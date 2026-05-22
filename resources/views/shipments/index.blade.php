@@ -646,8 +646,12 @@
         const WHISPER_DEBOUNCE_MS = 250;
         const _whisperPending = new Map();   // "sheetOrder:row:col" → timeoutId
 
+        // Diagnostic counters — expose qua window._realtimeStats để debug khi cần
+        const _rtStats = { sent: 0, received: 0, sendFailed: 0, noChannel: 0, skippedNoId: 0 };
+        window._realtimeStats = () => ({ ..._rtStats, channelReady: !!_privateChan });
+
         function whisperCellEdit(sheetOrder, sheetRow, colKey) {
-            if (! window.Echo || ! _privateChan) return;
+            if (! window.Echo || ! _privateChan) { _rtStats.noChannel++; return; }
 
             const k = `${sheetOrder}:${sheetRow}:${colKey}`;
             if (_whisperPending.has(k)) clearTimeout(_whisperPending.get(k));
@@ -664,7 +668,7 @@
                         : null;
 
                     // Row chưa có id (mới insert) → skip whisper, đợi save để có id
-                    if (rowId == null || rowId === '') return;
+                    if (rowId == null || rowId === '') { _rtStats.skippedNoId++; return; }
 
                     _privateChan.whisper('cell-edit', {
                         period:     PERIOD,
@@ -675,7 +679,11 @@
                         editor:     { id: CURRENT_USER.id, name: CURRENT_USER.name },
                         ts:         Date.now(),
                     });
-                } catch (e) { console.warn('whisper failed:', e); }
+                    _rtStats.sent++;
+                } catch (e) {
+                    _rtStats.sendFailed++;
+                    console.warn('[whisper] cell-edit failed:', e);
+                }
             }, WHISPER_DEBOUNCE_MS));
         }
 
@@ -1387,27 +1395,36 @@
                 _privateChan = window.Echo.private('items-sheet');
 
                 // 1) Server-broadcast event: ai đó save xong (authoritative confirmation)
-                // KHÔNG auto-reload — cell changes đã sync qua whisper (Lớp 1 realtime).
-                // Event này chỉ để:
-                //  - Bump local sheetVersion → tránh snapshot conflict ở lần save kế tiếp
-                //  - Update badge "lưu lần cuối bởi X"
-                //  - Toast nhẹ thông báo
-                // Nếu user cần đồng bộ dòng mới / formatting → bấm nút "Tải lại" thủ công.
+                // - Whisper (Lớp 1) đã sync cell value realtime cho row có id.
+                // - Nhưng row MỚI (chưa có id lúc gõ) chỉ visible sau khi save → cần reload
+                //   ở phía user khác để thấy.
+                // - Smart strategy: nếu user KHÔNG có dirty cells → auto-reload silent
+                //   (an toàn, không mất công sửa). Nếu CÓ dirty → toast + nút Reload thủ công.
                 _privateChan.listen('.sheet.updated', (e) => {
                     if (e.editorId === CURRENT_USER.id) return;
                     if (! e.sheetKey || ! e.sheetKey.endsWith(PERIOD)) return;
 
                     sheetVersion = e.version;
                     updateVersionBadge({ id: e.editorId, name: e.editorName }, new Date().toISOString());
-                    toast(
-                        `<i class="bi bi-person-fill-gear"></i> <strong>${e.editorName}</strong> vừa lưu (v${e.version}). ` +
-                        `Các thay đổi đã đồng bộ realtime; bấm <button class="btn btn-sm btn-link p-0 align-baseline" onclick="loadData()">Tải lại</button> nếu cần đồng bộ dòng mới / formatting.`,
-                        'info'
-                    );
+
+                    if (countDirty() === 0) {
+                        // An toàn — user không đang gõ dở → reload silent để đồng bộ rows/formatting mới.
+                        toast(`<i class="bi bi-person-fill-gear"></i> <strong>${e.editorName}</strong> vừa lưu (v${e.version}). Đang đồng bộ…`, 'info');
+                        loadData();
+                    } else {
+                        // User đang có thay đổi chưa lưu — KHÔNG auto-reload (tránh mất công).
+                        toast(
+                            `<i class="bi bi-person-fill-gear"></i> <strong>${e.editorName}</strong> vừa lưu (v${e.version}). ` +
+                            `Bạn có ${countDirty()} thay đổi chưa lưu — ` +
+                            `bấm <button class="btn btn-sm btn-link p-0 align-baseline" onclick="loadData()">Tải lại</button> sau khi lưu xong để thấy dòng/format mới.`,
+                            'warning'
+                        );
+                    }
                 });
 
                 // 2) Client-event (whisper): A gõ cell → B nhận instant, không qua DB
                 _privateChan.listenForWhisper('cell-edit', (e) => {
+                    _rtStats.received++;
                     if (! e || e.period !== PERIOD) return;
                     if (e.editor?.id === CURRENT_USER.id) return;
                     applyRemoteCellEdit(e, e.editor?.name);
@@ -1415,6 +1432,7 @@
 
                 // 3) Batch whisper cho paste (1 event chứa nhiều edits)
                 _privateChan.listenForWhisper('cell-batch', (e) => {
+                    _rtStats.received++;
                     if (! e || e.period !== PERIOD || ! Array.isArray(e.edits)) return;
                     if (e.editor?.id === CURRENT_USER.id) return;
                     e.edits.forEach(edit => applyRemoteCellEdit(edit, e.editor?.name));
