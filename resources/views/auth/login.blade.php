@@ -16,7 +16,7 @@
     {{-- Left side branding --}}
     <aside class="auth-side">
         <div class="brand">
-            <i class="bi bi-water"></i> cuocbien
+            MBF
         </div>
 
         <div>
@@ -31,7 +31,7 @@
             </ul>
         </div>
 
-        <div class="copyright">© {{ date('Y') }} cuocbien. All rights reserved.</div>
+        <div class="copyright">© {{ date('Y') }} MBF. All rights reserved.</div>
     </aside>
 
     {{-- Right side form --}}

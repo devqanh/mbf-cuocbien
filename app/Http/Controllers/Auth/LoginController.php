@@ -13,7 +13,7 @@ class LoginController extends Controller
     public function showLogin()
     {
         if (Auth::check()) {
-            return redirect()->route('dashboard');
+            return redirect()->route('shipments.index');
         }
         return view('auth.login');
     }
@@ -38,7 +38,7 @@ class LoginController extends Controller
 
         $request->session()->regenerate();
 
-        return redirect()->intended(route('dashboard'))
+        return redirect()->intended(route('shipments.index'))
             ->with('success', 'Chào mừng ' . Auth::user()->name . ' quay trở lại!');
     }
 

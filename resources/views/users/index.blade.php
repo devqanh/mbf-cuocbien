@@ -7,7 +7,7 @@
         <div>
             <h1>Danh sách thành viên</h1>
             <nav class="breadcrumb mt-1">
-                <a href="{{ route('dashboard') }}">Trang chủ</a>
+                <a href="{{ route('shipments.index') }}">Trang chủ</a>
                 <span class="mx-2">/</span>
                 <span>Quản trị</span>
                 <span class="mx-2">/</span>
@@ -60,17 +60,22 @@
                             @endforelse
                         </td>
                         <td><span class="text-muted">{{ $u->created_at?->format('d/m/Y H:i') }}</span></td>
+                        @php $uJson = $u->only(["id","name","email"]) + ["roles" => $u->roles->pluck("name")]; @endphp
                         <td class="text-end">
-                            <button class="btn btn-sm btn-outline-secondary"
-                                    onclick='openUserModal(@json($u->only(["id","name","email"]) + ["roles" => $u->roles->pluck("name")]))'
-                                    data-bs-toggle="modal" data-bs-target="#userModal">
-                                <i class="bi bi-pencil"></i>
-                            </button>
-                            <form action="{{ route('users.destroy', $u) }}" method="POST" class="d-inline"
-                                  onsubmit="return confirm('Xoá {{ $u->name }}?')">
-                                @csrf @method('DELETE')
-                                <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
-                            </form>
+                            <div class="action-group">
+                                <button type="button" class="action-btn action-edit" title="Sửa"
+                                        onclick='openUserModal(@json($uJson))'
+                                        data-bs-toggle="modal" data-bs-target="#userModal">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <form action="{{ route('users.destroy', $u) }}" method="POST"
+                                      onsubmit="return confirmDelete(this, {title: 'Xoá thành viên?', text: 'Bạn sắp xoá <b>{{ $u->name }}</b>. Hành động này không thể hoàn tác.'})">
+                                    @csrf @method('DELETE')
+                                    <button type="submit" class="action-btn action-delete" title="Xoá">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
                         </td>
                     </tr>
                 @empty

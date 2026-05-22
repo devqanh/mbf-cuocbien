@@ -2,17 +2,23 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\Domain\DomainException;
 use App\Models\User;
+use App\Services\UserService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\Models\Role;
 
 class UserController extends Controller
 {
+    public function __construct(
+        private readonly UserService $users,
+    ) {}
+
     public function index(Request $request)
     {
-        $q     = $request->get('q');
+        $q = $request->get('q');
+
         $users = User::with('roles')
             ->when($q, fn ($qb) => $qb->where(function ($w) use ($q) {
                 $w->where('name', 'like', "%$q%")
@@ -37,14 +43,7 @@ class UserController extends Controller
             'roles.*'  => ['string', 'exists:roles,name'],
         ]);
 
-        $user = User::create([
-            'name'              => $data['name'],
-            'email'             => $data['email'],
-            'password'          => Hash::make($data['password']),
-            'role'              => $data['roles'][0] ?? 'user',
-            'email_verified_at' => now(),
-        ]);
-        $user->syncRoles($data['roles'] ?? []);
+        $user = $this->users->create($data, $data['roles'] ?? []);
 
         return back()->with('success', "Đã thêm thành viên: {$user->name}");
     }
@@ -59,29 +58,19 @@ class UserController extends Controller
             'roles.*'  => ['string', 'exists:roles,name'],
         ]);
 
-        $user->name  = $data['name'];
-        $user->email = $data['email'];
-        if (! empty($data['password'])) {
-            $user->password = Hash::make($data['password']);
-        }
-        $user->role = $data['roles'][0] ?? $user->role;
-        $user->save();
-
-        $user->syncRoles($data['roles'] ?? []);
+        $user = $this->users->update($user, $data, $data['roles'] ?? []);
 
         return back()->with('success', "Đã cập nhật thành viên: {$user->name}");
     }
 
-    public function destroy(User $user): RedirectResponse
+    public function destroy(Request $request, User $user): RedirectResponse
     {
-        if ($user->id === auth()->id()) {
-            return back()->with('error', 'Không thể tự xoá chính mình.');
+        try {
+            $this->users->delete($user, $request->user());
+        } catch (DomainException $e) {
+            return back()->with('error', $e->getMessage());
         }
-        if ($user->hasRole('super_admin') && ! auth()->user()->hasRole('super_admin')) {
-            return back()->with('error', 'Bạn không có quyền xoá super admin.');
-        }
-        $name = $user->name;
-        $user->delete();
-        return back()->with('success', "Đã xoá: {$name}");
+
+        return back()->with('success', "Đã xoá: {$user->name}");
     }
 }

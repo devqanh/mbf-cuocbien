@@ -19,8 +19,8 @@
 <header class="app-header">
     <nav class="navbar navbar-expand-lg">
         <div class="container-fluid p-0">
-            <a class="navbar-brand brand-logo" href="{{ route('dashboard') }}">
-                <i class="bi bi-water"></i> cuocbien
+            <a class="navbar-brand brand-logo" href="{{ route('shipments.index') }}">
+                MBF
             </a>
 
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav">
@@ -29,37 +29,55 @@
 
             <div class="collapse navbar-collapse app-nav" id="mainNav">
                 <ul class="navbar-nav me-auto">
-                    {{-- Dashboard --}}
+                    {{-- Follow Up Shipment --}}
+                    @can('shipments.view')
                     <li class="nav-item">
-                        <a class="nav-link {{ request()->routeIs('dashboard') ? 'active' : '' }}"
-                           href="{{ route('dashboard') }}">
-                            <i class="bi bi-speedometer2"></i> Dashboard
+                        <a class="nav-link {{ request()->routeIs('shipments.*') ? 'active' : '' }}"
+                           href="{{ route('shipments.index') }}">
+                            <i class="bi bi-truck"></i> Follow Up Shipment
                         </a>
                     </li>
+                    @endcan
 
-                    {{-- Sản phẩm --}}
-                    <li class="nav-item">
-                        <a class="nav-link {{ request()->routeIs('items.*') ? 'active' : '' }}"
-                           href="{{ route('items.index') }}">
-                            <i class="bi bi-table"></i> Sản phẩm
+                    {{-- Báo cáo --}}
+                    @can('reports.view')
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle {{ request()->routeIs('reports.*') ? 'active' : '' }}"
+                           href="#" data-bs-toggle="dropdown" role="button">
+                            <i class="bi bi-clipboard-data"></i> Báo cáo
                         </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item {{ request()->routeIs('reports.payable.index','reports.payable.show','reports.payable.store','reports.payable.destroy') ? 'active' : '' }}"
+                                   href="{{ route('reports.payable.index') }}">
+                                <i class="bi bi-cash-stack"></i> Báo cáo phải trả</a></li>
+                            <li><a class="dropdown-item {{ request()->routeIs('reports.payable.initial.*') ? 'active' : '' }}"
+                                   href="{{ route('reports.payable.initial.index') }}">
+                                <i class="bi bi-pencil-square"></i> Cấu hình đầu kỳ NCC</a></li>
+                        </ul>
                     </li>
+                    @endcan
 
-                    {{-- Quản trị --}}
+                    {{-- Quản trị — chỉ hiện nếu có ít nhất 1 quyền users.view hoặc roles.view --}}
+                    @if(auth()->user()->hasAnyPermission(['users.view', 'roles.view']))
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle {{ request()->routeIs('users.*','roles.*') ? 'active' : '' }}"
                            href="#" data-bs-toggle="dropdown" role="button">
                             <i class="bi bi-shield-lock"></i> Quản trị
                         </a>
                         <ul class="dropdown-menu">
+                            @can('users.view')
                             <li><a class="dropdown-item {{ request()->routeIs('users.*') ? 'active' : '' }}"
                                    href="{{ route('users.index') }}">
                                 <i class="bi bi-people"></i> Danh sách thành viên</a></li>
+                            @endcan
+                            @can('roles.view')
                             <li><a class="dropdown-item {{ request()->routeIs('roles.*') ? 'active' : '' }}"
                                    href="{{ route('roles.index') }}">
                                 <i class="bi bi-shield-check"></i> Danh sách phân quyền</a></li>
+                            @endcan
                         </ul>
                     </li>
+                    @endif
                 </ul>
 
                 <div class="header-actions d-flex align-items-center gap-2">
@@ -117,6 +135,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
     function toggleFullscreen() {
         if (!document.fullscreenElement) document.documentElement.requestFullscreen();
@@ -124,6 +143,59 @@
     }
     // Auto-hide toast after 4s
     document.querySelectorAll('.toast.show').forEach(t => setTimeout(() => bootstrap.Toast.getOrCreateInstance(t).hide(), 4000));
+
+    // ---- SweetAlert global helpers ----
+    const APP_SWAL = {
+        customClass: {
+            popup: 'app-swal-popup',
+            title: 'app-swal-title',
+            htmlContainer: 'app-swal-text',
+            confirmButton: 'app-swal-btn app-swal-btn-confirm',
+            cancelButton: 'app-swal-btn app-swal-btn-cancel',
+            actions: 'app-swal-actions',
+            icon: 'app-swal-icon',
+        },
+        buttonsStyling: false,
+        reverseButtons: true,
+        focusCancel: true,
+    };
+
+    /**
+     * Dùng cho form xoá: <form onsubmit="return confirmDelete(this, {title, text})">
+     */
+    window.confirmDelete = function (form, opts = {}) {
+        Swal.fire({
+            ...APP_SWAL,
+            icon: 'warning',
+            title: opts.title || 'Xác nhận xoá?',
+            html: opts.text || 'Hành động này không thể hoàn tác.',
+            showCancelButton: true,
+            confirmButtonText: opts.confirmText || '<i class="bi bi-trash me-1"></i> Xoá',
+            cancelButtonText: 'Huỷ',
+            customClass: { ...APP_SWAL.customClass,
+                confirmButton: 'app-swal-btn app-swal-btn-danger' },
+        }).then((res) => { if (res.isConfirmed) form.submit(); });
+        return false;
+    };
+
+    /**
+     * Dùng trong JS bất đồng bộ: if (!await confirmAction({...})) return;
+     */
+    window.confirmAction = async function (opts = {}) {
+        const danger = !!opts.danger;
+        const res = await Swal.fire({
+            ...APP_SWAL,
+            icon: opts.icon || (danger ? 'warning' : 'question'),
+            title: opts.title || 'Bạn chắc chứ?',
+            html: opts.text || '',
+            showCancelButton: true,
+            confirmButtonText: opts.confirmText || 'Đồng ý',
+            cancelButtonText: opts.cancelText || 'Huỷ',
+            customClass: { ...APP_SWAL.customClass,
+                confirmButton: 'app-swal-btn ' + (danger ? 'app-swal-btn-danger' : 'app-swal-btn-confirm') },
+        });
+        return res.isConfirmed;
+    };
 </script>
 @stack('scripts')
 </body>

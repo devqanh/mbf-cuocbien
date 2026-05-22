@@ -248,6 +248,39 @@ a { text-decoration: none; }
 .badge-soft-danger  { background: rgba(255,91,91,.12); color: var(--azia-danger); }
 .badge-soft-warning { background: rgba(255,184,34,.15); color: #b8800f; }
 
+/* ---------- Action buttons (table row actions) ---------- */
+/* Icon-only buttons với kích thước thống nhất, hover màu theo type */
+.action-btn {
+    width: 34px; height: 34px;
+    border: 1px solid var(--azia-border);
+    background: #fff;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--azia-muted);
+    transition: all .15s ease;
+    padding: 0;
+    font-size: 14px;
+    text-decoration: none;
+    line-height: 1;
+}
+.action-btn:hover { transform: translateY(-1px); box-shadow: 0 2px 6px rgba(28,39,60,.1); }
+.action-btn:focus { outline: none; box-shadow: 0 0 0 3px rgba(1,83,169,.15); }
+
+.action-btn.action-view:hover    { background: var(--azia-primary-soft); color: var(--azia-primary); border-color: var(--azia-primary); }
+.action-btn.action-edit:hover    { background: rgba(255,184,34,.15);     color: #b8800f;             border-color: #ffb822; }
+.action-btn.action-delete:hover  { background: rgba(255,91,91,.12);      color: var(--azia-danger);  border-color: var(--azia-danger); }
+.action-btn.action-success:hover { background: rgba(36,211,159,.12);     color: var(--azia-success); border-color: var(--azia-success); }
+
+.action-btn[disabled],
+.action-btn.disabled { opacity: .5; cursor: not-allowed; pointer-events: none; }
+
+.action-group { display: inline-flex; gap: 6px; }
+
+/* Bỏ form margin/padding wrapping action buttons */
+.action-group form { display: inline; margin: 0; padding: 0; }
+
 /* ---------- Luckysheet area ---------- */
 #luckysheet {
     width: 100%;
@@ -259,6 +292,69 @@ a { text-decoration: none; }
 
 /* ---------- Toast ---------- */
 .toast-container { z-index: 2000; }
+
+/* ---------- SweetAlert2 theme (đồng bộ với app) ---------- */
+.app-swal-popup {
+    border-radius: 14px !important;
+    padding: 28px 26px 22px !important;
+    box-shadow: 0 24px 64px rgba(28,39,60,.18) !important;
+    font-family: inherit !important;
+}
+.app-swal-title {
+    font-size: 18px !important;
+    font-weight: 700 !important;
+    color: var(--azia-text) !important;
+    padding: 0 !important;
+    margin: 12px 0 6px !important;
+}
+.app-swal-text {
+    font-size: 13.5px !important;
+    color: var(--azia-muted) !important;
+    line-height: 1.55 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+.app-swal-icon {
+    width: 56px !important;
+    height: 56px !important;
+    margin: 4px auto 6px !important;
+    border-width: 3px !important;
+}
+.app-swal-icon .swal2-icon-content { font-size: 30px !important; }
+.app-swal-actions {
+    gap: 8px !important;
+    margin-top: 22px !important;
+}
+.app-swal-btn {
+    border: 1px solid transparent;
+    border-radius: 10px !important;
+    padding: 9px 18px !important;
+    font-weight: 600 !important;
+    font-size: 13.5px !important;
+    transition: all .15s !important;
+    box-shadow: none !important;
+    min-width: 96px;
+}
+.app-swal-btn-confirm {
+    background: var(--azia-primary) !important;
+    color: #fff !important;
+}
+.app-swal-btn-confirm:hover {
+    background: var(--azia-primary-dark) !important;
+}
+.app-swal-btn-danger {
+    background: var(--azia-danger) !important;
+    color: #fff !important;
+}
+.app-swal-btn-danger:hover { filter: brightness(.92); }
+.app-swal-btn-cancel {
+    background: #fff !important;
+    color: var(--azia-text) !important;
+    border-color: var(--azia-border) !important;
+}
+.app-swal-btn-cancel:hover {
+    background: var(--azia-bg) !important;
+}
 
 /* ---------- Mobile ---------- */
 @media (max-width: 992px) {
