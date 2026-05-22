@@ -1059,10 +1059,12 @@
                         }
                     },
                     cellUpdateBefore(r, c, value, isRefresh) {
-                        if (_systemUpdate) return;   // bypass khi system update
+                        if (_systemUpdate || isRefresh) return;
                         const colDef = COLS[c];
                         if (! colDef) return;
-                        if (colDef.readonly || COLUMN_PERMS[colDef.key] === 'view') {
+                        // Chỉ chặn cứng cột admin-set 'view'. Cột readonly inherent (id) đã được
+                        // cellEditBefore chặn user-edit → KHÔNG chặn ở đây để setCellValue programmatic chạy được.
+                        if (COLUMN_PERMS[colDef.key] === 'view') {
                             return false;
                         }
                     },
@@ -1219,39 +1221,35 @@
                 if (json.ok) {
                     sheetVersion = json.version;
 
-                    // Cập nhật cell No. cho các row mới — DIRECT data modification + refresh
-                    // (setCellValue bị hook chặn dù có _systemUpdate flag, dùng cách này chắc chắn nhất)
+                    // Gán No. mới cho các dòng vừa được tạo (id null → backend gán id mới)
+                    // Dùng setCellValue + _systemUpdate flag bypass hook readonly + toggle sheet để force redraw
                     const idCol = COLS.findIndex(c => c.key === 'id');
                     let updatedNew = 0;
-                    if (idCol >= 0 && Array.isArray(json.ids)) {
-                        const sheetsRaw = luckysheet.getluckysheetfile();
-                        allMeta.forEach((m, i) => {
-                            if ((m.data.id == null || m.data.id === '') && json.ids[i] != null) {
-                                const newId = json.ids[i];
-                                const sheet = sheetsRaw[m.sheetOrder];
-                                if (! sheet || ! sheet.data) return;
-                                // Pad rows nếu cần
-                                while (sheet.data.length <= m.sheetRow) sheet.data.push([]);
-                                if (! sheet.data[m.sheetRow]) sheet.data[m.sheetRow] = [];
-                                // Modify cell trực tiếp
-                                sheet.data[m.sheetRow][idCol] = {
-                                    v: newId,
-                                    m: String(newId),
-                                    ct: { fa: 'General', t: 'g' },
-                                    bg: '#f4f6fb', fc: '#7987a1', lo: 1, tb: 2, vt: 0
-                                };
-                                updatedNew++;
-                            }
-                        });
 
-                        // Force re-render
-                        if (updatedNew > 0) {
-                            try { luckysheet.refresh(); } catch (e) {}
-                            // Backup: switch sheet để force redraw
-                            try {
-                                const activeOrder = luckysheet.getSheet().order ?? 0;
-                                luckysheet.setSheetActive(activeOrder);
-                            } catch (e) {}
+                    if (idCol >= 0 && Array.isArray(json.ids)) {
+                        _systemUpdate = true;
+                        try {
+                            for (let i = 0; i < allMeta.length; i++) {
+                                const m = allMeta[i];
+                                const newId = json.ids[i];
+                                if ((m.data.id == null || m.data.id === '') && newId != null) {
+                                    try {
+                                        luckysheet.setCellValue(m.sheetRow, idCol, newId, { order: m.sheetOrder });
+                                        updatedNew++;
+                                    } catch (e) { console.warn('setCellValue id inject failed:', e); }
+                                }
+                            }
+                            // Force canvas redraw via sheet toggle (chắc chắn nhất trong luckysheet 2.1.x)
+                            if (updatedNew > 0) {
+                                try {
+                                    const cur = luckysheet.getSheet().order ?? 0;
+                                    const other = cur === 0 ? 1 : 0;
+                                    luckysheet.setSheetActive(other);
+                                    setTimeout(() => { try { luckysheet.setSheetActive(cur); } catch (e) {} }, 30);
+                                } catch (e) { console.warn('sheet toggle failed:', e); }
+                            }
+                        } finally {
+                            setTimeout(() => { _systemUpdate = false; }, 800);
                         }
                     }
 
@@ -1261,6 +1259,25 @@
                         toast(`Đã lưu ${json.saved} dòng (v${json.version}).`);
                     }
                     updateVersionBadge(CURRENT_USER, new Date().toISOString());
+
+                    // Re-save snapshot nền (chỉ super_admin / full quyền) với IDs mới đã inject
+                    // Tránh trường hợp reload trang thấy lại empty No. do snapshot cũ
+                    if (updatedNew > 0 && ! HAS_RESTRICTIONS) {
+                        setTimeout(async () => {
+                            try {
+                                const refreshedSheets = luckysheet.getAllSheets();
+                                await fetch(ROUTES.bulk, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json' },
+                                    body: JSON.stringify({
+                                        rows: { import: [], export: [] },
+                                        snapshot: refreshedSheets,
+                                        client_version: sheetVersion,
+                                    })
+                                });
+                            } catch (e) { console.warn('snapshot resave failed:', e); }
+                        }, 1000);
+                    }
                 } else {
                     toast('Lưu thất bại.', 'danger');
                 }
