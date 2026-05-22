@@ -1434,17 +1434,27 @@
                     clearDateFilter(false);
                 }
 
+                // FORCE COMMIT cell đang edit — blur active element + click sheet để Luckysheet
+                // flush in-progress edit vào data array. Không làm bước này → user gõ rồi bấm Lưu
+                // ngay không kịp Enter/Tab → cellUpdated chưa fire → dirty tracker miss.
+                try {
+                    if (document.activeElement && document.activeElement.blur) {
+                        document.activeElement.blur();
+                    }
+                } catch (e) {}
+
                 // SAFETY NET: scan + clear duplicate No. trước khi build payload
                 scanDuplicateIds();
-                await new Promise(r => setTimeout(r, 250));
+                await new Promise(r => setTimeout(r, 300));   // dài hơn cho commit kịp
 
-                // ===== Build payload từ DIRTY tracker (Mức 2 — collaborative editing) =====
+                // ===== Build payload =====
                 // - Row có id + dirty cells → partial update {id, ...dirty}
-                // - Row không id (mới) + có client → full create
-                // - Row có id nhưng không dirty → SKIP (không gửi)
-                const dirtyMeta = [];      // thứ tự gửi lên server (import trước, export sau)
-                const seenIds = new Set(); // dedup cross-sheet
+                // - Row có id, không dirty → SKIP
+                // - Row không id + có client (dù dirty tracker miss vẫn được include — safety net)
+                const dirtyMeta = [];
+                const seenIds = new Set();
                 let duplicateCount = 0;
+                let newRowsRecovered = 0;   // đếm new row được phục hồi từ scan (không phải dirty tracker)
 
                 [0, 1].forEach((sheetOrder) => {
                     const allRows = readSheetRowsWithMeta(sheetOrder);
@@ -1465,16 +1475,20 @@
                         if (effectiveId) {
                             // UPDATE — chỉ gửi cell dirty
                             const dirtyKeys = dirtyMap.get(m.sheetRow);
-                            if (! dirtyKeys || dirtyKeys.size === 0) return;   // không dirty → skip
+                            if (! dirtyKeys || dirtyKeys.size === 0) return;
                             const payload = { id: effectiveId };
                             dirtyKeys.forEach(key => {
                                 payload[key] = data[key] === undefined ? null : data[key];
                             });
                             dirtyMeta.push({ data: payload, sheetRow: m.sheetRow, sheetOrder, isNew: false });
                         } else {
-                            // CREATE — bắt buộc có client (định danh dòng)
-                            if (! data.client) return;
-                            const payload = { ...data };
+                            // CREATE — bắt buộc có client (text non-empty)
+                            const client = (data.client ?? '').toString().trim();
+                            if (! client) return;
+                            // Safety net: nếu dirty tracker không bắt được (vd user chưa commit
+                            // cell trước khi bấm Lưu), chúng ta vẫn include row này.
+                            if (! dirtyMap.has(m.sheetRow)) newRowsRecovered++;
+                            const payload = { ...data, client };   // gán client đã trim
                             delete payload.id;
                             dirtyMeta.push({ data: payload, sheetRow: m.sheetRow, sheetOrder, isNew: true });
                         }
@@ -1514,8 +1528,9 @@
 
                 sheetVersion = json.version;
 
-                // Gán No. mới cho dòng vừa được tạo
+                // Gán No. mới cho dòng vừa được tạo + verify hiển thị
                 const idCol = COLS.findIndex(c => c.key === 'id');
+                const newRowMetas = [];                          // các meta cần inject id
                 let updatedNew = 0;
 
                 if (idCol >= 0 && Array.isArray(json.ids)) {
@@ -1527,20 +1542,32 @@
                             if (m.isNew && newId != null) {
                                 try {
                                     luckysheet.setCellValue(m.sheetRow, idCol, newId, { order: m.sheetOrder });
+                                    newRowMetas.push({ ...m, newId });
                                     updatedNew++;
                                 } catch (e) { console.warn('setCellValue id inject failed:', e); }
                             }
                         }
-                        if (updatedNew > 0) {
-                            try {
-                                const cur = luckysheet.getSheet().order ?? 0;
-                                const other = cur === 0 ? 1 : 0;
-                                luckysheet.setSheetActive(other);
-                                setTimeout(() => { try { luckysheet.setSheetActive(cur); } catch (e) {} }, 30);
-                            } catch (e) { console.warn('sheet toggle failed:', e); }
-                        }
                     } finally {
-                        setTimeout(() => { _systemUpdate = false; }, 800);
+                        // Giữ flag bypass đủ dài để Luckysheet flush hết
+                        setTimeout(() => { _systemUpdate = false; }, 1000);
+                    }
+
+                    // Verify sau 250ms — nếu cell nào vẫn rỗng → fallback loadData
+                    if (newRowMetas.length > 0) {
+                        await new Promise(r => setTimeout(r, 250));
+                        const stillEmpty = newRowMetas.filter(m => {
+                            try {
+                                const v = luckysheet.getCellValue(m.sheetRow, idCol, { order: m.sheetOrder });
+                                return v == null || v === '';
+                            } catch (e) { return true; }
+                        });
+                        if (stillEmpty.length > 0) {
+                            console.warn(`${stillEmpty.length}/${newRowMetas.length} No. cell không hiển thị — fallback loadData`);
+                            toast(`Đã lưu — đang đồng bộ ${stillEmpty.length} No. mới…`, 'info');
+                            resetDirty();
+                            updateVersionBadge(CURRENT_USER, new Date().toISOString());
+                            return loadData();
+                        }
                     }
                 }
 
@@ -1549,15 +1576,15 @@
 
                 // Thông báo
                 if (json.snapshot_conflict) {
-                    // Row data đã save thành công, nhưng formatting/snapshot bị conflict với user khác.
-                    // KHÔNG mất dữ liệu — chỉ reload formatting để đồng bộ.
                     toast(
                         `✓ Đã lưu ${json.saved} dòng. ⚠️ Formatting bị overwrite bởi người khác — đang đồng bộ lại…`,
                         'warning'
                     );
                     setTimeout(loadData, 1500);
                 } else if (updatedNew > 0) {
-                    toast(`Đã lưu — gán <strong>${updatedNew}</strong> No. mới.`, 'success');
+                    let msg = `Đã lưu — gán <strong>${updatedNew}</strong> No. mới.`;
+                    if (newRowsRecovered > 0) msg += ` (${newRowsRecovered} dòng phục hồi từ scan)`;
+                    toast(msg, 'success');
                 } else {
                     toast(`Đã lưu ${json.saved} dòng (v${json.version}).`);
                 }
