@@ -11,6 +11,8 @@ use DateTime;
 use DateTimeInterface;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class ShipmentService
 {
@@ -353,13 +355,23 @@ class ShipmentService
             }
         }
 
-        broadcast(new SheetUpdated(
-            sheetKey:   $key,
-            version:    $newVersion,
-            editorId:   $editor->id,
-            editorName: $editor->name,
-            savedRows:  count($ids),
-        ))->toOthers();
+        // Broadcast best-effort — nếu Reverb/queue down KHÔNG được làm fail save.
+        // (QUEUE_CONNECTION=database: dispatch chỉ insert vào jobs table → ít khi fail.
+        //  QUEUE_CONNECTION=sync: chạy ngay → nếu Reverb down sẽ throw. Catch để an toàn.)
+        try {
+            broadcast(new SheetUpdated(
+                sheetKey:   $key,
+                version:    $newVersion,
+                editorId:   $editor->id,
+                editorName: $editor->name,
+                savedRows:  count($ids),
+            ))->toOthers();
+        } catch (Throwable $e) {
+            Log::channel('single')->warning('Broadcast SheetUpdated failed (Reverb/queue?)', [
+                'sheetKey' => $key,
+                'error'    => $e->getMessage(),
+            ]);
+        }
 
         return [
             'saved'             => count($ids),

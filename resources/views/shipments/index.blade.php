@@ -469,6 +469,8 @@
                     <span id="liveStatus" class="badge badge-soft-warning">
                         <i class="bi bi-wifi-off"></i> Offline
                     </span>
+                    <span id="liveActivity" class="small text-warning fw-semibold ms-2"
+                          style="opacity:0; transition: opacity .3s ease;"></span>
                 </div>
                 <div class="small text-muted fw-normal">
                     Workbook có 2 sheet ở dưới: <strong>HÀNG NHẬP</strong> và <strong>HÀNG XUẤT</strong>.
@@ -615,25 +617,176 @@
             return total;
         }
 
-        // Mark mọi cell trong range (dùng cho paste hook)
+        // Mark mọi cell trong range (dùng cho paste hook) + whisper
         function markRangeDirty(range) {
             if (! range) return;
             const ranges = Array.isArray(range) ? range : [range];
             const sheetOrder = luckysheet.getSheet()?.order ?? 0;
+            const batchEdits = [];   // collect cells để whisper batch
             ranges.forEach(rg => {
                 if (! rg || ! rg.row || ! rg.column) return;
                 const [r0, r1] = rg.row;
                 const [c0, c1] = rg.column;
-                for (let r = Math.max(1, r0); r <= r1; r++) {       // skip header row 0
+                for (let r = Math.max(1, r0); r <= r1; r++) {
                     for (let c = c0; c <= c1; c++) {
                         const colDef = COLS[c];
                         if (colDef && ! colDef.readonly && COLUMN_PERMS[colDef.key] !== 'view') {
                             markDirty(sheetOrder, r, colDef.key);
+                            batchEdits.push({ sheetOrder, sheetRow: r, colKey: colDef.key });
                         }
                     }
                 }
             });
+            if (batchEdits.length > 0) whisperCellBatch(batchEdits);
         }
+
+        // ===== LIVE REALTIME via Reverb client events (whisper) =====
+        // Cơ chế Google-Sheets-like: A gõ → debounce 250ms → whisper trực tiếp tới channel
+        // (không qua DB). B nhận → apply cell ngay. Save vẫn là source-of-truth, snapshot vẫn lưu khi save.
+        const WHISPER_DEBOUNCE_MS = 250;
+        const _whisperPending = new Map();   // "sheetOrder:row:col" → timeoutId
+
+        function whisperCellEdit(sheetOrder, sheetRow, colKey) {
+            if (! window.Echo || ! _privateChan) return;
+
+            const k = `${sheetOrder}:${sheetRow}:${colKey}`;
+            if (_whisperPending.has(k)) clearTimeout(_whisperPending.get(k));
+
+            _whisperPending.set(k, setTimeout(() => {
+                _whisperPending.delete(k);
+                try {
+                    const colIndex = COLS.findIndex(c => c.key === colKey);
+                    if (colIndex < 0) return;
+                    const cellValue = luckysheet.getCellValue(sheetRow, colIndex, { order: sheetOrder });
+                    const idCol = COLS.findIndex(c => c.key === 'id');
+                    const rowId = idCol >= 0
+                        ? luckysheet.getCellValue(sheetRow, idCol, { order: sheetOrder })
+                        : null;
+
+                    // Row chưa có id (mới insert) → skip whisper, đợi save để có id
+                    if (rowId == null || rowId === '') return;
+
+                    _privateChan.whisper('cell-edit', {
+                        period:     PERIOD,
+                        sheetOrder, sheetRow,
+                        rowId:      parseInt(rowId) || null,
+                        colKey,
+                        value:      cellValue,
+                        editor:     { id: CURRENT_USER.id, name: CURRENT_USER.name },
+                        ts:         Date.now(),
+                    });
+                } catch (e) { console.warn('whisper failed:', e); }
+            }, WHISPER_DEBOUNCE_MS));
+        }
+
+        // Whisper batch (cho paste) — gửi 1 event với array of edits, tránh spam rate-limit
+        function whisperCellBatch(edits) {
+            if (! window.Echo || ! _privateChan) return;
+            try {
+                const idCol = COLS.findIndex(c => c.key === 'id');
+                const payload = [];
+                edits.forEach(({ sheetOrder, sheetRow, colKey }) => {
+                    const colIndex = COLS.findIndex(c => c.key === colKey);
+                    if (colIndex < 0) return;
+                    const rowId = idCol >= 0
+                        ? luckysheet.getCellValue(sheetRow, idCol, { order: sheetOrder })
+                        : null;
+                    if (rowId == null || rowId === '') return;   // skip new rows
+                    const cellValue = luckysheet.getCellValue(sheetRow, colIndex, { order: sheetOrder });
+                    payload.push({ sheetOrder, sheetRow, rowId: parseInt(rowId), colKey, value: cellValue });
+                });
+                if (payload.length === 0) return;
+
+                _privateChan.whisper('cell-batch', {
+                    period: PERIOD,
+                    edits:  payload,
+                    editor: { id: CURRENT_USER.id, name: CURRENT_USER.name },
+                    ts:     Date.now(),
+                });
+            } catch (e) { console.warn('whisper batch failed:', e); }
+        }
+
+        // Áp dụng cell change từ user khác — bypass hook readonly, không mark dirty
+        function applyRemoteCellEdit(edit, editorName) {
+            try {
+                const colIndex = COLS.findIndex(c => c.key === edit.colKey);
+                if (colIndex < 0) return;   // user này đã ẩn cột → bỏ qua
+
+                // Match row theo rowId (cột id cell), KHÔNG dùng sheetRow trực tiếp
+                // vì 2 user có thể có sheet row khác nhau (vd: A vừa insert dòng mới)
+                const idCol = COLS.findIndex(c => c.key === 'id');
+                if (idCol < 0) return;
+
+                const sheets = luckysheet.getluckysheetfile();
+                const sheet = sheets[edit.sheetOrder];
+                if (! sheet?.data) return;
+
+                let targetRow = -1;
+                for (let r = 1; r < sheet.data.length; r++) {
+                    const cell = sheet.data[r]?.[idCol];
+                    const v = cell?.v ?? cell?.m;
+                    if (v != null && parseInt(v) === edit.rowId) {
+                        targetRow = r;
+                        break;
+                    }
+                }
+                if (targetRow < 0) return;   // không tìm thấy row → có thể user chưa load
+
+                _systemUpdate = true;
+                try {
+                    luckysheet.setCellValue(targetRow, colIndex, edit.value ?? '', { order: edit.sheetOrder });
+                    // Flash cell ngắn để user biết có người vừa sửa (visual cue)
+                    flashRemoteCell(edit.sheetOrder, targetRow, colIndex, editorName);
+                } finally {
+                    setTimeout(() => { _systemUpdate = false; }, 200);
+                }
+            } catch (e) { console.warn('applyRemoteCellEdit failed:', e); }
+        }
+
+        // Visual flash + tooltip ngắn tại cell vừa bị remote edit
+        function flashRemoteCell(sheetOrder, row, col, editorName) {
+            try {
+                // Tạm thay bg cell → vàng nhạt 1.5s → trở về
+                const allSheets = luckysheet.getluckysheetfile();
+                const sheet = allSheets[sheetOrder];
+                if (! sheet?.data?.[row]?.[col]) return;
+                const cell = sheet.data[row][col];
+                const oldBg = cell.bg;
+                _systemUpdate = true;
+                try {
+                    luckysheet.setCellFormat(row, col, 'bg', '#fef3c7', { order: sheetOrder });
+                } catch (e) {}
+                setTimeout(() => {
+                    _systemUpdate = true;
+                    try {
+                        luckysheet.setCellFormat(row, col, 'bg', oldBg || null, { order: sheetOrder });
+                    } catch (e) {}
+                    setTimeout(() => { _systemUpdate = false; }, 100);
+                }, 1500);
+
+                // Toast nhẹ — chỉ 1 lần/editor/5s để tránh spam
+                _showEditorActivity(editorName);
+            } catch (e) {}
+        }
+
+        // Throttle activity indicator per editor
+        const _activityShown = new Map();   // editorName → lastShownTs
+        function _showEditorActivity(editorName) {
+            if (! editorName) return;
+            const now = Date.now();
+            const last = _activityShown.get(editorName) || 0;
+            if (now - last < 5000) return;
+            _activityShown.set(editorName, now);
+            const el = document.getElementById('liveActivity');
+            if (! el) return;
+            el.innerHTML = `<i class="bi bi-pencil-fill text-warning"></i> <strong>${editorName}</strong> đang sửa…`;
+            el.style.opacity = '1';
+            clearTimeout(_showEditorActivity._t);
+            _showEditorActivity._t = setTimeout(() => { el.style.opacity = '0'; }, 3000);
+        }
+
+        // Reference tới private channel — set sau khi Echo init
+        let _privateChan = null;
 
         // ===== Scan + clear duplicate ID trong cột No. =====
         // QUAN TRỌNG: phải bật _systemUpdate vì setCellValue cho cột id (readonly) bị hook chặn
@@ -1138,6 +1291,8 @@
                         if (! colDef.readonly) {
                             const sheetOrder = luckysheet.getSheet()?.order ?? 0;
                             markDirty(sheetOrder, r, colDef.key);
+                            // LIVE REALTIME: whisper cell edit cho user khác thấy ngay (không cần save)
+                            whisperCellEdit(sheetOrder, r, colDef.key);
                         }
 
                         if (colDef.key === 'id') {
@@ -1210,11 +1365,41 @@
                 pc.bind('disconnected', () => { status.innerHTML = '<i class="bi bi-wifi-off"></i> Offline'; status.className = 'badge badge-soft-warning'; });
                 pc.bind('error',        (e) => { console.warn('Echo error:', e); status.innerHTML = '<i class="bi bi-exclamation-triangle"></i> Lỗi WS'; status.className = 'badge badge-soft-danger'; });
 
-                window.Echo.private('items-sheet').listen('.sheet.updated', (e) => {
+                _privateChan = window.Echo.private('items-sheet');
+
+                // 1) Server-broadcast event: ai đó save xong (authoritative confirmation)
+                _privateChan.listen('.sheet.updated', (e) => {
                     if (e.editorId === CURRENT_USER.id) return;
-                    if (!e.sheetKey || !e.sheetKey.endsWith(PERIOD)) return;  // chỉ react với event của tháng đang xem
-                    toast(`<i class="bi bi-person-fill-gear"></i> <strong>${e.editorName}</strong> vừa lưu ${e.savedRows} dòng (v${e.version}). Đang đồng bộ…`, 'info');
-                    loadData();
+                    if (! e.sheetKey || ! e.sheetKey.endsWith(PERIOD)) return;
+
+                    // Smart sync — KHÔNG auto-reload nếu user đang có dirty cells (mất công sửa)
+                    if (countDirty() > 0) {
+                        toast(
+                            `<i class="bi bi-person-fill-gear"></i> <strong>${e.editorName}</strong> vừa lưu ${e.savedRows} dòng (v${e.version}). ` +
+                            `Bạn đang có thay đổi chưa lưu — bấm <button class="btn btn-sm btn-link p-0 align-baseline" onclick="loadData()">Reload</button> khi sẵn sàng.`,
+                            'warning'
+                        );
+                        sheetVersion = e.version;
+                        updateVersionBadge({ id: e.editorId, name: e.editorName }, new Date().toISOString());
+                    } else {
+                        // Không dirty → auto-reload an toàn (giảm reload chỉ khi có new rows / formatting)
+                        toast(`<i class="bi bi-person-fill-gear"></i> <strong>${e.editorName}</strong> vừa lưu (v${e.version}).`, 'info');
+                        loadData();
+                    }
+                });
+
+                // 2) Client-event (whisper): A gõ cell → B nhận instant, không qua DB
+                _privateChan.listenForWhisper('cell-edit', (e) => {
+                    if (! e || e.period !== PERIOD) return;
+                    if (e.editor?.id === CURRENT_USER.id) return;
+                    applyRemoteCellEdit(e, e.editor?.name);
+                });
+
+                // 3) Batch whisper cho paste (1 event chứa nhiều edits)
+                _privateChan.listenForWhisper('cell-batch', (e) => {
+                    if (! e || e.period !== PERIOD || ! Array.isArray(e.edits)) return;
+                    if (e.editor?.id === CURRENT_USER.id) return;
+                    e.edits.forEach(edit => applyRemoteCellEdit(edit, e.editor?.name));
                 });
             } catch (err) { console.warn('Realtime init failed:', err); }
         }
