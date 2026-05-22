@@ -25,6 +25,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/shipments',             [ShipmentController::class, 'redirectToCurrent'])->name('shipments.index');
         Route::get('/shipments/{period}',    [ShipmentController::class, 'show'])->name('shipments.show')->where('period', '\d{4}-\d{2}');
         Route::get('/shipments/{period}/data', [ShipmentController::class, 'data'])->name('shipments.data')->where('period', '\d{4}-\d{2}');
+        Route::put('/me/shipment-column-prefs', [ShipmentController::class, 'updateColumnPrefs'])->name('shipments.columnPrefs');
     });
     Route::middleware('permission:shipments.create')->group(function () {
         Route::post('/shipments/months',                [ShipmentController::class, 'createPeriod'])->name('shipments.createPeriod');
@@ -65,6 +66,7 @@ Route::middleware('auth')->group(function () {
     });
     Route::middleware('permission:users.update')->group(function () {
         Route::put('/users/{user}', [UserController::class, 'update'])->name('users.update');
+        Route::put('/users/{user}/column-permissions', [UserController::class, 'updateColumnPermissions'])->name('users.columnPermissions');
     });
     Route::middleware('permission:users.delete')->group(function () {
         Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');

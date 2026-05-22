@@ -2,6 +2,22 @@
 
 @section('title', 'Danh sách thành viên')
 
+@push('styles')
+<style>
+    /* Fix scroll modal Quyền cột — cách đơn giản và chắc chắn nhất:
+       set explicit max-height cho modal-body + overflow-y:auto */
+    #columnPermsModal .modal-body {
+        max-height: calc(100vh - 220px) !important;   /* trừ header (~70px) + footer (~70px) + margins */
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+    }
+    /* Đảm bảo modal container không tự scroll page */
+    #columnPermsModal.modal {
+        padding-right: 0 !important;
+    }
+</style>
+@endpush
+
 @section('content')
     <div class="page-header">
         <div>
@@ -60,9 +76,17 @@
                             @endforelse
                         </td>
                         <td><span class="text-muted">{{ $u->created_at?->format('d/m/Y H:i') }}</span></td>
-                        @php $uJson = $u->only(["id","name","email"]) + ["roles" => $u->roles->pluck("name")]; @endphp
+                        @php
+                            $uJson = $u->only(["id","name","email"]) + ["roles" => $u->roles->pluck("name")];
+                            $uPermsJson = ['id' => $u->id, 'name' => $u->name, 'permissions' => (object) ($u->column_permissions ?? [])];
+                        @endphp
                         <td class="text-end">
                             <div class="action-group">
+                                <button type="button" class="action-btn action-view" title="Quyền cột"
+                                        onclick='openColumnPermsModal(@json($uPermsJson))'
+                                        data-bs-toggle="modal" data-bs-target="#columnPermsModal">
+                                    <i class="bi bi-grid-3x3-gap"></i>
+                                </button>
                                 <button type="button" class="action-btn action-edit" title="Sửa"
                                         onclick='openUserModal(@json($uJson))'
                                         data-bs-toggle="modal" data-bs-target="#userModal">
@@ -134,12 +158,142 @@
             </div>
         </div>
     </div>
+
+    {{-- ===== Modal Cấu hình QUYỀN CỘT cho user ===== --}}
+    @php
+        $groupedCols = collect($shipmentColumns)->groupBy('group');
+        $groupNames = [
+            1 => ['title' => 'NHÓM 1 — Thông tin lô hàng',     'color' => '#D4E6B5'],
+            2 => ['title' => 'NHÓM 2 — Chứng từ vận chuyển',   'color' => '#FCE4D6'],
+            3 => ['title' => 'NHÓM 3 — Thanh toán NCC & Agent','color' => '#DEEBF7'],
+            4 => ['title' => 'NHÓM 4 — Doanh thu khách hàng',  'color' => '#FFF2CC'],
+        ];
+    @endphp
+    <div class="modal fade" id="columnPermsModal" tabindex="-1">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <form id="columnPermsForm" method="POST">
+                    @csrf
+                    @method('PUT')
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            <i class="bi bi-grid-3x3-gap me-1" style="color: var(--azia-primary)"></i>
+                            Quyền cột bảng Shipment — <span id="cp_user_name" class="text-primary"></span>
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-info d-flex gap-2 mb-3">
+                            <i class="bi bi-info-circle-fill fs-5"></i>
+                            <div>
+                                Cấu hình cho từng cột user này được phép:
+                                <strong class="text-success">Sửa</strong> (mặc định)
+                                / <strong class="text-warning">Chỉ xem</strong>
+                                / <strong class="text-danger">Ẩn</strong>.
+                                Super admin luôn có toàn quyền (bỏ qua cấu hình).
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-end mb-2 gap-1">
+                            <button type="button" class="btn btn-sm btn-light" onclick="setAllPerms('edit')">
+                                Tất cả: Sửa
+                            </button>
+                            <button type="button" class="btn btn-sm btn-light" onclick="setAllPerms('view')">
+                                Tất cả: Chỉ xem
+                            </button>
+                            <button type="button" class="btn btn-sm btn-light" onclick="setAllPerms('hidden')">
+                                Tất cả: Ẩn
+                            </button>
+                        </div>
+
+                        @foreach($groupedCols as $gid => $cols)
+                            <div class="card mb-3" style="border-color: {{ $groupNames[$gid]['color'] ?? '#e1e6f1' }}">
+                                <div class="card-header d-flex justify-content-between align-items-center"
+                                     style="background: {{ $groupNames[$gid]['color'] ?? '#fafbfd' }}; color: #000">
+                                    <strong>{{ $groupNames[$gid]['title'] ?? "Nhóm $gid" }}</strong>
+                                    <div>
+                                        <button type="button" class="btn btn-sm btn-light"
+                                                onclick="setGroupPerms({{ $gid }}, 'edit')">Sửa</button>
+                                        <button type="button" class="btn btn-sm btn-light"
+                                                onclick="setGroupPerms({{ $gid }}, 'view')">Chỉ xem</button>
+                                        <button type="button" class="btn btn-sm btn-light"
+                                                onclick="setGroupPerms({{ $gid }}, 'hidden')">Ẩn</button>
+                                    </div>
+                                </div>
+                                <div class="table-responsive">
+                                    <table class="table table-sm mb-0 align-middle">
+                                        <thead>
+                                            <tr>
+                                                <th>Cột</th>
+                                                <th class="text-center" style="width:110px"><i class="bi bi-pencil-fill text-success"></i> Sửa</th>
+                                                <th class="text-center" style="width:110px"><i class="bi bi-eye-fill text-warning"></i> Chỉ xem</th>
+                                                <th class="text-center" style="width:110px"><i class="bi bi-eye-slash-fill text-danger"></i> Ẩn</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                        @foreach($cols as $col)
+                                            @if(! empty($col['readonly']))
+                                                @continue
+                                            @endif
+                                            <tr data-group="{{ $gid }}" data-key="{{ $col['key'] }}">
+                                                <td>
+                                                    <strong>{{ $col['title'] }}</strong>
+                                                    <code class="text-muted small ms-1">{{ $col['key'] }}</code>
+                                                </td>
+                                                @foreach(['edit','view','hidden'] as $p)
+                                                    <td class="text-center">
+                                                        <input type="radio" class="form-check-input cp-radio"
+                                                               data-key="{{ $col['key'] }}"
+                                                               name="permissions[{{ $col['key'] }}]"
+                                                               value="{{ $p }}"
+                                                               {{ $p === 'edit' ? 'checked' : '' }}>
+                                                    </td>
+                                                @endforeach
+                                            </tr>
+                                        @endforeach
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Đóng</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save me-1"></i> Lưu quyền cột
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 @endsection
 
 @push('scripts')
 <script>
     const URL_STORE = @json(route('users.store'));
     const URL_UPDATE_BASE = @json(url('users'));
+
+    // ===== Column Permissions Modal =====
+    function openColumnPermsModal(user) {
+        document.getElementById('cp_user_name').textContent = user.name;
+        document.getElementById('columnPermsForm').action  = `${URL_UPDATE_BASE}/${user.id}/column-permissions`;
+
+        const perms = user.permissions || {};
+        // Default tất cả về 'edit', sau đó override theo perms
+        document.querySelectorAll('.cp-radio[value="edit"]').forEach(r => r.checked = true);
+        Object.entries(perms).forEach(([key, val]) => {
+            const r = document.querySelector(`.cp-radio[data-key="${key}"][value="${val}"]`);
+            if (r) r.checked = true;
+        });
+    }
+    function setAllPerms(value) {
+        document.querySelectorAll(`.cp-radio[value="${value}"]`).forEach(r => r.checked = true);
+    }
+    function setGroupPerms(gid, value) {
+        document.querySelectorAll(`tr[data-group="${gid}"] .cp-radio[value="${value}"]`)
+                .forEach(r => r.checked = true);
+    }
 
     function openUserModal(user) {
         const form = document.getElementById('userForm');

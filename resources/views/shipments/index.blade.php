@@ -8,6 +8,138 @@
     <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/css/luckysheet.css' />
     <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/assets/iconfont/iconfont.css' />
 <style>
+    /* ===== Column visibility dropdown ===== */
+    .cv-dropdown {
+        min-width: 380px;
+        padding: 0;
+        border: none;
+        border-radius: 14px;
+        box-shadow: 0 20px 50px rgba(28,39,60,.18);
+        overflow: hidden;
+    }
+    .cv-header {
+        background: linear-gradient(135deg, #0153a9 0%, #013f80 100%);
+        color: #fff;
+        padding: 14px 18px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .cv-header .cv-title { font-size: 13px; font-weight: 700; letter-spacing: .3px; }
+    .cv-header .cv-counter {
+        background: rgba(255,255,255,.18);
+        font-size: 11px; font-weight: 600;
+        padding: 3px 10px; border-radius: 999px;
+    }
+    .cv-search {
+        padding: 10px 14px; border-bottom: 1px solid var(--azia-border);
+        background: #fafbfd;
+    }
+    .cv-search input {
+        width: 100%; padding: 7px 12px 7px 32px;
+        border: 1px solid var(--azia-border); border-radius: 8px;
+        font-size: 13px;
+        background: #fff url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%237987a1'><path d='M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z'/></svg>") no-repeat 10px center;
+        background-size: 14px;
+    }
+    .cv-search input:focus { outline: none; border-color: var(--azia-primary); box-shadow: 0 0 0 3px rgba(1,83,169,.12); }
+    .cv-quick {
+        display: flex; gap: 6px; padding: 10px 14px;
+        border-bottom: 1px solid var(--azia-border); background: #fafbfd;
+    }
+    .cv-quick button {
+        flex: 1; font-size: 11px; padding: 4px 8px;
+        border: 1px solid var(--azia-border); background: #fff;
+        border-radius: 6px; cursor: pointer; color: var(--azia-text);
+        font-weight: 600; transition: all .15s;
+    }
+    .cv-quick button:hover { background: var(--azia-primary-soft); color: var(--azia-primary); border-color: var(--azia-primary); }
+
+    .cv-body { max-height: 380px; overflow-y: auto; padding: 4px 0; }
+    .cv-group {
+        padding: 8px 14px 4px;
+        border-left: 4px solid transparent;
+        margin-bottom: 4px;
+    }
+    .cv-group.g-1 { border-left-color: #D4E6B5; }
+    .cv-group.g-2 { border-left-color: #FCE4D6; }
+    .cv-group.g-3 { border-left-color: #DEEBF7; }
+    .cv-group.g-4 { border-left-color: #FFF2CC; }
+
+    .cv-group-head {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: 6px;
+    }
+    .cv-group-title {
+        font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+        color: var(--azia-muted); font-weight: 700;
+    }
+    .cv-group-count {
+        background: var(--azia-bg); color: var(--azia-text);
+        font-size: 10px; font-weight: 700;
+        padding: 2px 8px; border-radius: 999px;
+    }
+    .cv-group-toggle {
+        font-size: 11px; padding: 2px 8px;
+        border: 1px solid var(--azia-border); border-radius: 6px;
+        background: #fff; cursor: pointer; color: var(--azia-muted);
+        margin-left: 4px;
+    }
+    .cv-group-toggle:hover { color: var(--azia-primary); border-color: var(--azia-primary); }
+
+    .cv-row {
+        display: flex; align-items: center; gap: 10px;
+        padding: 6px 8px; border-radius: 6px;
+        cursor: pointer; transition: background .12s;
+    }
+    .cv-row:hover { background: #fafbfd; }
+    .cv-row.is-disabled { opacity: .5; cursor: not-allowed; }
+    .cv-row.is-disabled:hover { background: transparent; }
+
+    /* Custom toggle switch */
+    .cv-switch {
+        position: relative;
+        width: 32px; height: 18px;
+        background: #d5dae3; border-radius: 999px;
+        flex-shrink: 0; transition: background .2s;
+    }
+    .cv-switch::after {
+        content: ''; position: absolute;
+        top: 2px; left: 2px;
+        width: 14px; height: 14px; background: #fff;
+        border-radius: 50%; transition: transform .2s;
+        box-shadow: 0 1px 3px rgba(0,0,0,.2);
+    }
+    .cv-row input:checked + .cv-switch { background: var(--azia-primary); }
+    .cv-row input:checked + .cv-switch::after { transform: translateX(14px); }
+    .cv-row input:disabled + .cv-switch { background: #e1e6f1; }
+    .cv-row input { position: absolute; opacity: 0; pointer-events: none; }
+
+    .cv-label {
+        flex: 1; font-size: 13px; color: var(--azia-text);
+        display: flex; align-items: center; gap: 6px;
+        min-width: 0;
+    }
+    .cv-label .name { font-weight: 500; }
+    .cv-locked {
+        font-size: 9px; color: var(--azia-danger);
+        background: rgba(255,91,91,.1); padding: 1px 6px;
+        border-radius: 4px; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .5px;
+    }
+
+    .cv-empty {
+        text-align: center; padding: 30px 20px;
+        color: var(--azia-muted); font-size: 13px;
+    }
+
+    .cv-footer {
+        display: flex; gap: 8px;
+        padding: 12px 14px;
+        background: #fafbfd; border-top: 1px solid var(--azia-border);
+    }
+    .cv-footer .btn { font-size: 13px; padding: 8px 14px; }
+
     .period-tabs {
         display: flex; gap: 4px; flex-wrap: wrap;
         padding: 6px; background: #fafbfd;
@@ -47,11 +179,137 @@
             </nav>
         </div>
         <div class="d-flex gap-2">
+            {{-- Dropdown chọn cột hiển thị (lưu riêng cho user) --}}
+            @php
+                $groupTitles = [
+                    1 => 'Thông tin lô hàng',
+                    2 => 'Chứng từ vận chuyển',
+                    3 => 'Thanh toán NCC & Agent',
+                    4 => 'Doanh thu khách hàng',
+                ];
+                $colsByGroup = collect($columns)->groupBy('group');
+                $userHidden  = $userPrefs ?? [];
+
+                // Tính số cột đang hiển thị
+                $totalToggleable = 0;
+                $currentlyShown  = 0;
+                foreach ($columns as $c) {
+                    if (! empty($c['readonly'])) continue;
+                    $adminHide = ($columnPerms[$c['key']] ?? 'edit') === 'hidden';
+                    if ($adminHide) continue;
+                    $totalToggleable++;
+                    if (! in_array($c['key'], $userHidden)) $currentlyShown++;
+                }
+            @endphp
+            <div class="dropdown">
+                <button class="btn btn-outline-secondary dropdown-toggle" type="button"
+                        data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+                    <i class="bi bi-layout-three-columns me-1"></i> Cột hiển thị
+                    <span class="badge bg-primary ms-1" id="colsCountBadge">{{ $currentlyShown }}</span>
+                </button>
+
+                <div class="dropdown-menu dropdown-menu-end cv-dropdown">
+                    {{-- Header gradient --}}
+                    <div class="cv-header">
+                        <div>
+                            <div class="cv-title"><i class="bi bi-layout-three-columns me-1"></i> Tuỳ chỉnh cột hiển thị</div>
+                        </div>
+                        <span class="cv-counter">
+                            <span id="cvShownNum">{{ $currentlyShown }}</span> / {{ $totalToggleable }} cột
+                        </span>
+                    </div>
+
+                    {{-- Search --}}
+                    <div class="cv-search">
+                        <input type="search" id="cvSearch" placeholder="Tìm cột theo tên...">
+                    </div>
+
+                    {{-- Quick actions --}}
+                    <div class="cv-quick">
+                        <button type="button" onclick="toggleAllCols(true)">
+                            <i class="bi bi-eye"></i> Hiện tất cả
+                        </button>
+                        <button type="button" onclick="toggleAllCols(false)">
+                            <i class="bi bi-eye-slash"></i> Ẩn tất cả
+                        </button>
+                        <button type="button" onclick="resetUserPrefs()">
+                            <i class="bi bi-arrow-counterclockwise"></i> Mặc định
+                        </button>
+                    </div>
+
+                    {{-- Body --}}
+                    <div class="cv-body" id="cvBody">
+                        @foreach($colsByGroup as $gid => $grpCols)
+                            @php
+                                $groupCount = 0; $groupVisible = 0;
+                                foreach ($grpCols as $c) {
+                                    if (! empty($c['readonly'])) continue;
+                                    if (($columnPerms[$c['key']] ?? 'edit') === 'hidden') continue;
+                                    $groupCount++;
+                                    if (! in_array($c['key'], $userHidden)) $groupVisible++;
+                                }
+                            @endphp
+                            <div class="cv-group g-{{ $gid }}" data-group-section="{{ $gid }}">
+                                <div class="cv-group-head">
+                                    <div>
+                                        <span class="cv-group-title">NHÓM {{ $gid }} — {{ $groupTitles[$gid] ?? "Nhóm $gid" }}</span>
+                                    </div>
+                                    <div class="d-flex align-items-center gap-1">
+                                        <span class="cv-group-count" id="cvCount_{{ $gid }}">{{ $groupVisible }}/{{ $groupCount }}</span>
+                                        <button type="button" class="cv-group-toggle" onclick="toggleGroupCols({{ $gid }})" title="Bật/tắt cả nhóm">
+                                            <i class="bi bi-toggles"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                @foreach($grpCols as $col)
+                                    @if(! empty($col['readonly']))
+                                        @continue
+                                    @endif
+                                    @php
+                                        $adminHidden = ($columnPerms[$col['key']] ?? 'edit') === 'hidden';
+                                    @endphp
+                                    <label class="cv-row {{ $adminHidden ? 'is-disabled' : '' }}"
+                                           data-name="{{ mb_strtolower($col['title']) }}"
+                                           data-group="{{ $gid }}"
+                                           for="cp_{{ $col['key'] }}">
+                                        <input class="col-pref-toggle"
+                                               type="checkbox"
+                                               data-key="{{ $col['key'] }}"
+                                               data-group="{{ $gid }}"
+                                               id="cp_{{ $col['key'] }}"
+                                               {{ $adminHidden ? 'disabled' : '' }}
+                                               {{ (! $adminHidden && ! in_array($col['key'], $userHidden)) ? 'checked' : '' }}>
+                                        <span class="cv-switch"></span>
+                                        <span class="cv-label">
+                                            <span class="name">{{ $col['title'] }}</span>
+                                            @if($adminHidden)
+                                                <span class="cv-locked"><i class="bi bi-lock-fill"></i> Admin khoá</span>
+                                            @endif
+                                        </span>
+                                    </label>
+                                @endforeach
+                            </div>
+                        @endforeach
+                        <div class="cv-empty d-none" id="cvEmpty">
+                            <i class="bi bi-search d-block mb-2" style="font-size:24px"></i>
+                            Không tìm thấy cột nào khớp.
+                        </div>
+                    </div>
+
+                    {{-- Footer --}}
+                    <div class="cv-footer">
+                        <button type="button" class="btn btn-light flex-grow-1" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="bi bi-x-lg"></i> Đóng
+                        </button>
+                        <button type="button" class="btn btn-primary flex-grow-1" id="btnApplyCols">
+                            <i class="bi bi-check2-circle me-1"></i> Áp dụng
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <button class="btn btn-outline-secondary" id="btnReload">
                 <i class="bi bi-arrow-clockwise me-1"></i> Tải lại
-            </button>
-            <button class="btn btn-outline-secondary" id="btnResetFormat" title="Xoá định dạng đã lưu">
-                <i class="bi bi-eraser me-1"></i> Reset định dạng
             </button>
             <button class="btn btn-primary" id="btnSaveAll">
                 <i class="bi bi-cloud-arrow-up me-1"></i> Lưu thay đổi
@@ -131,10 +389,10 @@
     <script>
         const PERIOD = @json($period);
         const ROUTES = {
-            data:           @json(route('shipments.data',           ['period' => $period])),
-            bulk:           @json(route('shipments.bulk',           ['period' => $period])),
-            resetSnapshot:  @json(route('shipments.resetSnapshot',  ['period' => $period])),
+            data:           @json(route('shipments.data',         ['period' => $period])),
+            bulk:           @json(route('shipments.bulk',         ['period' => $period])),
             createPeriod:   @json(route('shipments.createPeriod')),
+            columnPrefs:    @json(route('shipments.columnPrefs')),
         };
         const CSRF = document.querySelector('meta[name="csrf-token"]').content;
 
@@ -154,66 +412,22 @@
             4: '#FFF2CC',   // NHÓM 4 - DOANH THU KHÁCH HÀNG (vàng kem nhạt)
         };
 
-        // Định nghĩa cột — khớp schema shipments. 47 cột tổng.
-        // type: 'text' (default) | 'date' | 'vnd' | 'number'
-        // group: 1|2|3|4  → quyết định màu header
-        const COLS = [
-            // === NHÓM 1 — THÔNG TIN LÔ HÀNG (14 cột) ===
-            { key: 'id',             title: 'No.',         width: 50,  readonly: true, group: 1 },
-            { key: 'client',         title: 'Client',      width: 140, group: 1 },
-            { key: 'hbl',            title: 'HB/L',        width: 120, group: 1 },
-            { key: 'mbl_no',         title: 'MB/L NO',     width: 130, group: 1 },
-            { key: 'bkg_no',         title: 'BKG NO.',     width: 130, group: 1 },
-            { key: 'pol',            title: 'POL',         width: 70,  group: 1 },
-            { key: 'pod',            title: 'POD',         width: 70,  group: 1 },
-            { key: 'vol',            title: 'VOL',         width: 55,  group: 1 },
-            { key: 'container_type', title: 'TYPE',        width: 65,  group: 1 },
-            { key: 'etd',            title: 'ETD',         width: 85,  type: 'date', group: 1 },
-            { key: 'eta',            title: 'ETA',         width: 85,  type: 'date', group: 1 },
-            { key: 'vessel_name',    title: 'VESSEL NAME', width: 140, group: 1 },
-            { key: 'note',           title: 'NOTE',        width: 130, group: 1 },
-            { key: 'line',           title: 'LINE',        width: 80,  group: 1 },
+        // Định nghĩa cột — load từ config PHP để đồng bộ giữa backend & frontend
+        const ALL_COLS     = @json($columns);
+        const COLUMN_PERMS = @json($columnPerms);          // {key: 'hidden'|'view'|'edit'} — admin set
+        const USER_HIDDEN  = new Set(@json($userPrefs));   // [key,...] — user tự chọn ẩn
 
-            // === NHÓM 2 — CHỨNG TỪ VẬN CHUYỂN (8 cột) ===
-            { key: 'vgm',            title: 'VGM',           width: 70,  group: 2 },
-            { key: 'si',             title: 'SI',            width: 70,  group: 2 },
-            { key: 'bl_draft',       title: 'BL DRAFT',      width: 80,  group: 2 },
-            { key: 'bl_confirm',     title: 'BL CONFIRM',    width: 90,  group: 2 },
-            { key: 'obl',            title: 'OBL',           width: 70,  group: 2 },
-            { key: 'tlx',            title: 'TLX',           width: 70,  group: 2 },
-            { key: 'swb',            title: 'SWB',           width: 70,  group: 2 },
-            { key: 'shipment_done',  title: 'SHIPMENT DONE', width: 100, group: 2 },
-
-            // === NHÓM 3 — THANH TOÁN NCC & AGENT (16 cột) ===
-            { key: 'purchase_note',         title: 'Note giá mua',          width: 130, group: 3 },
-            { key: 'payment_amount',        title: 'Số tiền thanh toán',    width: 140, type: 'vnd',    group: 3 },
-            { key: 'supplier',              title: 'NCC',                    width: 130, group: 3 },
-            { key: 'supplier_due_date',          title: 'Hạn phải trả',                       width: 110, type: 'date', group: 3 },
-            { key: 'report_close_date_increase', title: 'Ngày chốt báo cáo phát sinh tăng',  width: 140, type: 'date', group: 3 },
-            { key: 'report_close_date_decrease', title: 'Ngày chốt báo cáo phát sinh giảm',  width: 140, type: 'date', group: 3 },
-            { key: 'supplier_paid_date',         title: 'Ngày trả',                            width: 110, type: 'date', group: 3 },
-            { key: 'cost_recognized',       title: 'Chi phí ghi nhận',       width: 140, type: 'vnd',    group: 3 },
-            { key: 'trucking_cost',         title: 'Trucking nếu có',        width: 130, type: 'vnd',    group: 3 },
-            { key: 'purchase_invoice_no',   title: 'Số hóa đơn đầu vào',    width: 130, group: 3 },
-            { key: 'purchase_invoice_date', title: 'Ngày hóa đơn đầu vào', width: 130, type: 'date',   group: 3 },
-            { key: 'driver_hoa',            title: 'Driver Hoa',             width: 110, group: 3 },
-            { key: 'agent_fee',             title: 'Phí agent',              width: 110, type: 'number', group: 3 },
-            { key: 'agent_name',            title: 'Tên Agent',              width: 130, group: 3 },
-            { key: 'agent_fee_vnd',         title: 'Quy đổi Agent sang VNĐ', width: 150, type: 'vnd',    group: 3 },
-            { key: 'agent_due_date',        title: 'Hạn phải trả (Agent)',  width: 130, type: 'date',   group: 3 },
-            { key: 'agent_paid_date',       title: 'Ngày trả (Agent)',       width: 120, type: 'date',   group: 3 },
-
-            // === NHÓM 4 — DOANH THU KHÁCH HÀNG (9 cột) ===
-            { key: 'sale_note',           title: 'Note giá bán',         width: 130, group: 4 },
-            { key: 'receivable_amount',   title: 'Phải thu khách',       width: 140, type: 'vnd',  group: 4 },
-            { key: 'customer',            title: 'Khách hàng',           width: 130, group: 4 },
-            { key: 'received_amount',     title: 'Tiền đã thu',          width: 140, type: 'vnd',  group: 4 },
-            { key: 'receivable_due_date', title: 'Hạn phải thu',         width: 110, type: 'date', group: 4 },
-            { key: 'received_date',       title: 'Ngày thu',             width: 110, type: 'date', group: 4 },
-            { key: 'revenue_recognized',  title: 'Doanh thu ghi nhận',   width: 140, type: 'vnd',  group: 4 },
-            { key: 'sale_invoice_no',     title: 'Số hóa đơn đầu ra',   width: 130, group: 4 },
-            { key: 'sale_invoice_date',   title: 'Ngày hóa đơn đầu ra', width: 130, type: 'date', group: 4 },
-        ];
+        // Filter:
+        //  1. Bỏ cột admin đã ẩn
+        //  2. Bỏ cột user tự chọn ẩn
+        //  3. Mark readonly cho cột view
+        const COLS = ALL_COLS
+            .filter(c => (COLUMN_PERMS[c.key] || 'edit') !== 'hidden')
+            .filter(c => ! USER_HIDDEN.has(c.key))
+            .map(c => {
+                const perm = COLUMN_PERMS[c.key] || 'edit';
+                return { ...c, readonly: c.readonly || perm === 'view' };
+            });
 
         function toast(msg, type = 'success') {
             const el = document.createElement('div');
@@ -242,6 +456,64 @@
             if (type === 'date')   return { fa: 'dd/MM/yyyy',   t: 'g' };  // 'g' để giữ chuỗi đã format
             return { fa: 'General', t: 'g' };
         };
+
+        // ===== Column visibility dropdown helpers =====
+        window.toggleAllCols = function (show) {
+            document.querySelectorAll('.col-pref-toggle:not(:disabled)').forEach(cb => cb.checked = show);
+            updateCvCounters();
+        };
+        window.toggleGroupCols = function (gid) {
+            const items = document.querySelectorAll(`.col-pref-toggle[data-group="${gid}"]:not(:disabled)`);
+            const anyUnchecked = Array.from(items).some(i => ! i.checked);
+            items.forEach(i => i.checked = anyUnchecked);
+            updateCvCounters();
+        };
+        // Bỏ ẩn tất cả — reset về mặc định (chỉ enable cột chưa bị admin khoá)
+        window.resetUserPrefs = function () {
+            document.querySelectorAll('.col-pref-toggle:not(:disabled)').forEach(cb => cb.checked = true);
+            updateCvCounters();
+        };
+
+        // Cập nhật counter tổng + theo nhóm
+        function updateCvCounters() {
+            let total = 0, shown = 0;
+            const byGroup = { 1: {t:0,s:0}, 2: {t:0,s:0}, 3: {t:0,s:0}, 4: {t:0,s:0} };
+            document.querySelectorAll('.col-pref-toggle').forEach(cb => {
+                if (cb.disabled) return;
+                const g = cb.dataset.group;
+                total++; byGroup[g].t++;
+                if (cb.checked) { shown++; byGroup[g].s++; }
+            });
+            const totalEl = document.getElementById('cvShownNum');
+            const badgeEl = document.getElementById('colsCountBadge');
+            if (totalEl) totalEl.textContent = shown;
+            if (badgeEl) badgeEl.textContent = shown;
+            Object.entries(byGroup).forEach(([g, v]) => {
+                const el = document.getElementById('cvCount_' + g);
+                if (el) el.textContent = `${v.s}/${v.t}`;
+            });
+        }
+
+        // Search filter
+        function setupCvSearch() {
+            const input = document.getElementById('cvSearch');
+            if (! input) return;
+            input.addEventListener('input', (e) => {
+                const q = e.target.value.trim().toLowerCase();
+                let anyMatch = false;
+                document.querySelectorAll('.cv-row').forEach(row => {
+                    const match = ! q || row.dataset.name.includes(q);
+                    row.style.display = match ? '' : 'none';
+                    if (match) anyMatch = true;
+                });
+                // Ẩn nhóm nếu không có row nào hiện
+                document.querySelectorAll('[data-group-section]').forEach(sec => {
+                    const visibleRows = sec.querySelectorAll('.cv-row:not([style*="display: none"])').length;
+                    sec.style.display = visibleRows > 0 ? '' : 'none';
+                });
+                document.getElementById('cvEmpty').classList.toggle('d-none', anyMatch);
+            });
+        }
 
         function buildCellData(rows) {
             const celldata = [];
@@ -481,16 +753,31 @@
                 }
             });
 
-            document.getElementById('btnResetFormat').addEventListener('click', async () => {
-                if (!await confirmAction({
-                    danger: true,
-                    title: 'Reset định dạng?',
-                    text: 'Toàn bộ định dạng đã lưu (màu nền, font…) sẽ bị xoá và build lại từ DB.',
-                    confirmText: '<i class="bi bi-arrow-counterclockwise me-1"></i> Reset',
-                })) return;
-                await fetch(ROUTES.resetSnapshot, { method: 'POST', headers: { 'X-CSRF-TOKEN': CSRF } });
-                toast('Đã reset định dạng.');
-                loadData();
+            // ===== Column prefs dropdown =====
+            // Mỗi lần tick/untick → cập nhật counter tổng + per-group
+            document.querySelectorAll('.col-pref-toggle').forEach(cb => {
+                cb.addEventListener('change', updateCvCounters);
+            });
+            setupCvSearch();
+
+            document.getElementById('btnApplyCols').addEventListener('click', async () => {
+                // Thu thập key các cột BỊ ẨN (checkbox không tick)
+                const hidden = [];
+                document.querySelectorAll('.col-pref-toggle:not(:disabled)').forEach(cb => {
+                    if (! cb.checked) hidden.push(cb.dataset.key);
+                });
+                const res = await fetch(ROUTES.columnPrefs, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json' },
+                    body: JSON.stringify({ hidden })
+                });
+                const json = await res.json();
+                if (json.ok) {
+                    toast(`Đã lưu (ẩn ${hidden.length} cột). Đang tải lại…`);
+                    setTimeout(() => location.reload(), 600);
+                } else {
+                    toast('Lưu thất bại.', 'danger');
+                }
             });
 
             // Tạo tháng mới

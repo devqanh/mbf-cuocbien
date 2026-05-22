@@ -24,19 +24,54 @@ class ShipmentController extends Controller
     }
 
     /** Trang theo dõi 1 tháng cụ thể. */
-    public function show(string $period)
+    public function show(string $period, Request $request)
     {
+        $user = $request->user();
+        $cols = config('shipment_columns', []);
+
+        // Build columnPerms map: { key => 'hidden'|'view'|'edit' }
+        $perms = [];
+        foreach ($cols as $col) {
+            $perms[$col['key']] = $user->columnPermission($col['key']);
+        }
+
         return view('shipments.index', [
-            'period'   => $period,
-            'periods'  => $this->shipments->listPeriods(),
-            'current'  => $this->shipments->currentPeriod(),
+            'period'      => $period,
+            'periods'     => $this->shipments->listPeriods(),
+            'current'     => $this->shipments->currentPeriod(),
+            'columns'     => $cols,
+            'columnPerms' => $perms,
+            'userPrefs'   => $user->shipment_column_prefs ?? [],   // list of hidden col keys (user preference)
         ]);
     }
 
-    /** API: dữ liệu của 1 tháng (cả Nhập + Xuất + snapshot). */
-    public function data(string $period): JsonResponse
+    /** Lưu cột user tự chọn ẩn (preference cá nhân). */
+    public function updateColumnPrefs(Request $request): JsonResponse
     {
-        $rows = $this->shipments->listForGrid($period);
+        $data = $request->validate([
+            'hidden'   => ['array'],
+            'hidden.*' => ['string'],
+        ]);
+
+        // Chỉ giữ key thuộc danh sách cột hợp lệ
+        $validKeys = array_column(config('shipment_columns', []), 'key');
+        $hidden = array_values(array_intersect($data['hidden'] ?? [], $validKeys));
+
+        $user = $request->user();
+        $user->shipment_column_prefs = $hidden ?: null;
+        $user->save();
+
+        return response()->json(['ok' => true, 'hidden' => $hidden]);
+    }
+
+    /** API: dữ liệu của 1 tháng (cả Nhập + Xuất + snapshot). */
+    public function data(string $period, Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $rows = $this->shipments->listForGrid($period, $user);
+
+        $summary = $this->snapshots->summary($this->shipments->sheetKey($period));
+        $summary['snapshot'] = $this->shipments->filterSnapshotForUser($summary['snapshot'], $user);
 
         return response()->json([
             'period' => $period,
@@ -44,7 +79,7 @@ class ShipmentController extends Controller
                 'import' => $rows['import'],
                 'export' => $rows['export'],
             ],
-            ...$this->snapshots->summary($this->shipments->sheetKey($period)),
+            ...$summary,
         ]);
     }
 

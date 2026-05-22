@@ -118,30 +118,13 @@
     .perm-name-cell .lbl  { font-weight: 600; color: var(--azia-text); }
     .perm-name-cell .slug { font-size: 11px; color: var(--azia-muted); font-family: ui-monospace, monospace; }
 
-    /* Modal scroll fix — cho body cuộn, header/footer cố định */
-    #roleModal .modal-dialog {
-        height: calc(100vh - 3rem) !important;
-        max-height: calc(100vh - 3rem) !important;
-        margin: 1.5rem auto !important;
-        display: flex !important;
-        flex-direction: column !important;
-    }
-    #roleModal .modal-content {
-        max-height: 100% !important;
-        height: 100% !important;
-        overflow: hidden !important;
-        display: flex !important;
-        flex-direction: column !important;
-    }
-    #roleModal .modal-header,
-    #roleModal .modal-footer {
-        flex: 0 0 auto !important;
-    }
+    /* Modal scroll fix — set explicit max-height cho modal-body */
     #roleModal .modal-body {
+        max-height: calc(100vh - 220px) !important;
         overflow-y: auto !important;
-        flex: 1 1 auto !important;
-        min-height: 0 !important;     /* QUAN TRỌNG cho flex child cuộn */
+        overflow-x: hidden !important;
     }
+    #roleModal.modal { padding-right: 0 !important; }
 
     /* Modal */
     .perm-module {

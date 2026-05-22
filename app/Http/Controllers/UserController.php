@@ -30,7 +30,10 @@ class UserController extends Controller
 
         $roles = Role::orderBy('name')->get();
 
-        return view('users.index', compact('users', 'roles', 'q'));
+        // Pass shipment columns + groups info để render modal cấu hình
+        $shipmentColumns = config('shipment_columns', []);
+
+        return view('users.index', compact('users', 'roles', 'q', 'shipmentColumns'));
     }
 
     public function store(Request $request): RedirectResponse
@@ -72,5 +75,26 @@ class UserController extends Controller
         }
 
         return back()->with('success', "Đã xoá: {$user->name}");
+    }
+
+    /** Lưu permission từng cột cho user. */
+    public function updateColumnPermissions(Request $request, User $user): RedirectResponse
+    {
+        $data = $request->validate([
+            'permissions'   => ['array'],
+            'permissions.*' => ['in:hidden,view,edit'],
+        ]);
+
+        // Chỉ giữ key thuộc danh sách cột hợp lệ
+        $valid = array_column(config('shipment_columns', []), 'key');
+        $perms = array_intersect_key($data['permissions'] ?? [], array_flip($valid));
+
+        // Bỏ key có giá trị mặc định 'edit' (giữ JSON nhỏ gọn)
+        $perms = array_filter($perms, fn ($v) => $v !== 'edit');
+
+        $user->column_permissions = $perms ?: null;
+        $user->save();
+
+        return back()->with('success', "Đã cập nhật quyền cột cho {$user->name}.");
     }
 }

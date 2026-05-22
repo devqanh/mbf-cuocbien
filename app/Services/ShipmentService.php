@@ -89,17 +89,85 @@ class ShipmentService
 
     /**
      * Lấy shipments của 1 tháng, group theo direction.
+     * Nếu có $user → filter cột hidden trên từng row.
      *
      * @return array{import: Collection, export: Collection}
      */
-    public function listForGrid(string $period): array
+    public function listForGrid(string $period, ?User $user = null): array
     {
         $rows = Shipment::inPeriod($period)->orderBy('id')->get();
 
+        $hidden = $user ? $this->hiddenColumnKeys($user) : [];
+
+        $mapRow = function (Shipment $s) use ($hidden) {
+            $row = $this->toGridRow($s);
+            foreach ($hidden as $k) {
+                unset($row[$k]);
+            }
+            return $row;
+        };
+
         return [
-            'import' => $rows->where('direction', Shipment::DIRECTION_IMPORT)->values()->map([$this, 'toGridRow']),
-            'export' => $rows->where('direction', Shipment::DIRECTION_EXPORT)->values()->map([$this, 'toGridRow']),
+            'import' => $rows->where('direction', Shipment::DIRECTION_IMPORT)->values()->map($mapRow),
+            'export' => $rows->where('direction', Shipment::DIRECTION_EXPORT)->values()->map($mapRow),
         ];
+    }
+
+    /**
+     * Lọc snapshot Luckysheet trước khi gửi cho user — bỏ cell nằm trong cột hidden.
+     * Cần biết thứ tự cột (column index) để filter celldata.
+     */
+    public function filterSnapshotForUser(?array $snapshot, User $user): ?array
+    {
+        if (! $snapshot) return $snapshot;
+
+        $cols = config('shipment_columns', []);
+        $hiddenIdx = [];
+        foreach ($cols as $i => $col) {
+            if ($user->columnPermission($col['key']) === User::PERM_HIDDEN) {
+                $hiddenIdx[] = $i;
+            }
+        }
+        if (empty($hiddenIdx)) return $snapshot;
+
+        foreach ($snapshot as &$sheet) {
+            if (! isset($sheet['celldata']) || ! is_array($sheet['celldata'])) continue;
+            $sheet['celldata'] = array_values(array_filter(
+                $sheet['celldata'],
+                fn ($cell) => ! in_array($cell['c'] ?? -1, $hiddenIdx, true)
+            ));
+        }
+        return $snapshot;
+    }
+
+    /** Danh sách key các cột mà user KHÔNG được xem. */
+    public function hiddenColumnKeys(User $user): array
+    {
+        if ($user->isSuperAdmin()) return [];
+
+        $perms = $user->column_permissions ?? [];
+        return array_keys(array_filter($perms, fn ($v) => $v === User::PERM_HIDDEN));
+    }
+
+    /** Danh sách key các cột mà user được PHÉP edit. */
+    public function editableColumnKeysFor(User $user): array
+    {
+        $cols = config('shipment_columns', []);
+        // Luôn cho phép period/direction (internal field cần thiết)
+        $always = ['client'];   // client bắt buộc để identify dòng
+
+        if ($user->isSuperAdmin()) {
+            return array_merge($always, array_column($cols, 'key'));
+        }
+
+        $editable = [];
+        foreach ($cols as $col) {
+            if (! empty($col['readonly'])) continue;       // cột metadata (id) không edit
+            if ($user->canEditColumn($col['key'])) {
+                $editable[] = $col['key'];
+            }
+        }
+        return array_unique(array_merge($always, $editable));
     }
 
     public function toGridRow(Shipment $s): array
@@ -153,8 +221,12 @@ class ShipmentService
         $key = $this->sheetKey($period);
         $this->snapshots->assertVersionMatches($key, $clientVersion);
 
-        $ids = DB::transaction(function () use ($rowsByDirection, $period) {
+        // Strip những key user không có quyền edit (vd chỉ xem) — bảo vệ backend
+        $editableKeys = $this->editableColumnKeysFor($editor);
+
+        $ids = DB::transaction(function () use ($rowsByDirection, $period, $editableKeys, $editor) {
             $saved = [];
+            $isSuper = $editor->isSuperAdmin();
             foreach ([Shipment::DIRECTION_IMPORT, Shipment::DIRECTION_EXPORT] as $direction) {
                 foreach ($rowsByDirection[$direction] ?? [] as $row) {
                     $row = $this->normalize($row);
@@ -162,6 +234,11 @@ class ShipmentService
 
                     $id = $row['id'] ?? null;
                     unset($row['id']);
+
+                    // Chỉ giữ các key user được phép edit (super admin pass all)
+                    if (! $isSuper) {
+                        $row = array_intersect_key($row, array_flip($editableKeys));
+                    }
 
                     $row['period']    = $period;
                     $row['direction'] = $direction;
