@@ -594,6 +594,24 @@
         // Khi true, các hook cellUpdateBefore/cellUpdated sẽ không chặn/revert
         let _systemUpdate = false;
 
+        // Per-cell system update tracking — thay thế global flag để KHÔNG block
+        // user typing ở cell khác. Key: "sheetOrder:row:col" → TTL 400ms.
+        // System code call markSystemCell trước setCellValue/setCellFormat; hook check
+        // isSystemCell để skip markDirty CHỈ cho cell đó, không block toàn sheet.
+        const _systemCells = new Map();   // key → expireAt timestamp
+
+        function markSystemCell(sheetOrder, row, col, ttl = 400) {
+            const k = `${sheetOrder}:${row}:${col}`;
+            _systemCells.set(k, Date.now() + ttl);
+        }
+        function isSystemCell(sheetOrder, row, col) {
+            const k = `${sheetOrder}:${row}:${col}`;
+            const exp = _systemCells.get(k);
+            if (! exp) return false;
+            if (Date.now() > exp) { _systemCells.delete(k); return false; }
+            return true;
+        }
+
         // ===== DIRTY-CELL TRACKER (Mức 2 — collaborative editing) =====
         // Map per-sheet-order { sheetRow → Set(colKey) }
         // Chỉ cell nằm trong tracker được gửi lên server khi Lưu → backend partial update
@@ -609,6 +627,32 @@
 
         function resetDirty() {
             dirtyCells = { 0: new Map(), 1: new Map() };
+        }
+
+        // Snapshot dirty state (deep clone) — dùng để: save chụp tại t0, sau khi server
+        // confirm chỉ xóa keys ĐÃ GỬI (giữ keys user typing trong lúc save đang fetch).
+        function snapshotDirty() {
+            const snap = { 0: new Map(), 1: new Map() };
+            [0, 1].forEach(o => {
+                (dirtyCells[o] || new Map()).forEach((set, row) => {
+                    snap[o].set(row, new Set(set));
+                });
+            });
+            return snap;
+        }
+
+        // Remove entries trong snap khỏi dirtyCells (giữ entries mới user typing sau snap)
+        function removeDirtyMatching(snap) {
+            [0, 1].forEach(o => {
+                const liveMap = dirtyCells[o];
+                if (! liveMap) return;
+                snap[o].forEach((sentKeys, row) => {
+                    const liveSet = liveMap.get(row);
+                    if (! liveSet) return;
+                    sentKeys.forEach(k => liveSet.delete(k));
+                    if (liveSet.size === 0) liveMap.delete(row);
+                });
+            });
         }
 
         function countDirty() {
@@ -738,41 +782,39 @@
                         break;
                     }
                 }
-                if (targetRow < 0) return;   // không tìm thấy row → có thể user chưa load
+                if (targetRow < 0) return;
 
-                _systemUpdate = true;
+                // Per-cell mark — KHÔNG dùng global _systemUpdate để không block user khác.
+                markSystemCell(edit.sheetOrder, targetRow, colIndex, 400);
                 try {
                     luckysheet.setCellValue(targetRow, colIndex, edit.value ?? '', { order: edit.sheetOrder });
-                    // Flash cell ngắn để user biết có người vừa sửa (visual cue)
-                    flashRemoteCell(edit.sheetOrder, targetRow, colIndex, editorName);
-                } finally {
-                    setTimeout(() => { _systemUpdate = false; }, 200);
-                }
+                } catch (e) { console.warn('apply setCellValue failed:', e); }
+
+                flashRemoteCell(edit.sheetOrder, targetRow, colIndex, editorName);
             } catch (e) { console.warn('applyRemoteCellEdit failed:', e); }
         }
 
-        // Visual flash + tooltip ngắn tại cell vừa bị remote edit
+        // Visual flash tại cell vừa bị remote edit — bg vàng 1.5s rồi restore.
+        // Dùng per-cell marker, KHÔNG block global → user gõ cell khác vẫn được track dirty.
         function flashRemoteCell(sheetOrder, row, col, editorName) {
             try {
-                // Tạm thay bg cell → vàng nhạt 1.5s → trở về
                 const allSheets = luckysheet.getluckysheetfile();
                 const sheet = allSheets[sheetOrder];
                 if (! sheet?.data?.[row]?.[col]) return;
-                const cell = sheet.data[row][col];
-                const oldBg = cell.bg;
-                _systemUpdate = true;
+                const oldBg = sheet.data[row][col].bg;
+
+                markSystemCell(sheetOrder, row, col, 200);
                 try {
                     luckysheet.setCellFormat(row, col, 'bg', '#fef3c7', { order: sheetOrder });
                 } catch (e) {}
+
                 setTimeout(() => {
-                    _systemUpdate = true;
+                    markSystemCell(sheetOrder, row, col, 200);
                     try {
                         luckysheet.setCellFormat(row, col, 'bg', oldBg || null, { order: sheetOrder });
                     } catch (e) {}
-                    setTimeout(() => { _systemUpdate = false; }, 100);
                 }, 1500);
 
-                // Toast nhẹ — chỉ 1 lần/editor/5s để tránh spam
                 _showEditorActivity(editorName);
             } catch (e) {}
         }
@@ -831,21 +873,17 @@
 
                 if (toClear.length === 0) return 0;
 
-                // Bypass hook chặn readonly id để có thể clear cell
-                _systemUpdate = true;
-                try {
-                    toClear.forEach(({ r, sheetOrder }) => {
-                        try {
-                            if (sheetOrder === activeOrder) {
-                                luckysheet.setCellValue(r, idCol, '');
-                            } else {
-                                luckysheet.setCellValue(r, idCol, '', { order: sheetOrder });
-                            }
-                        } catch (e) { console.warn('clear duplicate id fail:', e); }
-                    });
-                } finally {
-                    setTimeout(() => { _systemUpdate = false; }, 200);
-                }
+                // Per-cell mark thay vì global flag → user gõ cell khác không bị block
+                toClear.forEach(({ r, sheetOrder }) => {
+                    try {
+                        markSystemCell(sheetOrder, r, idCol, 300);
+                        if (sheetOrder === activeOrder) {
+                            luckysheet.setCellValue(r, idCol, '');
+                        } else {
+                            luckysheet.setCellValue(r, idCol, '', { order: sheetOrder });
+                        }
+                    } catch (e) { console.warn('clear duplicate id fail:', e); }
+                });
 
                 toast(`Đã xoá <strong>${toClear.length}</strong> No. trùng (copy/paste) — khi lưu sẽ tạo dòng mới.`, 'info');
                 return toClear.length;
@@ -1409,14 +1447,22 @@
                         }
                     },
                     cellUpdated(r, c, oldValue, newValue, isRefresh) {
-                        if (_systemUpdate || isRefresh) return;
+                        if (isRefresh) return;
+                        const sheetOrder = luckysheet.getSheet()?.order ?? 0;
+                        // Per-cell check: bỏ qua CHỈ cell vừa được system update (không block cell khác)
+                        if (isSystemCell(sheetOrder, r, c)) return;
+                        // Legacy global flag — vẫn check để backward compat với code chưa migrate
+                        if (_systemUpdate) return;
+
                         const colDef = COLS[c];
                         if (! colDef) return;
 
                         if (COLUMN_PERMS[colDef.key] === 'view') {
                             setTimeout(() => {
-                                try { luckysheet.setCellValue(r, c, oldValue?.v ?? oldValue?.m ?? ''); }
-                                catch (e) {}
+                                try {
+                                    markSystemCell(sheetOrder, r, c, 200);
+                                    luckysheet.setCellValue(r, c, oldValue?.v ?? oldValue?.m ?? '');
+                                } catch (e) {}
                             }, 50);
                             return;
                         }
@@ -1424,7 +1470,6 @@
                         // Dirty tracker — mark cell vừa sửa để save handler gửi chỉ cell này.
                         // Skip cột readonly (id auto-gen) — không bao giờ là "thay đổi của user".
                         if (! colDef.readonly) {
-                            const sheetOrder = luckysheet.getSheet()?.order ?? 0;
                             markDirty(sheetOrder, r, colDef.key);
                             // LIVE REALTIME: whisper cell edit cho user khác thấy ngay (không cần save)
                             whisperCellEdit(sheetOrder, r, colDef.key);
@@ -1571,6 +1616,10 @@
                 scanDuplicateIds();
                 await new Promise(r => setTimeout(r, 300));   // dài hơn cho commit kịp
 
+                // SNAPSHOT dirty TẠI t0 — selective clear sau khi save xong
+                // (giữ dirty user tạo trong lúc fetch đang chạy)
+                const dirtyAtStart = snapshotDirty();
+
                 // ===== Build payload =====
                 // - Row có id + dirty cells → partial update {id, ...dirty}
                 // - Row có id, không dirty → SKIP
@@ -1582,7 +1631,7 @@
 
                 [0, 1].forEach((sheetOrder) => {
                     const allRows = readSheetRowsWithMeta(sheetOrder);
-                    const dirtyMap = dirtyCells[sheetOrder] || new Map();
+                    const dirtyMap = dirtyAtStart[sheetOrder] || new Map();
 
                     allRows.forEach(m => {
                         const data = m.data;
@@ -1666,29 +1715,25 @@
 
                 // Gán No. mới cho dòng vừa được tạo + verify hiển thị
                 const idCol = COLS.findIndex(c => c.key === 'id');
-                const newRowMetas = [];                          // các meta cần inject id
+                const newRowMetas = [];
                 let updatedNew = 0;
 
                 if (idCol >= 0 && Array.isArray(json.ids)) {
-                    _systemUpdate = true;
-                    try {
-                        for (let i = 0; i < dirtyMeta.length; i++) {
-                            const m = dirtyMeta[i];
-                            const newId = json.ids[i];
-                            if (m.isNew && newId != null) {
-                                try {
-                                    luckysheet.setCellValue(m.sheetRow, idCol, newId, { order: m.sheetOrder });
-                                    newRowMetas.push({ ...m, newId });
-                                    updatedNew++;
-                                } catch (e) { console.warn('setCellValue id inject failed:', e); }
-                            }
+                    // PER-CELL tracking thay vì global flag → KHÔNG block user gõ cell khác
+                    for (let i = 0; i < dirtyMeta.length; i++) {
+                        const m = dirtyMeta[i];
+                        const newId = json.ids[i];
+                        if (m.isNew && newId != null) {
+                            try {
+                                markSystemCell(m.sheetOrder, m.sheetRow, idCol, 600);
+                                luckysheet.setCellValue(m.sheetRow, idCol, newId, { order: m.sheetOrder });
+                                newRowMetas.push({ ...m, newId });
+                                updatedNew++;
+                            } catch (e) { console.warn('setCellValue id inject failed:', e); }
                         }
-                    } finally {
-                        // Giữ flag bypass đủ dài để Luckysheet flush hết
-                        setTimeout(() => { _systemUpdate = false; }, 1000);
                     }
 
-                    // Verify sau 250ms — nếu cell nào vẫn rỗng → fallback loadData
+                    // Verify sau 250ms
                     if (newRowMetas.length > 0) {
                         await new Promise(r => setTimeout(r, 250));
                         const stillEmpty = newRowMetas.filter(m => {
@@ -1700,15 +1745,39 @@
                         if (stillEmpty.length > 0) {
                             console.warn(`${stillEmpty.length}/${newRowMetas.length} No. cell không hiển thị — fallback loadData`);
                             toast(`Đã lưu — đang đồng bộ ${stillEmpty.length} No. mới…`, 'info');
-                            resetDirty();
+                            removeDirtyMatching(dirtyAtStart);
                             updateVersionBadge(CURRENT_USER, new Date().toISOString());
                             return loadData();
                         }
                     }
                 }
 
-                // CLEAR dirty tracker — data vừa sync với server
-                resetDirty();
+                // SELECTIVE clear — chỉ xóa dirty entries đã SENT (giữ entries user typing trong lúc fetch)
+                removeDirtyMatching(dirtyAtStart);
+
+                // Snapshot resave sau khi inject IDs — đảm bảo other users load thấy snapshot
+                // có IDs đầy đủ (không bị empty ID cells gây augment hiểu nhầm).
+                if (updatedNew > 0 && ! HAS_RESTRICTIONS) {
+                    setTimeout(async () => {
+                        try {
+                            const refreshedSheets = luckysheet.getAllSheets();
+                            await fetch(ROUTES.bulk, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-CSRF-TOKEN':  CSRF,
+                                    'X-Socket-ID':   socketId,
+                                    'Accept':        'application/json',
+                                },
+                                body: JSON.stringify({
+                                    rows: { import: [], export: [] },
+                                    snapshot: refreshedSheets,
+                                    client_version: sheetVersion,
+                                })
+                            });
+                        } catch (e) { console.warn('snapshot resave failed:', e); }
+                    }, 800);
+                }
 
                 // Thông báo
                 if (json.snapshot_conflict) {
