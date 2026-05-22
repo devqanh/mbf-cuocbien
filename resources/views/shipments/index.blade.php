@@ -1174,24 +1174,74 @@
             return readSheetRowsWithMeta(sheetIndex).map(m => m.data);
         }
 
-        // Trả về [{data, sheetRow}] — cần sheetRow để setCellValue sau save
+        // Trả về [{data, sheetRow}] đọc từ CẢ data[] và celldata[].
+        //
+        // Luckysheet đôi khi lưu cell mới user gõ vào celldata mà KHÔNG extend data[].
+        // Nếu chỉ đọc data[] → miss rows → save không thấy thay đổi của user
+        // (bug 'Không có thay đổi cần lưu' khi user thực tế có gõ).
         function readSheetRowsWithMeta(sheetIndex) {
             const sheets = luckysheet.getAllSheets();
             const sheet  = sheets[sheetIndex];
-            if (!sheet || !sheet.data) return [];
+            if (! sheet) return [];
+
+            // Index celldata vào Map theo "r:c" để lookup nhanh
+            const cdMap = new Map();
+            if (Array.isArray(sheet.celldata)) {
+                sheet.celldata.forEach(cd => {
+                    if (cd && cd.r != null && cd.c != null) {
+                        cdMap.set(`${cd.r}:${cd.c}`, cd.v);
+                    }
+                });
+            }
+
+            // Tập row indices từ BOTH data[] và celldata[]
+            const rowIndices = new Set();
+            if (Array.isArray(sheet.data)) {
+                for (let r = 1; r < sheet.data.length; r++) {
+                    if (sheet.data[r]) rowIndices.add(r);
+                }
+            }
+            cdMap.forEach((_, key) => {
+                const r = parseInt(key.split(':')[0]);
+                if (r > 0) rowIndices.add(r);
+            });
+
             const rows = [];
-            for (let r = 1; r < sheet.data.length; r++) {
-                const row = sheet.data[r];
-                if (!row) continue;
+            Array.from(rowIndices).sort((a, b) => a - b).forEach(r => {
                 const obj = {};
                 COLS.forEach((c, ci) => {
-                    let v = parseCellValue(row[ci], c.type);
+                    // Ưu tiên data[r][ci], fallback celldata
+                    let cell = sheet.data?.[r]?.[ci];
+                    if (! cell || (cell.v == null && cell.m == null)) {
+                        cell = cdMap.get(`${r}:${ci}`);
+                    }
+                    let v = parseCellValue(cell, c.type);
                     if (c.key === 'id') v = v === '' ? null : (parseInt(v) || null);
                     obj[c.key] = v;
                 });
                 rows.push({ data: obj, sheetRow: r });
-            }
+            });
             return rows;
+        }
+
+        // So sánh 2 giá trị cell — handle null/empty/number/string normalize
+        function cellValuesEqual(a, b) {
+            const norm = (x) => {
+                if (x == null || x === '') return '';
+                if (typeof x === 'number') return String(x);
+                return String(x).trim();
+            };
+            return norm(a) === norm(b);
+        }
+
+        // Build lookup map: id → row data từ rowsByDir cho safety net comparison
+        function buildDbRowsById(direction) {
+            const map = new Map();
+            const rows = rowsByDir[direction] || [];
+            (Array.isArray(rows) ? rows : Array.from(rows)).forEach(r => {
+                if (r.id != null) map.set(parseInt(r.id), r);
+            });
+            return map;
         }
 
         let rowsByDir = { import: [], export: [] };
@@ -1629,9 +1679,12 @@
                 let duplicateCount = 0;
                 let newRowsRecovered = 0;   // đếm new row được phục hồi từ scan (không phải dirty tracker)
 
+                let updatesRecovered = 0;   // đếm update phục hồi từ comparison (dirty tracker miss)
+
                 [0, 1].forEach((sheetOrder) => {
                     const allRows = readSheetRowsWithMeta(sheetOrder);
                     const dirtyMap = dirtyAtStart[sheetOrder] || new Map();
+                    const dbRowsById = buildDbRowsById(sheetOrder === 0 ? 'import' : 'export');
 
                     allRows.forEach(m => {
                         const data = m.data;
@@ -1646,9 +1699,28 @@
                         if (effectiveId) seenIds.add(effectiveId);
 
                         if (effectiveId) {
-                            // UPDATE — chỉ gửi cell dirty
-                            const dirtyKeys = dirtyMap.get(m.sheetRow);
-                            if (! dirtyKeys || dirtyKeys.size === 0) return;
+                            // UPDATE — gửi cell dirty + comparison safety net
+                            const dirtyKeys = new Set(dirtyMap.get(m.sheetRow) || []);
+
+                            // SAFETY NET: so giá trị cell hiện tại với DB row (rowsByDir).
+                            // Nếu khác → mark dirty implicit. Cover case dirty tracker miss
+                            // (vd: cellUpdated không fire, _systemUpdate timing, hoặc cell
+                            // được lưu trong celldata mà không phải data[]).
+                            const dbRow = dbRowsById.get(parseInt(effectiveId));
+                            if (dbRow) {
+                                const before = dirtyKeys.size;
+                                COLS.forEach(col => {
+                                    if (col.readonly) return;
+                                    if (COLUMN_PERMS[col.key] === 'view') return;
+                                    if (col.key === 'id') return;
+                                    if (! cellValuesEqual(data[col.key], dbRow[col.key])) {
+                                        dirtyKeys.add(col.key);
+                                    }
+                                });
+                                if (dirtyKeys.size > before) updatesRecovered++;
+                            }
+
+                            if (dirtyKeys.size === 0) return;
                             const payload = { id: effectiveId };
                             dirtyKeys.forEach(key => {
                                 payload[key] = data[key] === undefined ? null : data[key];
@@ -1658,10 +1730,8 @@
                             // CREATE — bắt buộc có client (text non-empty)
                             const client = (data.client ?? '').toString().trim();
                             if (! client) return;
-                            // Safety net: nếu dirty tracker không bắt được (vd user chưa commit
-                            // cell trước khi bấm Lưu), chúng ta vẫn include row này.
                             if (! dirtyMap.has(m.sheetRow)) newRowsRecovered++;
-                            const payload = { ...data, client };   // gán client đã trim
+                            const payload = { ...data, client };
                             delete payload.id;
                             dirtyMeta.push({ data: payload, sheetRow: m.sheetRow, sheetOrder, isNew: true });
                         }
@@ -1792,10 +1862,13 @@
                     setTimeout(loadData, 500);
                 } else if (updatedNew > 0) {
                     let msg = `Đã lưu — gán <strong>${updatedNew}</strong> No. mới.`;
-                    if (newRowsRecovered > 0) msg += ` (${newRowsRecovered} dòng phục hồi từ scan)`;
+                    if (newRowsRecovered > 0)  msg += ` (${newRowsRecovered} dòng phục hồi)`;
+                    if (updatesRecovered > 0)  msg += ` (${updatesRecovered} update phục hồi)`;
                     toast(msg, 'success');
                 } else {
-                    toast(`Đã lưu ${json.saved} dòng (v${json.version}).`);
+                    let msg = `Đã lưu ${json.saved} dòng (v${json.version})`;
+                    if (updatesRecovered > 0) msg += ` — ${updatesRecovered} dòng phục hồi từ so sánh DB`;
+                    toast(msg + '.');
                 }
                 updateVersionBadge(CURRENT_USER, new Date().toISOString());
             });
