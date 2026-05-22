@@ -55,9 +55,10 @@ class SheetSnapshotService
 
     public function save(string $key, array $payload, int $clientVersion, ?int $userId = null): SheetSnapshot
     {
-        // 4.3 — Trim payload trước khi lưu: bỏ m (display string) khi nó trivially derive từ v.
-        // Tiết kiệm thêm ~15% sau gzip mà không ảnh hưởng hiển thị (luckysheet re-compute m từ v+ct).
-        $payload = $this->trimPayload($payload);
+        // [DISABLED 2026-05-23] trimPayload — Luckysheet 2.1.13 cần field `m` để render
+        // multi-line text + giữ row height. Drop `m` gây cell collapse / wrap break.
+        // Giữ method để rollback nếu sau này có replacement an toàn hơn.
+        // $payload = $this->trimPayload($payload);
 
         // 4.6 — Telemetry: warn khi payload sau gzip vượt ngưỡng (theo dõi growth)
         $estimatedBytes = strlen(gzdeflate(json_encode($payload), 6));

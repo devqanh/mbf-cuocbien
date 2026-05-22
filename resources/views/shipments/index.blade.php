@@ -1198,7 +1198,7 @@
                 row: importRowCount,
                 column: COLS.length + 1,
                 frozen: { type: 'rangeBoth', range: { row_focus: 0, column_focus: 1 } },
-                defaultRowHeight: 32,
+                defaultRowHeight: 36,
             };
             const exportSheet = {
                 name: 'HÀNG XUẤT', order: 1, color: '#0153a9',
@@ -1210,7 +1210,7 @@
                 row: exportRowCount,
                 column: COLS.length + 1,
                 frozen: { type: 'rangeBoth', range: { row_focus: 0, column_focus: 1 } },
-                defaultRowHeight: 32,
+                defaultRowHeight: 36,
             };
 
             // Restricted user (HAS_RESTRICTIONS=true) → rebuild từ defaultSheet để áp readonly styling
@@ -1221,12 +1221,20 @@
                 { name: 'HÀNG NHẬP', color: '#24d39f' },
                 { name: 'HÀNG XUẤT', color: '#0153a9' },
             ];
+            const DEFAULT_ROW_HEIGHT = 36;   // tăng từ 32 → 36 cho dễ đọc, đủ cho multi-line wrap
             const sheets = (! HAS_RESTRICTIONS && snapshot && Array.isArray(snapshot) && snapshot.length >= 2)
                 ? snapshot.map((sh, i) => ({
                     ...sh,
                     name:  SHEET_DEFAULTS[i]?.name  || sh.name || `Sheet${i + 1}`,
                     order: i,
                     color: SHEET_DEFAULTS[i]?.color || sh.color,
+                    // Force defaultRowHeight — snapshot cũ có thể thiếu/sai → row bị compress
+                    defaultRowHeight: DEFAULT_ROW_HEIGHT,
+                    config: {
+                        ...sh.config,
+                        // Đảm bảo header row (0) cao 48px, ghi đè nếu snapshot có giá trị nhỏ
+                        rowlen: { ...(sh.config?.rowlen || {}), 0: 48 },
+                    },
                   }))
                 : [importSheet, exportSheet];
 
