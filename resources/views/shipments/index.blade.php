@@ -1185,6 +1185,111 @@
             }
         }
 
+        /**
+         * Self-healing: augment snapshot với DB rows missing.
+         *
+         * Vấn đề: snapshot lưu trên server chỉ chứa workbook state tại thời điểm save.
+         * Nếu DB có rows mới (do user khác tạo, hoặc do snapshot mismatch giữa data[] và
+         * celldata[]), super admin dùng snapshot sẽ THIẾU rows so với DB. Restricted user
+         * (dùng buildCellData từ rowsByDir) thì luôn thấy đầy đủ.
+         *
+         * Fix: match rowsByDir vs snapshot theo `id` (cell ở idCol). Row nào có ở DB
+         * nhưng KHÔNG có ở snapshot → append vào snapshot's celldata + bump sheet.row.
+         */
+        function augmentSnapshotWithDbRows(snapshot) {
+            const idColIdx = COLS.findIndex(c => c.key === 'id');
+            if (idColIdx < 0) return snapshot;
+
+            const buildCellForRow = (row, ri) => {
+                const cells = [];
+                COLS.forEach((c, ci) => {
+                    const raw = row[c.key];
+                    const isEmpty = raw == null || raw === '';
+                    const readonly = c.readonly || COLUMN_PERMS[c.key] === 'view';
+                    if (isEmpty && ! readonly) return;
+
+                    let m;
+                    if (c.type === 'vnd')        m = fmtVND(raw);
+                    else if (c.type === 'number') m = fmtNumber(raw);
+                    else if (c.type === 'date')   m = fmtDate(raw);
+                    else                          m = isEmpty ? '' : String(raw);
+
+                    const cell = {
+                        v: isEmpty ? '' : raw,
+                        m: m,
+                        ct: ctFor(c.type),
+                        tb: 2,
+                        vt: 0,
+                    };
+                    if (c.type === 'vnd' || c.type === 'number') cell.ht = 2;
+                    if (readonly) {
+                        cell.bg = '#f4f6fb';
+                        cell.fc = '#7987a1';
+                        cell.lo = 1;
+                    }
+                    cells.push({ r: ri, c: ci, v: cell });
+                });
+                return cells;
+            };
+
+            const dirNames = ['import', 'export'];
+            snapshot.forEach((sheet, sheetIdx) => {
+                const dbRows = rowsByDir[dirNames[sheetIdx]] || [];
+                if (! Array.isArray(dbRows) || dbRows.length === 0) return;
+
+                // Thu thập IDs đã có trong snapshot (check cả data[] và celldata[])
+                const presentIds = new Set();
+                if (Array.isArray(sheet.data)) {
+                    for (let r = 1; r < sheet.data.length; r++) {
+                        const cell = sheet.data[r]?.[idColIdx];
+                        const v = cell?.v ?? cell?.m;
+                        if (v != null && v !== '') presentIds.add(parseInt(v));
+                    }
+                }
+                if (Array.isArray(sheet.celldata)) {
+                    sheet.celldata.forEach(cd => {
+                        if (cd.c === idColIdx) {
+                            const v = cd.v?.v ?? cd.v?.m;
+                            if (v != null && v !== '') presentIds.add(parseInt(v));
+                        }
+                    });
+                }
+
+                // DB rows không có trong snapshot → cần append
+                const missing = dbRows.filter(r => {
+                    const id = r.id != null ? parseInt(r.id) : null;
+                    return id && ! presentIds.has(id);
+                });
+                if (missing.length === 0) return;
+
+                // Tìm row index cuối cùng có data trong snapshot để append phía sau
+                let lastDataRow = 0;
+                if (Array.isArray(sheet.celldata)) {
+                    sheet.celldata.forEach(cd => {
+                        if (cd.r > lastDataRow) lastDataRow = cd.r;
+                    });
+                }
+                if (Array.isArray(sheet.data)) {
+                    lastDataRow = Math.max(lastDataRow, sheet.data.length - 1);
+                }
+
+                // Append missing rows
+                if (! Array.isArray(sheet.celldata)) sheet.celldata = [];
+                missing.forEach((row, i) => {
+                    const ri = lastDataRow + 1 + i;
+                    const cells = buildCellForRow(row, ri);
+                    sheet.celldata.push(...cells);
+                });
+
+                // Bump sheet.row + sheet.data để đủ chỗ
+                const newRowCount = lastDataRow + missing.length + 20;   // +20 buffer rows
+                if (! sheet.row || sheet.row < newRowCount) sheet.row = newRowCount;
+
+                console.info(`[augment] sheet ${dirNames[sheetIdx]}: append ${missing.length} DB rows missing trong snapshot`);
+            });
+            return snapshot;
+        }
+
         function renderSheet() {
             const columnlen = COLS.reduce((acc, c, i) => (acc[i] = c.width, acc), {});
 
@@ -1233,18 +1338,17 @@
                 { name: 'HÀNG NHẬP', color: '#24d39f' },
                 { name: 'HÀNG XUẤT', color: '#0153a9' },
             ];
-            const DEFAULT_ROW_HEIGHT = 36;   // tăng từ 32 → 36 cho dễ đọc, đủ cho multi-line wrap
-            const sheets = (! HAS_RESTRICTIONS && snapshot && Array.isArray(snapshot) && snapshot.length >= 2)
-                ? snapshot.map((sh, i) => ({
+            const DEFAULT_ROW_HEIGHT = 36;
+            const useSnapshot = ! HAS_RESTRICTIONS && snapshot && Array.isArray(snapshot) && snapshot.length >= 2;
+            const sheets = useSnapshot
+                ? augmentSnapshotWithDbRows(snapshot).map((sh, i) => ({
                     ...sh,
                     name:  SHEET_DEFAULTS[i]?.name  || sh.name || `Sheet${i + 1}`,
                     order: i,
                     color: SHEET_DEFAULTS[i]?.color || sh.color,
-                    // Force defaultRowHeight — snapshot cũ có thể thiếu/sai → row bị compress
                     defaultRowHeight: DEFAULT_ROW_HEIGHT,
                     config: {
                         ...sh.config,
-                        // Đảm bảo header row (0) cao 48px, ghi đè nếu snapshot có giá trị nhỏ
                         rowlen: { ...(sh.config?.rowlen || {}), 0: 48 },
                     },
                   }))
