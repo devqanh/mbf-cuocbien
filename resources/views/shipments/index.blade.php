@@ -93,8 +93,15 @@
         cursor: pointer; transition: background .12s;
     }
     .cv-row:hover { background: #fafbfd; }
-    .cv-row.is-disabled { opacity: .5; cursor: not-allowed; }
-    .cv-row.is-disabled:hover { background: transparent; }
+    .cv-row.is-disabled {
+        opacity: .55;
+        cursor: not-allowed;
+        background: #fff5f5;
+        pointer-events: none;   /* QUAN TRỌNG: chặn mọi click leak vào input/switch */
+    }
+    .cv-row.is-disabled:hover { background: #fff5f5; }
+    .cv-row.is-disabled .cv-switch { background: #ffd0d0 !important; }
+    .cv-row.is-disabled .cv-switch::after { background: #f5f5f5; }
 
     /* Custom toggle switch */
     .cv-switch {
@@ -139,6 +146,50 @@
         background: #fafbfd; border-top: 1px solid var(--azia-border);
     }
     .cv-footer .btn { font-size: 13px; padding: 8px 14px; }
+
+    /* ===== Date filter dropdown ===== */
+    .df-dropdown {
+        min-width: 360px; padding: 0; border: none; border-radius: 14px;
+        box-shadow: 0 20px 50px rgba(28,39,60,.18); overflow: hidden;
+    }
+    .df-header {
+        background: linear-gradient(135deg, #24d39f 0%, #169a72 100%);
+        color: #fff; padding: 14px 18px;
+        display: flex; justify-content: space-between; align-items: center;
+    }
+    .df-body { padding: 16px; }
+    .df-field { margin-bottom: 14px; }
+    .df-field label {
+        display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+        color: var(--azia-muted); font-weight: 700; margin-bottom: 6px;
+    }
+    .df-field select, .df-field input {
+        width: 100%; padding: 8px 12px;
+        border: 1px solid var(--azia-border); border-radius: 8px;
+        font-size: 13px;
+    }
+    .df-field select:focus, .df-field input:focus {
+        outline: none; border-color: var(--azia-success);
+        box-shadow: 0 0 0 3px rgba(36,211,159,.15);
+    }
+    .df-help { font-size: 12px; color: var(--azia-muted); padding: 8px 12px; background: #fafbfd; border-radius: 8px; }
+    .df-help i { color: var(--azia-success); margin-right: 4px; }
+
+    .df-footer { display: flex; gap: 8px; padding: 12px 16px; background: #fafbfd; border-top: 1px solid var(--azia-border); }
+
+    .filter-chip {
+        display: inline-flex; align-items: center; gap: 6px;
+        background: rgba(36,211,159,.15); color: #169a72;
+        font-size: 12px; font-weight: 600;
+        padding: 4px 10px 4px 10px; border-radius: 999px;
+        margin-left: 6px;
+    }
+    .filter-chip button {
+        background: transparent; border: none; color: #169a72;
+        cursor: pointer; padding: 0; margin-left: 4px;
+        display: inline-flex; align-items: center;
+    }
+    .filter-chip button:hover { color: var(--azia-danger); }
 
     .period-tabs {
         display: flex; gap: 4px; flex-wrap: wrap;
@@ -190,11 +241,10 @@
                 $colsByGroup = collect($columns)->groupBy('group');
                 $userHidden  = $userPrefs ?? [];
 
-                // Tính số cột đang hiển thị
+                // Tính số cột đang hiển thị (bao gồm cả readonly như No.)
                 $totalToggleable = 0;
                 $currentlyShown  = 0;
                 foreach ($columns as $c) {
-                    if (! empty($c['readonly'])) continue;
                     $adminHide = ($columnPerms[$c['key']] ?? 'edit') === 'hidden';
                     if ($adminHide) continue;
                     $totalToggleable++;
@@ -243,7 +293,6 @@
                             @php
                                 $groupCount = 0; $groupVisible = 0;
                                 foreach ($grpCols as $c) {
-                                    if (! empty($c['readonly'])) continue;
                                     if (($columnPerms[$c['key']] ?? 'edit') === 'hidden') continue;
                                     $groupCount++;
                                     if (! in_array($c['key'], $userHidden)) $groupVisible++;
@@ -262,9 +311,6 @@
                                     </div>
                                 </div>
                                 @foreach($grpCols as $col)
-                                    @if(! empty($col['readonly']))
-                                        @continue
-                                    @endif
                                     @php
                                         $adminHidden = ($columnPerms[$col['key']] ?? 'edit') === 'hidden';
                                     @endphp
@@ -298,7 +344,7 @@
 
                     {{-- Footer --}}
                     <div class="cv-footer">
-                        <button type="button" class="btn btn-light flex-grow-1" data-bs-toggle="dropdown" aria-expanded="false">
+                        <button type="button" class="btn btn-light flex-grow-1" onclick="closeDropdown(this)">
                             <i class="bi bi-x-lg"></i> Đóng
                         </button>
                         <button type="button" class="btn btn-primary flex-grow-1" id="btnApplyCols">
@@ -308,6 +354,84 @@
                 </div>
             </div>
 
+            {{-- Dropdown lọc theo cột ngày --}}
+            @php
+                $dateColumns = collect($columns)->where('type', 'date')->values();
+            @endphp
+            <div class="dropdown">
+                <button class="btn btn-outline-success dropdown-toggle" type="button"
+                        data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+                    <i class="bi bi-funnel me-1"></i> Lọc ngày
+                    <span class="badge bg-success ms-1 d-none" id="dfBadge">0</span>
+                </button>
+                <div class="dropdown-menu dropdown-menu-end df-dropdown">
+                    <div class="df-header">
+                        <div>
+                            <div style="font-size:13px;font-weight:700;letter-spacing:.3px">
+                                <i class="bi bi-funnel-fill me-1"></i> Lọc dòng theo cột ngày
+                            </div>
+                            <div style="font-size:11px;opacity:.85;margin-top:2px">Dành cho kế toán rà soát hạn / thanh toán</div>
+                        </div>
+                    </div>
+                    <div class="df-body">
+                        <div class="df-field">
+                            <label>Cột áp dụng</label>
+                            <select id="dfColumn">
+                                <option value="">— Chọn cột —</option>
+                                @foreach($dateColumns as $col)
+                                    <option value="{{ $col['key'] }}">{{ $col['title'] }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div class="df-field">
+                            <label>Điều kiện</label>
+                            <select id="dfOperator">
+                                <option value="overdue">⚠️ Quá hạn (trước hôm nay)</option>
+                                <option value="within_days" selected>⏰ Sắp đến hạn trong ≤ N ngày</option>
+                                <option value="due_today">📅 Đúng hôm nay</option>
+                                <option value="between">📆 Trong khoảng từ → đến</option>
+                                <option value="not_empty">✓ Có giá trị</option>
+                                <option value="empty">✗ Trống</option>
+                            </select>
+                        </div>
+
+                        <div class="df-field" id="dfParamN">
+                            <label>Số ngày (N)</label>
+                            <input type="number" id="dfN" value="7" min="0" max="365">
+                        </div>
+
+                        <div class="df-field d-none" id="dfParamRange">
+                            <label>Từ ngày → đến ngày</label>
+                            <div class="d-flex gap-2">
+                                <input type="date" id="dfFrom">
+                                <input type="date" id="dfTo">
+                            </div>
+                        </div>
+
+                        <div class="df-help">
+                            <i class="bi bi-info-circle"></i>
+                            Ẩn các dòng không khớp điều kiện. Filter chỉ ảnh hưởng VIEW, không lưu DB.
+                        </div>
+                    </div>
+                    <div class="df-footer">
+                        <button type="button" class="btn btn-light flex-grow-1" id="btnClearFilter">
+                            <i class="bi bi-x-lg"></i> Xoá lọc
+                        </button>
+                        <button type="button" class="btn btn-success flex-grow-1" id="btnApplyFilter">
+                            <i class="bi bi-check2-circle me-1"></i> Áp dụng
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <span id="filterChip"></span>
+
+            <a href="{{ route('reports.payable.initial.index') }}" class="btn btn-outline-secondary"
+               target="_blank" title="Cấu hình danh sách NCC — mở tab mới">
+                <i class="bi bi-people me-1"></i> NCC
+                <span class="badge bg-secondary ms-1">{{ count($suppliers) }}</span>
+            </a>
             <button class="btn btn-outline-secondary" id="btnReload">
                 <i class="bi bi-arrow-clockwise me-1"></i> Tải lại
             </button>
@@ -416,6 +540,12 @@
         const ALL_COLS     = @json($columns);
         const COLUMN_PERMS = @json($columnPerms);          // {key: 'hidden'|'view'|'edit'} — admin set
         const USER_HIDDEN  = new Set(@json($userPrefs));   // [key,...] — user tự chọn ẩn
+        const SUPPLIERS    = @json($suppliers);            // danh sách NCC từ payable_initial_balances + shipments
+
+        // GLOBAL — dùng ở nhiều function (renderSheet, btnSaveAll handler...)
+        // User bị admin restrict (hidden/view) hoặc user tự ẩn cột → skip snapshot logic
+        const HAS_RESTRICTIONS = Object.values(COLUMN_PERMS).some(p => p === 'hidden' || p === 'view')
+                              || USER_HIDDEN.size > 0;
 
         // Filter:
         //  1. Bỏ cột admin đã ẩn
@@ -456,6 +586,140 @@
             if (type === 'date')   return { fa: 'dd/MM/yyyy',   t: 'g' };  // 'g' để giữ chuỗi đã format
             return { fa: 'General', t: 'g' };
         };
+
+        // Helper close dropdown bằng API Bootstrap (dùng cho onclick inline)
+        window.closeDropdown = function (btn) {
+            const dropdown = btn.closest('.dropdown');
+            if (! dropdown) return;
+            const toggle = dropdown.querySelector('[data-bs-toggle="dropdown"]');
+            if (toggle) bootstrap.Dropdown.getOrCreateInstance(toggle).hide();
+        };
+
+        // ===== Date filter helpers =====
+        function parseDateFromCell(value) {
+            if (value == null || value === '') return null;
+            const s = String(value).trim();
+            let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+            if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+            m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+            if (m) return new Date(+m[3], +m[2] - 1, +m[1]);
+            return null;
+        }
+
+        let dateFilterState = { active: false, hiddenRows: [], colKey: null, op: null, label: null, matched: 0 };
+
+        function applyDateFilter() {
+            const colKey = document.getElementById('dfColumn').value;
+            const op     = document.getElementById('dfOperator').value;
+            if (! colKey) { toast('Vui lòng chọn cột để lọc.', 'warning'); return; }
+
+            const colIndex = COLS.findIndex(c => c.key === colKey);
+            if (colIndex < 0) {
+                toast('Cột này đang bị ẩn — bật lại ở "Cột hiển thị" để dùng filter.', 'warning');
+                return;
+            }
+
+            clearDateFilter(false);
+
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const n = parseInt(document.getElementById('dfN').value || 0);
+            const from = parseDateFromCell(document.getElementById('dfFrom').value);
+            const to   = parseDateFromCell(document.getElementById('dfTo').value);
+            if (to) to.setHours(23, 59, 59);
+
+            const sheets = luckysheet.getluckysheetfile();
+            const activeIdx = luckysheet.getSheet().order ?? 0;
+            const sheet = sheets[activeIdx];
+            const data  = sheet.data;
+            const clientIdx = COLS.findIndex(c => c.key === 'client');
+
+            let matchedCount = 0;
+            const toHide = [];
+            const heights = {};
+
+            for (let r = 1; r < data.length; r++) {
+                const row = data[r];
+                if (! row) continue;
+                const hasClient = clientIdx >= 0 && row[clientIdx] && (row[clientIdx].v ?? row[clientIdx].m);
+                if (! hasClient) continue;
+
+                const cell = row[colIndex];
+                const dateVal = cell ? (cell.v ?? cell.m) : null;
+                const cellDate = parseDateFromCell(dateVal);
+
+                let match = false;
+                switch (op) {
+                    case 'overdue':     match = cellDate && cellDate < today; break;
+                    case 'within_days': {
+                        const limit = new Date(today);
+                        limit.setDate(limit.getDate() + n);
+                        match = cellDate && cellDate >= today && cellDate <= limit;
+                        break;
+                    }
+                    case 'due_today':   match = cellDate && cellDate.getTime() === today.getTime(); break;
+                    case 'between':     match = cellDate && from && to && cellDate >= from && cellDate <= to; break;
+                    case 'empty':       match = ! cellDate; break;
+                    case 'not_empty':   match = !! cellDate; break;
+                }
+
+                if (match) matchedCount++;
+                else { toHide.push(r); heights[r] = 0; }
+            }
+
+            if (Object.keys(heights).length > 0) {
+                luckysheet.setRowHeight(heights);
+            }
+
+            const colTitle = COLS[colIndex].title;
+            const opLabels = {
+                overdue: 'quá hạn', within_days: `≤ ${n} ngày tới`, due_today: 'đúng hôm nay',
+                between: 'trong khoảng', empty: 'trống', not_empty: 'có giá trị',
+            };
+            const label = `${colTitle} · ${opLabels[op]}`;
+
+            dateFilterState = { active: true, hiddenRows: toHide, colKey, op, label, matched: matchedCount };
+            updateFilterChip(matchedCount);
+            toast(`Lọc xong: <strong>${matchedCount}</strong> dòng khớp.`);
+        }
+
+        window.clearDateFilter = function (notify = true) {
+            if (dateFilterState.hiddenRows.length > 0) {
+                const heights = {};
+                dateFilterState.hiddenRows.forEach(r => { heights[r] = 32; });
+                luckysheet.setRowHeight(heights);
+            }
+            dateFilterState = { active: false, hiddenRows: [], colKey: null, op: null, label: null, matched: 0 };
+            updateFilterChip(0);
+            if (notify) toast('Đã xoá lọc — hiện tất cả dòng.', 'info');
+        };
+
+        function updateFilterChip(matched) {
+            const chip  = document.getElementById('filterChip');
+            const badge = document.getElementById('dfBadge');
+            if (dateFilterState.active) {
+                chip.innerHTML = `<span class="filter-chip">
+                    <i class="bi bi-funnel-fill"></i> ${dateFilterState.label} — <strong>${matched}</strong> dòng
+                    <button type="button" onclick="clearDateFilter()" title="Xoá lọc"><i class="bi bi-x-circle-fill"></i></button>
+                </span>`;
+                badge.classList.remove('d-none');
+                badge.textContent = matched;
+            } else {
+                chip.innerHTML = '';
+                badge.classList.add('d-none');
+            }
+        }
+
+        function setupDateFilter() {
+            const op = document.getElementById('dfOperator');
+            if (! op) return;
+            op.addEventListener('change', () => {
+                const v = op.value;
+                document.getElementById('dfParamN').classList.toggle('d-none', v !== 'within_days');
+                document.getElementById('dfParamRange').classList.toggle('d-none', v !== 'between');
+            });
+            document.getElementById('btnApplyFilter').addEventListener('click', applyDateFilter);
+            document.getElementById('btnClearFilter').addEventListener('click', () => clearDateFilter());
+        }
 
         // ===== Column visibility dropdown helpers =====
         window.toggleAllCols = function (show) {
@@ -517,18 +781,22 @@
 
         function buildCellData(rows) {
             const celldata = [];
-            // Header row — màu theo group, text đen bold, wrap + center
-            // Luckysheet alignment: ht (0=center, 1=left, 2=right) — vt (0=middle, 1=top, 2=bottom)
+            // Cột readonly = id auto-gen HOẶC admin set 'view'
+            const isReadonly = (c) => c.readonly || COLUMN_PERMS[c.key] === 'view';
+            // Chỉ hiện 🔒 cho cột bị admin restrict (không phải id, vì id hiển nhiên auto)
+            const showLockIcon = (c) => COLUMN_PERMS[c.key] === 'view';
+
             COLS.forEach((c, ci) => {
+                const headerTitle = showLockIcon(c) ? '🔒 ' + c.title : c.title;
                 celldata.push({
                     r: 0, c: ci,
                     v: {
-                        v: c.title, m: c.title,
-                        bl: 1,                                       // bold
-                        bg: GROUP_HEADER_BG[c.group] || '#e1e6f1',  // bg theo nhóm
-                        fc: '#000000',                               // text đen
-                        ht: 0, vt: 0,                                // 0=horizontal center, 0=vertical middle
-                        tb: 2,                                       // wrap
+                        v: headerTitle, m: headerTitle,
+                        bl: 1,
+                        bg: GROUP_HEADER_BG[c.group] || '#e1e6f1',
+                        fc: '#000000',
+                        ht: 0, vt: 0,
+                        tb: 2,
                     }
                 });
             });
@@ -542,14 +810,21 @@
                     else                          displayed = (raw == null ? '' : String(raw));
 
                     const cell = {
-                        v: raw == null ? '' : raw,                  // value gốc
-                        m: displayed,                                // hiển thị
+                        v: raw == null ? '' : raw,
+                        m: displayed,
                         ct: ctFor(c.type),
                         tb: 2,
                         vt: 0,
                     };
-                    // Căn phải cho số/tiền
                     if (c.type === 'vnd' || c.type === 'number') cell.ht = 2;
+
+                    // Readonly: nền xám + text mờ + lock — user nhìn ra ngay, không gõ vào để khỏi mất dữ liệu
+                    if (isReadonly(c)) {
+                        cell.bg = '#f4f6fb';
+                        cell.fc = '#7987a1';
+                        cell.lo = 1;
+                    }
+
                     celldata.push({ r: ri + 1, c: ci, v: cell });
                 });
             });
@@ -667,8 +942,9 @@
                 defaultRowHeight: 32,
             };
 
-            // Có snapshot → dùng nguyên si (giữ format user đã đặt)
-            const sheets = (snapshot && Array.isArray(snapshot) && snapshot.length >= 2)
+            // Restricted user (HAS_RESTRICTIONS=true) → rebuild từ defaultSheet để áp readonly styling
+            // Super_admin / user full quyền → dùng snapshot để giữ format đã lưu
+            const sheets = (! HAS_RESTRICTIONS && snapshot && Array.isArray(snapshot) && snapshot.length >= 2)
                 ? snapshot
                 : [importSheet, exportSheet];
 
@@ -683,6 +959,91 @@
                 enableAddBackTop: false,
                 allowEdit: true,
                 data: sheets,
+                hook: {
+                    workbookCreateAfter() {
+                        applySupplierDropdown();
+                    },
+                    // Helper kiểm cột readonly bằng index c
+                    // (COLS đã filter theo perms, nên COLS[c] tương ứng đúng cột hiển thị tại index c)
+                    // Chặn nhập vào cột readonly (id auto-gen + admin set 'view')
+                    cellEditBefore(range) {
+                        const ranges = Array.isArray(range) ? range : [range];
+                        for (const r of ranges) {
+                            if (r == null) continue;
+                            let startCol, endCol;
+                            if (typeof r === 'number') {
+                                startCol = endCol = r;
+                            } else if (r.column) {
+                                startCol = Array.isArray(r.column) ? r.column[0] : r.column;
+                                endCol   = Array.isArray(r.column) ? (r.column[1] ?? startCol) : startCol;
+                            } else continue;
+
+                            for (let c = startCol; c <= endCol; c++) {
+                                const colDef = COLS[c];
+                                if (! colDef) continue;
+                                if (COLUMN_PERMS[colDef.key] === 'view') {
+                                    toast(`Cột "<strong>${colDef.title}</strong>" chỉ xem, không thể sửa.`, 'warning');
+                                    return false;
+                                }
+                                if (colDef.readonly) {
+                                    toast(`Cột "<strong>${colDef.title}</strong>" tự động tạo, không sửa được.`, 'info');
+                                    return false;
+                                }
+                            }
+                        }
+                    },
+                    cellUpdateBefore(r, c, value, isRefresh) {
+                        const colDef = COLS[c];
+                        if (! colDef) return;
+                        if (colDef.readonly || COLUMN_PERMS[colDef.key] === 'view') {
+                            return false;
+                        }
+                    },
+                    // Sau khi cell update — nếu là readonly thì revert
+                    cellUpdated(r, c, oldValue, newValue, isRefresh) {
+                        if (isRefresh) return;
+                        const colDef = COLS[c];
+                        if (! colDef) return;
+                        if (colDef.readonly || COLUMN_PERMS[colDef.key] === 'view') {
+                            // Revert by clearing the cell
+                            setTimeout(() => {
+                                try {
+                                    luckysheet.setCellValue(r, c, oldValue?.v ?? oldValue?.m ?? '');
+                                } catch (e) { console.warn('Revert readonly cell failed:', e); }
+                            }, 50);
+                        }
+                    },
+                }
+            });
+        }
+
+        // Set data validation dropdown cho cột NCC (cả HÀNG NHẬP + HÀNG XUẤT)
+        function applySupplierDropdown() {
+            if (! SUPPLIERS || SUPPLIERS.length === 0) return;
+            const colIndex = COLS.findIndex(c => c.key === 'supplier');
+            if (colIndex < 0) return;   // user/admin đã ẩn cột supplier
+
+            const valueList = SUPPLIERS.join(',');
+            const allSheets = luckysheet.getAllSheets();
+            allSheets.forEach((_, sheetOrder) => {
+                try {
+                    luckysheet.setDataVerification({
+                        type: 'dropdown',
+                        type2: '',
+                        value1: valueList,
+                        value2: '',
+                        validity: '',
+                        remote: false,
+                        prohibitInput: false,    // cho phép gõ tay NCC mới
+                        hintShow: true,
+                        hintText: 'Chọn NCC từ danh sách hoặc gõ tên mới',
+                    }, {
+                        range: { row: [1, 199], column: [colIndex, colIndex] },
+                        order: sheetOrder,
+                    });
+                } catch (e) {
+                    console.warn('Không apply được dropdown NCC cho sheet', sheetOrder, e);
+                }
             });
         }
 
@@ -720,13 +1081,19 @@
             document.getElementById('btnReload').addEventListener('click', loadData);
 
             document.getElementById('btnSaveAll').addEventListener('click', async () => {
+                // Auto-clear filter trước save để không lưu row heights=0 vào snapshot
+                if (dateFilterState.active) {
+                    clearDateFilter(false);
+                }
                 const importRows = readSheetRows(0).filter(r => r.client);
                 const exportRows = readSheetRows(1).filter(r => r.client);
                 if (importRows.length === 0 && exportRows.length === 0) {
                     return toast('Không có dòng hợp lệ để lưu (cần ít nhất Client).', 'warning');
                 }
 
-                const fullSheets = luckysheet.getAllSheets();
+                // Nếu user bị ẩn cột → KHÔNG gửi snapshot (tránh ghi đè master snapshot bằng layout thiếu cột)
+                // Chỉ super_admin / user full quyền mới được cập nhật snapshot
+                const fullSheets = HAS_RESTRICTIONS ? null : luckysheet.getAllSheets();
 
                 const res = await fetch(ROUTES.bulk, {
                     method: 'POST',
@@ -754,11 +1121,13 @@
             });
 
             // ===== Column prefs dropdown =====
-            // Mỗi lần tick/untick → cập nhật counter tổng + per-group
             document.querySelectorAll('.col-pref-toggle').forEach(cb => {
                 cb.addEventListener('change', updateCvCounters);
             });
             setupCvSearch();
+
+            // ===== Date filter dropdown =====
+            setupDateFilter();
 
             document.getElementById('btnApplyCols').addEventListener('click', async () => {
                 // Thu thập key các cột BỊ ẨN (checkbox không tick)

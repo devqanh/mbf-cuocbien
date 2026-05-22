@@ -219,7 +219,14 @@ class ShipmentService
         User $editor,
     ): array {
         $key = $this->sheetKey($period);
-        $this->snapshots->assertVersionMatches($key, $clientVersion);
+
+        // Chỉ check optimistic lock khi user thực sự update snapshot.
+        // User restricted không lưu snapshot → bỏ qua version check, save row tự do.
+        $canUpdateSnapshot = $editor->isSuperAdmin()
+            || empty(array_filter($editor->column_permissions ?? [], fn ($v) => in_array($v, ['hidden', 'view'])));
+        if ($snapshot && $canUpdateSnapshot) {
+            $this->snapshots->assertVersionMatches($key, $clientVersion);
+        }
 
         // Strip những key user không có quyền edit (vd chỉ xem) — bảo vệ backend
         $editableKeys = $this->editableColumnKeysFor($editor);
@@ -255,7 +262,9 @@ class ShipmentService
         });
 
         $newVersion = $this->snapshots->currentVersion($key);
-        if ($snapshot) {
+
+        // Save snapshot — chỉ khi user FULL quyền (đã tính $canUpdateSnapshot ở trên)
+        if ($snapshot && $canUpdateSnapshot) {
             $newVersion = $this->snapshots->save($key, $snapshot, $clientVersion, $editor->id)->version;
         }
 

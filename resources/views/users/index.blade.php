@@ -232,9 +232,6 @@
                                         </thead>
                                         <tbody>
                                         @foreach($cols as $col)
-                                            @if(! empty($col['readonly']))
-                                                @continue
-                                            @endif
                                             <tr data-group="{{ $gid }}" data-key="{{ $col['key'] }}">
                                                 <td>
                                                     <strong>{{ $col['title'] }}</strong>

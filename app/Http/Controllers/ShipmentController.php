@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\Domain\DomainException;
 use App\Models\Shipment;
+use App\Services\PayableReportService;
 use App\Services\ShipmentService;
 use App\Services\SheetSnapshotService;
 use Illuminate\Http\JsonResponse;
@@ -15,6 +16,7 @@ class ShipmentController extends Controller
     public function __construct(
         private readonly ShipmentService $shipments,
         private readonly SheetSnapshotService $snapshots,
+        private readonly PayableReportService $payable,
     ) {}
 
     /** /shipments → redirect sang tháng hiện tại. */
@@ -35,13 +37,21 @@ class ShipmentController extends Controller
             $perms[$col['key']] = $user->columnPermission($col['key']);
         }
 
+        // List NCC (suppliers) — gộp từ payable_initial_balances + distinct supplier trong shipments
+        // Lọc bỏ tên chứa dấu phẩy (vì Luckysheet dùng `,` làm separator trong dropdown)
+        $suppliers = $this->payable->availableSuppliers()
+            ->filter(fn ($s) => ! str_contains($s, ','))
+            ->values()
+            ->all();
+
         return view('shipments.index', [
             'period'      => $period,
             'periods'     => $this->shipments->listPeriods(),
             'current'     => $this->shipments->currentPeriod(),
             'columns'     => $cols,
             'columnPerms' => $perms,
-            'userPrefs'   => $user->shipment_column_prefs ?? [],   // list of hidden col keys (user preference)
+            'userPrefs'   => $user->shipment_column_prefs ?? [],
+            'suppliers'   => $suppliers,
         ]);
     }
 
