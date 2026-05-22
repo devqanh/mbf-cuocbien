@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\CompressedJson;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -10,7 +11,7 @@ class SheetSnapshot extends Model
     protected $fillable = ['key', 'payload', 'version', 'updated_by'];
 
     protected $casts = [
-        'payload'    => 'array',
+        'payload'    => CompressedJson::class,
         'version'    => 'integer',
         'updated_by' => 'integer',
     ];

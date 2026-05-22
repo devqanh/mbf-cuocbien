@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Events\SheetUpdated;
 use App\Exceptions\Domain\BusinessRuleException;
+use App\Exceptions\Domain\SnapshotConflictException;
 use App\Models\Shipment;
 use App\Models\User;
 use DateTime;
@@ -15,6 +16,9 @@ class ShipmentService
 {
     /** Prefix snapshot key, dán thêm period: shipments_grid_2026-05 */
     public const SHEET_KEY_PREFIX = 'shipments_grid_';
+
+    /** Memoize per-request — listPeriods() được gọi nhiều lần/page render */
+    private ?array $cachedPeriods = null;
 
     public function __construct(
         private readonly SheetSnapshotService $snapshots,
@@ -39,6 +43,8 @@ class ShipmentService
      */
     public function listPeriods(): array
     {
+        if ($this->cachedPeriods !== null) return $this->cachedPeriods;
+
         $fromRows = Shipment::query()
             ->select('period')
             ->distinct()
@@ -51,7 +57,7 @@ class ShipmentService
 
         $current = $this->currentPeriod();
 
-        return $fromRows
+        return $this->cachedPeriods = $fromRows
             ->merge($fromSnapshots)
             ->push($current)                      // luôn đảm bảo tháng hiện tại có mặt
             ->unique()
@@ -81,6 +87,7 @@ class ShipmentService
 
         // Tạo snapshot rỗng để đánh dấu period đã tồn tại — bypass optimistic check
         $this->snapshots->save($this->sheetKey($period), [], 0, $userId);
+        $this->cachedPeriods = null;   // invalidate per-request cache
         return $period;
     }
 
@@ -91,6 +98,7 @@ class ShipmentService
             Shipment::inPeriod($period)->delete();
             $this->snapshots->reset($this->sheetKey($period));
         });
+        $this->cachedPeriods = null;
     }
 
     /**
@@ -101,7 +109,12 @@ class ShipmentService
      */
     public function listForGrid(string $period, ?User $user = null): array
     {
-        $rows = Shipment::inPeriod($period)->orderBy('id')->get();
+        // 1 query + 1 lần traverse groupBy thay vì where() 2 lần qua collection
+        // (where Collection scan toàn bộ rows mỗi lần gọi → O(N) × 2 lần)
+        $rowsByDir = Shipment::inPeriod($period)
+            ->orderBy('id')
+            ->get()
+            ->groupBy('direction');
 
         $hidden = $user ? $this->hiddenColumnKeys($user) : [];
 
@@ -114,8 +127,8 @@ class ShipmentService
         };
 
         return [
-            'import' => $rows->where('direction', Shipment::DIRECTION_IMPORT)->values()->map($mapRow),
-            'export' => $rows->where('direction', Shipment::DIRECTION_EXPORT)->values()->map($mapRow),
+            'import' => ($rowsByDir[Shipment::DIRECTION_IMPORT] ?? collect())->values()->map($mapRow),
+            'export' => ($rowsByDir[Shipment::DIRECTION_EXPORT] ?? collect())->values()->map($mapRow),
         ];
     }
 
@@ -214,8 +227,15 @@ class ShipmentService
     /**
      * Bulk save 1 tháng. Nhận rows theo direction + snapshot toàn workbook (2 sheets).
      *
+     * Dirty-cell tracking (Mức 2):
+     * - Frontend chỉ gửi cell DIRTY (đã sửa từ lúc load), không gửi full row.
+     * - Row có `id`: UPDATE chỉ các cột được gửi → không đè cell của user khác đang sửa cột khác.
+     * - Row không `id`: CREATE với toàn bộ field được gửi.
+     * - Snapshot conflict KHÔNG còn reject row save — chỉ skip lưu snapshot, return cờ
+     *   `snapshot_conflict` để frontend xử lý (reload formatting).
+     *
      * @param array{import: array, export: array} $rowsByDirection
-     * @return array{saved:int, ids:array, version:int}
+     * @return array{saved:int, ids:array, version:int, snapshot_conflict:bool}
      */
     public function bulkSave(
         string $period,
@@ -226,58 +246,111 @@ class ShipmentService
     ): array {
         $key = $this->sheetKey($period);
 
-        // Chỉ check optimistic lock khi user thực sự update snapshot.
-        // User restricted không lưu snapshot → bỏ qua version check, save row tự do.
         $canUpdateSnapshot = $editor->isSuperAdmin()
             || empty(array_filter($editor->column_permissions ?? [], fn ($v) => in_array($v, ['hidden', 'view'])));
-        if ($snapshot && $canUpdateSnapshot) {
-            $this->snapshots->assertVersionMatches($key, $clientVersion);
-        }
 
-        // Strip những key user không có quyền edit (vd chỉ xem) — bảo vệ backend
         $editableKeys = $this->editableColumnKeysFor($editor);
 
         $ids = DB::transaction(function () use ($rowsByDirection, $period, $editableKeys, $editor) {
-            $saved = [];
-            $seenIds = [];                       // Dedup ID: lần đầu = update; lần sau (copy-paste) = create new
             $isSuper = $editor->isSuperAdmin();
+            $now     = now()->format('Y-m-d H:i:s');
+
+            // 1) Pre-check tồn tại ID — 1 query duy nhất thay vì N find()
+            $incomingIds = [];
+            foreach ([Shipment::DIRECTION_IMPORT, Shipment::DIRECTION_EXPORT] as $dir) {
+                foreach ($rowsByDirection[$dir] ?? [] as $row) {
+                    if (! empty($row['id'])) $incomingIds[] = (int) $row['id'];
+                }
+            }
+            $existingIds = $incomingIds
+                ? Shipment::whereIn('id', array_unique($incomingIds))->pluck('id')->flip()->all()
+                : [];
+
+            $saved           = [];
+            $seenIds         = [];
+            $creates         = [];
+            $createPositions = [];
+
             foreach ([Shipment::DIRECTION_IMPORT, Shipment::DIRECTION_EXPORT] as $direction) {
                 foreach ($rowsByDirection[$direction] ?? [] as $row) {
                     $row = $this->normalize($row);
-                    if (empty($row['client'])) continue;
 
                     $id = $row['id'] ?? null;
                     unset($row['id']);
 
-                    // Dedup: nếu id đã được dùng trong batch này → treat as new (tránh ghi đè)
-                    if ($id && in_array($id, $seenIds, true)) {
-                        $id = null;
-                    }
+                    // Dedup: id đã dùng trong batch → treat as new (copy-paste)
+                    if ($id && in_array($id, $seenIds, true))     $id = null;
+                    // Stale: id không còn tồn tại trong DB (xoá concurrent) → treat as new
+                    if ($id && ! isset($existingIds[$id]))         $id = null;
+
+                    // NEW row bắt buộc có client (đảm bảo có identity); UPDATE thì không cần
+                    if (! $id && empty($row['client'])) continue;
+
                     if ($id) $seenIds[] = $id;
 
                     if (! $isSuper) {
                         $row = array_intersect_key($row, array_flip($editableKeys));
                     }
 
-                    $row['period']    = $period;
-                    $row['direction'] = $direction;
-
-                    $shipment = $id ? Shipment::find($id) : null;
-                    $shipment = $shipment
-                        ? tap($shipment)->update($row)
-                        : Shipment::create($row);
-
-                    $saved[] = $shipment->id;
+                    if ($id) {
+                        // PARTIAL UPDATE — chỉ update các cell được gửi (dirty).
+                        // KHÔNG inject period/direction → user khác đang edit cột khác không bị đè.
+                        if (empty($row)) {
+                            $saved[] = $id;   // không có gì để update nhưng vẫn report id
+                            continue;
+                        }
+                        $row['updated_at'] = $now;
+                        Shipment::where('id', $id)->update($row);
+                        $saved[] = $id;
+                    } else {
+                        // CREATE — inject period/direction
+                        $row['period']     = $period;
+                        $row['direction']  = $direction;
+                        $row['created_at'] = $now;
+                        $row['updated_at'] = $now;
+                        $createPositions[] = count($saved);
+                        $saved[]           = null;
+                        $creates[]         = $row;
+                    }
                 }
             }
+
+            if (! empty($creates)) {
+                // Batch insert có thể cần keys đồng nhất (DB::insert yêu cầu mọi row cùng schema).
+                // Đảm bảo mọi create row có cùng key set bằng cách padding null.
+                $allKeys = [];
+                foreach ($creates as $row) {
+                    foreach ($row as $k => $_) $allKeys[$k] = true;
+                }
+                $keyList = array_keys($allKeys);
+                $padded = array_map(function ($row) use ($keyList) {
+                    $out = [];
+                    foreach ($keyList as $k) $out[$k] = $row[$k] ?? null;
+                    return $out;
+                }, $creates);
+
+                DB::table('shipments')->insert($padded);
+                $startId = (int) DB::getPdo()->lastInsertId();
+                foreach ($createPositions as $i => $pos) {
+                    $saved[$pos] = $startId + $i;
+                }
+            }
+
             return $saved;
         });
 
+        // 2) Snapshot conflict → KHÔNG reject row save, chỉ skip lưu snapshot
+        $snapshotConflict = false;
         $newVersion = $this->snapshots->currentVersion($key);
 
-        // Save snapshot — chỉ khi user FULL quyền (đã tính $canUpdateSnapshot ở trên)
         if ($snapshot && $canUpdateSnapshot) {
-            $newVersion = $this->snapshots->save($key, $snapshot, $clientVersion, $editor->id)->version;
+            try {
+                $newVersion = $this->snapshots->save($key, $snapshot, $clientVersion, $editor->id)->version;
+            } catch (SnapshotConflictException $e) {
+                // Rows đã save xong; chỉ snapshot bị conflict → báo frontend reload formatting.
+                $snapshotConflict = true;
+                $newVersion = $this->snapshots->currentVersion($key);
+            }
         }
 
         broadcast(new SheetUpdated(
@@ -288,7 +361,12 @@ class ShipmentService
             savedRows:  count($ids),
         ))->toOthers();
 
-        return ['saved' => count($ids), 'ids' => $ids, 'version' => $newVersion];
+        return [
+            'saved'             => count($ids),
+            'ids'               => $ids,
+            'version'           => $newVersion,
+            'snapshot_conflict' => $snapshotConflict,
+        ];
     }
 
     public function resetSnapshot(string $period): void

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Shipment extends Model
 {
@@ -89,5 +90,14 @@ class Shipment extends Model
     public function scopeOfDirection(Builder $q, string $direction): Builder
     {
         return $q->where('direction', $direction);
+    }
+
+    /**
+     * Liên kết NCC qua tên (denormalized string).
+     * Cho phép eager load: Shipment::with('supplierBalance') để lấy initial_balance + as_of_date.
+     */
+    public function supplierBalance(): BelongsTo
+    {
+        return $this->belongsTo(PayableInitialBalance::class, 'supplier', 'supplier');
     }
 }

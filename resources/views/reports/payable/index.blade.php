@@ -96,7 +96,7 @@
                         <i class="bi bi-list-ul me-1" style="color: var(--azia-primary)"></i>
                         Danh sách báo cáo
                     </div>
-                    <span class="badge badge-soft-primary">{{ $reports->count() }} báo cáo</span>
+                    <span class="badge badge-soft-primary">{{ $reports->total() }} báo cáo</span>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover mb-0">
@@ -154,6 +154,11 @@
                         </tbody>
                     </table>
                 </div>
+                @if($reports->hasPages())
+                    <div class="card-footer bg-white border-top">
+                        {{ $reports->links() }}
+                    </div>
+                @endif
             </div>
         </div>
     </div>
