@@ -796,6 +796,9 @@
         // Reference tới private channel — set sau khi Echo init
         let _privateChan = null;
 
+        // Flag: user khác đã save trong khi mình đang gõ dở → cần resync sau khi save xong
+        let _needsResync = false;
+
         // ===== Scan + clear duplicate ID trong cột No. =====
         // QUAN TRỌNG: phải bật _systemUpdate vì setCellValue cho cột id (readonly) bị hook chặn
         function scanDuplicateIds() {
@@ -1165,8 +1168,9 @@
             sheetVersion = json.version ?? 0;
             renderSheet();
             updateVersionBadge(json.editor, json.updatedAt);
-            // Reset dirty tracker — data vừa fresh, không còn cell nào dirty
+            // Reset dirty tracker + flags — data vừa fresh, không còn cell nào dirty/stale
             resetDirty();
+            _needsResync = false;
         }
 
         function updateVersionBadge(editor, at) {
@@ -1394,29 +1398,27 @@
 
                 _privateChan = window.Echo.private('items-sheet');
 
-                // 1) Server-broadcast event: ai đó save xong (authoritative confirmation)
-                // - Whisper (Lớp 1) đã sync cell value realtime cho row có id.
-                // - Nhưng row MỚI (chưa có id lúc gõ) chỉ visible sau khi save → cần reload
-                //   ở phía user khác để thấy.
-                // - Smart strategy: nếu user KHÔNG có dirty cells → auto-reload silent
-                //   (an toàn, không mất công sửa). Nếu CÓ dirty → toast + nút Reload thủ công.
+                // 1) Server-broadcast event: ai đó save xong
+                // - toOthers() ở backend đã loại sender's socket (nhờ X-Socket-ID header trên save).
+                //   Nên KHÔNG cần check editorId — multi-tab same user vẫn nhận event ở tab khác.
+                // - Smart strategy: nếu user không có dirty cells → reload silent.
+                //   Nếu có dirty → đặt flag _needsResync, reload sau khi user save xong.
                 _privateChan.listen('.sheet.updated', (e) => {
-                    if (e.editorId === CURRENT_USER.id) return;
                     if (! e.sheetKey || ! e.sheetKey.endsWith(PERIOD)) return;
 
                     sheetVersion = e.version;
                     updateVersionBadge({ id: e.editorId, name: e.editorName }, new Date().toISOString());
 
                     if (countDirty() === 0) {
-                        // An toàn — user không đang gõ dở → reload silent để đồng bộ rows/formatting mới.
+                        // An toàn — user không đang gõ dở → reload silent.
                         toast(`<i class="bi bi-person-fill-gear"></i> <strong>${e.editorName}</strong> vừa lưu (v${e.version}). Đang đồng bộ…`, 'info');
                         loadData();
                     } else {
-                        // User đang có thay đổi chưa lưu — KHÔNG auto-reload (tránh mất công).
+                        // User đang có thay đổi chưa lưu → đặt flag, sẽ resync sau khi save xong.
+                        _needsResync = true;
                         toast(
                             `<i class="bi bi-person-fill-gear"></i> <strong>${e.editorName}</strong> vừa lưu (v${e.version}). ` +
-                            `Bạn có ${countDirty()} thay đổi chưa lưu — ` +
-                            `bấm <button class="btn btn-sm btn-link p-0 align-baseline" onclick="loadData()">Tải lại</button> sau khi lưu xong để thấy dòng/format mới.`,
+                            `Sẽ tự đồng bộ sau khi bạn lưu thay đổi của mình.`,
                             'warning'
                         );
                     }
@@ -1528,9 +1530,21 @@
                     return toast('Không có thay đổi cần lưu.', 'info');
                 }
 
+                // X-Socket-ID — Reverb's toOthers() dùng header này để loại tab của sender
+                // khỏi broadcast. Không có nó → tab gửi cũng nhận event của chính nó.
+                const socketId = (() => {
+                    try { return window.Echo?.socketId?.() ?? ''; }
+                    catch (e) { return ''; }
+                })();
+
                 const res = await fetch(ROUTES.bulk, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN':  CSRF,
+                        'X-Socket-ID':   socketId,
+                        'Accept':        'application/json',
+                    },
                     body: JSON.stringify({
                         rows: { import: importRows, export: exportRows },
                         snapshot: fullSheets,
@@ -1599,6 +1613,10 @@
                         'warning'
                     );
                     setTimeout(loadData, 1500);
+                } else if (_needsResync) {
+                    // User khác đã save trong lúc mình gõ → giờ mình save xong → reload đồng bộ
+                    toast(`Đã lưu ${json.saved} dòng. Đang đồng bộ với thay đổi của người khác…`, 'info');
+                    setTimeout(loadData, 500);
                 } else if (updatedNew > 0) {
                     let msg = `Đã lưu — gán <strong>${updatedNew}</strong> No. mới.`;
                     if (newRowsRecovered > 0) msg += ` (${newRowsRecovered} dòng phục hồi từ scan)`;
