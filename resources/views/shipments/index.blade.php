@@ -1379,24 +1379,23 @@
                 _privateChan = window.Echo.private('items-sheet');
 
                 // 1) Server-broadcast event: ai đó save xong (authoritative confirmation)
+                // KHÔNG auto-reload — cell changes đã sync qua whisper (Lớp 1 realtime).
+                // Event này chỉ để:
+                //  - Bump local sheetVersion → tránh snapshot conflict ở lần save kế tiếp
+                //  - Update badge "lưu lần cuối bởi X"
+                //  - Toast nhẹ thông báo
+                // Nếu user cần đồng bộ dòng mới / formatting → bấm nút "Tải lại" thủ công.
                 _privateChan.listen('.sheet.updated', (e) => {
                     if (e.editorId === CURRENT_USER.id) return;
                     if (! e.sheetKey || ! e.sheetKey.endsWith(PERIOD)) return;
 
-                    // Smart sync — KHÔNG auto-reload nếu user đang có dirty cells (mất công sửa)
-                    if (countDirty() > 0) {
-                        toast(
-                            `<i class="bi bi-person-fill-gear"></i> <strong>${e.editorName}</strong> vừa lưu ${e.savedRows} dòng (v${e.version}). ` +
-                            `Bạn đang có thay đổi chưa lưu — bấm <button class="btn btn-sm btn-link p-0 align-baseline" onclick="loadData()">Reload</button> khi sẵn sàng.`,
-                            'warning'
-                        );
-                        sheetVersion = e.version;
-                        updateVersionBadge({ id: e.editorId, name: e.editorName }, new Date().toISOString());
-                    } else {
-                        // Không dirty → auto-reload an toàn (giảm reload chỉ khi có new rows / formatting)
-                        toast(`<i class="bi bi-person-fill-gear"></i> <strong>${e.editorName}</strong> vừa lưu (v${e.version}).`, 'info');
-                        loadData();
-                    }
+                    sheetVersion = e.version;
+                    updateVersionBadge({ id: e.editorId, name: e.editorName }, new Date().toISOString());
+                    toast(
+                        `<i class="bi bi-person-fill-gear"></i> <strong>${e.editorName}</strong> vừa lưu (v${e.version}). ` +
+                        `Các thay đổi đã đồng bộ realtime; bấm <button class="btn btn-sm btn-link p-0 align-baseline" onclick="loadData()">Tải lại</button> nếu cần đồng bộ dòng mới / formatting.`,
+                        'info'
+                    );
                 });
 
                 // 2) Client-event (whisper): A gõ cell → B nhận instant, không qua DB
