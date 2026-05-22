@@ -1215,8 +1215,19 @@
 
             // Restricted user (HAS_RESTRICTIONS=true) → rebuild từ defaultSheet để áp readonly styling
             // Super_admin / user full quyền → dùng snapshot để giữ format đã lưu
+            // FORCE name/order/color theo defaults — Luckysheet 2.1.13 render tab dùng template
+            // `${name}`, nếu sheet object thiếu name (snapshot cũ/corrupt) sẽ hiện literal "${name}"
+            const SHEET_DEFAULTS = [
+                { name: 'HÀNG NHẬP', color: '#24d39f' },
+                { name: 'HÀNG XUẤT', color: '#0153a9' },
+            ];
             const sheets = (! HAS_RESTRICTIONS && snapshot && Array.isArray(snapshot) && snapshot.length >= 2)
-                ? snapshot
+                ? snapshot.map((sh, i) => ({
+                    ...sh,
+                    name:  SHEET_DEFAULTS[i]?.name  || sh.name || `Sheet${i + 1}`,
+                    order: i,
+                    color: SHEET_DEFAULTS[i]?.color || sh.color,
+                  }))
                 : [importSheet, exportSheet];
 
             luckysheet.destroy();
