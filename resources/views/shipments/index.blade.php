@@ -588,6 +588,66 @@
             return { fa: 'General', t: 'g' };
         };
 
+        // Flag bypass cho khi SYSTEM tự update cells readonly (vd: gán id mới sau save)
+        // Khi true, các hook cellUpdateBefore/cellUpdated sẽ không chặn/revert
+        let _systemUpdate = false;
+
+        // ===== Scan + clear duplicate ID trong cột No. =====
+        // QUAN TRỌNG: phải bật _systemUpdate vì setCellValue cho cột id (readonly) bị hook chặn
+        function scanDuplicateIds() {
+            try {
+                const idCol = COLS.findIndex(c => c.key === 'id');
+                if (idCol < 0) return 0;
+
+                const allSheets = luckysheet.getluckysheetfile();
+                const activeOrder = luckysheet.getSheet().order ?? 0;
+                const seenIds = new Set();
+                const toClear = [];   // [{r, sheetOrder}]
+
+                allSheets.forEach((sheet, sheetOrder) => {
+                    const data = sheet.data;
+                    if (! data) return;
+                    for (let r = 1; r < data.length; r++) {
+                        const cell = data[r]?.[idCol];
+                        const v = cell?.v ?? cell?.m;
+                        if (v == null || v === '') continue;
+                        const numId = parseInt(v);
+                        if (! numId) continue;
+
+                        if (seenIds.has(numId)) {
+                            toClear.push({ r, sheetOrder });
+                        } else {
+                            seenIds.add(numId);
+                        }
+                    }
+                });
+
+                if (toClear.length === 0) return 0;
+
+                // Bypass hook chặn readonly id để có thể clear cell
+                _systemUpdate = true;
+                try {
+                    toClear.forEach(({ r, sheetOrder }) => {
+                        try {
+                            if (sheetOrder === activeOrder) {
+                                luckysheet.setCellValue(r, idCol, '');
+                            } else {
+                                luckysheet.setCellValue(r, idCol, '', { order: sheetOrder });
+                            }
+                        } catch (e) { console.warn('clear duplicate id fail:', e); }
+                    });
+                } finally {
+                    setTimeout(() => { _systemUpdate = false; }, 200);
+                }
+
+                toast(`Đã xoá <strong>${toClear.length}</strong> No. trùng (copy/paste) — khi lưu sẽ tạo dòng mới.`, 'info');
+                return toClear.length;
+            } catch (e) {
+                console.warn('scanDuplicateIds failed:', e);
+                return 0;
+            }
+        }
+
         // Helper close dropdown bằng API Bootstrap (dùng cho onclick inline)
         window.closeDropdown = function (btn) {
             const dropdown = btn.closest('.dropdown');
@@ -859,6 +919,11 @@
         }
 
         function readSheetRows(sheetIndex) {
+            return readSheetRowsWithMeta(sheetIndex).map(m => m.data);
+        }
+
+        // Trả về [{data, sheetRow}] — cần sheetRow để setCellValue sau save
+        function readSheetRowsWithMeta(sheetIndex) {
             const sheets = luckysheet.getAllSheets();
             const sheet  = sheets[sheetIndex];
             if (!sheet || !sheet.data) return [];
@@ -872,7 +937,7 @@
                     if (c.key === 'id') v = v === '' ? null : (parseInt(v) || null);
                     obj[c.key] = v;
                 });
-                rows.push(obj);
+                rows.push({ data: obj, sheetRow: r });
             }
             return rows;
         }
@@ -994,25 +1059,34 @@
                         }
                     },
                     cellUpdateBefore(r, c, value, isRefresh) {
+                        if (_systemUpdate) return;   // bypass khi system update
                         const colDef = COLS[c];
                         if (! colDef) return;
                         if (colDef.readonly || COLUMN_PERMS[colDef.key] === 'view') {
                             return false;
                         }
                     },
-                    // Sau khi cell update — nếu là readonly thì revert
                     cellUpdated(r, c, oldValue, newValue, isRefresh) {
-                        if (isRefresh) return;
+                        if (_systemUpdate || isRefresh) return;
                         const colDef = COLS[c];
                         if (! colDef) return;
-                        if (colDef.readonly || COLUMN_PERMS[colDef.key] === 'view') {
-                            // Revert by clearing the cell
+
+                        if (COLUMN_PERMS[colDef.key] === 'view') {
                             setTimeout(() => {
-                                try {
-                                    luckysheet.setCellValue(r, c, oldValue?.v ?? oldValue?.m ?? '');
-                                } catch (e) { console.warn('Revert readonly cell failed:', e); }
+                                try { luckysheet.setCellValue(r, c, oldValue?.v ?? oldValue?.m ?? ''); }
+                                catch (e) {}
                             }, 50);
                         }
+                        if (colDef.key === 'id') {
+                            setTimeout(scanDuplicateIds, 100);
+                        }
+                    },
+
+                    // Multiple paste hook names (Luckysheet version khác nhau)
+                    pasted(range) { setTimeout(scanDuplicateIds, 150); },
+                    pasteBefore(html, plain, range) {
+                        setTimeout(scanDuplicateIds, 200);
+                        return undefined;  // không chặn paste
                     },
                 }
             });
@@ -1086,10 +1160,40 @@
                 if (dateFilterState.active) {
                     clearDateFilter(false);
                 }
-                const importRows = readSheetRows(0).filter(r => r.client);
-                const exportRows = readSheetRows(1).filter(r => r.client);
-                if (importRows.length === 0 && exportRows.length === 0) {
+
+                // SAFETY NET: scan + clear duplicate No. ngay trước khi đọc rows
+                // Tránh trường hợp paste hook không fire kịp
+                scanDuplicateIds();
+                await new Promise(r => setTimeout(r, 250));   // chờ setCellValue settle
+                // Đọc rows kèm sheet row index (để setCellValue sau khi backend gán id mới)
+                let importMeta = readSheetRowsWithMeta(0).filter(m => m.data.client);
+                let exportMeta = readSheetRowsWithMeta(1).filter(m => m.data.client);
+                if (importMeta.length === 0 && exportMeta.length === 0) {
                     return toast('Không có dòng hợp lệ để lưu (cần ít nhất Client).', 'warning');
+                }
+
+                // Dedup id ACROSS cả 2 sheet — copy-paste hay duplicate
+                const seenIds = new Set();
+                let duplicateCount = 0;
+                const dedupe = (metas, sheetOrder) => metas.map(m => {
+                    const r = { ...m.data };
+                    if (r.id != null && r.id !== '' && seenIds.has(r.id)) {
+                        duplicateCount++;
+                        r.id = null;
+                        return { ...m, data: r, wasDupe: true, sheetOrder };
+                    }
+                    if (r.id != null && r.id !== '') seenIds.add(r.id);
+                    return { ...m, data: r, wasDupe: false, sheetOrder };
+                });
+                importMeta = dedupe(importMeta, 0);
+                exportMeta = dedupe(exportMeta, 1);
+                const allMeta = [...importMeta, ...exportMeta];   // thứ tự khớp với backend processing
+
+                const importRows = importMeta.map(m => m.data);
+                const exportRows = exportMeta.map(m => m.data);
+
+                if (duplicateCount > 0) {
+                    toast(`⚠️ Phát hiện <strong>${duplicateCount}</strong> dòng trùng ID — sẽ tạo thành dòng MỚI.`, 'warning');
                 }
 
                 // Nếu user bị ẩn cột → KHÔNG gửi snapshot (tránh ghi đè master snapshot bằng layout thiếu cột)
@@ -1114,7 +1218,48 @@
                 const json = await res.json();
                 if (json.ok) {
                     sheetVersion = json.version;
-                    toast(`Đã lưu ${json.saved} dòng (v${json.version}).`);
+
+                    // Cập nhật cell No. cho các row mới — DIRECT data modification + refresh
+                    // (setCellValue bị hook chặn dù có _systemUpdate flag, dùng cách này chắc chắn nhất)
+                    const idCol = COLS.findIndex(c => c.key === 'id');
+                    let updatedNew = 0;
+                    if (idCol >= 0 && Array.isArray(json.ids)) {
+                        const sheetsRaw = luckysheet.getluckysheetfile();
+                        allMeta.forEach((m, i) => {
+                            if ((m.data.id == null || m.data.id === '') && json.ids[i] != null) {
+                                const newId = json.ids[i];
+                                const sheet = sheetsRaw[m.sheetOrder];
+                                if (! sheet || ! sheet.data) return;
+                                // Pad rows nếu cần
+                                while (sheet.data.length <= m.sheetRow) sheet.data.push([]);
+                                if (! sheet.data[m.sheetRow]) sheet.data[m.sheetRow] = [];
+                                // Modify cell trực tiếp
+                                sheet.data[m.sheetRow][idCol] = {
+                                    v: newId,
+                                    m: String(newId),
+                                    ct: { fa: 'General', t: 'g' },
+                                    bg: '#f4f6fb', fc: '#7987a1', lo: 1, tb: 2, vt: 0
+                                };
+                                updatedNew++;
+                            }
+                        });
+
+                        // Force re-render
+                        if (updatedNew > 0) {
+                            try { luckysheet.refresh(); } catch (e) {}
+                            // Backup: switch sheet để force redraw
+                            try {
+                                const activeOrder = luckysheet.getSheet().order ?? 0;
+                                luckysheet.setSheetActive(activeOrder);
+                            } catch (e) {}
+                        }
+                    }
+
+                    if (updatedNew > 0) {
+                        toast(`Đã lưu — gán <strong>${updatedNew}</strong> No. mới.`, 'success');
+                    } else {
+                        toast(`Đã lưu ${json.saved} dòng (v${json.version}).`);
+                    }
                     updateVersionBadge(CURRENT_USER, new Date().toISOString());
                 } else {
                     toast('Lưu thất bại.', 'danger');
@@ -1129,6 +1274,13 @@
 
             // ===== Date filter dropdown =====
             setupDateFilter();
+
+            // Document-level Ctrl+V safety net — backup nếu Luckysheet hook không fire
+            document.addEventListener('keydown', (e) => {
+                if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V')) {
+                    setTimeout(scanDuplicateIds, 300);
+                }
+            });
 
             document.getElementById('btnApplyCols').addEventListener('click', async () => {
                 // Thu thập key các cột BỊ ẨN (checkbox không tick)

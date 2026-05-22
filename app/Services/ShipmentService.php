@@ -239,6 +239,7 @@ class ShipmentService
 
         $ids = DB::transaction(function () use ($rowsByDirection, $period, $editableKeys, $editor) {
             $saved = [];
+            $seenIds = [];                       // Dedup ID: lần đầu = update; lần sau (copy-paste) = create new
             $isSuper = $editor->isSuperAdmin();
             foreach ([Shipment::DIRECTION_IMPORT, Shipment::DIRECTION_EXPORT] as $direction) {
                 foreach ($rowsByDirection[$direction] ?? [] as $row) {
@@ -248,7 +249,12 @@ class ShipmentService
                     $id = $row['id'] ?? null;
                     unset($row['id']);
 
-                    // Chỉ giữ các key user được phép edit (super admin pass all)
+                    // Dedup: nếu id đã được dùng trong batch này → treat as new (tránh ghi đè)
+                    if ($id && in_array($id, $seenIds, true)) {
+                        $id = null;
+                    }
+                    if ($id) $seenIds[] = $id;
+
                     if (! $isSuper) {
                         $row = array_intersect_key($row, array_flip($editableKeys));
                     }
