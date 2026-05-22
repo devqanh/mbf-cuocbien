@@ -19,10 +19,10 @@ class ShipmentController extends Controller
         private readonly PayableReportService $payable,
     ) {}
 
-    /** /shipments → redirect sang tháng hiện tại. */
+    /** /shipments → redirect sang tháng MỚI NHẤT (max trong DB). */
     public function redirectToCurrent(): RedirectResponse
     {
-        return redirect()->route('shipments.show', ['period' => $this->shipments->currentPeriod()]);
+        return redirect()->route('shipments.show', ['period' => $this->shipments->latestPeriod()]);
     }
 
     /** Trang theo dõi 1 tháng cụ thể. */

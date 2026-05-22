@@ -8,14 +8,12 @@
     <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/css/luckysheet.css' />
     <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/assets/iconfont/iconfont.css' />
 <style>
-    /* ===== Column visibility dropdown ===== */
-    .cv-dropdown {
-        min-width: 380px;
-        padding: 0;
-        border: none;
-        border-radius: 14px;
-        box-shadow: 0 20px 50px rgba(28,39,60,.18);
-        overflow: hidden;
+    /* ===== Column visibility offcanvas (slide-in panel) ===== */
+    .cv-offcanvas {
+        width: 420px !important;
+        max-width: 100vw;
+        display: flex !important;
+        flex-direction: column !important;
     }
     .cv-header {
         background: linear-gradient(135deg, #0153a9 0%, #013f80 100%);
@@ -55,7 +53,13 @@
     }
     .cv-quick button:hover { background: var(--azia-primary-soft); color: var(--azia-primary); border-color: var(--azia-primary); }
 
-    .cv-body { max-height: 380px; overflow-y: auto; padding: 4px 0; }
+    .cv-body {
+        flex: 1 1 auto;
+        min-height: 0;      /* QUAN TRỌNG cho flex child cuộn */
+        overflow-y: auto;
+        padding: 4px 0;
+    }
+    .cv-header, .cv-search, .cv-quick, .cv-footer { flex: 0 0 auto; }
     .cv-group {
         padding: 8px 14px 4px;
         border-left: 4px solid transparent;
@@ -93,15 +97,6 @@
         cursor: pointer; transition: background .12s;
     }
     .cv-row:hover { background: #fafbfd; }
-    .cv-row.is-disabled {
-        opacity: .55;
-        cursor: not-allowed;
-        background: #fff5f5;
-        pointer-events: none;   /* QUAN TRỌNG: chặn mọi click leak vào input/switch */
-    }
-    .cv-row.is-disabled:hover { background: #fff5f5; }
-    .cv-row.is-disabled .cv-switch { background: #ffd0d0 !important; }
-    .cv-row.is-disabled .cv-switch::after { background: #f5f5f5; }
 
     /* Custom toggle switch */
     .cv-switch {
@@ -251,44 +246,46 @@
                     if (! in_array($c['key'], $userHidden)) $currentlyShown++;
                 }
             @endphp
-            <div class="dropdown">
-                <button class="btn btn-outline-secondary dropdown-toggle" type="button"
-                        data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
-                    <i class="bi bi-layout-three-columns me-1"></i> Cột hiển thị
-                    <span class="badge bg-primary ms-1" id="colsCountBadge">{{ $currentlyShown }}</span>
-                </button>
+            <button class="btn btn-outline-secondary" type="button"
+                    data-bs-toggle="offcanvas" data-bs-target="#cvOffcanvas" aria-controls="cvOffcanvas">
+                <i class="bi bi-layout-three-columns me-1"></i> Cột hiển thị
+                <span class="badge bg-primary ms-1" id="colsCountBadge">{{ $currentlyShown }}</span>
+            </button>
 
-                <div class="dropdown-menu dropdown-menu-end cv-dropdown">
-                    {{-- Header gradient --}}
-                    <div class="cv-header">
-                        <div>
-                            <div class="cv-title"><i class="bi bi-layout-three-columns me-1"></i> Tuỳ chỉnh cột hiển thị</div>
-                        </div>
+            <div class="offcanvas offcanvas-end cv-offcanvas" tabindex="-1" id="cvOffcanvas" aria-labelledby="cvOffcanvasLabel">
+                {{-- Header gradient --}}
+                <div class="cv-header">
+                    <div>
+                        <div class="cv-title" id="cvOffcanvasLabel"><i class="bi bi-layout-three-columns me-1"></i> Tuỳ chỉnh cột hiển thị</div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
                         <span class="cv-counter">
                             <span id="cvShownNum">{{ $currentlyShown }}</span> / {{ $totalToggleable }} cột
                         </span>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Đóng"></button>
                     </div>
+                </div>
 
-                    {{-- Search --}}
-                    <div class="cv-search">
-                        <input type="search" id="cvSearch" placeholder="Tìm cột theo tên...">
-                    </div>
+                {{-- Search --}}
+                <div class="cv-search">
+                    <input type="search" id="cvSearch" placeholder="Tìm cột theo tên...">
+                </div>
 
-                    {{-- Quick actions --}}
-                    <div class="cv-quick">
-                        <button type="button" onclick="toggleAllCols(true)">
-                            <i class="bi bi-eye"></i> Hiện tất cả
-                        </button>
-                        <button type="button" onclick="toggleAllCols(false)">
-                            <i class="bi bi-eye-slash"></i> Ẩn tất cả
-                        </button>
-                        <button type="button" onclick="resetUserPrefs()">
-                            <i class="bi bi-arrow-counterclockwise"></i> Mặc định
-                        </button>
-                    </div>
+                {{-- Quick actions --}}
+                <div class="cv-quick">
+                    <button type="button" onclick="toggleAllCols(true)">
+                        <i class="bi bi-eye"></i> Hiện tất cả
+                    </button>
+                    <button type="button" onclick="toggleAllCols(false)">
+                        <i class="bi bi-eye-slash"></i> Ẩn tất cả
+                    </button>
+                    <button type="button" onclick="resetUserPrefs()">
+                        <i class="bi bi-arrow-counterclockwise"></i> Mặc định
+                    </button>
+                </div>
 
-                    {{-- Body --}}
-                    <div class="cv-body" id="cvBody">
+                {{-- Body --}}
+                <div class="cv-body" id="cvBody">
                         @foreach($colsByGroup as $gid => $grpCols)
                             @php
                                 $groupCount = 0; $groupVisible = 0;
@@ -298,6 +295,8 @@
                                     if (! in_array($c['key'], $userHidden)) $groupVisible++;
                                 }
                             @endphp
+                            {{-- Nếu cả nhóm bị admin ẩn hết → bỏ qua section --}}
+                            @if($groupCount === 0) @continue @endif
                             <div class="cv-group g-{{ $gid }}" data-group-section="{{ $gid }}">
                                 <div class="cv-group-head">
                                     <div>
@@ -311,10 +310,11 @@
                                     </div>
                                 </div>
                                 @foreach($grpCols as $col)
-                                    @php
-                                        $adminHidden = ($columnPerms[$col['key']] ?? 'edit') === 'hidden';
-                                    @endphp
-                                    <label class="cv-row {{ $adminHidden ? 'is-disabled' : '' }}"
+                                    {{-- Cột admin đã ẩn → KHÔNG show trong dropdown (user không cần biết) --}}
+                                    @if(($columnPerms[$col['key']] ?? 'edit') === 'hidden')
+                                        @continue
+                                    @endif
+                                    <label class="cv-row"
                                            data-name="{{ mb_strtolower($col['title']) }}"
                                            data-group="{{ $gid }}"
                                            for="cp_{{ $col['key'] }}">
@@ -323,36 +323,32 @@
                                                data-key="{{ $col['key'] }}"
                                                data-group="{{ $gid }}"
                                                id="cp_{{ $col['key'] }}"
-                                               {{ $adminHidden ? 'disabled' : '' }}
-                                               {{ (! $adminHidden && ! in_array($col['key'], $userHidden)) ? 'checked' : '' }}>
+                                               {{ ! in_array($col['key'], $userHidden) ? 'checked' : '' }}>
                                         <span class="cv-switch"></span>
                                         <span class="cv-label">
                                             <span class="name">{{ $col['title'] }}</span>
-                                            @if($adminHidden)
-                                                <span class="cv-locked"><i class="bi bi-lock-fill"></i> Admin khoá</span>
-                                            @endif
                                         </span>
                                     </label>
                                 @endforeach
                             </div>
                         @endforeach
-                        <div class="cv-empty d-none" id="cvEmpty">
-                            <i class="bi bi-search d-block mb-2" style="font-size:24px"></i>
-                            Không tìm thấy cột nào khớp.
-                        </div>
-                    </div>
-
-                    {{-- Footer --}}
-                    <div class="cv-footer">
-                        <button type="button" class="btn btn-light flex-grow-1" onclick="closeDropdown(this)">
-                            <i class="bi bi-x-lg"></i> Đóng
-                        </button>
-                        <button type="button" class="btn btn-primary flex-grow-1" id="btnApplyCols">
-                            <i class="bi bi-check2-circle me-1"></i> Áp dụng
-                        </button>
+                    <div class="cv-empty d-none" id="cvEmpty">
+                        <i class="bi bi-search d-block mb-2" style="font-size:24px"></i>
+                        Không tìm thấy cột nào khớp.
                     </div>
                 </div>
+
+                {{-- Footer --}}
+                <div class="cv-footer">
+                    <button type="button" class="btn btn-light flex-grow-1" data-bs-dismiss="offcanvas">
+                        <i class="bi bi-x-lg"></i> Đóng
+                    </button>
+                    <button type="button" class="btn btn-primary flex-grow-1" id="btnApplyCols">
+                        <i class="bi bi-check2-circle me-1"></i> Áp dụng
+                    </button>
+                </div>
             </div>
+            {{-- end .cv-offcanvas --}}
 
             {{-- Dropdown lọc theo cột ngày --}}
             @php
@@ -372,6 +368,8 @@
                             </div>
                             <div style="font-size:11px;opacity:.85;margin-top:2px">Dành cho kế toán rà soát hạn / thanh toán</div>
                         </div>
+                        <button type="button" class="btn-close btn-close-white" aria-label="Đóng"
+                                onclick="closeDropdown(this)" style="filter:brightness(0) invert(1);opacity:.8"></button>
                     </div>
                     <div class="df-body">
                         <div class="df-field">
@@ -415,8 +413,11 @@
                         </div>
                     </div>
                     <div class="df-footer">
+                        <button type="button" class="btn btn-light" onclick="closeDropdown(this)">
+                            <i class="bi bi-x-lg"></i> Đóng
+                        </button>
                         <button type="button" class="btn btn-light flex-grow-1" id="btnClearFilter">
-                            <i class="bi bi-x-lg"></i> Xoá lọc
+                            <i class="bi bi-eraser"></i> Xoá lọc
                         </button>
                         <button type="button" class="btn btn-success flex-grow-1" id="btnApplyFilter">
                             <i class="bi bi-check2-circle me-1"></i> Áp dụng

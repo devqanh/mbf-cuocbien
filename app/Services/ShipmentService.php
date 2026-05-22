@@ -33,16 +33,15 @@ class ShipmentService
 
     /**
      * Danh sách tháng có trong hệ thống (đã từng có dữ liệu hoặc snapshot).
-     * Sắp xếp tăng dần (DEC-25 → JAN-26 → ...).
+     * Sắp xếp GIẢM DẦN — tháng mới nhất ở đầu mảng (hiển thị bên TRÁI trong UI tab).
      *
-     * @return array<int,string>  vd: ['2025-12','2026-01',...]
+     * @return array<int,string>  vd: ['2026-06','2026-05','2025-12']
      */
     public function listPeriods(): array
     {
         $fromRows = Shipment::query()
             ->select('period')
             ->distinct()
-            ->orderBy('period')
             ->pluck('period');
 
         $fromSnapshots = DB::table('sheet_snapshots')
@@ -56,9 +55,16 @@ class ShipmentService
             ->merge($fromSnapshots)
             ->push($current)                      // luôn đảm bảo tháng hiện tại có mặt
             ->unique()
-            ->sort()
+            ->sortDesc()                          // mới nhất → cũ nhất
             ->values()
             ->all();
+    }
+
+    /** Tháng mới nhất trong hệ thống (max trong DB hoặc current nếu trống). */
+    public function latestPeriod(): string
+    {
+        $periods = $this->listPeriods();
+        return $periods[0] ?? $this->currentPeriod();
     }
 
     /**
