@@ -1349,10 +1349,40 @@
                     ?.filter(cd => cd.v?.bg)
                     ?.slice(0, 10)
                     ?.map(cd => ({ r: cd.r, c: cd.c, bg: cd.v.bg })),
+                data_with_bg: (() => {
+                    const sheet = luckysheet.getAllSheets()[0];
+                    if (! sheet?.data) return [];
+                    const out = [];
+                    for (let r = 1; r < sheet.data.length && out.length < 10; r++) {
+                        const row = sheet.data[r];
+                        if (! row) continue;
+                        for (let c = 0; c < row.length; c++) {
+                            if (row[c]?.bg && row[c].bg !== '#f4f6fb') {
+                                out.push({ r, c, bg: row[c].bg });
+                            }
+                        }
+                    }
+                    return out;
+                })(),
             };
             console.log('=== BG DEBUG ===');
             console.log(JSON.stringify(out, null, 2));
             return out;
+        };
+
+        // Debug — fetch raw /data từ server để xem snapshot backend đang trả gì
+        window._debugServerSnapshot = async function() {
+            const res = await fetch(ROUTES.data, { headers: { 'Accept': 'application/json' } });
+            const j = await res.json();
+            console.log('=== SERVER SNAPSHOT ===');
+            console.log('snapshot:', j.snapshot);
+            console.log('snapshot.formatting?', j.snapshot?.formatting);
+            if (j.snapshot?.formatting) {
+                console.log('import entries:', j.snapshot.formatting.import?.length || 0);
+                console.log('first import entry with bg:',
+                    j.snapshot.formatting.import?.find(e => e.fmt?.bg));
+            }
+            return j.snapshot;
         };
 
         function applyFormattingOverlay(sheetOrder, overlay) {
@@ -1978,10 +2008,14 @@
                     };
                     const savedFmtStr = JSON.stringify(snapshot?.formatting || { import: [], export: [] });
                     formattingChanged = JSON.stringify(currentFmt) !== savedFmtStr;
+                    console.log('[save] currentFmt entries:', currentFmt.import.length + currentFmt.export.length,
+                                '| formattingChanged:', formattingChanged,
+                                '| HAS_RESTRICTIONS:', HAS_RESTRICTIONS);
                 }
 
                 // Không có row dirty + không có format thay đổi → khỏi gọi API
                 if (dirtyMeta.length === 0 && ! formattingChanged) {
+                    console.log('[save] EARLY RETURN — no changes');
                     return toast('Không có thay đổi cần lưu.', 'info');
                 }
 
@@ -1995,6 +2029,7 @@
                 // Lưu CHỈ formatting overlay (bg, fc, font, etc.) — không lưu row data
                 // (DB là source of truth). User restricted KHÔNG lưu formatting (tránh đè).
                 const formattingPayload = HAS_RESTRICTIONS ? null : { formatting: currentFmt };
+                console.log('[save] sending snapshot:', formattingPayload ? JSON.stringify(formattingPayload).slice(0, 200) + '...' : 'NULL');
 
                 const res = await fetch(ROUTES.bulk, {
                     method: 'POST',
@@ -2012,6 +2047,7 @@
                 });
 
                 const json = await res.json();
+                console.log('[save] response:', { ok: json.ok, version: json.version, saved: json.saved, snapshot_conflict: json.snapshot_conflict });
                 if (! json.ok) {
                     toast(json.message || 'Lưu thất bại.', 'danger');
                     return;
