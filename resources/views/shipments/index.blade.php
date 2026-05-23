@@ -1256,7 +1256,7 @@
                 const sheet = luckysheet.getAllSheets()[sheetOrder];
                 if (! sheet) return [];
 
-                // Build map sheetRow → id (đọc từ data + celldata)
+                // Build map sheetRow → id (đọc từ CẢ data + celldata)
                 const rowToId = new Map();
                 if (Array.isArray(sheet.data)) {
                     for (let r = 1; r < sheet.data.length; r++) {
@@ -1269,23 +1269,22 @@
                     sheet.celldata.forEach(cd => {
                         if (cd.c === idColIdx && cd.v) {
                             const v = cd.v.v ?? cd.v.m;
-                            if (v != null && v !== '') rowToId.set(cd.r, parseInt(v));
+                            if (v != null && v !== '' && ! rowToId.has(cd.r)) {
+                                rowToId.set(cd.r, parseInt(v));
+                            }
                         }
                     });
                 }
 
-                const result = [];
-                const seen = new Set();   // dedup (r,c)
+                // Merge cells từ CẢ celldata + data — KHÔNG dedup (bg có thể nằm ở
+                // 1 nguồn mà không nguồn còn lại → cần merge để không miss).
+                const cellMap = new Map();   // "r:c" → {id, col, fmt}
+
                 const processCell = (r, c, cellV) => {
                     if (! cellV || r === 0) return;
-                    const key = `${r}:${c}`;
-                    if (seen.has(key)) return;
-                    seen.add(key);
-
                     const col = COLS[c];
-                    if (! col || col.readonly) return;   // skip readonly (default styling)
+                    if (! col || col.readonly) return;
                     if (COLUMN_PERMS[col.key] === 'view') return;
-
                     const id = rowToId.get(r);
                     if (! id) return;
 
@@ -1297,14 +1296,17 @@
                     });
                     if (Object.keys(fmt).length === 0) return;
 
-                    result.push({ id, col: col.key, fmt });
+                    const key = `${r}:${c}`;
+                    const existing = cellMap.get(key);
+                    if (existing) {
+                        // Merge — last source wins per key
+                        cellMap.set(key, { id, col: col.key, fmt: { ...existing.fmt, ...fmt } });
+                    } else {
+                        cellMap.set(key, { id, col: col.key, fmt });
+                    }
                 };
 
-                // Iterate celldata (primary)
-                if (Array.isArray(sheet.celldata)) {
-                    sheet.celldata.forEach(cd => processCell(cd.r, cd.c, cd.v));
-                }
-                // Also iterate data[] (some cells stored here)
+                // Process data[] FIRST (raw store), then celldata (sparse — usually has more recent updates)
                 if (Array.isArray(sheet.data)) {
                     for (let r = 1; r < sheet.data.length; r++) {
                         const row = sheet.data[r];
@@ -1314,9 +1316,31 @@
                         }
                     }
                 }
-                return result;
+                if (Array.isArray(sheet.celldata)) {
+                    sheet.celldata.forEach(cd => processCell(cd.r, cd.c, cd.v));
+                }
+
+                return Array.from(cellMap.values());
             } catch (e) { console.warn('extractFormatting failed:', e); return []; }
         }
+
+        // Debug tool — user gõ vào console để check bg flow đang đứng ở bước nào
+        window._debugBg = function() {
+            const out = {
+                snapshot_has_formatting: !! snapshot?.formatting,
+                snapshot_formatting: snapshot?.formatting,
+                extract_import: extractFormatting(0),
+                extract_export: extractFormatting(1),
+                sheet_count: luckysheet.getAllSheets().length,
+                celldata_with_bg: luckysheet.getAllSheets()[0]?.celldata
+                    ?.filter(cd => cd.v?.bg)
+                    ?.slice(0, 10)
+                    ?.map(cd => ({ r: cd.r, c: cd.c, bg: cd.v.bg })),
+            };
+            console.log('=== BG DEBUG ===');
+            console.log(JSON.stringify(out, null, 2));
+            return out;
+        };
 
         function applyFormattingOverlay(sheetOrder, overlay) {
             if (! Array.isArray(overlay) || overlay.length === 0) return;
@@ -1605,6 +1629,16 @@
                 hook: {
                     workbookCreateAfter() {
                         applySupplierDropdown();
+
+                        // Belt-and-suspenders: apply formatting overlay sau khi Luckysheet
+                        // init xong. buildCellData đã bake-in nhưng phòng trường hợp
+                        // Luckysheet override hoặc init không ăn → apply lại qua API.
+                        if (snapshot?.formatting) {
+                            setTimeout(() => {
+                                applyFormattingOverlay(0, snapshot.formatting.import || []);
+                                applyFormattingOverlay(1, snapshot.formatting.export || []);
+                            }, 100);
+                        }
                     },
                     // Helper kiểm cột readonly bằng index c
                     // (COLS đã filter theo perms, nên COLS[c] tương ứng đúng cột hiển thị tại index c)
