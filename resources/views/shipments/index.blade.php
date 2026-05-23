@@ -1733,7 +1733,7 @@
                     pivotTable:         false,   // không phù hợp
                     function:           false,   // hiếm dùng, dễ gây nhầm cell
                     frozenMode:         true,
-                    sortAndFilter:      true,
+                    sortAndFilter:      false,   // KHÔNG persist + di chuyển cells phá row id mapping
                     conditionalFormat:  false,   // KHÔNG persist qua save
                     dataVerification:   true,    // dùng cho dropdown NCC
                     splitColumn:        false,   // hiếm dùng
