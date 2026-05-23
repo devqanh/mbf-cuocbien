@@ -6,7 +6,7 @@
     <title>419 · Phiên đã hết hạn · {{ config('app.name') }}</title>
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
-    <link rel="stylesheet" href="{{ asset('css/error.css') }}">
+    <link rel="stylesheet" href="@assetVer('css/error.css')">
 </head>
 <body>
 

@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -25,6 +26,18 @@ class AppServiceProvider extends ServiceProvider
 
         // Đăng ký route /broadcasting/auth cho private channel auth (Laravel 11/12 cần khai báo thủ công)
         Broadcast::routes(['middleware' => ['web', 'auth']]);
+
+        // Blade directive @assetVer('css/app.css') — emit asset URL với cache-busting version
+        // Dùng filemtime nếu file tồn tại (cache hợp lý — bust khi file đổi),
+        // fallback time() (always bust) nếu file chưa có (vd vào trang trước khi build CSS).
+        Blade::directive('assetVer', function ($expression) {
+            return "<?php
+                \$__path = {$expression};
+                \$__full = public_path(\$__path);
+                \$__ver  = file_exists(\$__full) ? filemtime(\$__full) : time();
+                echo asset(\$__path) . '?v=' . \$__ver;
+            ?>";
+        });
 
         // 4.6 — Metrics/telemetry: log slow query để dễ debug perf.
         // Chỉ bật ngoài production để tránh log spam; production bật riêng qua env nếu cần.

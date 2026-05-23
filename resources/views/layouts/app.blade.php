@@ -10,8 +10,10 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     {{-- Bootstrap Icons --}}
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+    {{-- Select2 4.1 --}}
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css">
 
-    <link rel="stylesheet" href="{{ asset('css/app.css') }}">
+    <link rel="stylesheet" href="@assetVer('css/app.css')">
     @stack('styles')
 </head>
 <body>
@@ -247,12 +249,12 @@
                         @can('tasks.assign_others')
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">Giao cho</label>
-                            <select name="assignees[]" class="form-select" multiple id="quickAssignees" size="3">
+                            <select name="assignees[]" class="form-select js-select2-users" multiple id="quickAssignees"
+                                    data-placeholder="Chọn người được giao…">
                                 @foreach(\App\Models\User::orderBy('name')->get(['id','name']) as $u)
                                     <option value="{{ $u->id }}" {{ $u->id === auth()->id() ? 'selected' : '' }}>{{ $u->name }}</option>
                                 @endforeach
                             </select>
-                            <small class="text-muted">Giữ Ctrl/Cmd để chọn nhiều</small>
                         </div>
                         @endcan
                     </div>
@@ -274,7 +276,9 @@
 </div>
 @endcan
 
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script src="https://cdn.jsdelivr.net/npm/pusher-js@8.4.0/dist/web/pusher.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/laravel-echo@1.16.1/dist/echo.iife.js"></script>
@@ -338,6 +342,32 @@
         });
         return res.isConfirmed;
     };
+
+    // ---- Select2 init cho mọi field "Giao cho" / multi-user picker ----
+    // Element cần class `js-select2-users` để được auto-init.
+    window.initUserSelect2 = function ($el) {
+        const $jq = $($el);
+        if (! $jq.length || $jq.data('select2-initialized')) return;
+        const $modal = $jq.closest('.modal');
+        $jq.select2({
+            placeholder: $jq.data('placeholder') || 'Chọn người…',
+            width: '100%',
+            allowClear: true,
+            closeOnSelect: false,
+            dropdownParent: $modal.length ? $modal : $('body'),
+            language: {
+                noResults: () => 'Không tìm thấy',
+                searching: () => 'Đang tìm…',
+                removeAllItems: () => 'Bỏ chọn tất cả',
+            },
+        });
+        $jq.data('select2-initialized', true);
+    };
+
+    $(function () {
+        // Auto init mọi select đã có class này khi load page
+        $('.js-select2-users').each(function () { window.initUserSelect2(this); });
+    });
 
     // ---- Realtime Echo init (1 lần cho cả app) ----
     @auth
@@ -448,25 +478,90 @@
             } catch (e) {}
         },
 
+        // ---- App Toast (slide-in từ phải, có progress bar, click để mở chi tiết) ----
+        _getStack() {
+            let $c = document.getElementById('app-toast-stack');
+            if (!$c) {
+                $c = document.createElement('div');
+                $c.id = 'app-toast-stack';
+                $c.className = 'app-toast-stack';
+                document.body.appendChild($c);
+            }
+            return $c;
+        },
+
+        _titleFor(type) {
+            // Tiêu đề ngắn theo loại notification — pro hơn "Thông báo mới" chung chung
+            switch (type) {
+                case 'task.assigned':  return '<i class="bi bi-person-fill-add me-1"></i> Bạn vừa được giao việc';
+                case 'task.reminder':  return '<i class="bi bi-alarm-fill me-1"></i> Nhắc hẹn công việc';
+                case 'task.mentioned': return '<i class="bi bi-at me-1"></i> Bạn được nhắc đến';
+                case 'task.commented': return '<i class="bi bi-chat-square-text-fill me-1"></i> Bình luận mới';
+                case 'task.updated':   return '<i class="bi bi-pencil-square me-1"></i> Cập nhật công việc';
+                default:               return '<i class="bi bi-bell-fill me-1"></i> Thông báo mới';
+            }
+        },
+
         toast(notif) {
-            // In-app toast khi nhận event realtime mới
             const d = notif || {};
-            const colorMap = { primary:'#0153a9', info:'#00b8d4', warning:'#ffb822', danger:'#ff5b5b', success:'#24d39f' };
-            const color = colorMap[d.color] || '#0153a9';
-            const $c = document.querySelector('.toast-container');
-            if (!$c) return;
+            const palette = {
+                primary: { fg: '#0153a9', soft: 'rgba(1,83,169,.12)' },
+                info:    { fg: '#00b8d4', soft: 'rgba(0,184,212,.14)' },
+                warning: { fg: '#d28b00', soft: 'rgba(255,184,34,.18)' },
+                danger:  { fg: '#ff5b5b', soft: 'rgba(255,91,91,.14)' },
+                success: { fg: '#1aa37e', soft: 'rgba(36,211,159,.16)' },
+            };
+            const color = palette[d.color] ? d.color : 'primary';
+            const c = palette[color];
+            const $stack = this._getStack();
+
             const $t = document.createElement('div');
-            $t.className = 'toast align-items-center border-0 show';
-            $t.style.cssText = `background:${color};color:#fff;`;
-            $t.innerHTML = `<div class="d-flex">
-                <div class="toast-body">
-                    <i class="bi bi-${d.icon || 'bell'} me-2"></i>
-                    <a href="${d.url || '#'}" class="text-white text-decoration-none">${(d.message || 'Thông báo mới').replace(/</g,'&lt;')}</a>
+            $t.className = `app-toast color-${color}`;
+            $t.innerHTML = `
+                <button class="app-toast-close" type="button" aria-label="Đóng">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+                <div class="app-toast-head">
+                    <span class="app-toast-icon" style="background:${c.soft};color:${c.fg};">
+                        <i class="bi bi-${d.icon || 'bell-fill'}"></i>
+                    </span>
+                    <div class="app-toast-meta">
+                        <div class="app-toast-title">${this._titleFor(d.type)}</div>
+                        <div class="app-toast-time">vừa xong</div>
+                    </div>
                 </div>
-                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-            </div>`;
-            $c.appendChild($t);
-            setTimeout(() => bootstrap.Toast.getOrCreateInstance($t).hide(), 6000);
+                <div class="app-toast-body">${(d.message || '').replace(/</g, '&lt;')}</div>
+                ${d.url ? `<a class="app-toast-action" href="${d.url}">Xem chi tiết <i class="bi bi-arrow-right"></i></a>` : ''}
+                <div class="app-toast-progress"><span></span></div>
+            `;
+
+            // Cho phép click toàn bộ toast để navigate
+            if (d.url) {
+                $t.addEventListener('click', (e) => {
+                    if (e.target.closest('.app-toast-close')) return;
+                    window.location.href = d.url;
+                });
+            }
+
+            // Đóng
+            const dismiss = () => {
+                if ($t.dataset.dismissing) return;
+                $t.dataset.dismissing = '1';
+                $t.classList.add('is-leaving');
+                $t.classList.remove('is-visible');
+                setTimeout(() => $t.remove(), 350);
+            };
+            $t.querySelector('.app-toast-close').addEventListener('click', (e) => {
+                e.stopPropagation();
+                dismiss();
+            });
+
+            $stack.appendChild($t);
+            // Force reflow → kích hoạt CSS transition
+            requestAnimationFrame(() => requestAnimationFrame(() => $t.classList.add('is-visible')));
+
+            // Auto-dismiss khớp animation 6s
+            setTimeout(dismiss, 6000);
         },
     };
     window.Bell = Bell;
