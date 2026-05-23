@@ -1643,8 +1643,35 @@
             }
         }
 
-        function renderSheet() {
+        // Build columnlen cho 1 sheet — apply user-customized widths từ snapshot
+        // (anchored theo col KEY, không theo index → portable giữa users với COLS khác nhau).
+        function buildColumnlen(sheetDir) {
             const columnlen = COLS.reduce((acc, c, i) => (acc[i] = c.width, acc), {});
+            const overlay = snapshot?.columnlen?.[sheetDir];
+            if (overlay && typeof overlay === 'object') {
+                COLS.forEach((c, i) => {
+                    if (overlay[c.key] != null) columnlen[i] = overlay[c.key];
+                });
+            }
+            return columnlen;
+        }
+
+        // Extract column widths hiện tại của sheet — keyed theo col KEY
+        function extractColumnWidths(sheetOrder) {
+            const sheet = luckysheet.getAllSheets()[sheetOrder];
+            if (! sheet?.config?.columnlen) return {};
+            const cl = sheet.config.columnlen;
+            const result = {};
+            Object.entries(cl).forEach(([idx, width]) => {
+                const col = COLS[parseInt(idx)];
+                if (col && col.key && width != null) result[col.key] = width;
+            });
+            return result;
+        }
+
+        function renderSheet() {
+            const columnlenImport = buildColumnlen('import');
+            const columnlenExport = buildColumnlen('export');
 
             // Border đen mảnh cho toàn bộ cell — style 1 = thin solid
             const makeBorderInfo = (totalRows) => ([{
@@ -1661,7 +1688,7 @@
             const importSheet = {
                 name: 'HÀNG NHẬP', order: 0, color: '#24d39f',
                 config: {
-                    columnlen, rowlen: { 0: 48 }, customHeight: { 0: 1 },
+                    columnlen: columnlenImport, rowlen: { 0: 48 }, customHeight: { 0: 1 },
                     borderInfo: makeBorderInfo(importRowCount),
                 },
                 celldata: buildCellData(rowsByDir.import || [], 0),
@@ -1673,7 +1700,7 @@
             const exportSheet = {
                 name: 'HÀNG XUẤT', order: 1, color: '#0153a9',
                 config: {
-                    columnlen, rowlen: { 0: 48 }, customHeight: { 0: 1 },
+                    columnlen: columnlenExport, rowlen: { 0: 48 }, customHeight: { 0: 1 },
                     borderInfo: makeBorderInfo(exportRowCount),
                 },
                 celldata: buildCellData(rowsByDir.export || [], 1),
@@ -2085,10 +2112,11 @@
                 const importRows = dirtyMeta.filter(m => m.sheetOrder === 0).map(m => m.data);
                 const exportRows = dirtyMeta.filter(m => m.sheetOrder === 1).map(m => m.data);
 
-                // Detect formatting changes (user tô bg, đổi font, ...) bằng deep compare
-                // với formatting đã lưu (snapshot.formatting trong cache).
+                // Detect formatting + column width changes
                 let formattingChanged = false;
+                let columnlenChanged  = false;
                 let currentFmt = null;
+                let currentColumnlen = null;
                 if (CAN_SAVE_FORMATTING) {
                     currentFmt = {
                         import: extractFormatting(0),
@@ -2096,15 +2124,21 @@
                     };
                     const savedFmtStr = JSON.stringify(snapshot?.formatting || { import: [], export: [] });
                     formattingChanged = JSON.stringify(currentFmt) !== savedFmtStr;
-                    console.log('[save] currentFmt entries:', currentFmt.import.length + currentFmt.export.length,
-                                '| formattingChanged:', formattingChanged,
-                                '| CAN_SAVE_FORMATTING:', CAN_SAVE_FORMATTING,
-                                '| ADMIN_RESTRICTED:', ADMIN_RESTRICTED,
-                                '| USER_HIDDEN:', USER_HIDDEN.size);
+
+                    currentColumnlen = {
+                        import: extractColumnWidths(0),
+                        export: extractColumnWidths(1),
+                    };
+                    const savedColumnlenStr = JSON.stringify(snapshot?.columnlen || { import: {}, export: {} });
+                    columnlenChanged = JSON.stringify(currentColumnlen) !== savedColumnlenStr;
+
+                    console.log('[save] formattingChanged:', formattingChanged,
+                                '| columnlenChanged:', columnlenChanged,
+                                '| CAN_SAVE:', CAN_SAVE_FORMATTING);
                 }
 
-                // Không có row dirty + không có format thay đổi → khỏi gọi API
-                if (dirtyMeta.length === 0 && ! formattingChanged) {
+                // Không có row dirty + không có format/columnlen thay đổi → khỏi gọi API
+                if (dirtyMeta.length === 0 && ! formattingChanged && ! columnlenChanged) {
                     console.log('[save] EARLY RETURN — no changes');
                     return toast('Không có thay đổi cần lưu.', 'info');
                 }
@@ -2116,13 +2150,13 @@
                     catch (e) { return ''; }
                 })();
 
-                // Lưu CHỈ formatting overlay (bg, fc, font, etc.) — không lưu row data
-                // (DB là source of truth). User admin-restricted KHÔNG lưu formatting.
-                // Gửi formatting_scope = visible col keys → backend merge với existing,
-                // không mất format của cols user không thấy (do USER_HIDDEN cá nhân).
+                // Snapshot payload: formatting overlay + column widths.
+                // Anchored theo col KEY → portable giữa users với COLS khác nhau.
+                // Backend merge theo formatting_scope (visible cols), giữ values cho hidden cols.
                 const formattingPayload = CAN_SAVE_FORMATTING ? {
                     formatting: currentFmt,
                     formatting_scope: COLS.map(c => c.key),
+                    columnlen: currentColumnlen,
                 } : null;
                 console.log('[save] sending snapshot:', formattingPayload ? JSON.stringify(formattingPayload).slice(0, 200) + '...' : 'NULL');
 

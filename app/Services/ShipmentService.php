@@ -405,36 +405,47 @@ class ShipmentService
     private function mergeFormattingWithExisting(string $key, array $snapshot): array
     {
         $scope = $snapshot['formatting_scope'] ?? null;
-        // Always strip formatting_scope before storing (it's only metadata for merge)
         unset($snapshot['formatting_scope']);
 
         // No scope = no merge needed (legacy clients hoặc super-admin full scope)
         if (! is_array($scope) || empty($scope)) {
-            \Log::info('mergeFormattingWithExisting: no scope → store as-is', [
-                'key' => $key,
-                'has_formatting' => isset($snapshot['formatting']),
-                'import_count' => count($snapshot['formatting']['import'] ?? []),
-            ]);
             return $snapshot;
         }
 
         $existing = $this->snapshots->get($key);
         $existingFmt = null;
-        if ($existing && is_array($existing->payload ?? null) && isset($existing->payload['formatting'])
-            && is_array($existing->payload['formatting'])) {
-            $existingFmt = $existing->payload['formatting'];
+        $existingColumnlen = null;
+        if ($existing && is_array($existing->payload ?? null)) {
+            if (isset($existing->payload['formatting']) && is_array($existing->payload['formatting'])) {
+                $existingFmt = $existing->payload['formatting'];
+            }
+            if (isset($existing->payload['columnlen']) && is_array($existing->payload['columnlen'])) {
+                $existingColumnlen = $existing->payload['columnlen'];
+            }
         }
 
-        \Log::info('mergeFormattingWithExisting: with scope', [
-            'key' => $key,
-            'scope_size' => count($scope),
-            'existing_fmt_is_array' => is_array($existingFmt),
-            'existing_import_count' => is_array($existingFmt) ? count($existingFmt['import'] ?? []) : null,
-            'new_import_count' => count($snapshot['formatting']['import'] ?? []),
-        ]);
+        $scopeSet = array_flip($scope);
+
+        // Merge columnlen — keep widths cho cols OUTSIDE scope, accept new cho IN scope
+        if (isset($snapshot['columnlen']) && is_array($snapshot['columnlen']) && is_array($existingColumnlen)) {
+            $mergedCl = ['import' => [], 'export' => []];
+            foreach (['import', 'export'] as $dir) {
+                $merged = [];
+                // Keep existing widths for hidden cols
+                foreach (($existingColumnlen[$dir] ?? []) as $colKey => $width) {
+                    if (! isset($scopeSet[$colKey])) $merged[$colKey] = $width;
+                }
+                // Accept user's new widths for visible cols
+                foreach (($snapshot['columnlen'][$dir] ?? []) as $colKey => $width) {
+                    if (isset($scopeSet[$colKey])) $merged[$colKey] = $width;
+                }
+                $mergedCl[$dir] = $merged;
+            }
+            $snapshot['columnlen'] = $mergedCl;
+        }
 
         if (! is_array($existingFmt)) {
-            // No existing formatting → use new as-is (don't filter by scope on first save)
+            // No existing formatting → store as-is (formatting + columnlen)
             return $snapshot;
         }
 

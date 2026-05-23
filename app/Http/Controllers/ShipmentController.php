@@ -164,6 +164,9 @@ class ShipmentController extends Controller
             'snapshot.formatting.import'    => ['nullable', 'array'],
             'snapshot.formatting.export'    => ['nullable', 'array'],
             'snapshot.formatting_scope'     => ['nullable', 'array'],
+            'snapshot.columnlen'            => ['nullable', 'array'],
+            'snapshot.columnlen.import'    => ['nullable', 'array'],
+            'snapshot.columnlen.export'    => ['nullable', 'array'],
             'client_version'                => ['nullable', 'integer'],
         ], [
             'rows.import.max' => 'Quá nhiều dòng HÀNG NHẬP (tối đa 5000).',
