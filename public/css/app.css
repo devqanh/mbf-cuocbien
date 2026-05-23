@@ -440,42 +440,54 @@ a { text-decoration: none; }
     color: var(--azia-primary) !important;
     border: none !important;
     border-radius: 999px !important;          /* pill bo tròn full */
-    padding: 3px 4px 3px 12px !important;
+    padding: 4px 14px 4px 32px !important;    /* left=32px chừa chỗ cho X absolute */
     font-weight: 600;
     font-size: 12.5px;
     margin: 4px 4px 0 0 !important;
-    display: inline-flex !important;
-    align-items: center !important;
-    gap: 2px;
     line-height: 1.4;
+    position: relative !important;
+    display: inline-block !important;
 }
-/* Đảo order: tên trước, X sau (mặc định Select2 đặt X bên trái) */
 .select2-container--default .select2-selection--multiple .select2-selection__choice__display {
-    order: 1;
     padding: 0 !important;
+    display: inline-block !important;
+    vertical-align: middle;
 }
+/* Nút X — giữ position absolute mặc định nhưng style lại đẹp + center dọc */
 .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
-    order: 2;
+    position: absolute !important;
+    left: 5px !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
     width: 20px !important;
     height: 20px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    border-right: none !important;             /* override Select2 default border-right */
     border-radius: 50% !important;
-    display: inline-flex !important;
-    align-items: center !important;
-    justify-content: center !important;
+    background: transparent !important;
+    color: var(--azia-primary) !important;
     font-size: 14px !important;
     font-weight: 700 !important;
     line-height: 1 !important;
-    margin: 0 0 0 6px !important;
-    padding: 0 !important;
-    color: var(--azia-primary) !important;
-    background: transparent !important;
-    border: none !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
     transition: all .12s !important;
-    cursor: pointer;
 }
-.select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
-    background: rgba(1, 83, 169, .2) !important;
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover,
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove:focus {
+    background: rgba(1, 83, 169, .18) !important;
     color: var(--azia-primary) !important;
+    outline: none !important;
+}
+/* Inner span chứa dấu × — căn giữa */
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove > span,
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove::before {
+    display: inline-block;
+    line-height: 1;
 }
 .select2-container .select2-search--inline .select2-search__field {
     margin-top: 6px;
