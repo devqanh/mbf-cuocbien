@@ -26,6 +26,11 @@ class TaskUpdatedNotification extends Notification
         return ['database', 'broadcast'];
     }
 
+    public function broadcastType(): string
+    {
+        return 'task.updated';
+    }
+
     public function toArray(object $notifiable): array
     {
         // Tóm tắt thay đổi cho thân thiện

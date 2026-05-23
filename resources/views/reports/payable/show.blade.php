@@ -528,7 +528,8 @@
                         @can('tasks.assign_others')
                         <div class="mt-3">
                             <label class="form-label fw-semibold">Giao cho</label>
-                            <select name="assignees[]" class="form-select" multiple size="3">
+                            <select name="assignees[]" class="form-select js-select2-users" multiple
+                                    data-placeholder="Chọn người được giao…">
                                 @foreach(\App\Models\User::orderBy('name')->get(['id','name']) as $u)
                                     <option value="{{ $u->id }}" {{ $u->id === auth()->id() ? 'selected' : '' }}>{{ $u->name }}</option>
                                 @endforeach

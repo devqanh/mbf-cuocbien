@@ -242,6 +242,51 @@
         display: inline-flex; align-items: center; justify-content: center;
         font-size: 11px; font-weight: 700;
     }
+
+    /* ========== Inline title edit (header) ========== */
+    .title-editable {
+        display: inline-flex; align-items: center; gap: 8px;
+        cursor: pointer;
+        position: relative;
+        padding: 2px 8px;
+        border-radius: 8px;
+        transition: background .12s;
+    }
+    .title-editable:hover {
+        background: rgba(255,255,255,.12);
+    }
+    .title-editable .edit-icon {
+        opacity: 0;
+        font-size: 16px;
+        transition: opacity .12s;
+        color: rgba(255,255,255,.7);
+    }
+    .title-editable:hover .edit-icon { opacity: 1; }
+
+    /* Inline title input mode */
+    .title-input {
+        background: rgba(255,255,255,.18);
+        border: 1px solid rgba(255,255,255,.3);
+        color: #fff;
+        font-size: 22px; font-weight: 700;
+        padding: 4px 10px;
+        border-radius: 8px;
+        outline: none;
+        width: 100%;
+        max-width: 600px;
+    }
+    .title-input:focus {
+        background: rgba(255,255,255,.25);
+        border-color: rgba(255,255,255,.5);
+    }
+    .title-edit-actions {
+        display: inline-flex; gap: 6px; margin-left: 8px;
+    }
+    .title-edit-actions .btn-sm {
+        padding: 4px 12px;
+        font-size: 12px;
+        border-radius: 8px;
+    }
 </style>
 @endpush
 
@@ -257,7 +302,16 @@
                     <span class="mx-2 opacity-75">/</span>
                     <span class="opacity-75">#{{ $task->id }}</span>
                 </nav>
-                <h1>{{ $task->title }}</h1>
+                @if($canEdit)
+                    <h1 class="title-editable" id="taskTitleWrap" title="Click để sửa tên task"
+                        data-update-url="{{ route('tasks.update', $task) }}"
+                        data-original="{{ $task->title }}">
+                        <span id="taskTitleText">{{ $task->title }}</span>
+                        <i class="bi bi-pencil edit-icon"></i>
+                    </h1>
+                @else
+                    <h1>{{ $task->title }}</h1>
+                @endif
                 <div class="meta">
                     <span><i class="bi bi-person-circle"></i> {{ $task->creator?->name ?? '—' }}</span>
                     <span><i class="bi bi-clock-history"></i> {{ $task->created_at->format('d/m/Y H:i') }}</span>
@@ -505,19 +559,49 @@
             </div>
 
             <div class="card mb-3">
-                <div class="card-header"><i class="bi bi-people me-1" style="color: var(--azia-primary)"></i> Được giao</div>
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div>
+                        <i class="bi bi-people me-1" style="color: var(--azia-primary)"></i> Được giao
+                    </div>
+                    @if($canEdit && auth()->user()->can('tasks.assign_others'))
+                        <button type="button" class="btn btn-sm btn-outline-secondary border-0" id="btnEditAssignees" title="Sửa người được giao">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                    @endif
+                </div>
                 <div class="card-body">
-                    @if($task->assignees->count())
-                        <div class="av-list">
-                            @foreach($task->assignees as $a)
-                                <span class="d-inline-flex align-items-center gap-2 mb-2 me-2">
-                                    <span class="av">{{ strtoupper(mb_substr($a->name, 0, 1)) }}</span>
-                                    <span class="small fw-semibold">{{ $a->name }}</span>
-                                </span>
-                            @endforeach
+                    {{-- VIEW MODE --}}
+                    <div id="assigneesView">
+                        @if($task->assignees->count())
+                            <div class="av-list">
+                                @foreach($task->assignees as $a)
+                                    <span class="d-inline-flex align-items-center gap-2 mb-2 me-2">
+                                        <span class="av">{{ strtoupper(mb_substr($a->name, 0, 1)) }}</span>
+                                        <span class="small fw-semibold">{{ $a->name }}</span>
+                                    </span>
+                                @endforeach
+                            </div>
+                        @else
+                            <p class="text-muted small mb-0 fst-italic">Chưa giao cho ai.</p>
+                        @endif
+                    </div>
+
+                    {{-- EDIT MODE (ẩn ban đầu) --}}
+                    @if($canEdit && auth()->user()->can('tasks.assign_others'))
+                        <div id="assigneesEdit" class="d-none">
+                            <select id="assigneesEditSelect" multiple class="form-select"
+                                    data-placeholder="Chọn người được giao…">
+                                @foreach($users as $u)
+                                    <option value="{{ $u->id }}" {{ $task->assignees->contains('id', $u->id) ? 'selected' : '' }}>{{ $u->name }}</option>
+                                @endforeach
+                            </select>
+                            <div class="d-flex justify-content-end gap-2 mt-2">
+                                <button type="button" class="btn btn-sm btn-light" id="btnCancelAssignees">Huỷ</button>
+                                <button type="button" class="btn btn-sm btn-primary" id="btnSaveAssignees">
+                                    <i class="bi bi-check2 me-1"></i> Lưu
+                                </button>
+                            </div>
                         </div>
-                    @else
-                        <p class="text-muted small mb-0 fst-italic">Chưa giao cho ai.</p>
                     @endif
                 </div>
             </div>
@@ -536,6 +620,188 @@
 
     @push('scripts')
     <script>
+    // ---- Inline edit assignees (card "Được giao") ----
+    (function () {
+        const $btnEdit   = document.getElementById('btnEditAssignees');
+        const $view      = document.getElementById('assigneesView');
+        const $edit      = document.getElementById('assigneesEdit');
+        const $select    = document.getElementById('assigneesEditSelect');
+        const $btnCancel = document.getElementById('btnCancelAssignees');
+        const $btnSave   = document.getElementById('btnSaveAssignees');
+        if (! $btnEdit || ! $view || ! $edit || ! $select) return;
+
+        const updateUrl = @json(route('tasks.update', $task));
+        const csrf = document.querySelector('meta[name="csrf-token"]').content;
+        let select2Initialized = false;
+        let originalIds = [...$select.querySelectorAll('option[selected]')].map(o => o.value);
+
+        const enter = () => {
+            $view.classList.add('d-none');
+            $edit.classList.remove('d-none');
+            if (! select2Initialized && window.initUserSelect2) {
+                window.initUserSelect2($select);
+                select2Initialized = true;
+            }
+        };
+        const leave = () => {
+            $edit.classList.add('d-none');
+            $view.classList.remove('d-none');
+        };
+
+        const renderAssignees = (assignees) => {
+            if (! assignees.length) {
+                $view.innerHTML = '<p class="text-muted small mb-0 fst-italic">Chưa giao cho ai.</p>';
+                return;
+            }
+            $view.innerHTML = '<div class="av-list">' + assignees.map(a => `
+                <span class="d-inline-flex align-items-center gap-2 mb-2 me-2">
+                    <span class="av">${a.name.charAt(0).toUpperCase()}</span>
+                    <span class="small fw-semibold">${a.name.replace(/</g,'&lt;')}</span>
+                </span>
+            `).join('') + '</div>';
+        };
+
+        $btnEdit.addEventListener('click', enter);
+        $btnCancel.addEventListener('click', () => {
+            // Reset selection về giá trị gốc
+            $($select).val(originalIds).trigger('change');
+            leave();
+        });
+
+        $btnSave.addEventListener('click', async () => {
+            const ids = $($select).val() || [];
+            $btnSave.disabled = true;
+            $btnSave.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Đang lưu';
+
+            try {
+                const fd = new URLSearchParams();
+                ids.forEach(id => fd.append('assignees[]', id));
+                // Title bắt buộc — không gửi → validate fail. Gửi lại title hiện tại để pass.
+                fd.append('title', @json($task->title));
+
+                const res = await fetch(updateUrl, {
+                    method: 'PUT',
+                    headers: {
+                        'X-CSRF-TOKEN': csrf,
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'Accept': 'application/json',
+                    },
+                    body: fd.toString(),
+                    credentials: 'same-origin',
+                });
+                if (! res.ok) throw new Error('HTTP ' + res.status);
+
+                // Build mới list assignees từ select options
+                const newAssignees = ids.map(id => {
+                    const opt = $select.querySelector(`option[value="${id}"]`);
+                    return { id: id, name: opt ? opt.textContent : '?' };
+                });
+                renderAssignees(newAssignees);
+                originalIds = ids;
+                leave();
+            } catch (e) {
+                Swal && Swal.fire({
+                    ...APP_SWAL, icon: 'error',
+                    title: 'Lưu thất bại',
+                    html: 'Không cập nhật được người được giao. Thử lại sau.',
+                    showCancelButton: false, confirmButtonText: 'Đóng',
+                });
+            } finally {
+                $btnSave.disabled = false;
+                $btnSave.innerHTML = '<i class="bi bi-check2 me-1"></i> Lưu';
+            }
+        });
+    })();
+
+    // ---- Inline edit title (click vào title trong header → input ----
+    (function () {
+        const $wrap = document.getElementById('taskTitleWrap');
+        if (! $wrap) return;
+        const updateUrl = $wrap.dataset.updateUrl;
+        const csrf = document.querySelector('meta[name="csrf-token"]').content;
+
+        const enterEditMode = () => {
+            if ($wrap.dataset.editing === '1') return;
+            $wrap.dataset.editing = '1';
+
+            const current = document.getElementById('taskTitleText').textContent.trim();
+            $wrap.innerHTML = `
+                <input type="text" class="title-input" value="${current.replace(/"/g, '&quot;')}" maxlength="255">
+                <span class="title-edit-actions">
+                    <button type="button" class="btn btn-sm btn-light" data-action="cancel">Huỷ</button>
+                    <button type="button" class="btn btn-sm btn-primary" data-action="save">
+                        <i class="bi bi-check2 me-1"></i>Lưu
+                    </button>
+                </span>
+            `;
+            const $input = $wrap.querySelector('input');
+            $input.focus();
+            $input.setSelectionRange(0, $input.value.length);
+
+            $input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); save(); }
+                else if (e.key === 'Escape') { cancel(); }
+            });
+            $wrap.querySelector('[data-action=save]').addEventListener('click', save);
+            $wrap.querySelector('[data-action=cancel]').addEventListener('click', cancel);
+        };
+
+        const renderTitle = (title) => {
+            $wrap.dataset.editing = '0';
+            $wrap.dataset.original = title;
+            $wrap.innerHTML = `
+                <span id="taskTitleText">${title.replace(/</g,'&lt;')}</span>
+                <i class="bi bi-pencil edit-icon"></i>
+            `;
+        };
+
+        const cancel = () => renderTitle($wrap.dataset.original);
+
+        const save = async () => {
+            const $input = $wrap.querySelector('input');
+            const $saveBtn = $wrap.querySelector('[data-action=save]');
+            const newTitle = $input.value.trim();
+            if (! newTitle) { $input.focus(); return; }
+            if (newTitle === $wrap.dataset.original) { cancel(); return; }
+
+            $saveBtn.disabled = true;
+            $saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
+            $input.disabled = true;
+
+            try {
+                const res = await fetch(updateUrl, {
+                    method: 'PUT',
+                    headers: {
+                        'X-CSRF-TOKEN': csrf,
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'Accept': 'application/json',
+                    },
+                    body: 'title=' + encodeURIComponent(newTitle),
+                    credentials: 'same-origin',
+                });
+                if (! res.ok) throw new Error('HTTP ' + res.status);
+                renderTitle(newTitle);
+                // Cập nhật title tab trình duyệt
+                document.title = document.title.replace(/^[^—·]+/, 'Task ');
+            } catch (e) {
+                $input.disabled = false;
+                $saveBtn.disabled = false;
+                $saveBtn.innerHTML = '<i class="bi bi-check2 me-1"></i>Lưu';
+                Swal && Swal.fire({
+                    ...APP_SWAL, icon: 'error',
+                    title: 'Lưu thất bại', html: 'Không cập nhật được. Thử lại sau.',
+                    showCancelButton: false, confirmButtonText: 'Đóng',
+                });
+            }
+        };
+
+        $wrap.addEventListener('click', (e) => {
+            if ($wrap.dataset.editing === '1') return;
+            // Không trigger khi click vào edit-icon hoặc actions sau khi render lại
+            enterEditMode();
+        });
+    })();
+
     // ---- Form submit loading: cho mọi form trong card bình luận ----
     (function () {
         document.querySelectorAll('#commentForm, .comment-reply-form').forEach(($form) => {
@@ -750,7 +1016,8 @@
                             @can('tasks.assign_others')
                             <div class="col-md-6">
                                 <label class="form-label fw-semibold">Được giao cho</label>
-                                <select name="assignees[]" class="form-select" multiple size="4">
+                                <select name="assignees[]" class="form-select js-select2-users" multiple
+                                        data-placeholder="Chọn người được giao…">
                                     @foreach($users as $u)
                                         <option value="{{ $u->id }}" {{ $task->assignees->contains('id', $u->id) ? 'selected' : '' }}>{{ $u->name }}</option>
                                     @endforeach

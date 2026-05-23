@@ -290,9 +290,207 @@ a { text-decoration: none; }
     overflow: hidden;
 }
 
-/* ---------- Toast ---------- */
+/* ---------- Toast (legacy Bootstrap toast cho session flash) ---------- */
 .toast-container { z-index: 2000; }
 .toast-container .toast { min-width: 260px; }
+
+/* ---------- App Toast (realtime notification, hiện đại) ---------- */
+.app-toast-stack {
+    position: fixed;
+    top: 76px; right: 20px;
+    z-index: 2500;
+    display: flex; flex-direction: column;
+    gap: 10px;
+    pointer-events: none;
+    max-width: 380px;
+}
+.app-toast {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 14px 40px rgba(28, 39, 60, .18);
+    border-left: 4px solid var(--azia-primary);
+    padding: 14px 36px 14px 16px;
+    min-width: 320px;
+    max-width: 380px;
+    pointer-events: auto;
+    transform: translateX(440px);
+    opacity: 0;
+    transition: transform .35s cubic-bezier(.2, .8, .3, 1), opacity .25s ease;
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+}
+.app-toast.is-visible { transform: translateX(0); opacity: 1; }
+.app-toast.is-leaving { transform: translateX(440px); opacity: 0; }
+.app-toast:hover { box-shadow: 0 18px 48px rgba(28, 39, 60, .22); }
+
+.app-toast-close {
+    position: absolute; top: 10px; right: 10px;
+    background: none; border: none;
+    color: #aaa; font-size: 11px;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: all .12s;
+    padding: 0;
+}
+.app-toast-close:hover {
+    background: var(--azia-bg);
+    color: var(--azia-text);
+}
+
+.app-toast-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+.app-toast-icon {
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+}
+.app-toast-meta { flex: 1; min-width: 0; }
+.app-toast-title {
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--azia-text);
+    line-height: 1.25;
+}
+.app-toast-time {
+    font-size: 11px;
+    color: var(--azia-muted);
+    margin-top: 1px;
+}
+.app-toast-body {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--azia-text);
+    margin-bottom: 4px;
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.app-toast-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--azia-primary);
+    text-decoration: none;
+    margin-top: 2px;
+}
+.app-toast-action:hover { text-decoration: underline; }
+
+.app-toast-progress {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 3px;
+    background: rgba(0, 0, 0, .05);
+}
+.app-toast-progress span {
+    display: block;
+    height: 100%;
+    background: var(--azia-primary);
+    animation: appToastProgress 6s linear forwards;
+    transform-origin: left center;
+}
+@keyframes appToastProgress {
+    from { width: 100%; }
+    to { width: 0%; }
+}
+
+/* Color variants */
+.app-toast.color-primary { border-left-color: var(--azia-primary); }
+.app-toast.color-primary .app-toast-progress span { background: var(--azia-primary); }
+.app-toast.color-info { border-left-color: var(--azia-info); }
+.app-toast.color-info .app-toast-progress span { background: var(--azia-info); }
+.app-toast.color-warning { border-left-color: var(--azia-warning); }
+.app-toast.color-warning .app-toast-progress span { background: var(--azia-warning); }
+.app-toast.color-danger { border-left-color: var(--azia-danger); }
+.app-toast.color-danger .app-toast-progress span { background: var(--azia-danger); }
+.app-toast.color-success { border-left-color: var(--azia-success); }
+.app-toast.color-success .app-toast-progress span { background: var(--azia-success); }
+
+/* ---------- Select2 — theme match app ---------- */
+.select2-container--default .select2-selection--multiple,
+.select2-container--default .select2-selection--single {
+    border-color: var(--azia-border) !important;
+    border-radius: 10px !important;
+    min-height: 38px;
+    padding: 2px 6px;
+    transition: border-color .12s, box-shadow .12s;
+}
+.select2-container--default.select2-container--focus .select2-selection--multiple,
+.select2-container--default.select2-container--focus .select2-selection--single {
+    border-color: var(--azia-primary) !important;
+    box-shadow: 0 0 0 3px rgba(1, 83, 169, .12);
+}
+.select2-container--default .select2-selection--multiple .select2-selection__rendered {
+    padding: 0 4px;
+}
+.select2-container--default .select2-selection--multiple .select2-selection__choice {
+    background: var(--azia-primary-soft) !important;
+    color: var(--azia-primary) !important;
+    border: none !important;
+    border-radius: 6px !important;
+    padding: 2px 8px 2px 6px !important;
+    font-weight: 600;
+    font-size: 12.5px;
+    margin: 4px 4px 0 0 !important;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+    color: var(--azia-primary) !important;
+    background: transparent !important;
+    border: none !important;
+    font-size: 14px;
+    margin-right: 2px;
+    padding: 0;
+    line-height: 1;
+}
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
+    color: var(--azia-danger) !important;
+    background: transparent !important;
+}
+.select2-container .select2-search--inline .select2-search__field {
+    margin-top: 6px;
+    font-size: 13px;
+    padding-left: 4px;
+}
+.select2-dropdown {
+    border-color: var(--azia-border) !important;
+    border-radius: 10px !important;
+    box-shadow: 0 8px 24px rgba(28, 39, 60, .12);
+    overflow: hidden;
+}
+.select2-results__option {
+    padding: 8px 12px;
+    font-size: 13.5px;
+}
+.select2-container--default .select2-results__option--highlighted.select2-results__option--selectable {
+    background: var(--azia-primary-soft) !important;
+    color: var(--azia-primary) !important;
+}
+.select2-container--default .select2-results__option--selected {
+    background: var(--azia-bg) !important;
+    color: var(--azia-muted) !important;
+}
+.select2-container--default .select2-selection--single .select2-selection__arrow b {
+    border-color: var(--azia-muted) transparent transparent transparent;
+}
+.select2-search__field:focus { outline: none !important; }
+
+/* Make sure Select2 inside Bootstrap modal opens above backdrop */
+.select2-container--open { z-index: 1060; }
 
 /* ---------- Nav menu badge (số task pending) ---------- */
 .menu-badge {
@@ -307,10 +505,18 @@ a { text-decoration: none; }
     font-size: 10.5px;
     font-weight: 700;
     line-height: 1;
-    margin-left: 4px;
+    margin-left: 6px;
     vertical-align: middle;
+    box-shadow: 0 1px 3px rgba(255, 91, 91, .25);
+    transition: all .15s;
 }
-.nav-link.active .menu-badge { background: #fff; color: var(--azia-primary); }
+/* Khi nav đang active: dùng pill xanh nhạt — match màu underline đang active,
+   không lấn át nhưng vẫn rõ */
+.nav-link.active .menu-badge {
+    background: var(--azia-primary-soft);
+    color: var(--azia-primary);
+    box-shadow: none;
+}
 
 /* ---------- Bell notification ---------- */
 .bell-wrap { position: relative; }

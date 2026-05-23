@@ -26,6 +26,11 @@ class TaskCommentedNotification extends Notification
         return ['database', 'broadcast'];
     }
 
+    public function broadcastType(): string
+    {
+        return $this->isMention ? 'task.mentioned' : 'task.commented';
+    }
+
     public function toArray(object $notifiable): array
     {
         $preview = Str::limit($this->comment->body, 80);

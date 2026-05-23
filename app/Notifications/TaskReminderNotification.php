@@ -18,6 +18,11 @@ class TaskReminderNotification extends Notification
         return ['database', 'broadcast'];
     }
 
+    public function broadcastType(): string
+    {
+        return 'task.reminder';
+    }
+
     public function toArray(object $notifiable): array
     {
         $dueAt   = $this->task->due_at;

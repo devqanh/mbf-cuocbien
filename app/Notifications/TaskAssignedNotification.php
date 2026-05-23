@@ -22,6 +22,12 @@ class TaskAssignedNotification extends Notification
         return ['database', 'broadcast'];
     }
 
+    /** Override broadcast event "type" để client dễ branch (mặc định Laravel dùng FQCN). */
+    public function broadcastType(): string
+    {
+        return 'task.assigned';
+    }
+
     public function toArray(object $notifiable): array
     {
         return [
