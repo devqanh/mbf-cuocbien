@@ -1224,6 +1224,123 @@
             return rows;
         }
 
+        // ===== Formatting overlay — persist manual styling (bg color, font, etc.) =====
+        // Khác snapshot cũ: chỉ lưu CELL STYLE, không lưu row data.
+        // Anchored theo (id, colKey) thay vì (sheetRow, colIdx) để không bị drift
+        // khi rows reorder/insert/delete.
+        const STYLE_KEYS = ['bg', 'fc', 'bl', 'it', 'un', 'cl', 'fs', 'ff', 'ht', 'vt', 'tb'];
+
+        function extractFormatting(sheetOrder) {
+            try {
+                const idColIdx = COLS.findIndex(c => c.key === 'id');
+                if (idColIdx < 0) return [];
+                const sheet = luckysheet.getAllSheets()[sheetOrder];
+                if (! sheet) return [];
+
+                // Build map sheetRow → id (đọc từ data + celldata)
+                const rowToId = new Map();
+                if (Array.isArray(sheet.data)) {
+                    for (let r = 1; r < sheet.data.length; r++) {
+                        const cell = sheet.data[r]?.[idColIdx];
+                        const v = cell?.v ?? cell?.m;
+                        if (v != null && v !== '') rowToId.set(r, parseInt(v));
+                    }
+                }
+                if (Array.isArray(sheet.celldata)) {
+                    sheet.celldata.forEach(cd => {
+                        if (cd.c === idColIdx && cd.v) {
+                            const v = cd.v.v ?? cd.v.m;
+                            if (v != null && v !== '') rowToId.set(cd.r, parseInt(v));
+                        }
+                    });
+                }
+
+                const result = [];
+                const seen = new Set();   // dedup (r,c)
+                const processCell = (r, c, cellV) => {
+                    if (! cellV || r === 0) return;
+                    const key = `${r}:${c}`;
+                    if (seen.has(key)) return;
+                    seen.add(key);
+
+                    const col = COLS[c];
+                    if (! col || col.readonly) return;   // skip readonly (default styling)
+                    if (COLUMN_PERMS[col.key] === 'view') return;
+
+                    const id = rowToId.get(r);
+                    if (! id) return;
+
+                    const fmt = {};
+                    STYLE_KEYS.forEach(k => {
+                        if (cellV[k] !== undefined && cellV[k] !== null && cellV[k] !== '') {
+                            fmt[k] = cellV[k];
+                        }
+                    });
+                    if (Object.keys(fmt).length === 0) return;
+
+                    result.push({ id, col: col.key, fmt });
+                };
+
+                // Iterate celldata (primary)
+                if (Array.isArray(sheet.celldata)) {
+                    sheet.celldata.forEach(cd => processCell(cd.r, cd.c, cd.v));
+                }
+                // Also iterate data[] (some cells stored here)
+                if (Array.isArray(sheet.data)) {
+                    for (let r = 1; r < sheet.data.length; r++) {
+                        const row = sheet.data[r];
+                        if (! row) continue;
+                        for (let c = 0; c < row.length; c++) {
+                            processCell(r, c, row[c]);
+                        }
+                    }
+                }
+                return result;
+            } catch (e) { console.warn('extractFormatting failed:', e); return []; }
+        }
+
+        function applyFormattingOverlay(sheetOrder, overlay) {
+            if (! Array.isArray(overlay) || overlay.length === 0) return;
+            try {
+                const idColIdx = COLS.findIndex(c => c.key === 'id');
+                if (idColIdx < 0) return;
+                const sheet = luckysheet.getAllSheets()[sheetOrder];
+                if (! sheet?.data) return;
+
+                // Build id → sheetRow map (đọc cả celldata)
+                const idToRow = new Map();
+                for (let r = 1; r < sheet.data.length; r++) {
+                    const cell = sheet.data[r]?.[idColIdx];
+                    const v = cell?.v ?? cell?.m;
+                    if (v != null && v !== '') idToRow.set(parseInt(v), r);
+                }
+                if (Array.isArray(sheet.celldata)) {
+                    sheet.celldata.forEach(cd => {
+                        if (cd.c === idColIdx && cd.v) {
+                            const v = cd.v.v ?? cd.v.m;
+                            if (v != null && v !== '' && ! idToRow.has(parseInt(v))) {
+                                idToRow.set(parseInt(v), cd.r);
+                            }
+                        }
+                    });
+                }
+
+                overlay.forEach(entry => {
+                    const sheetRow = idToRow.get(parseInt(entry.id));
+                    if (sheetRow == null) return;
+                    const colIdx = COLS.findIndex(c => c.key === entry.col);
+                    if (colIdx < 0) return;
+
+                    Object.entries(entry.fmt || {}).forEach(([k, v]) => {
+                        try {
+                            markSystemCell(sheetOrder, sheetRow, colIdx, 400);
+                            luckysheet.setCellFormat(sheetRow, colIdx, k, v, { order: sheetOrder });
+                        } catch (e) {}
+                    });
+                });
+            } catch (e) { console.warn('applyFormattingOverlay failed:', e); }
+        }
+
         // So sánh 2 giá trị cell — handle null/empty/number/string normalize
         function cellValuesEqual(a, b) {
             const norm = (x) => {
@@ -1256,7 +1373,15 @@
             sheetVersion = json.version ?? 0;
             renderSheet();
             updateVersionBadge(json.editor, json.updatedAt);
-            // Reset dirty tracker + flags — data vừa fresh, không còn cell nào dirty/stale
+
+            // Apply formatting overlay sau render — persist bg/fc/font user set manually
+            if (snapshot?.formatting) {
+                setTimeout(() => {
+                    applyFormattingOverlay(0, snapshot.formatting.import || []);
+                    applyFormattingOverlay(1, snapshot.formatting.export || []);
+                }, 200);
+            }
+
             resetDirty();
             _needsResync = false;
         }
@@ -1338,7 +1463,14 @@
 
                 // Update local cache + badge
                 rowsByDir = newRowsByDir;
+                snapshot  = json.snapshot;
                 updateVersionBadge(json.editor, json.updatedAt);
+
+                // Apply formatting overlay (bg colors etc.) — không destroy sheet
+                if (json.snapshot?.formatting) {
+                    applyFormattingOverlay(0, json.snapshot.formatting.import || []);
+                    applyFormattingOverlay(1, json.snapshot.formatting.export || []);
+                }
 
                 return { updated, appended, skippedDirty };
             } catch (e) {
@@ -1713,8 +1845,21 @@
                 const importRows = dirtyMeta.filter(m => m.sheetOrder === 0).map(m => m.data);
                 const exportRows = dirtyMeta.filter(m => m.sheetOrder === 1).map(m => m.data);
 
-                // Snapshot đã bị bỏ — chỉ gửi rows. DB là single source of truth.
-                if (dirtyMeta.length === 0) {
+                // Detect formatting changes (user tô bg, đổi font, ...) bằng deep compare
+                // với formatting đã lưu (snapshot.formatting trong cache).
+                let formattingChanged = false;
+                let currentFmt = null;
+                if (! HAS_RESTRICTIONS) {
+                    currentFmt = {
+                        import: extractFormatting(0),
+                        export: extractFormatting(1),
+                    };
+                    const savedFmtStr = JSON.stringify(snapshot?.formatting || { import: [], export: [] });
+                    formattingChanged = JSON.stringify(currentFmt) !== savedFmtStr;
+                }
+
+                // Không có row dirty + không có format thay đổi → khỏi gọi API
+                if (dirtyMeta.length === 0 && ! formattingChanged) {
                     return toast('Không có thay đổi cần lưu.', 'info');
                 }
 
@@ -1724,6 +1869,10 @@
                     try { return window.Echo?.socketId?.() ?? ''; }
                     catch (e) { return ''; }
                 })();
+
+                // Lưu CHỈ formatting overlay (bg, fc, font, etc.) — không lưu row data
+                // (DB là source of truth). User restricted KHÔNG lưu formatting (tránh đè).
+                const formattingPayload = HAS_RESTRICTIONS ? null : { formatting: currentFmt };
 
                 const res = await fetch(ROUTES.bulk, {
                     method: 'POST',
@@ -1735,7 +1884,7 @@
                     },
                     body: JSON.stringify({
                         rows: { import: importRows, export: exportRows },
-                        snapshot: null,                  // snapshot disabled — DB là source of truth
+                        snapshot: formattingPayload,
                         client_version: sheetVersion,
                     })
                 });

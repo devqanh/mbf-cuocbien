@@ -74,15 +74,14 @@ class ShipmentController extends Controller
         return response()->json(['ok' => true, 'hidden' => $hidden]);
     }
 
-    /** API: dữ liệu của 1 tháng (Nhập + Xuất). */
+    /** API: dữ liệu của 1 tháng (Nhập + Xuất + formatting overlay). */
     public function data(string $period, Request $request): JsonResponse
     {
         $user = $request->user();
         $rows = $this->shipments->listForGrid($period, $user);
 
-        // Snapshot mechanism đã bỏ — chỉ trả metadata version + editor (cho badge).
-        // Không load BLOB payload để giảm payload network ~300KB-1MB mỗi request.
-        $snap = $this->snapshots->getMetadata($this->shipments->sheetKey($period));
+        // Snapshot payload giờ chỉ chứa formatting overlay (small) — load nhẹ.
+        $snap = $this->snapshots->get($this->shipments->sheetKey($period));
 
         return response()->json([
             'period'    => $period,
@@ -93,7 +92,7 @@ class ShipmentController extends Controller
             'version'   => $snap?->version ?? 0,
             'editor'    => $snap?->editor?->only(['id', 'name']),
             'updatedAt' => $snap?->updated_at?->toIso8601String(),
-            'snapshot'  => null,
+            'snapshot'  => $snap?->payload,
         ]);
     }
 
