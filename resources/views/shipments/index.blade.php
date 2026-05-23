@@ -1933,9 +1933,12 @@
 
         function setupRealtime() {
             try {
-                // Echo đã được layout init sẵn. Chỉ tạo mới nếu chưa có (defensive).
-                if (! window.Echo && typeof Echo !== 'undefined') {
-                    window.Echo = new Echo({
+                // Echo đã được layout init sẵn (là instance, có .connector).
+                // Defensive: nếu vì lý do gì chưa có instance → tự tạo.
+                const isInstance = window.Echo && window.Echo.connector;
+                if (! isInstance && typeof Echo === 'function') {
+                    const EchoCtor = window.Echo;
+                    window.Echo = new EchoCtor({
                         broadcaster: 'reverb',
                         key:     REVERB.key,
                         wsHost:  REVERB.host,
@@ -1946,7 +1949,7 @@
                         auth: { headers: { 'X-CSRF-TOKEN': CSRF } },
                     });
                 }
-                if (! window.Echo) throw new Error('Echo unavailable');
+                if (! window.Echo || ! window.Echo.connector) throw new Error('Echo unavailable');
                 const status = document.getElementById('liveStatus');
                 const pc = window.Echo.connector.pusher.connection;
                 pc.bind('connected',    () => { status.innerHTML = '<i class="bi bi-wifi"></i> Live'; status.className = 'badge badge-soft-success'; });

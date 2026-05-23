@@ -392,8 +392,11 @@
                                 <div class="task-row {{ $task->status === 'done' ? 'is-done' : '' }} {{ $task->status === 'doing' ? 'is-doing' : '' }}">
                                     <span class="priority-bar priority-{{ $task->priority }}"></span>
 
-                                    {{-- Toggle done --}}
-                                    <form method="POST" action="{{ route('tasks.toggleStatus', $task) }}" class="m-0">
+                                    {{-- Toggle done — có confirm SweetAlert khi đánh dấu hoàn thành --}}
+                                    <form method="POST" action="{{ route('tasks.toggleStatus', $task) }}"
+                                          class="m-0 task-toggle-form"
+                                          data-task-title="{{ $task->title }}"
+                                          data-confirm="{{ $togglerNext === 'done' ? '1' : '0' }}">
                                         @csrf @method('PUT')
                                         <input type="hidden" name="status" value="{{ $togglerNext }}">
                                         <button type="submit" class="task-toggle" title="{{ $togglerTitle }}">
@@ -477,4 +480,33 @@
             @endif
         </div>
     </div>
+
+    @push('scripts')
+    <script>
+        // ---- Confirm SweetAlert trước khi đánh dấu task = done ----
+        // - Đánh dấu done: hỏi xác nhận (đỡ lỡ tay)
+        // - Mở lại (done → todo): submit thẳng, không hỏi
+        document.querySelectorAll('.task-toggle-form').forEach(($form) => {
+            const needConfirm = $form.dataset.confirm === '1';
+            if (! needConfirm) return;
+
+            $form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const title = $form.dataset.taskTitle || 'task này';
+                const ok = await confirmAction({
+                    icon: 'question',
+                    title: 'Đã hoàn thành task?',
+                    text: `Đánh dấu <b>"${title.replace(/</g,'&lt;')}"</b> là <b>Hoàn thành</b>?<br><small class="text-muted">Task sẽ ẩn khỏi danh sách "Được giao cho tôi".</small>`,
+                    confirmText: '<i class="bi bi-check2-circle me-1"></i> Đã xong',
+                });
+                if (ok) {
+                    // Disable nút để chống double-click khi đang gửi
+                    const $btn = $form.querySelector('button[type=submit]');
+                    if ($btn) $btn.disabled = true;
+                    $form.submit();
+                }
+            });
+        });
+    </script>
+    @endpush
 @endsection

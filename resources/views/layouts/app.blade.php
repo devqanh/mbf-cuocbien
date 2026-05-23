@@ -344,30 +344,37 @@
     };
 
     // ---- Select2 init cho mọi field "Giao cho" / multi-user picker ----
-    // Element cần class `js-select2-users` để được auto-init.
-    window.initUserSelect2 = function ($el) {
-        const $jq = $($el);
-        if (! $jq.length || $jq.data('select2-initialized')) return;
-        const $modal = $jq.closest('.modal');
-        $jq.select2({
-            placeholder: $jq.data('placeholder') || 'Chọn người…',
-            width: '100%',
-            allowClear: true,
-            closeOnSelect: false,
-            dropdownParent: $modal.length ? $modal : $('body'),
-            language: {
-                noResults: () => 'Không tìm thấy',
-                searching: () => 'Đang tìm…',
-                removeAllItems: () => 'Bỏ chọn tất cả',
-            },
-        });
-        $jq.data('select2-initialized', true);
-    };
+    // CAPTURE jQuery reference NGAY BÂY GIỜ — phòng trường hợp các thư viện
+    // khác (Luckysheet…) bundle jQuery riêng và đè window.$ sau này.
+    (function ($) {
+        if (! $ || ! $.fn || ! $.fn.select2) {
+            console.warn('jQuery/Select2 chưa load — skip initUserSelect2');
+            return;
+        }
 
-    $(function () {
-        // Auto init mọi select đã có class này khi load page
-        $('.js-select2-users').each(function () { window.initUserSelect2(this); });
-    });
+        window.initUserSelect2 = function (el) {
+            const $jq = $(el);
+            if (! $jq.length || $jq.data('select2-initialized')) return;
+            const $modal = $jq.closest('.modal');
+            $jq.select2({
+                placeholder: $jq.data('placeholder') || 'Chọn người…',
+                width: '100%',
+                allowClear: true,
+                closeOnSelect: false,
+                dropdownParent: $modal.length ? $modal : $('body'),
+                language: {
+                    noResults: () => 'Không tìm thấy',
+                    searching: () => 'Đang tìm…',
+                    removeAllItems: () => 'Bỏ chọn tất cả',
+                },
+            });
+            $jq.data('select2-initialized', true);
+        };
+
+        $(function () {
+            $('.js-select2-users').each(function () { window.initUserSelect2(this); });
+        });
+    })(window.jQuery);
 
     // ---- Realtime Echo init (1 lần cho cả app) ----
     @auth
@@ -380,9 +387,14 @@
     const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]').content;
     const AUTH_USER  = @json(['id' => auth()->id(), 'name' => auth()->user()->name]);
 
+    // Quan trọng: laravel-echo iife script ngay khi load đã SET window.Echo = EchoClass.
+    // Phải dùng EchoClass để new instance, rồi overwrite window.Echo bằng instance.
+    // Check `.connector` để biết đã là instance hay chưa.
     try {
-        if (!window.Echo && typeof Echo !== 'undefined' && REVERB_CFG.key) {
-            window.Echo = new Echo({
+        const isInstance = window.Echo && window.Echo.connector;
+        if (! isInstance && typeof Echo === 'function' && REVERB_CFG.key) {
+            const EchoCtor = window.Echo;  // class reference trước khi overwrite
+            window.Echo = new EchoCtor({
                 broadcaster: 'reverb',
                 key:     REVERB_CFG.key,
                 wsHost:  REVERB_CFG.host,
