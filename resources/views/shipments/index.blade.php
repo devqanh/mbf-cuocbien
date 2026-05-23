@@ -433,6 +433,10 @@
                 <i class="bi bi-people me-1"></i> NCC
                 <span class="badge bg-secondary ms-1">{{ count($suppliers) }}</span>
             </a>
+            <a class="btn btn-outline-success" href="{{ route('shipments.export', ['period' => $period]) }}"
+               title="Tải file Excel toàn bộ dữ liệu tháng này">
+                <i class="bi bi-file-earmark-excel me-1"></i> Xuất Excel
+            </a>
             <button class="btn btn-outline-secondary" id="btnReload">
                 <i class="bi bi-arrow-clockwise me-1"></i> Tải lại
             </button>

@@ -5,8 +5,10 @@ namespace App\Http\Controllers;
 use App\Exceptions\Domain\DomainException;
 use App\Models\Shipment;
 use App\Services\PayableReportService;
+use App\Services\ShipmentExportService;
 use App\Services\ShipmentService;
 use App\Services\SheetSnapshotService;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -17,7 +19,20 @@ class ShipmentController extends Controller
         private readonly ShipmentService $shipments,
         private readonly SheetSnapshotService $snapshots,
         private readonly PayableReportService $payable,
+        private readonly ShipmentExportService $exporter,
     ) {}
+
+    /** Export shipments của 1 period sang file XLSX (download). */
+    public function export(string $period, Request $request): BinaryFileResponse
+    {
+        $user = $request->user();
+        $file = $this->exporter->exportPeriod($period, $user);
+        $filename = "shipments_{$period}_" . now()->format('Ymd_His') . ".xlsx";
+
+        return response()->download($file, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ])->deleteFileAfterSend(true);
+    }
 
     /** /shipments → redirect sang tháng MỚI NHẤT (max trong DB). */
     public function redirectToCurrent(): RedirectResponse

@@ -25,6 +25,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/shipments',             [ShipmentController::class, 'redirectToCurrent'])->name('shipments.index');
         Route::get('/shipments/{period}',    [ShipmentController::class, 'show'])->name('shipments.show')->where('period', '\d{4}-\d{2}');
         Route::get('/shipments/{period}/data', [ShipmentController::class, 'data'])->name('shipments.data')->where('period', '\d{4}-\d{2}');
+        Route::get('/shipments/{period}/export', [ShipmentController::class, 'export'])->name('shipments.export')->where('period', '\d{4}-\d{2}');
         Route::put('/me/shipment-column-prefs', [ShipmentController::class, 'updateColumnPrefs'])->name('shipments.columnPrefs');
 
         // Debug endpoint — dump current snapshot for inspection
