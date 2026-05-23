@@ -1261,6 +1261,93 @@
             _needsResync = false;
         }
 
+        /**
+         * Soft merge — fetch data mới + setCellValue per cell thay đổi.
+         * KHÔNG destroy/recreate Luckysheet → giữ scroll, selection, dirty cells.
+         *
+         * - Diff old vs new rowsByDir theo id
+         * - Cell thay đổi: setCellValue với per-cell marker (không trigger dirty)
+         * - Cell user đang sửa (dirty): SKIP, giữ nguyên công sửa
+         * - Row mới: append vào cuối sheet
+         * - Row bị xóa: tạm thời skip (rare case, manual reload nếu cần)
+         *
+         * @returns {Promise<{updated: number, appended: number, skippedDirty: number}>}
+         */
+        async function softMerge() {
+            try {
+                const res = await fetch(ROUTES.data, { headers: { 'Accept': 'application/json' } });
+                const json = await res.json();
+                const newRowsByDir = json.data;
+                sheetVersion = json.version ?? sheetVersion;
+
+                let updated = 0, appended = 0, skippedDirty = 0;
+
+                [0, 1].forEach((sheetOrder) => {
+                    const dir = sheetOrder === 0 ? 'import' : 'export';
+                    const newRows = (newRowsByDir[dir] || []).filter(r => r.id != null);
+                    const newById = new Map(newRows.map(r => [parseInt(r.id), r]));
+
+                    const rendered = readSheetRowsWithMeta(sheetOrder);
+                    const dirtyMap = dirtyCells[sheetOrder] || new Map();
+                    const renderedIds = new Set();
+                    let lastSheetRow = 0;
+
+                    // PASS 1: Update cells của existing rows (skip dirty cells)
+                    rendered.forEach(m => {
+                        const id = m.data.id != null ? parseInt(m.data.id) : null;
+                        if (m.sheetRow > lastSheetRow) lastSheetRow = m.sheetRow;
+                        if (! id) return;
+                        renderedIds.add(id);
+
+                        const newRow = newById.get(id);
+                        if (! newRow) return;   // row deleted — skip cho gọn
+
+                        const rowDirtyKeys = dirtyMap.get(m.sheetRow) || new Set();
+
+                        COLS.forEach((col, ci) => {
+                            if (col.readonly) return;                          // skip id, etc.
+                            if (rowDirtyKeys.has(col.key)) { skippedDirty++; return; }   // PRESERVE user edit
+
+                            const newVal = newRow[col.key];
+                            const curVal = m.data[col.key];
+                            if (! cellValuesEqual(newVal, curVal)) {
+                                try {
+                                    markSystemCell(sheetOrder, m.sheetRow, ci, 500);
+                                    luckysheet.setCellValue(m.sheetRow, ci, newVal ?? '', { order: sheetOrder });
+                                    updated++;
+                                } catch (e) { console.warn('softMerge update cell failed:', e); }
+                            }
+                        });
+                    });
+
+                    // PASS 2: Append new rows (id chưa có trong rendered)
+                    const toAppend = newRows.filter(r => ! renderedIds.has(parseInt(r.id)));
+                    toAppend.forEach((row, i) => {
+                        const targetRow = lastSheetRow + 1 + i;
+                        COLS.forEach((col, ci) => {
+                            const val = row[col.key];
+                            if (val == null || val === '') return;
+                            try {
+                                markSystemCell(sheetOrder, targetRow, ci, 500);
+                                luckysheet.setCellValue(targetRow, ci, val, { order: sheetOrder });
+                            } catch (e) { console.warn('softMerge append cell failed:', e); }
+                        });
+                        appended++;
+                    });
+                });
+
+                // Update local cache + badge
+                rowsByDir = newRowsByDir;
+                updateVersionBadge(json.editor, json.updatedAt);
+
+                return { updated, appended, skippedDirty };
+            } catch (e) {
+                console.warn('softMerge failed, fallback loadData:', e);
+                await loadData();
+                return { updated: 0, appended: 0, skippedDirty: 0, fallback: true };
+            }
+        }
+
         function updateVersionBadge(editor, at) {
             const badge = document.getElementById('versionBadge');
             if (editor) {
@@ -1480,25 +1567,28 @@
                 //   Nên KHÔNG cần check editorId — multi-tab same user vẫn nhận event ở tab khác.
                 // - Smart strategy: nếu user không có dirty cells → reload silent.
                 //   Nếu có dirty → đặt flag _needsResync, reload sau khi user save xong.
-                _privateChan.listen('.sheet.updated', (e) => {
+                _privateChan.listen('.sheet.updated', async (e) => {
                     if (! e.sheetKey || ! e.sheetKey.endsWith(PERIOD)) return;
 
                     sheetVersion = e.version;
                     updateVersionBadge({ id: e.editorId, name: e.editorName }, new Date().toISOString());
 
-                    if (countDirty() === 0) {
-                        // An toàn — user không đang gõ dở → reload silent.
-                        toast(`<i class="bi bi-person-fill-gear"></i> <strong>${e.editorName}</strong> vừa lưu (v${e.version}). Đang đồng bộ…`, 'info');
-                        loadData();
-                    } else {
-                        // User đang có thay đổi chưa lưu → đặt flag, sẽ resync sau khi save xong.
-                        _needsResync = true;
-                        toast(
-                            `<i class="bi bi-person-fill-gear"></i> <strong>${e.editorName}</strong> vừa lưu (v${e.version}). ` +
-                            `Sẽ tự đồng bộ sau khi bạn lưu thay đổi của mình.`,
-                            'warning'
-                        );
+                    // SOFT MERGE — không reload toàn sheet, chỉ update cells thay đổi.
+                    // Cells user đang sửa (dirty) sẽ được GIỮ NGUYÊN, không bị đè.
+                    const { updated, appended, skippedDirty, fallback } = await softMerge();
+
+                    if (fallback) {
+                        toast(`<i class="bi bi-person-fill-gear"></i> <strong>${e.editorName}</strong> vừa lưu (v${e.version}). Đã reload.`, 'info');
+                        return;
                     }
+
+                    let msg = `<i class="bi bi-person-fill-gear"></i> <strong>${e.editorName}</strong> vừa lưu (v${e.version}).`;
+                    const parts = [];
+                    if (updated > 0)      parts.push(`<strong>${updated}</strong> cell update`);
+                    if (appended > 0)     parts.push(`<strong>${appended}</strong> dòng mới`);
+                    if (skippedDirty > 0) parts.push(`giữ ${skippedDirty} cell bạn đang sửa`);
+                    if (parts.length > 0) msg += ' ' + parts.join(' • ') + '.';
+                    toast(msg, 'info');
                 });
 
                 // 2) Client-event (whisper): A gõ cell → B nhận instant, không qua DB
@@ -1701,11 +1791,7 @@
                 removeDirtyMatching(dirtyAtStart);
 
                 // Thông báo
-                if (_needsResync) {
-                    // User khác đã save trong lúc mình gõ → giờ mình save xong → reload đồng bộ
-                    toast(`Đã lưu ${json.saved} dòng. Đang đồng bộ với thay đổi của người khác…`, 'info');
-                    setTimeout(loadData, 500);
-                } else if (updatedNew > 0) {
+                if (updatedNew > 0) {
                     let msg = `Đã lưu — gán <strong>${updatedNew}</strong> No. mới.`;
                     if (newRowsRecovered > 0)  msg += ` (${newRowsRecovered} dòng phục hồi)`;
                     if (updatesRecovered > 0)  msg += ` (${updatesRecovered} update phục hồi)`;
