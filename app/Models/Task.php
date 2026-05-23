@@ -63,9 +63,25 @@ class Task extends Model
             ->withTimestamps();
     }
 
+    /**
+     * Chỉ lấy comment top-level (parent_id IS NULL), kèm replies + author (eager) để tránh N+1.
+     * Composite index (task_id, parent_id, created_at) cover toàn bộ query.
+     */
     public function comments(): HasMany
     {
-        return $this->hasMany(TaskComment::class)->with('author:id,name')->oldest();
+        return $this->hasMany(TaskComment::class)
+            ->whereNull('parent_id')
+            ->with([
+                'author:id,name',
+                'replies.author:id,name',
+            ])
+            ->oldest();
+    }
+
+    /** Tổng số comment (cả replies) — dùng để hiện badge. */
+    public function allComments(): HasMany
+    {
+        return $this->hasMany(TaskComment::class);
     }
 
     /** Tất cả user liên quan (assignee + watcher + creator) — dùng để broadcast. */

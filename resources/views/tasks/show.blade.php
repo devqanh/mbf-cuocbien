@@ -171,6 +171,46 @@
         padding: 30px 16px;
         color: var(--azia-muted);
     }
+    .comment-actions {
+        margin-top: 4px;
+        font-size: 12px;
+    }
+    .comment-actions .btn-reply {
+        background: none; border: none; padding: 0;
+        color: var(--azia-muted); font-weight: 600;
+        font-size: 12px;
+    }
+    .comment-actions .btn-reply:hover { color: var(--azia-primary); }
+
+    /* Replies block — indent left + thin guide line */
+    .replies-block {
+        margin-top: 10px;
+        padding-left: 16px;
+        border-left: 2px solid var(--azia-border);
+    }
+    .replies-block .comment-item {
+        padding: 10px 0 10px 14px;
+        border-bottom: 1px dashed #f0f3fa;
+    }
+    .replies-block .comment-item:last-child { border-bottom: none; }
+    .replies-block .comment-av {
+        width: 28px; height: 28px;
+        font-size: 11px;
+    }
+
+    /* Inline reply form */
+    .reply-form-wrap {
+        margin-top: 10px;
+        padding-left: 16px;
+        border-left: 2px solid var(--azia-primary-soft);
+        display: none;
+    }
+    .reply-form-wrap.is-open { display: block; }
+    .reply-form-wrap form { padding-left: 14px; }
+    .reply-form-wrap textarea {
+        font-size: 13px;
+        resize: none;
+    }
 
     /* Mention picker dropdown */
     .mention-picker {
@@ -293,20 +333,27 @@
             @endif
 
             {{-- ============ COMMENTS THREAD ============ --}}
+            @php
+                $totalComments = $task->allComments()->count();
+                $canComment = auth()->user()->can('tasks.manage_all')
+                    || $task->created_by === auth()->id()
+                    || $task->assignees->contains('id', auth()->id())
+                    || $task->watchers->contains('id', auth()->id());
+            @endphp
             <div class="card mt-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <div>
                         <i class="bi bi-chat-square-text me-1" style="color: var(--azia-primary)"></i>
                         Bình luận
-                        @if($task->comments->count())
-                            <span class="badge badge-soft-primary ms-2">{{ $task->comments->count() }}</span>
+                        @if($totalComments > 0)
+                            <span class="badge badge-soft-primary ms-2">{{ $totalComments }}</span>
                         @endif
                     </div>
                 </div>
 
                 <div class="comment-list">
                     @forelse($task->comments as $c)
-                        <div class="comment-item">
+                        <div class="comment-item" id="comment-{{ $c->id }}">
                             <span class="comment-av">{{ strtoupper(mb_substr($c->author?->name ?? 'U', 0, 1)) }}</span>
                             <div class="comment-body">
                                 <div class="comment-head">
@@ -316,6 +363,63 @@
                                     </span>
                                 </div>
                                 <div class="comment-text">{!! $c->renderedBody() !!}</div>
+
+                                @if($canComment)
+                                <div class="comment-actions">
+                                    <button type="button" class="btn-reply"
+                                            data-reply-target="reply-{{ $c->id }}"
+                                            data-mention-name="{{ $c->author?->name }}">
+                                        <i class="bi bi-reply"></i> Trả lời
+                                    </button>
+                                </div>
+                                @endif
+
+                                {{-- Replies (nested 1 level only - flat thread) --}}
+                                @if($c->replies->isNotEmpty())
+                                    <div class="replies-block">
+                                        @foreach($c->replies as $r)
+                                            <div class="comment-item" id="comment-{{ $r->id }}">
+                                                <span class="comment-av">{{ strtoupper(mb_substr($r->author?->name ?? 'U', 0, 1)) }}</span>
+                                                <div class="comment-body">
+                                                    <div class="comment-head">
+                                                        <span class="comment-name">{{ $r->author?->name ?? 'Người dùng đã xoá' }}</span>
+                                                        <span class="comment-time" title="{{ $r->created_at->format('d/m/Y H:i') }}">
+                                                            {{ $r->created_at->diffForHumans() }}
+                                                        </span>
+                                                    </div>
+                                                    <div class="comment-text">{!! $r->renderedBody() !!}</div>
+                                                    @if($canComment)
+                                                    <div class="comment-actions">
+                                                        <button type="button" class="btn-reply"
+                                                                data-reply-target="reply-{{ $c->id }}"
+                                                                data-mention-name="{{ $r->author?->name }}">
+                                                            <i class="bi bi-reply"></i> Trả lời
+                                                        </button>
+                                                    </div>
+                                                    @endif
+                                                </div>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                @endif
+
+                                {{-- Inline reply form (ẩn mặc định) --}}
+                                @if($canComment)
+                                <div class="reply-form-wrap" id="reply-{{ $c->id }}">
+                                    <form method="POST" action="{{ route('tasks.comments.store', $task) }}" class="comment-reply-form mt-2">
+                                        @csrf
+                                        <input type="hidden" name="parent_id" value="{{ $c->id }}">
+                                        <textarea name="body" class="form-control reply-textarea" rows="2" required
+                                                  placeholder="Trả lời… Gõ @ để tag đồng nghiệp"></textarea>
+                                        <div class="d-flex justify-content-end gap-2 mt-2">
+                                            <button type="button" class="btn btn-sm btn-light btn-cancel-reply">Huỷ</button>
+                                            <button type="submit" class="btn btn-sm btn-primary reply-submit-btn">
+                                                <i class="bi bi-send me-1"></i> Gửi trả lời
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+                                @endif
                             </div>
                         </div>
                     @empty
@@ -326,6 +430,7 @@
                     @endforelse
                 </div>
 
+                @if($canComment)
                 <form method="POST" action="{{ route('tasks.comments.store', $task) }}" class="comment-form" id="commentForm">
                     @csrf
                     <textarea name="body" class="form-control" rows="2" required
@@ -341,6 +446,7 @@
                         </button>
                     </div>
                 </form>
+                @endif
             </div>
         </div>
 
@@ -430,43 +536,80 @@
 
     @push('scripts')
     <script>
-    // ---- Comment submit: disable button + show loading khi đang gửi ----
+    // ---- Form submit loading: cho mọi form trong card bình luận ----
     (function () {
-        const $form = document.getElementById('commentForm');
-        const $btn  = document.getElementById('commentSubmitBtn');
-        if (! $form || ! $btn) return;
+        document.querySelectorAll('#commentForm, .comment-reply-form').forEach(($form) => {
+            const $btn = $form.querySelector('button[type=submit]');
+            if (! $btn) return;
+            const origHTML = $btn.innerHTML;
 
-        $form.addEventListener('submit', (e) => {
-            // Đề phòng submit duplicate (Enter trong textarea + click nút)
-            if ($btn.disabled) { e.preventDefault(); return; }
-
-            // textarea bắt buộc required — nếu rỗng, browser sẽ chặn submit, không vào đây
-            $btn.disabled = true;
-            $btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Đang gửi…';
-            // Khi response trả về → full page reload → nút tự khôi phục.
+            $form.addEventListener('submit', (e) => {
+                if ($btn.disabled) { e.preventDefault(); return; }
+                $btn.disabled = true;
+                $btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Đang gửi…';
+            });
         });
     })();
 
-    // ---- @mention picker trong textarea bình luận ----
+    // ---- Toggle reply form: click "Trả lời" → mở form tương ứng, auto prefill @Tên ----
     (function () {
-        const $ta = document.getElementById('commentBody');
-        if (! $ta) return;
+        document.querySelectorAll('.btn-reply').forEach(($btn) => {
+            $btn.addEventListener('click', () => {
+                const targetId = $btn.dataset.replyTarget;
+                const mentionName = $btn.dataset.mentionName;
+                const $wrap = document.getElementById(targetId);
+                if (! $wrap) return;
 
+                // Đóng các reply form khác trên page để màn hình gọn
+                document.querySelectorAll('.reply-form-wrap.is-open').forEach((w) => {
+                    if (w !== $wrap) w.classList.remove('is-open');
+                });
+
+                $wrap.classList.add('is-open');
+                const $ta = $wrap.querySelector('textarea.reply-textarea');
+                if (! $ta) return;
+
+                // Prefill @Tên nếu textarea trống và có tên user để tag
+                if (mentionName && $ta.value.trim() === '') {
+                    $ta.value = '@' + mentionName + ' ';
+                }
+                $ta.focus();
+                $ta.setSelectionRange($ta.value.length, $ta.value.length);
+            });
+        });
+
+        // Huỷ → đóng wrap
+        document.querySelectorAll('.btn-cancel-reply').forEach(($btn) => {
+            $btn.addEventListener('click', () => {
+                const $wrap = $btn.closest('.reply-form-wrap');
+                if ($wrap) $wrap.classList.remove('is-open');
+            });
+        });
+    })();
+
+    // ---- @mention picker: gắn vào MỌI textarea trong card bình luận (cả main + reply) ----
+    (function () {
+        const searchUrl = @json(route('users.search'));
+        const textareas = document.querySelectorAll('#commentBody, .reply-textarea');
+        if (! textareas.length) return;
+
+        // 1 picker dùng chung, bám theo textarea đang active
         let picker = null;
+        let activeTa = null;
         let users = [];
         let activeIdx = 0;
-        let searchAt = -1;            // vị trí dấu @ đang trigger picker
+        let searchAt = -1;
         let lastQ = '';
 
-        const closePicker = () => { if (picker) { picker.remove(); picker = null; users = []; searchAt = -1; } };
+        const closePicker = () => { if (picker) { picker.remove(); picker = null; users = []; searchAt = -1; activeTa = null; } };
 
-        const openPicker = () => {
+        const openPicker = ($ta) => {
             closePicker();
+            activeTa = $ta;
             picker = document.createElement('div');
             picker.className = 'mention-picker';
-            // Vị trí: tạm thời đơn giản — đặt ngay dưới textarea
             const rect = $ta.getBoundingClientRect();
-            picker.style.left = (rect.left + 12) + 'px';
+            picker.style.left = (window.scrollX + rect.left + 12) + 'px';
             picker.style.top  = (window.scrollY + rect.bottom + 4) + 'px';
             document.body.appendChild(picker);
         };
@@ -494,7 +637,7 @@
 
         const fetchUsers = async (q) => {
             try {
-                const res = await fetch(@json(route('users.search')) + '?q=' + encodeURIComponent(q), {
+                const res = await fetch(searchUrl + '?q=' + encodeURIComponent(q), {
                     headers: { 'Accept': 'application/json' },
                     credentials: 'same-origin',
                 });
@@ -504,50 +647,49 @@
         };
 
         const insertMention = () => {
-            if (! picker || ! users.length) return;
+            if (! picker || ! users.length || ! activeTa) return;
             const u = users[activeIdx];
-            const before = $ta.value.slice(0, searchAt);
-            const after  = $ta.value.slice($ta.selectionStart);
+            const before = activeTa.value.slice(0, searchAt);
+            const after  = activeTa.value.slice(activeTa.selectionStart);
             const insert = '@' + u.name + ' ';
-            $ta.value = before + insert + after;
+            activeTa.value = before + insert + after;
             const pos = (before + insert).length;
-            $ta.setSelectionRange(pos, pos);
-            $ta.focus();
+            activeTa.setSelectionRange(pos, pos);
+            activeTa.focus();
             closePicker();
         };
 
-        $ta.addEventListener('input', async () => {
-            const pos = $ta.selectionStart;
-            const text = $ta.value.slice(0, pos);
-            // Tìm vị trí dấu @ gần nhất trước cursor mà không có space sau nó
-            const match = text.match(/@([^\s@]{0,40})$/);
-            if (! match) { closePicker(); return; }
+        const bind = ($ta) => {
+            $ta.addEventListener('input', async () => {
+                const pos = $ta.selectionStart;
+                const text = $ta.value.slice(0, pos);
+                const match = text.match(/@([^\s@]{0,40})$/);
+                if (! match) { closePicker(); return; }
 
-            searchAt = text.length - match[0].length;
-            const q = match[1];
-            if (q === lastQ && picker) return;
-            lastQ = q;
+                searchAt = text.length - match[0].length;
+                const q = match[1];
+                if (q === lastQ && picker && activeTa === $ta) return;
+                lastQ = q;
 
-            users = await fetchUsers(q);
-            activeIdx = 0;
-            if (! picker) openPicker();
-            renderPicker();
-        });
+                users = await fetchUsers(q);
+                activeIdx = 0;
+                if (! picker || activeTa !== $ta) openPicker($ta);
+                renderPicker();
+            });
 
-        $ta.addEventListener('keydown', (e) => {
-            if (! picker || ! users.length) return;
-            if (e.key === 'ArrowDown') { e.preventDefault(); activeIdx = (activeIdx + 1) % users.length; renderPicker(); }
-            else if (e.key === 'ArrowUp') { e.preventDefault(); activeIdx = (activeIdx - 1 + users.length) % users.length; renderPicker(); }
-            else if (e.key === 'Enter' || e.key === 'Tab') {
-                e.preventDefault();
-                insertMention();
-            } else if (e.key === 'Escape') {
-                closePicker();
-            }
-        });
+            $ta.addEventListener('keydown', (e) => {
+                if (! picker || ! users.length || activeTa !== $ta) return;
+                if (e.key === 'ArrowDown') { e.preventDefault(); activeIdx = (activeIdx + 1) % users.length; renderPicker(); }
+                else if (e.key === 'ArrowUp') { e.preventDefault(); activeIdx = (activeIdx - 1 + users.length) % users.length; renderPicker(); }
+                else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertMention(); }
+                else if (e.key === 'Escape') { closePicker(); }
+            });
+        };
+
+        textareas.forEach(bind);
 
         document.addEventListener('click', (e) => {
-            if (picker && ! picker.contains(e.target) && e.target !== $ta) closePicker();
+            if (picker && ! picker.contains(e.target) && e.target !== activeTa) closePicker();
         });
     })();
     </script>

@@ -23,8 +23,21 @@ class TaskCommentController extends Controller
         abort_unless($allowed, 403, 'Bạn không có quyền bình luận task này.');
 
         $data = $request->validate([
-            'body' => ['required', 'string', 'max:5000'],
+            'body'      => ['required', 'string', 'max:5000'],
+            'parent_id' => ['nullable', 'integer', 'exists:task_comments,id'],
         ], [], ['body' => 'Nội dung']);
+
+        // Reply flattening: nếu reply vào 1 reply, gán về parent gốc (top-level).
+        // Pattern Slack/Twitter: thread phẳng, không nested vô hạn.
+        $parentId = null;
+        if (! empty($data['parent_id'])) {
+            $parent = TaskComment::where('id', $data['parent_id'])
+                ->where('task_id', $task->id)  // chống tampering: reply phải trong cùng task
+                ->first();
+            if ($parent) {
+                $parentId = $parent->parent_id ?? $parent->id;
+            }
+        }
 
         // Parse @mention từ body — match "@<Tên>" với tên trong bảng users
         $mentionedIds = $this->extractMentions($data['body']);
@@ -32,6 +45,7 @@ class TaskCommentController extends Controller
         $comment = TaskComment::create([
             'task_id'            => $task->id,
             'user_id'            => $u->id,
+            'parent_id'          => $parentId,
             'body'               => $data['body'],
             'mentioned_user_ids' => $mentionedIds ?: null,
         ]);
@@ -49,8 +63,15 @@ class TaskCommentController extends Controller
             }
         }
 
-        // Người liên quan (assignee + creator + watcher) — trừ tác giả và người đã được mention
-        $relatedIds = collect($task->recipients())
+        // Người liên quan (assignee + creator + watcher) — trừ tác giả và người đã được mention.
+        // Nếu là reply: cộng thêm tác giả comment cha (nếu chưa có trong recipients).
+        $relatedIds = collect($task->recipients());
+        if ($parentId) {
+            $parentAuthorId = TaskComment::where('id', $parentId)->value('user_id');
+            if ($parentAuthorId) $relatedIds->push($parentAuthorId);
+        }
+        $relatedIds = $relatedIds
+            ->unique()
             ->reject(fn ($id) => $id === $u->id || in_array($id, $mentionedIds, true))
             ->values()
             ->all();

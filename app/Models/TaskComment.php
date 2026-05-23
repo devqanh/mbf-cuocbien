@@ -2,13 +2,15 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class TaskComment extends Model
 {
     protected $fillable = [
-        'task_id', 'user_id', 'body', 'mentioned_user_ids',
+        'task_id', 'user_id', 'parent_id', 'body', 'mentioned_user_ids',
     ];
 
     protected function casts(): array
@@ -26,6 +28,26 @@ class TaskComment extends Model
     public function author(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(TaskComment::class, 'parent_id');
+    }
+
+    public function replies(): HasMany
+    {
+        return $this->hasMany(TaskComment::class, 'parent_id')->oldest();
+    }
+
+    public function scopeTopLevel(Builder $q): Builder
+    {
+        return $q->whereNull('parent_id');
+    }
+
+    public function isReply(): bool
+    {
+        return $this->parent_id !== null;
     }
 
     /**

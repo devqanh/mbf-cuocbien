@@ -294,6 +294,24 @@ a { text-decoration: none; }
 .toast-container { z-index: 2000; }
 .toast-container .toast { min-width: 260px; }
 
+/* ---------- Nav menu badge (số task pending) ---------- */
+.menu-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px; height: 18px;
+    padding: 0 6px;
+    background: var(--azia-danger);
+    color: #fff;
+    border-radius: 999px;
+    font-size: 10.5px;
+    font-weight: 700;
+    line-height: 1;
+    margin-left: 4px;
+    vertical-align: middle;
+}
+.nav-link.active .menu-badge { background: #fff; color: var(--azia-primary); }
+
 /* ---------- Bell notification ---------- */
 .bell-wrap { position: relative; }
 .bell-badge {

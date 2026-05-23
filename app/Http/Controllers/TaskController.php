@@ -69,7 +69,17 @@ class TaskController extends Controller
     public function show(Request $request, Task $task)
     {
         $this->authorizeView($request->user(), $task);
-        $task->load(['assignees:id,name', 'watchers:id,name', 'creator:id,name', 'linkable']);
+
+        // Eager load tất cả relation cần render trong 1 lượt → tránh N+1
+        // - comments() đã pre-defined: chỉ top-level + with(replies.author + author)
+        $task->load([
+            'assignees:id,name',
+            'watchers:id,name',
+            'creator:id,name',
+            'linkable',
+            'comments',
+        ]);
+
         $users = User::orderBy('name')->get(['id', 'name']);
         return view('tasks.show', compact('task', 'users'));
     }

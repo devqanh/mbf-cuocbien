@@ -39,6 +39,26 @@
                     </li>
                     @endcan
 
+                    {{-- Ghi chú & công việc (đặt trước Báo cáo để dễ thấy) --}}
+                    @can('tasks.view')
+                    @php
+                        // Số task chưa done được giao cho user hiện tại — dùng index task_user.(user_id, role) + tasks.(status, due_at)
+                        $myPendingTasksCount = \App\Models\Task::query()
+                            ->assignedTo(auth()->id())
+                            ->open()
+                            ->count();
+                    @endphp
+                    <li class="nav-item">
+                        <a class="nav-link {{ request()->routeIs('tasks.*') ? 'active' : '' }}"
+                           href="{{ route('tasks.index') }}">
+                            <i class="bi bi-check2-square"></i> Công việc
+                            <span id="navTaskBadge" class="menu-badge {{ $myPendingTasksCount > 0 ? '' : 'd-none' }}">
+                                {{ $myPendingTasksCount > 99 ? '99+' : $myPendingTasksCount }}
+                            </span>
+                        </a>
+                    </li>
+                    @endcan
+
                     {{-- Báo cáo --}}
                     @can('reports.view')
                     <li class="nav-item dropdown">
@@ -54,16 +74,6 @@
                                    href="{{ route('reports.payable.initial.index') }}">
                                 <i class="bi bi-pencil-square"></i> Cấu hình đầu kỳ NCC</a></li>
                         </ul>
-                    </li>
-                    @endcan
-
-                    {{-- Ghi chú & công việc --}}
-                    @can('tasks.view')
-                    <li class="nav-item">
-                        <a class="nav-link {{ request()->routeIs('tasks.*') ? 'active' : '' }}"
-                           href="{{ route('tasks.index') }}">
-                            <i class="bi bi-check2-square"></i> Công việc
-                        </a>
                     </li>
                     @endcan
 
@@ -467,6 +477,22 @@
     // Initial load
     Bell.fetchFeed();
 
+    // ---- Helper: tăng badge "Công việc" trên nav khi có task mới được giao ----
+    function bumpNavTaskBadge(delta = 1) {
+        const $badge = document.getElementById('navTaskBadge');
+        if (! $badge) return;
+        const current = parseInt(($badge.textContent || '0').replace('+',''), 10) || 0;
+        const next = Math.max(0, current + delta);
+        if (next === 0) {
+            $badge.classList.add('d-none');
+            $badge.textContent = '0';
+        } else {
+            $badge.classList.remove('d-none');
+            $badge.textContent = next > 99 ? '99+' : String(next);
+        }
+    }
+    window.bumpNavTaskBadge = bumpNavTaskBadge;
+
     // Realtime subscribe — chờ Echo sẵn sàng
     try {
         if (window.Echo) {
@@ -474,6 +500,11 @@
                 .notification((notif) => {
                     Bell.setUnread(Bell.unread + 1);
                     Bell.toast(notif);
+
+                    // Task vừa được giao cho tôi → tăng badge "Công việc"
+                    if (notif && notif.type === 'task.assigned') {
+                        bumpNavTaskBadge(1);
+                    }
                 });
         }
     } catch (e) { console.warn('Bell subscribe failed:', e); }
