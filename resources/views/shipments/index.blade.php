@@ -1438,7 +1438,15 @@
                     // PASS 1: Update cells của existing rows (skip dirty cells)
                     rendered.forEach(m => {
                         const id = m.data.id != null ? parseInt(m.data.id) : null;
-                        if (m.sheetRow > lastSheetRow) lastSheetRow = m.sheetRow;
+                        // lastSheetRow chỉ tính rows CÓ CONTENT thật (id hoặc value).
+                        // KHÔNG tính empty styled rows (Luckysheet auto-expand đến row 80
+                        // với data[r] truthy nhưng cells trống) — nếu không sẽ append
+                        // new row tại row 81+ → quá xa, user không thấy.
+                        const hasContent = id != null || Object.keys(m.data).some(k => {
+                            const v = m.data[k];
+                            return v != null && v !== '' && k !== 'id';
+                        });
+                        if (hasContent && m.sheetRow > lastSheetRow) lastSheetRow = m.sheetRow;
                         if (! id) return;
                         renderedIds.add(id);
 
@@ -1982,6 +1990,44 @@
 
                 // SELECTIVE clear — chỉ xóa dirty entries đã SENT (giữ entries user typing trong lúc fetch)
                 removeDirtyMatching(dirtyAtStart);
+
+                // Update local snapshot cache — tránh stale ở lần save kế (formattingChanged compare)
+                if (currentFmt) {
+                    if (! snapshot) snapshot = {};
+                    snapshot.formatting = currentFmt;
+                }
+
+                // FORMAT RESAVE — sau khi inject new IDs, re-extract formatting + save lại.
+                // Lý do: lúc save lần đầu, new rows có id=null → extractFormatting skip
+                // bg của new row → bg mất. Sau khi inject id, re-extract sẽ bắt được.
+                if (updatedNew > 0 && ! HAS_RESTRICTIONS) {
+                    setTimeout(async () => {
+                        try {
+                            const refreshedFmt = {
+                                import: extractFormatting(0),
+                                export: extractFormatting(1),
+                            };
+                            // Update local cached snapshot để lần save kế tiếp compare đúng
+                            if (! snapshot) snapshot = {};
+                            snapshot.formatting = refreshedFmt;
+
+                            await fetch(ROUTES.bulk, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-CSRF-TOKEN':  CSRF,
+                                    'X-Socket-ID':   socketId,
+                                    'Accept':        'application/json',
+                                },
+                                body: JSON.stringify({
+                                    rows: { import: [], export: [] },
+                                    snapshot: { formatting: refreshedFmt },
+                                    client_version: sheetVersion,
+                                })
+                            });
+                        } catch (e) { console.warn('format resave failed:', e); }
+                    }, 500);
+                }
 
                 // Thông báo
                 if (updatedNew > 0) {
