@@ -29,6 +29,19 @@ class SheetSnapshotService
     }
 
     /**
+     * Lấy metadata snapshot (version, editor, updated_at) KHÔNG load BLOB payload.
+     * Dùng cho /data endpoint sau khi đã bỏ snapshot rendering — chỉ cần version
+     * cho optimistic lock + badge "lưu lần cuối bởi X".
+     */
+    public function getMetadata(string $key): ?SheetSnapshot
+    {
+        return SheetSnapshot::with('editor:id,name')
+            ->where('key', $key)
+            ->select(['id', 'key', 'version', 'updated_by', 'created_at', 'updated_at'])
+            ->first();
+    }
+
+    /**
      * Tóm tắt thông tin snapshot dùng cho API response.
      */
     public function summary(string $key): array

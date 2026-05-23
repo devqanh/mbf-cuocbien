@@ -1273,111 +1273,6 @@
             }
         }
 
-        /**
-         * Self-healing: augment snapshot với DB rows missing.
-         *
-         * Vấn đề: snapshot lưu trên server chỉ chứa workbook state tại thời điểm save.
-         * Nếu DB có rows mới (do user khác tạo, hoặc do snapshot mismatch giữa data[] và
-         * celldata[]), super admin dùng snapshot sẽ THIẾU rows so với DB. Restricted user
-         * (dùng buildCellData từ rowsByDir) thì luôn thấy đầy đủ.
-         *
-         * Fix: match rowsByDir vs snapshot theo `id` (cell ở idCol). Row nào có ở DB
-         * nhưng KHÔNG có ở snapshot → append vào snapshot's celldata + bump sheet.row.
-         */
-        function augmentSnapshotWithDbRows(snapshot) {
-            const idColIdx = COLS.findIndex(c => c.key === 'id');
-            if (idColIdx < 0) return snapshot;
-
-            const buildCellForRow = (row, ri) => {
-                const cells = [];
-                COLS.forEach((c, ci) => {
-                    const raw = row[c.key];
-                    const isEmpty = raw == null || raw === '';
-                    const readonly = c.readonly || COLUMN_PERMS[c.key] === 'view';
-                    if (isEmpty && ! readonly) return;
-
-                    let m;
-                    if (c.type === 'vnd')        m = fmtVND(raw);
-                    else if (c.type === 'number') m = fmtNumber(raw);
-                    else if (c.type === 'date')   m = fmtDate(raw);
-                    else                          m = isEmpty ? '' : String(raw);
-
-                    const cell = {
-                        v: isEmpty ? '' : raw,
-                        m: m,
-                        ct: ctFor(c.type),
-                        tb: 2,
-                        vt: 0,
-                    };
-                    if (c.type === 'vnd' || c.type === 'number') cell.ht = 2;
-                    if (readonly) {
-                        cell.bg = '#f4f6fb';
-                        cell.fc = '#7987a1';
-                        cell.lo = 1;
-                    }
-                    cells.push({ r: ri, c: ci, v: cell });
-                });
-                return cells;
-            };
-
-            const dirNames = ['import', 'export'];
-            snapshot.forEach((sheet, sheetIdx) => {
-                const dbRows = rowsByDir[dirNames[sheetIdx]] || [];
-                if (! Array.isArray(dbRows) || dbRows.length === 0) return;
-
-                // Thu thập IDs đã có trong snapshot (check cả data[] và celldata[])
-                const presentIds = new Set();
-                if (Array.isArray(sheet.data)) {
-                    for (let r = 1; r < sheet.data.length; r++) {
-                        const cell = sheet.data[r]?.[idColIdx];
-                        const v = cell?.v ?? cell?.m;
-                        if (v != null && v !== '') presentIds.add(parseInt(v));
-                    }
-                }
-                if (Array.isArray(sheet.celldata)) {
-                    sheet.celldata.forEach(cd => {
-                        if (cd.c === idColIdx) {
-                            const v = cd.v?.v ?? cd.v?.m;
-                            if (v != null && v !== '') presentIds.add(parseInt(v));
-                        }
-                    });
-                }
-
-                // DB rows không có trong snapshot → cần append
-                const missing = dbRows.filter(r => {
-                    const id = r.id != null ? parseInt(r.id) : null;
-                    return id && ! presentIds.has(id);
-                });
-                if (missing.length === 0) return;
-
-                // Tìm row index cuối cùng có data trong snapshot để append phía sau
-                let lastDataRow = 0;
-                if (Array.isArray(sheet.celldata)) {
-                    sheet.celldata.forEach(cd => {
-                        if (cd.r > lastDataRow) lastDataRow = cd.r;
-                    });
-                }
-                if (Array.isArray(sheet.data)) {
-                    lastDataRow = Math.max(lastDataRow, sheet.data.length - 1);
-                }
-
-                // Append missing rows
-                if (! Array.isArray(sheet.celldata)) sheet.celldata = [];
-                missing.forEach((row, i) => {
-                    const ri = lastDataRow + 1 + i;
-                    const cells = buildCellForRow(row, ri);
-                    sheet.celldata.push(...cells);
-                });
-
-                // Bump sheet.row + sheet.data để đủ chỗ
-                const newRowCount = lastDataRow + missing.length + 20;   // +20 buffer rows
-                if (! sheet.row || sheet.row < newRowCount) sheet.row = newRowCount;
-
-                console.info(`[augment] sheet ${dirNames[sheetIdx]}: append ${missing.length} DB rows missing trong snapshot`);
-            });
-            return snapshot;
-        }
-
         function renderSheet() {
             const columnlen = COLS.reduce((acc, c, i) => (acc[i] = c.width, acc), {});
 
@@ -1418,37 +1313,12 @@
                 defaultRowHeight: 36,
             };
 
-            // Restricted user (HAS_RESTRICTIONS=true) → rebuild từ defaultSheet để áp readonly styling
-            // Super_admin / user full quyền → dùng snapshot để giữ format đã lưu
-            // FORCE name/order/color theo defaults — Luckysheet 2.1.13 render tab dùng template
-            // `${name}`, nếu sheet object thiếu name (snapshot cũ/corrupt) sẽ hiện literal "${name}"
-            const SHEET_DEFAULTS = [
-                { name: 'HÀNG NHẬP', color: '#24d39f' },
-                { name: 'HÀNG XUẤT', color: '#0153a9' },
-            ];
-            const DEFAULT_ROW_HEIGHT = 36;
-            const useSnapshot = ! HAS_RESTRICTIONS && snapshot && Array.isArray(snapshot) && snapshot.length >= 2;
-            const sheets = useSnapshot
-                ? augmentSnapshotWithDbRows(snapshot).map((sh, i) => {
-                    const rowCount = Math.max(sh.row || 80, 80);
-                    return {
-                        ...sh,
-                        name:  SHEET_DEFAULTS[i]?.name  || sh.name || `Sheet${i + 1}`,
-                        order: i,
-                        color: SHEET_DEFAULTS[i]?.color || sh.color,
-                        defaultRowHeight: DEFAULT_ROW_HEIGHT,
-                        config: {
-                            ...sh.config,
-                            rowlen: { ...(sh.config?.rowlen || {}), 0: 48 },
-                            // Force borderInfo nếu snapshot thiếu/rỗng — Luckysheet 2.1.13
-                            // đôi khi mất borderInfo qua các save round-trip → cell hết viền.
-                            borderInfo: (Array.isArray(sh.config?.borderInfo) && sh.config.borderInfo.length > 0)
-                                ? sh.config.borderInfo
-                                : makeBorderInfo(rowCount),
-                        },
-                    };
-                  })
-                : [importSheet, exportSheet];
+            // [2026-05-23] Bỏ snapshot mechanism — tất cả user dùng buildCellData(rowsByDir).
+            // Lý do: snapshot gây hàng loạt bug đồng bộ (stale rows, missing borders,
+            // mismatch giữa users, augment workaround...). Dùng DB là single source of
+            // truth → 100% consistency. Trade-off: mất manual cell formatting (bg, border
+            // custom), nhưng use case logistics chỉ cần data entry, không dùng formatting.
+            const sheets = [importSheet, exportSheet];
 
             luckysheet.destroy();
             luckysheet.create({
@@ -1753,11 +1623,8 @@
                 const importRows = dirtyMeta.filter(m => m.sheetOrder === 0).map(m => m.data);
                 const exportRows = dirtyMeta.filter(m => m.sheetOrder === 1).map(m => m.data);
 
-                // Nếu user bị ẩn cột → KHÔNG gửi snapshot (tránh đè master bằng layout thiếu cột)
-                const fullSheets = HAS_RESTRICTIONS ? null : luckysheet.getAllSheets();
-
-                // Không có row dirty + không có snapshot mới → khỏi gọi API
-                if (dirtyMeta.length === 0 && ! fullSheets) {
+                // Snapshot đã bị bỏ — chỉ gửi rows. DB là single source of truth.
+                if (dirtyMeta.length === 0) {
                     return toast('Không có thay đổi cần lưu.', 'info');
                 }
 
@@ -1778,7 +1645,7 @@
                     },
                     body: JSON.stringify({
                         rows: { import: importRows, export: exportRows },
-                        snapshot: fullSheets,
+                        snapshot: null,                  // snapshot disabled — DB là source of truth
                         client_version: sheetVersion,
                     })
                 });
@@ -1833,38 +1700,8 @@
                 // SELECTIVE clear — chỉ xóa dirty entries đã SENT (giữ entries user typing trong lúc fetch)
                 removeDirtyMatching(dirtyAtStart);
 
-                // Snapshot resave sau khi inject IDs — đảm bảo other users load thấy snapshot
-                // có IDs đầy đủ (không bị empty ID cells gây augment hiểu nhầm).
-                if (updatedNew > 0 && ! HAS_RESTRICTIONS) {
-                    setTimeout(async () => {
-                        try {
-                            const refreshedSheets = luckysheet.getAllSheets();
-                            await fetch(ROUTES.bulk, {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                    'X-CSRF-TOKEN':  CSRF,
-                                    'X-Socket-ID':   socketId,
-                                    'Accept':        'application/json',
-                                },
-                                body: JSON.stringify({
-                                    rows: { import: [], export: [] },
-                                    snapshot: refreshedSheets,
-                                    client_version: sheetVersion,
-                                })
-                            });
-                        } catch (e) { console.warn('snapshot resave failed:', e); }
-                    }, 800);
-                }
-
                 // Thông báo
-                if (json.snapshot_conflict) {
-                    toast(
-                        `✓ Đã lưu ${json.saved} dòng. ⚠️ Formatting bị overwrite bởi người khác — đang đồng bộ lại…`,
-                        'warning'
-                    );
-                    setTimeout(loadData, 1500);
-                } else if (_needsResync) {
+                if (_needsResync) {
                     // User khác đã save trong lúc mình gõ → giờ mình save xong → reload đồng bộ
                     toast(`Đã lưu ${json.saved} dòng. Đang đồng bộ với thay đổi của người khác…`, 'info');
                     setTimeout(loadData, 500);
