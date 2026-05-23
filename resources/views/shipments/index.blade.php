@@ -546,9 +546,15 @@
         const SUPPLIERS    = @json($suppliers);            // danh sách NCC từ payable_initial_balances + shipments
 
         // GLOBAL — dùng ở nhiều function (renderSheet, btnSaveAll handler...)
-        // User bị admin restrict (hidden/view) hoặc user tự ẩn cột → skip snapshot logic
-        const HAS_RESTRICTIONS = Object.values(COLUMN_PERMS).some(p => p === 'hidden' || p === 'view')
-                              || USER_HIDDEN.size > 0;
+        // ADMIN_RESTRICTED: admin set col permissions hidden/view → user không có quyền sửa
+        //   toàn workbook → KHÔNG cho save formatting (sẽ overwrite cols admin restrict).
+        // USER_HIDDEN: user TỰ chọn hide cho riêng họ (preference) → vẫn cho save format
+        //   trên cols visible. Backend merge để không mất format cols other users đã set.
+        const ADMIN_RESTRICTED = Object.values(COLUMN_PERMS).some(p => p === 'hidden' || p === 'view');
+        const HAS_RESTRICTIONS = ADMIN_RESTRICTED || USER_HIDDEN.size > 0;   // legacy — vẫn dùng cho render snapshot
+
+        // Cho save formatting: chỉ cần KHÔNG bị admin restrict (user-hidden OK).
+        const CAN_SAVE_FORMATTING = ! ADMIN_RESTRICTED;
 
         // Filter:
         //  1. Bỏ cột admin đã ẩn
@@ -1340,6 +1346,9 @@
         // Debug tool — user gõ vào console để check bg flow đang đứng ở bước nào
         window._debugBg = function() {
             const out = {
+                can_save_formatting: CAN_SAVE_FORMATTING,
+                admin_restricted: ADMIN_RESTRICTED,
+                user_hidden_count: USER_HIDDEN.size,
                 snapshot_has_formatting: !! snapshot?.formatting,
                 snapshot_formatting: snapshot?.formatting,
                 extract_import: extractFormatting(0),
@@ -2001,7 +2010,7 @@
                 // với formatting đã lưu (snapshot.formatting trong cache).
                 let formattingChanged = false;
                 let currentFmt = null;
-                if (! HAS_RESTRICTIONS) {
+                if (CAN_SAVE_FORMATTING) {
                     currentFmt = {
                         import: extractFormatting(0),
                         export: extractFormatting(1),
@@ -2010,7 +2019,9 @@
                     formattingChanged = JSON.stringify(currentFmt) !== savedFmtStr;
                     console.log('[save] currentFmt entries:', currentFmt.import.length + currentFmt.export.length,
                                 '| formattingChanged:', formattingChanged,
-                                '| HAS_RESTRICTIONS:', HAS_RESTRICTIONS);
+                                '| CAN_SAVE_FORMATTING:', CAN_SAVE_FORMATTING,
+                                '| ADMIN_RESTRICTED:', ADMIN_RESTRICTED,
+                                '| USER_HIDDEN:', USER_HIDDEN.size);
                 }
 
                 // Không có row dirty + không có format thay đổi → khỏi gọi API
@@ -2027,8 +2038,13 @@
                 })();
 
                 // Lưu CHỈ formatting overlay (bg, fc, font, etc.) — không lưu row data
-                // (DB là source of truth). User restricted KHÔNG lưu formatting (tránh đè).
-                const formattingPayload = HAS_RESTRICTIONS ? null : { formatting: currentFmt };
+                // (DB là source of truth). User admin-restricted KHÔNG lưu formatting.
+                // Gửi formatting_scope = visible col keys → backend merge với existing,
+                // không mất format của cols user không thấy (do USER_HIDDEN cá nhân).
+                const formattingPayload = CAN_SAVE_FORMATTING ? {
+                    formatting: currentFmt,
+                    formatting_scope: COLS.map(c => c.key),
+                } : null;
                 console.log('[save] sending snapshot:', formattingPayload ? JSON.stringify(formattingPayload).slice(0, 200) + '...' : 'NULL');
 
                 const res = await fetch(ROUTES.bulk, {
@@ -2104,16 +2120,13 @@
                 }
 
                 // FORMAT RESAVE — sau khi inject new IDs, re-extract formatting + save lại.
-                // Lý do: lúc save lần đầu, new rows có id=null → extractFormatting skip
-                // bg của new row → bg mất. Sau khi inject id, re-extract sẽ bắt được.
-                if (updatedNew > 0 && ! HAS_RESTRICTIONS) {
+                if (updatedNew > 0 && CAN_SAVE_FORMATTING) {
                     setTimeout(async () => {
                         try {
                             const refreshedFmt = {
                                 import: extractFormatting(0),
                                 export: extractFormatting(1),
                             };
-                            // Update local cached snapshot để lần save kế tiếp compare đúng
                             if (! snapshot) snapshot = {};
                             snapshot.formatting = refreshedFmt;
 
@@ -2127,7 +2140,10 @@
                                 },
                                 body: JSON.stringify({
                                     rows: { import: [], export: [] },
-                                    snapshot: { formatting: refreshedFmt },
+                                    snapshot: {
+                                        formatting: refreshedFmt,
+                                        formatting_scope: COLS.map(c => c.key),
+                                    },
                                     client_version: sheetVersion,
                                 })
                             });

@@ -346,10 +346,15 @@ class ShipmentService
         $newVersion = $this->snapshots->currentVersion($key);
 
         if ($snapshot && $canUpdateSnapshot) {
+            // Merge formatting overlay với existing — preserve format của cols user
+            // không thấy (user-hidden cá nhân) để không mất bg của other users.
+            if (isset($snapshot['formatting']) && is_array($snapshot['formatting'])) {
+                $snapshot = $this->mergeFormattingWithExisting($key, $snapshot);
+            }
+
             try {
                 $newVersion = $this->snapshots->save($key, $snapshot, $clientVersion, $editor->id)->version;
             } catch (SnapshotConflictException $e) {
-                // Rows đã save xong; chỉ snapshot bị conflict → báo frontend reload formatting.
                 $snapshotConflict = true;
                 $newVersion = $this->snapshots->currentVersion($key);
             }
@@ -384,6 +389,60 @@ class ShipmentService
     public function resetSnapshot(string $period): void
     {
         $this->snapshots->reset($this->sheetKey($period));
+    }
+
+    /**
+     * Merge formatting overlay từ frontend với existing trên server.
+     *
+     * User chỉ thấy SUBSET cols (do USER_HIDDEN cá nhân). Frontend gửi:
+     * - formatting: entries cho cols user thấy
+     * - formatting_scope: list col keys user đang thấy
+     *
+     * Logic merge: cho mỗi direction, giữ entries của cols KHÔNG nằm trong scope
+     * (user không thấy, không nên ghi đè), nhận entries từ frontend cho cols
+     * trong scope (user có quyền edit).
+     */
+    private function mergeFormattingWithExisting(string $key, array $snapshot): array
+    {
+        $scope = $snapshot['formatting_scope'] ?? null;
+        // No scope = no merge needed (legacy or super-admin full scope)
+        if (! is_array($scope) || empty($scope)) {
+            unset($snapshot['formatting_scope']);
+            return $snapshot;
+        }
+        unset($snapshot['formatting_scope']);   // không lưu scope, chỉ dùng để merge
+
+        $existing = $this->snapshots->get($key);
+        $existingFmt = $existing?->payload['formatting'] ?? null;
+        if (! is_array($existingFmt)) {
+            return $snapshot;
+        }
+
+        $scopeSet = array_flip($scope);
+        $newFmt   = $snapshot['formatting'];
+        $merged   = ['import' => [], 'export' => []];
+
+        foreach (['import', 'export'] as $dir) {
+            $byKey = [];
+
+            // Keep existing entries for cols OUTSIDE user's scope
+            foreach (($existingFmt[$dir] ?? []) as $entry) {
+                if (! isset($scopeSet[$entry['col'] ?? ''])) {
+                    $byKey[($entry['id'] ?? '') . ':' . ($entry['col'] ?? '')] = $entry;
+                }
+            }
+
+            // Apply user's new entries (only for cols in scope)
+            foreach (($newFmt[$dir] ?? []) as $entry) {
+                if (! isset($scopeSet[$entry['col'] ?? ''])) continue;
+                $byKey[($entry['id'] ?? '') . ':' . ($entry['col'] ?? '')] = $entry;
+            }
+
+            $merged[$dir] = array_values($byKey);
+        }
+
+        $snapshot['formatting'] = $merged;
+        return $snapshot;
     }
 
     /** Tất cả cột text (chuyển '' → null). */
