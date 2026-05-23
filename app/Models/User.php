@@ -47,6 +47,26 @@ class User extends Authenticatable
     }
 
     /**
+     * Trả về nhãn vai trò để hiển thị cho user (header, profile…).
+     * Ưu tiên: roles.display_name (DB) → config('permissions.roles.{name}.label') → tên role.
+     * Nếu user không có Spatie role → fallback cột legacy users.role.
+     */
+    public function roleLabel(): string
+    {
+        $role = $this->roles->first();
+
+        if ($role) {
+            return $role->display_name
+                ?: (config("permissions.roles.{$role->name}.label")
+                    ?: ucwords(str_replace('_', ' ', $role->name)));
+        }
+
+        return $this->role
+            ? ucwords(str_replace('_', ' ', $this->role))
+            : '—';
+    }
+
+    /**
      * Trả về permission cho 1 cột.
      * Super admin luôn 'edit'. Nếu user không có config → 'edit' (mặc định mở).
      */

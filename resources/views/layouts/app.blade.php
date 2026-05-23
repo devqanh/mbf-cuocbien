@@ -90,10 +90,17 @@
                             <span class="avatar">{{ strtoupper(substr(auth()->user()->name ?? 'U', 0, 1)) }}</span>
                             <div class="d-none d-md-block">
                                 <div class="name">{{ auth()->user()->name ?? 'Guest' }}</div>
-                                <div class="role">{{ str_replace('_', ' ', auth()->user()->role ?? '') }}</div>
+                                <div class="role">{{ auth()->user()->roleLabel() }}</div>
                             </div>
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end">
+                            <li>
+                                <a class="dropdown-item {{ request()->routeIs('profile.*') ? 'active' : '' }}"
+                                   href="{{ route('profile.show') }}">
+                                    <i class="bi bi-person-circle"></i> Thông tin cá nhân
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider my-1"></li>
                             <li>
                                 <form action="{{ route('logout') }}" method="POST">
                                     @csrf

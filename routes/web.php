@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\PayableReportController;
+use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\ShipmentController;
 use App\Http\Controllers\UserController;
@@ -19,6 +20,11 @@ Route::middleware('guest')->group(function () {
 
 Route::middleware('auth')->group(function () {
     Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
+
+    // ===== Profile (mọi user đã login) =====
+    Route::get('/profile',           [ProfileController::class, 'show'])->name('profile.show');
+    Route::put('/profile/info',      [ProfileController::class, 'updateInfo'])->name('profile.info');
+    Route::put('/profile/password',  [ProfileController::class, 'updatePassword'])->name('profile.password');
 
     // ===== Follow Up Shipment =====
     Route::middleware('permission:shipments.view')->group(function () {

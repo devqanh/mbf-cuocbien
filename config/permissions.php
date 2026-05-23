@@ -71,7 +71,7 @@ return [
     // Mô tả từng vai trò (dùng cho 4 role mặc định; role tự tạo dùng fallback)
     'roles' => [
         'super_admin' => [
-            'label'       => 'Quản trị tối cao',
+            'label'       => 'Quản trị hệ thống',
             'description' => 'Toàn quyền hệ thống. Có thể làm mọi thao tác.',
             'icon'        => 'shield-fill-exclamation',
             'color'       => 'danger',
