@@ -1429,17 +1429,25 @@
             const DEFAULT_ROW_HEIGHT = 36;
             const useSnapshot = ! HAS_RESTRICTIONS && snapshot && Array.isArray(snapshot) && snapshot.length >= 2;
             const sheets = useSnapshot
-                ? augmentSnapshotWithDbRows(snapshot).map((sh, i) => ({
-                    ...sh,
-                    name:  SHEET_DEFAULTS[i]?.name  || sh.name || `Sheet${i + 1}`,
-                    order: i,
-                    color: SHEET_DEFAULTS[i]?.color || sh.color,
-                    defaultRowHeight: DEFAULT_ROW_HEIGHT,
-                    config: {
-                        ...sh.config,
-                        rowlen: { ...(sh.config?.rowlen || {}), 0: 48 },
-                    },
-                  }))
+                ? augmentSnapshotWithDbRows(snapshot).map((sh, i) => {
+                    const rowCount = Math.max(sh.row || 80, 80);
+                    return {
+                        ...sh,
+                        name:  SHEET_DEFAULTS[i]?.name  || sh.name || `Sheet${i + 1}`,
+                        order: i,
+                        color: SHEET_DEFAULTS[i]?.color || sh.color,
+                        defaultRowHeight: DEFAULT_ROW_HEIGHT,
+                        config: {
+                            ...sh.config,
+                            rowlen: { ...(sh.config?.rowlen || {}), 0: 48 },
+                            // Force borderInfo nếu snapshot thiếu/rỗng — Luckysheet 2.1.13
+                            // đôi khi mất borderInfo qua các save round-trip → cell hết viền.
+                            borderInfo: (Array.isArray(sh.config?.borderInfo) && sh.config.borderInfo.length > 0)
+                                ? sh.config.borderInfo
+                                : makeBorderInfo(rowCount),
+                        },
+                    };
+                  })
                 : [importSheet, exportSheet];
 
             luckysheet.destroy();
