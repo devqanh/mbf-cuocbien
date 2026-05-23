@@ -1155,7 +1155,14 @@
                     }
 
                     // Apply overlay LAST → ghi đè default styling (vd user override readonly bg)
-                    if (overlayFmt) Object.assign(cell, overlayFmt);
+                    // SKIP layout defaults (vt, tb, ht) — old snapshot có thể chứa noise
+                    // từ trước fix, các keys này không nên override defaults của buildCellData.
+                    if (overlayFmt) {
+                        Object.entries(overlayFmt).forEach(([k, v]) => {
+                            if (k === 'vt' || k === 'tb' || k === 'ht') return;
+                            cell[k] = v;
+                        });
+                    }
 
                     celldata.push({ r: ri + 1, c: ci, v: cell });
                 });
@@ -1356,7 +1363,6 @@
                 const sheet = luckysheet.getAllSheets()[sheetOrder];
                 if (! sheet?.data) return;
 
-                // Build id → sheetRow map (đọc cả celldata)
                 const idToRow = new Map();
                 for (let r = 1; r < sheet.data.length; r++) {
                     const cell = sheet.data[r]?.[idColIdx];
@@ -1381,6 +1387,9 @@
                     if (colIdx < 0) return;
 
                     Object.entries(entry.fmt || {}).forEach(([k, v]) => {
+                        // SKIP layout defaults — chúng RESET bg/fc khi setCellFormat
+                        // (Luckysheet 2.1.13 quirk). Bg/fc đã được baked-in qua buildCellData.
+                        if (k === 'vt' || k === 'tb' || k === 'ht') return;
                         try {
                             markSystemCell(sheetOrder, sheetRow, colIdx, 400);
                             luckysheet.setCellFormat(sheetRow, colIdx, k, v, { order: sheetOrder });
@@ -1635,16 +1644,10 @@
                 hook: {
                     workbookCreateAfter() {
                         applySupplierDropdown();
-
-                        // Belt-and-suspenders: apply formatting overlay sau khi Luckysheet
-                        // init xong. buildCellData đã bake-in nhưng phòng trường hợp
-                        // Luckysheet override hoặc init không ăn → apply lại qua API.
-                        if (snapshot?.formatting) {
-                            setTimeout(() => {
-                                applyFormattingOverlay(0, snapshot.formatting.import || []);
-                                applyFormattingOverlay(1, snapshot.formatting.export || []);
-                            }, 100);
-                        }
+                        // Formatting overlay đã được bake-in qua buildCellData → không cần
+                        // applyFormattingOverlay ở đây (setCellFormat có thể reset bg do
+                        // Luckysheet quirk khi gọi cho cell vừa render). Giữ overlay cho
+                        // softMerge dynamic update khi user khác đổi format realtime.
                     },
                     // Helper kiểm cột readonly bằng index c
                     // (COLS đã filter theo perms, nên COLS[c] tương ứng đúng cột hiển thị tại index c)
