@@ -1398,6 +1398,23 @@
          *
          * @returns {Promise<{updated: number, appended: number, skippedDirty: number}>}
          */
+        // Flash cell silent (không toast) — visual cue + force canvas redraw
+        // (setCellFormat trigger redraw cell ngay, khắc phục việc setCellValue không
+        // luôn redraw kịp khi update nhiều cell trong softMerge).
+        function flashCellSilent(sheetOrder, row, col) {
+            try {
+                const sheet = luckysheet.getluckysheetfile()[sheetOrder];
+                if (! sheet?.data?.[row]?.[col]) return;
+                const oldBg = sheet.data[row][col].bg;
+                markSystemCell(sheetOrder, row, col, 200);
+                luckysheet.setCellFormat(row, col, 'bg', '#dbeafe', { order: sheetOrder });   // xanh nhạt
+                setTimeout(() => {
+                    markSystemCell(sheetOrder, row, col, 200);
+                    try { luckysheet.setCellFormat(row, col, 'bg', oldBg || null, { order: sheetOrder }); } catch (e) {}
+                }, 1500);
+            } catch (e) {}
+        }
+
         async function softMerge() {
             try {
                 const res = await fetch(ROUTES.data, { headers: { 'Accept': 'application/json' } });
@@ -1406,6 +1423,7 @@
                 sheetVersion = json.version ?? sheetVersion;
 
                 let updated = 0, appended = 0, skippedDirty = 0;
+                const changedSheets = new Set();   // sheet orders có changes — để force redraw sau
 
                 [0, 1].forEach((sheetOrder) => {
                     const dir = sheetOrder === 0 ? 'import' : 'export';
@@ -1439,7 +1457,9 @@
                                 try {
                                     markSystemCell(sheetOrder, m.sheetRow, ci, 500);
                                     luckysheet.setCellValue(m.sheetRow, ci, newVal ?? '', { order: sheetOrder });
+                                    flashCellSilent(sheetOrder, m.sheetRow, ci);   // force redraw + visual cue
                                     updated++;
+                                    changedSheets.add(sheetOrder);
                                 } catch (e) { console.warn('softMerge update cell failed:', e); }
                             }
                         });
@@ -1455,11 +1475,25 @@
                             try {
                                 markSystemCell(sheetOrder, targetRow, ci, 500);
                                 luckysheet.setCellValue(targetRow, ci, val, { order: sheetOrder });
+                                flashCellSilent(sheetOrder, targetRow, ci);
                             } catch (e) { console.warn('softMerge append cell failed:', e); }
                         });
                         appended++;
+                        changedSheets.add(sheetOrder);
                     });
                 });
+
+                // Force canvas redraw cho các sheet có changes — đảm bảo user thấy update
+                // ngay cả khi nhiều cell update batch lại
+                if (changedSheets.size > 0) {
+                    setTimeout(() => {
+                        try {
+                            const curOrder = luckysheet.getSheet()?.order ?? 0;
+                            // Re-set sheet active (no-op switch) để Luckysheet flush render
+                            luckysheet.setSheetActive(curOrder);
+                        } catch (e) {}
+                    }, 100);
+                }
 
                 // Update local cache + badge
                 rowsByDir = newRowsByDir;
@@ -1707,20 +1741,30 @@
 
                     // SOFT MERGE — không reload toàn sheet, chỉ update cells thay đổi.
                     // Cells user đang sửa (dirty) sẽ được GIỮ NGUYÊN, không bị đè.
-                    const { updated, appended, skippedDirty, fallback } = await softMerge();
+                    const result = await softMerge();
+                    const { updated, appended, skippedDirty, fallback } = result;
 
                     if (fallback) {
                         toast(`<i class="bi bi-person-fill-gear"></i> <strong>${e.editorName}</strong> vừa lưu (v${e.version}). Đã reload.`, 'info');
                         return;
                     }
 
+                    // Hint sheet name nếu user đang ở sheet khác
+                    const curOrder = luckysheet.getSheet()?.order ?? 0;
+                    const sheetName = curOrder === 0 ? 'HÀNG NHẬP' : 'HÀNG XUẤT';
+
                     let msg = `<i class="bi bi-person-fill-gear"></i> <strong>${e.editorName}</strong> vừa lưu (v${e.version}).`;
                     const parts = [];
                     if (updated > 0)      parts.push(`<strong>${updated}</strong> cell update`);
                     if (appended > 0)     parts.push(`<strong>${appended}</strong> dòng mới`);
                     if (skippedDirty > 0) parts.push(`giữ ${skippedDirty} cell bạn đang sửa`);
-                    if (parts.length > 0) msg += ' ' + parts.join(' • ') + '.';
+                    if (parts.length > 0) {
+                        msg += ' ' + parts.join(' • ') + '. ';
+                        msg += `<small class="text-muted">(Có thể ở sheet khác — kiểm tra HÀNG NHẬP / HÀNG XUẤT)</small>`;
+                    }
                     toast(msg, 'info');
+
+                    if (updated + appended > 0) _showEditorActivity(e.editorName);
                 });
 
                 // 2) Client-event (whisper): A gõ cell → B nhận instant, không qua DB
