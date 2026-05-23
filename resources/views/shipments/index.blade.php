@@ -1427,10 +1427,27 @@
             const res  = await fetch(ROUTES.data, { headers: { 'Accept': 'application/json' } });
             const json = await res.json();
             rowsByDir    = json.data;
-            snapshot     = json.snapshot;     // chứa formatting overlay, được buildCellData merge baked-in
+            snapshot     = json.snapshot;
             sheetVersion = json.version ?? 0;
-            renderSheet();                    // formatting đã merge vào celldata → bg hiển thị ngay
+            renderSheet();
             updateVersionBadge(json.editor, json.updatedAt);
+
+            // Apply formatting overlay via setCellFormat — Luckysheet đôi khi strip bg
+            // khỏi celldata sau create() dù bake-in đã set. setCellFormat ép sync vào
+            // CẢ data[] lẫn celldata + trigger canvas redraw cell.
+            // Đã filter vt/tb/ht trong applyFormattingOverlay nên không reset bg.
+            if (snapshot?.formatting) {
+                setTimeout(() => {
+                    applyFormattingOverlay(0, snapshot.formatting.import || []);
+                    applyFormattingOverlay(1, snapshot.formatting.export || []);
+                    // Force canvas redraw final (no-op sheet switch)
+                    try {
+                        const cur = luckysheet.getSheet()?.order ?? 0;
+                        luckysheet.setSheetActive(cur);
+                    } catch (e) {}
+                }, 300);
+            }
+
             resetDirty();
             _needsResync = false;
         }
