@@ -163,7 +163,20 @@ class ShipmentController extends Controller
             return response()->json(['ok' => false, 'message' => $e->getMessage()] + $e->context(), $e->httpStatus());
         }
 
-        return response()->json(['ok' => true, 'period' => $period, ...$result]);
+        // DEBUG: read back snapshot ngay sau save để confirm backend đã persist gì
+        $snapAfter = $this->snapshots->get($this->shipments->sheetKey($period));
+        $debugSnap = [
+            'exists'          => $snapAfter !== null,
+            'version'         => $snapAfter?->version,
+            'payload_type'    => $snapAfter ? gettype($snapAfter->payload) : null,
+            'payload_keys'    => $snapAfter && is_array($snapAfter->payload) ? array_keys($snapAfter->payload) : null,
+            'has_formatting'  => $snapAfter && is_array($snapAfter->payload) && isset($snapAfter->payload['formatting']),
+            'fmt_import_n'    => $snapAfter && isset($snapAfter->payload['formatting']['import']) ? count($snapAfter->payload['formatting']['import']) : null,
+            'fmt_export_n'    => $snapAfter && isset($snapAfter->payload['formatting']['export']) ? count($snapAfter->payload['formatting']['export']) : null,
+            'first_import'    => $snapAfter && ! empty($snapAfter->payload['formatting']['import']) ? $snapAfter->payload['formatting']['import'][0] : null,
+        ];
+
+        return response()->json(['ok' => true, 'period' => $period, '_debug_snapshot' => $debugSnap, ...$result]);
     }
 
     public function resetSnapshot(string $period): JsonResponse

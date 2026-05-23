@@ -2064,6 +2064,9 @@
 
                 const json = await res.json();
                 console.log('[save] response:', { ok: json.ok, version: json.version, saved: json.saved, snapshot_conflict: json.snapshot_conflict });
+                if (json._debug_snapshot) {
+                    console.log('[save] BACKEND SNAPSHOT AFTER SAVE:', json._debug_snapshot);
+                }
                 if (! json.ok) {
                     toast(json.message || 'Lưu thất bại.', 'danger');
                     return;
