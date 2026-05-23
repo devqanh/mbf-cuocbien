@@ -94,6 +94,8 @@ Route::middleware('auth')->group(function () {
     // ===== Users =====
     Route::middleware('permission:users.view')->group(function () {
         Route::get('/users', [UserController::class, 'index'])->name('users.index');
+        // Debug: test Reverb broadcast tới mọi user
+        Route::post('/users/broadcast-test', [UserController::class, 'broadcastTest'])->name('users.broadcastTest');
     });
     Route::middleware('permission:users.create')->group(function () {
         Route::post('/users', [UserController::class, 'store'])->name('users.store');

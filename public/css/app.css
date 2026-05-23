@@ -439,27 +439,43 @@ a { text-decoration: none; }
     background: var(--azia-primary-soft) !important;
     color: var(--azia-primary) !important;
     border: none !important;
-    border-radius: 6px !important;
-    padding: 2px 8px 2px 6px !important;
+    border-radius: 999px !important;          /* pill bo tròn full */
+    padding: 3px 4px 3px 12px !important;
     font-weight: 600;
     font-size: 12.5px;
     margin: 4px 4px 0 0 !important;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 2px;
+    line-height: 1.4;
+}
+/* Đảo order: tên trước, X sau (mặc định Select2 đặt X bên trái) */
+.select2-container--default .select2-selection--multiple .select2-selection__choice__display {
+    order: 1;
+    padding: 0 !important;
 }
 .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+    order: 2;
+    width: 20px !important;
+    height: 20px !important;
+    border-radius: 50% !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 14px !important;
+    font-weight: 700 !important;
+    line-height: 1 !important;
+    margin: 0 0 0 6px !important;
+    padding: 0 !important;
     color: var(--azia-primary) !important;
     background: transparent !important;
     border: none !important;
-    font-size: 14px;
-    margin-right: 2px;
-    padding: 0;
-    line-height: 1;
+    transition: all .12s !important;
+    cursor: pointer;
 }
 .select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
-    color: var(--azia-danger) !important;
-    background: transparent !important;
+    background: rgba(1, 83, 169, .2) !important;
+    color: var(--azia-primary) !important;
 }
 .select2-container .select2-search--inline .select2-search__field {
     margin-top: 6px;
@@ -529,7 +545,23 @@ a { text-decoration: none; }
     font-size: 10px; font-weight: 700;
     display: inline-flex; align-items: center; justify-content: center;
     padding: 0 4px; line-height: 1;
+    transition: transform .15s;
 }
+/* Khi có notification mới → bell rung 1 lần */
+@keyframes bellShake {
+    0%, 100% { transform: rotate(0); }
+    15%, 45%, 75% { transform: rotate(-12deg); }
+    30%, 60%, 90% { transform: rotate(12deg); }
+}
+.bell-shake { animation: bellShake .7s ease-in-out; }
+
+/* Badge pulse khi update */
+@keyframes badgePulse {
+    0%   { transform: scale(1); }
+    40%  { transform: scale(1.4); box-shadow: 0 0 0 6px rgba(255, 91, 91, .25); }
+    100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 91, 91, 0); }
+}
+.bell-badge.badge-pulse { animation: badgePulse .8s ease-out; }
 .bell-menu {
     min-width: 360px; max-width: 380px;
     border: 1px solid var(--azia-border);

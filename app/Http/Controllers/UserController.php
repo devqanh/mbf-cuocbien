@@ -4,9 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\Domain\DomainException;
 use App\Models\User;
+use App\Notifications\BroadcastTestNotification;
 use App\Services\UserService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Notification;
 use Spatie\Permission\Models\Role;
 
 class UserController extends Controller
@@ -75,6 +77,23 @@ class UserController extends Controller
         }
 
         return back()->with('success', "Đã xoá: {$user->name}");
+    }
+
+    /**
+     * Debug: gửi 1 notification TEST cho TẤT CẢ users để kiểm tra Reverb hoạt động.
+     * Chỉ admin (có quyền users.view) được dùng.
+     */
+    public function broadcastTest(Request $request): RedirectResponse
+    {
+        $sender = $request->user();
+        $users  = User::all();
+
+        Notification::send($users, new BroadcastTestNotification($sender));
+
+        return back()->with('success', sprintf(
+            'Đã đẩy thông báo TEST cho %d user. Mở các tab khác để kiểm tra toast realtime.',
+            $users->count()
+        ));
     }
 
     /** Lưu permission từng cột cho user. */

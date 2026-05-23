@@ -560,8 +560,16 @@
             // Force reflow → kích hoạt CSS transition
             requestAnimationFrame(() => requestAnimationFrame(() => $t.classList.add('is-visible')));
 
-            // Auto-dismiss khớp animation 6s
-            setTimeout(dismiss, 6000);
+            // Tồn tại lâu hơn khi tab không focus (user đang làm chuyện khác → không miss)
+            // Mention + reminder = quan trọng → 12s; thường = 6s; nếu tab unfocus tăng gấp đôi.
+            let lifeMs = 6000;
+            if (d.type === 'task.mentioned' || d.type === 'task.reminder') lifeMs = 12000;
+            if (! document.hasFocus()) lifeMs *= 2;
+
+            const progress = $t.querySelector('.app-toast-progress span');
+            if (progress) progress.style.animationDuration = (lifeMs / 1000) + 's';
+
+            setTimeout(dismiss, lifeMs);
         },
     };
     window.Bell = Bell;
@@ -588,13 +596,68 @@
     }
     window.bumpNavTaskBadge = bumpNavTaskBadge;
 
+    // ---- Tab title flash: hiện (N) ở title trình duyệt khi có noti chưa đọc ----
+    const TabTitle = {
+        original: document.title,
+        timer: null,
+        unread: 0,
+        update(unread) {
+            this.unread = unread;
+            if (unread > 0) {
+                document.title = `(${unread > 99 ? '99+' : unread}) ${this.original}`;
+                if (! document.hasFocus()) this.startFlash();
+            } else {
+                this.stopFlash();
+                document.title = this.original;
+            }
+        },
+        startFlash() {
+            if (this.timer) return;
+            let alt = false;
+            this.timer = setInterval(() => {
+                alt = !alt;
+                document.title = alt
+                    ? `🔔 ${this.unread > 99 ? '99+' : this.unread} thông báo mới`
+                    : `(${this.unread > 99 ? '99+' : this.unread}) ${this.original}`;
+            }, 1500);
+        },
+        stopFlash() {
+            if (this.timer) { clearInterval(this.timer); this.timer = null; }
+        },
+    };
+    window.addEventListener('focus', () => { TabTitle.stopFlash(); TabTitle.update(TabTitle.unread); });
+
+    // Wrap Bell.setUnread để đồng bộ với tab title
+    const _origSetUnread = Bell.setUnread.bind(Bell);
+    Bell.setUnread = function (n) {
+        _origSetUnread(n);
+        TabTitle.update(Math.max(0, n));
+    };
+
+    // ---- Bell shake + badge pulse animation khi noti mới ----
+    const shakeBell = () => {
+        if (! Bell.$btn) return;
+        Bell.$btn.classList.remove('bell-shake');
+        void Bell.$btn.offsetWidth;
+        Bell.$btn.classList.add('bell-shake');
+        // Badge pulse
+        if (Bell.$badge) {
+            Bell.$badge.classList.remove('badge-pulse');
+            void Bell.$badge.offsetWidth;
+            Bell.$badge.classList.add('badge-pulse');
+        }
+    };
+
     // Realtime subscribe — chờ Echo sẵn sàng
     try {
         if (window.Echo) {
             window.Echo.private(`App.Models.User.${AUTH_USER.id}`)
                 .notification((notif) => {
+                    console.log('[realtime notification]', notif);
+
                     Bell.setUnread(Bell.unread + 1);
                     Bell.toast(notif);
+                    shakeBell();
 
                     // Task vừa được giao cho tôi → tăng badge "Công việc"
                     if (notif && notif.type === 'task.assigned') {
@@ -603,6 +666,12 @@
                 });
         }
     } catch (e) { console.warn('Bell subscribe failed:', e); }
+
+    // Init tab title với số unread ban đầu (server-rendered)
+    document.addEventListener('DOMContentLoaded', () => {
+        const initUnread = parseInt(Bell.$badge?.textContent || '0', 10) || 0;
+        if (initUnread > 0) TabTitle.update(initUnread);
+    });
 
     // Phím tắt N → mở quick task modal (chỉ khi không đang nhập trong input/textarea)
     document.addEventListener('keydown', (e) => {

@@ -30,11 +30,37 @@
                 <span>Thành viên</span>
             </nav>
         </div>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#userModal"
-                onclick="openUserModal(null)">
-            <i class="bi bi-person-plus me-1"></i> Thêm thành viên
-        </button>
+        <div class="d-flex gap-2">
+            <form method="POST" action="{{ route('users.broadcastTest') }}" class="m-0" id="broadcastTestForm">
+                @csrf
+                <button type="button" id="btnBroadcastTest" class="btn btn-outline-secondary"
+                        title="Đẩy 1 thông báo test tới tất cả user để kiểm tra Reverb">
+                    <i class="bi bi-broadcast me-1"></i> Test broadcast
+                </button>
+            </form>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#userModal"
+                    onclick="openUserModal(null)">
+                <i class="bi bi-person-plus me-1"></i> Thêm thành viên
+            </button>
+        </div>
     </div>
+
+    @push('scripts')
+    <script>
+        document.getElementById('btnBroadcastTest')?.addEventListener('click', async (e) => {
+            const $btn = e.currentTarget;
+            const ok = await confirmAction({
+                title: 'Đẩy thông báo TEST?',
+                text: 'Tất cả <b>{{ $users->total() }}</b> user trong hệ thống sẽ nhận 1 toast realtime để kiểm tra Reverb còn sống không.',
+                confirmText: '<i class="bi bi-broadcast me-1"></i> Đẩy ngay',
+            });
+            if (! ok) return;
+            $btn.disabled = true;
+            $btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Đang đẩy…';
+            document.getElementById('broadcastTestForm').submit();
+        });
+    </script>
+    @endpush
 
     <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
