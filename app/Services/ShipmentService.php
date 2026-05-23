@@ -405,16 +405,36 @@ class ShipmentService
     private function mergeFormattingWithExisting(string $key, array $snapshot): array
     {
         $scope = $snapshot['formatting_scope'] ?? null;
-        // No scope = no merge needed (legacy or super-admin full scope)
+        // Always strip formatting_scope before storing (it's only metadata for merge)
+        unset($snapshot['formatting_scope']);
+
+        // No scope = no merge needed (legacy clients hoặc super-admin full scope)
         if (! is_array($scope) || empty($scope)) {
-            unset($snapshot['formatting_scope']);
+            \Log::info('mergeFormattingWithExisting: no scope → store as-is', [
+                'key' => $key,
+                'has_formatting' => isset($snapshot['formatting']),
+                'import_count' => count($snapshot['formatting']['import'] ?? []),
+            ]);
             return $snapshot;
         }
-        unset($snapshot['formatting_scope']);   // không lưu scope, chỉ dùng để merge
 
         $existing = $this->snapshots->get($key);
-        $existingFmt = $existing?->payload['formatting'] ?? null;
+        $existingFmt = null;
+        if ($existing && is_array($existing->payload ?? null) && isset($existing->payload['formatting'])
+            && is_array($existing->payload['formatting'])) {
+            $existingFmt = $existing->payload['formatting'];
+        }
+
+        \Log::info('mergeFormattingWithExisting: with scope', [
+            'key' => $key,
+            'scope_size' => count($scope),
+            'existing_fmt_is_array' => is_array($existingFmt),
+            'existing_import_count' => is_array($existingFmt) ? count($existingFmt['import'] ?? []) : null,
+            'new_import_count' => count($snapshot['formatting']['import'] ?? []),
+        ]);
+
         if (! is_array($existingFmt)) {
+            // No existing formatting → use new as-is (don't filter by scope on first save)
             return $snapshot;
         }
 

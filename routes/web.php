@@ -26,6 +26,29 @@ Route::middleware('auth')->group(function () {
         Route::get('/shipments/{period}',    [ShipmentController::class, 'show'])->name('shipments.show')->where('period', '\d{4}-\d{2}');
         Route::get('/shipments/{period}/data', [ShipmentController::class, 'data'])->name('shipments.data')->where('period', '\d{4}-\d{2}');
         Route::put('/me/shipment-column-prefs', [ShipmentController::class, 'updateColumnPrefs'])->name('shipments.columnPrefs');
+
+        // Debug endpoint — dump current snapshot for inspection
+        Route::get('/shipments/{period}/debug-snapshot', function (string $period) {
+            $svc = app(\App\Services\SheetSnapshotService::class);
+            $snap = $svc->get('shipments_grid_' . $period);
+            return response()->json([
+                'exists'   => $snap !== null,
+                'version'  => $snap?->version,
+                'updated_at' => $snap?->updated_at,
+                'payload_type' => $snap ? gettype($snap->payload) : null,
+                'payload_keys' => $snap && is_array($snap->payload) ? array_keys($snap->payload) : null,
+                'has_formatting' => $snap && is_array($snap->payload) && isset($snap->payload['formatting']),
+                'formatting_import_count' => $snap && is_array($snap->payload)
+                    && isset($snap->payload['formatting']['import'])
+                    ? count($snap->payload['formatting']['import']) : null,
+                'formatting_export_count' => $snap && is_array($snap->payload)
+                    && isset($snap->payload['formatting']['export'])
+                    ? count($snap->payload['formatting']['export']) : null,
+                'first_import_entry' => $snap && is_array($snap->payload)
+                    && ! empty($snap->payload['formatting']['import'])
+                    ? $snap->payload['formatting']['import'][0] : null,
+            ]);
+        })->where('period', '\d{4}-\d{2}');
     });
     Route::middleware('permission:shipments.create')->group(function () {
         Route::post('/shipments/months',                [ShipmentController::class, 'createPeriod'])->name('shipments.createPeriod');
