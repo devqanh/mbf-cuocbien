@@ -1247,7 +1247,13 @@
         // Khác snapshot cũ: chỉ lưu CELL STYLE, không lưu row data.
         // Anchored theo (id, colKey) thay vì (sheetRow, colIdx) để không bị drift
         // khi rows reorder/insert/delete.
-        const STYLE_KEYS = ['bg', 'fc', 'bl', 'it', 'un', 'cl', 'fs', 'ff', 'ht', 'vt', 'tb'];
+        //
+        // CHỈ persist USER-MEANINGFUL styles. Skip layout defaults (vt, tb, ht) vì:
+        // 1. Chúng đã được buildCellData tự set mỗi lần render (vt:0, tb:2, ht:2 cho number).
+        // 2. Capture chúng → bloat snapshot (hàng trăm entries vô nghĩa).
+        // 3. applyFormattingOverlay gọi setCellFormat(vt=0) sau setCellFormat(bg=...)
+        //    đôi khi RESET bg → bg mất sau reload!
+        const STYLE_KEYS = ['bg', 'fc', 'bd', 'bl', 'it', 'un', 'cl', 'fs', 'ff'];
 
         function extractFormatting(sheetOrder) {
             try {
