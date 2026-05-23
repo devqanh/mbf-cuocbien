@@ -1741,6 +1741,7 @@
                 hook: {
                     workbookCreateAfter() {
                         applySupplierDropdown();
+                        applyDateValidation();
                         // Formatting overlay đã được bake-in qua buildCellData → không cần
                         // applyFormattingOverlay ở đây (setCellFormat có thể reset bg do
                         // Luckysheet quirk khi gọi cho cell vừa render). Giữ overlay cho
@@ -1842,8 +1843,6 @@
             const valueList = SUPPLIERS.join(',');
             const allSheets = luckysheet.getAllSheets();
             allSheets.forEach((sheet, sheetOrder) => {
-                // Dynamic range: lấy số row thật của sheet thay vì hardcode 199
-                // Đảm bảo dropdown vẫn hoạt động khi tháng có >200 dòng
                 const lastRow = Math.max((sheet.row ?? 80) - 1, 199);
                 try {
                     luckysheet.setDataVerification({
@@ -1863,6 +1862,41 @@
                 } catch (e) {
                     console.warn('Không apply được dropdown NCC cho sheet', sheetOrder, e);
                 }
+            });
+        }
+
+        // Set data verification 'date' cho TẤT CẢ cột date — user click ô trống thấy
+        // date picker, đảm bảo input chuẩn YYYY-MM-DD, không cho gõ chuỗi tùy ý.
+        function applyDateValidation() {
+            const dateColIndexes = [];
+            COLS.forEach((c, i) => {
+                if (c.type === 'date') dateColIndexes.push({ idx: i, key: c.key, title: c.title });
+            });
+            if (dateColIndexes.length === 0) return;
+
+            const allSheets = luckysheet.getAllSheets();
+            allSheets.forEach((sheet, sheetOrder) => {
+                const lastRow = Math.max((sheet.row ?? 80) - 1, 199);
+                dateColIndexes.forEach(({ idx, title }) => {
+                    try {
+                        luckysheet.setDataVerification({
+                            type:           'date',
+                            type2:          'bw',                  // between dates
+                            value1:         '1900-01-01',          // min
+                            value2:         '2099-12-31',          // max
+                            validity:       'Định dạng ngày không hợp lệ (YYYY-MM-DD).',
+                            remote:         false,
+                            prohibitInput:  false,                 // cho phép gõ tay
+                            hintShow:       true,
+                            hintText:       `📅 ${title}: chọn ngày từ lịch hoặc gõ YYYY-MM-DD`,
+                        }, {
+                            range: { row: [1, lastRow], column: [idx, idx] },
+                            order: sheetOrder,
+                        });
+                    } catch (e) {
+                        console.warn(`Không apply được date validation cho ${title} sheet ${sheetOrder}:`, e);
+                    }
+                });
             });
         }
 
