@@ -10,6 +10,9 @@ use Illuminate\Validation\ValidationException;
 
 class LoginController extends Controller
 {
+    /** Thời hạn cookie "remember me" — 6 tháng (phút). */
+    private const REMEMBER_DURATION_MINUTES = 60 * 24 * 30 * 6;
+
     public function showLogin()
     {
         if (Auth::check()) {
@@ -29,6 +32,10 @@ class LoginController extends Controller
         ]);
 
         $remember = $request->boolean('remember');
+
+        if ($remember) {
+            Auth::guard('web')->setRememberDuration(self::REMEMBER_DURATION_MINUTES);
+        }
 
         if (! Auth::attempt($credentials, $remember)) {
             throw ValidationException::withMessages([

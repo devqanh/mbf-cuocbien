@@ -91,8 +91,9 @@
                 </div>
 
                 <div class="form-check mb-4">
-                    <input type="checkbox" name="remember" id="remember" class="form-check-input" value="1">
-                    <label for="remember" class="form-check-label">Ghi nhớ đăng nhập</label>
+                    <input type="checkbox" name="remember" id="remember" class="form-check-input" value="1"
+                           {{ old('remember', '1') ? 'checked' : '' }}>
+                    <label for="remember" class="form-check-label">Ghi nhớ đăng nhập (6 tháng)</label>
                 </div>
 
                 <button type="submit" class="btn btn-primary w-100 mb-3">
