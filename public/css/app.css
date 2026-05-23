@@ -429,35 +429,72 @@ a { text-decoration: none; }
 }
 .flatpickr-calendar.open { z-index: 1060; }  /* trên modal backdrop */
 
-/* Header (tháng + năm + arrow) */
+/* Header (tháng + năm + arrow) — chiều cao default 28-34px của flatpickr, padding chỉ tăng nhẹ */
 .flatpickr-months {
-    background: linear-gradient(135deg, #0153a9 0%, #013f80 100%);
-    padding: 10px 8px 8px;
+    background: linear-gradient(135deg, #0153a9 0%, #013f80 100%) !important;
     border-top-left-radius: 14px;
     border-top-right-radius: 14px;
+    padding: 4px 4px 0;
+    height: 44px;
 }
-.flatpickr-months .flatpickr-month,
-.flatpickr-current-month,
-.flatpickr-current-month input.cur-year,
-.flatpickr-monthDropdown-months {
+.flatpickr-months .flatpickr-month {
+    background: transparent !important;
     color: #fff !important;
     fill: #fff !important;
+    height: 36px;
+    line-height: 1;
+    overflow: visible !important;
+}
+.flatpickr-current-month {
+    color: #fff !important;
+    fill: #fff !important;
+    padding-top: 6px !important;
+    font-size: 16px;
 }
 .flatpickr-current-month .flatpickr-monthDropdown-months {
     background: transparent !important;
     border: none !important;
+    color: #fff !important;
     font-weight: 700 !important;
+    padding: 2px 6px !important;
+    border-radius: 6px;
+}
+.flatpickr-current-month .flatpickr-monthDropdown-months:hover {
+    background: rgba(255,255,255,.18) !important;
 }
 .flatpickr-current-month .flatpickr-monthDropdown-months option {
     color: var(--azia-text);
     background: #fff;
 }
-.flatpickr-current-month input.cur-year { font-weight: 700 !important; }
+/* Year input + wrapper — KEY FIX: input mặc định bg trắng, phải transparent */
+.flatpickr-current-month input.cur-year {
+    background: transparent !important;
+    border: none !important;
+    color: #fff !important;
+    font-weight: 700 !important;
+    box-shadow: none !important;
+}
+.flatpickr-current-month input.cur-year:focus { outline: none !important; }
+.flatpickr-current-month .numInputWrapper {
+    background: transparent !important;
+}
+.flatpickr-current-month .numInputWrapper:hover {
+    background: rgba(255,255,255,.18) !important;
+    border-radius: 6px;
+}
+.flatpickr-current-month .numInputWrapper span {
+    border-color: transparent !important;
+    background: transparent !important;
+}
+.flatpickr-current-month .numInputWrapper span:after {
+    border-top-color: #fff !important;
+    border-bottom-color: #fff !important;
+}
 .flatpickr-months .flatpickr-prev-month,
 .flatpickr-months .flatpickr-next-month {
     fill: #fff !important;
     color: #fff !important;
-    padding: 6px;
+    background: transparent !important;
 }
 .flatpickr-months .flatpickr-prev-month:hover,
 .flatpickr-months .flatpickr-next-month:hover {
