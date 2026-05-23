@@ -136,19 +136,23 @@ class ShipmentController extends Controller
 
     public function bulk(Request $request, string $period): JsonResponse
     {
+        // Snapshot validation — KHÔNG dùng wildcard 'snapshot.*.celldata' vì Laravel
+        // wildcard validation strip assoc keys (formatting, formatting_scope) thành
+        // numeric array [item0, item1] → mất structure → backend không nhận đúng.
+        // Dùng rules explicit cho cấu trúc mới.
         $payload = $request->validate([
-            'rows'                   => ['required', 'array'],
-            'rows.import'            => ['array',  'max:5000'],
-            'rows.export'            => ['array',  'max:5000'],
-            // Snapshot Luckysheet: tối đa 5 sheets, mỗi sheet tối đa 100k cell.
-            // 100k cell ≈ 25 MB raw JSON ≈ 2.5 MB sau gzip — đủ headroom cho tháng bận nhất.
-            'snapshot'               => ['nullable', 'array', 'max:5'],
-            'snapshot.*.celldata'    => ['nullable', 'array', 'max:100000'],
-            'client_version'         => ['nullable', 'integer'],
+            'rows'                          => ['required', 'array'],
+            'rows.import'                   => ['array',  'max:5000'],
+            'rows.export'                   => ['array',  'max:5000'],
+            'snapshot'                      => ['nullable', 'array'],
+            'snapshot.formatting'           => ['nullable', 'array'],
+            'snapshot.formatting.import'    => ['nullable', 'array'],
+            'snapshot.formatting.export'    => ['nullable', 'array'],
+            'snapshot.formatting_scope'     => ['nullable', 'array'],
+            'client_version'                => ['nullable', 'integer'],
         ], [
-            'rows.import.max'         => 'Quá nhiều dòng HÀNG NHẬP (tối đa 5000).',
-            'rows.export.max'         => 'Quá nhiều dòng HÀNG XUẤT (tối đa 5000).',
-            'snapshot.*.celldata.max' => 'Snapshot quá lớn (tối đa 100,000 cell/sheet) — cân nhắc xoá bớt formatting hoặc reset snapshot.',
+            'rows.import.max' => 'Quá nhiều dòng HÀNG NHẬP (tối đa 5000).',
+            'rows.export.max' => 'Quá nhiều dòng HÀNG XUẤT (tối đa 5000).',
         ]);
 
         try {
