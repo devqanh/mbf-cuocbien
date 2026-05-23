@@ -1697,6 +1697,47 @@
                 enableAddBackTop: false,
                 allowEdit: true,
                 data: sheets,
+                // Hide toolbar features không persist hoặc không phù hợp logistics tracking.
+                // Persist: bg/fc/bold/italic/underline/strike/font/size/align/border.
+                // KHÔNG persist (ẩn): image, chart, postil, conditionalFormat, pivotTable.
+                showtoolbarConfig: {
+                    undoRedo:           true,
+                    paintFormat:        true,
+                    currencyFormat:     true,
+                    percentageFormat:   true,
+                    numberDecrease:     true,
+                    numberIncrease:     true,
+                    moreFormats:        true,
+                    font:               true,
+                    fontSize:           true,
+                    bold:               true,
+                    italic:             true,
+                    strikethrough:      true,
+                    underline:          true,
+                    textColor:          true,
+                    fillColor:          true,
+                    border:             true,
+                    mergeCell:          true,
+                    horizontalAlignMode: true,
+                    verticalAlignMode:   true,
+                    textWrapMode:       true,
+                    textRotateMode:     false,   // hiếm dùng cho logistics
+                    image:              false,   // không cần ảnh trong sheet data
+                    link:               false,   // không persist tốt
+                    chart:              false,   // không phù hợp use case
+                    postil:             false,   // comment KHÔNG persist qua save
+                    pivotTable:         false,   // không phù hợp
+                    function:           false,   // hiếm dùng, dễ gây nhầm cell
+                    frozenMode:         true,
+                    sortAndFilter:      true,
+                    conditionalFormat:  false,   // KHÔNG persist qua save
+                    dataVerification:   true,    // dùng cho dropdown NCC
+                    splitColumn:        false,   // hiếm dùng
+                    screenshot:         false,   // không cần
+                    findAndReplace:     true,
+                    protection:         false,   // đã handle qua code permissions
+                    print:              true,
+                },
                 hook: {
                     workbookCreateAfter() {
                         applySupplierDropdown();
