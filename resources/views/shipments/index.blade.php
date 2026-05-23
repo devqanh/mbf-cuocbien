@@ -1085,13 +1085,26 @@
             });
         }
 
-        function buildCellData(rows) {
+        function buildCellData(rows, sheetOrder) {
             const celldata = [];
-            // Cột readonly = id auto-gen HOẶC admin set 'view'
             const isReadonly = (c) => c.readonly || COLUMN_PERMS[c.key] === 'view';
-            // Chỉ hiện 🔒 cho cột bị admin restrict (không phải id, vì id hiển nhiên auto)
             const showLockIcon = (c) => COLUMN_PERMS[c.key] === 'view';
 
+            // BAKED-IN OVERLAY: merge formatting (bg, fc, font...) trực tiếp vào celldata
+            // → bg là part của initial render, KHÔNG cần setCellFormat post-render
+            // → tránh race condition + canvas redraw lag.
+            const overlayMap = new Map();   // id → Map(colKey → fmt)
+            if (snapshot?.formatting && sheetOrder != null) {
+                const dir = sheetOrder === 0 ? 'import' : 'export';
+                (snapshot.formatting[dir] || []).forEach(entry => {
+                    if (! entry.id) return;
+                    const id = parseInt(entry.id);
+                    if (! overlayMap.has(id)) overlayMap.set(id, new Map());
+                    overlayMap.get(id).set(entry.col, entry.fmt || {});
+                });
+            }
+
+            // Header row 0
             COLS.forEach((c, ci) => {
                 const headerTitle = showLockIcon(c) ? '🔒 ' + c.title : c.title;
                 celldata.push({
@@ -1106,15 +1119,19 @@
                     }
                 });
             });
+
             rows.forEach((row, ri) => {
+                const rowOverlay = row.id != null ? overlayMap.get(parseInt(row.id)) : null;
+
                 COLS.forEach((c, ci) => {
                     const raw = row[c.key];
                     const isEmpty = raw == null || raw === '';
                     const readonly = isReadonly(c);
+                    const overlayFmt = rowOverlay?.get(c.key) || null;
 
-                    // Skip cell editable rỗng — Luckysheet auto-render rỗng, tiết kiệm 60-80% celldata
-                    // Readonly cell vẫn keep dù rỗng → giữ visual cue (bg xám + lock)
-                    if (isEmpty && ! readonly) return;
+                    // Skip cell editable rỗng + KHÔNG có overlay format
+                    // (Cell rỗng nhưng có bg yellow vẫn phải render!)
+                    if (isEmpty && ! readonly && ! overlayFmt) return;
 
                     let displayed;
                     if (c.type === 'vnd')        displayed = fmtVND(raw);
@@ -1131,12 +1148,14 @@
                     };
                     if (c.type === 'vnd' || c.type === 'number') cell.ht = 2;
 
-                    // Readonly: nền xám + text mờ + lock — user nhìn ra ngay, không gõ vào để khỏi mất dữ liệu
                     if (readonly) {
                         cell.bg = '#f4f6fb';
                         cell.fc = '#7987a1';
                         cell.lo = 1;
                     }
+
+                    // Apply overlay LAST → ghi đè default styling (vd user override readonly bg)
+                    if (overlayFmt) Object.assign(cell, overlayFmt);
 
                     celldata.push({ r: ri + 1, c: ci, v: cell });
                 });
@@ -1369,19 +1388,10 @@
             const res  = await fetch(ROUTES.data, { headers: { 'Accept': 'application/json' } });
             const json = await res.json();
             rowsByDir    = json.data;
-            snapshot     = json.snapshot;
+            snapshot     = json.snapshot;     // chứa formatting overlay, được buildCellData merge baked-in
             sheetVersion = json.version ?? 0;
-            renderSheet();
+            renderSheet();                    // formatting đã merge vào celldata → bg hiển thị ngay
             updateVersionBadge(json.editor, json.updatedAt);
-
-            // Apply formatting overlay sau render — persist bg/fc/font user set manually
-            if (snapshot?.formatting) {
-                setTimeout(() => {
-                    applyFormattingOverlay(0, snapshot.formatting.import || []);
-                    applyFormattingOverlay(1, snapshot.formatting.export || []);
-                }, 200);
-            }
-
             resetDirty();
             _needsResync = false;
         }
@@ -1555,7 +1565,7 @@
                     columnlen, rowlen: { 0: 48 }, customHeight: { 0: 1 },
                     borderInfo: makeBorderInfo(importRowCount),
                 },
-                celldata: buildCellData(rowsByDir.import || []),
+                celldata: buildCellData(rowsByDir.import || [], 0),
                 row: importRowCount,
                 column: COLS.length + 1,
                 frozen: { type: 'rangeBoth', range: { row_focus: 0, column_focus: 1 } },
@@ -1567,7 +1577,7 @@
                     columnlen, rowlen: { 0: 48 }, customHeight: { 0: 1 },
                     borderInfo: makeBorderInfo(exportRowCount),
                 },
-                celldata: buildCellData(rowsByDir.export || []),
+                celldata: buildCellData(rowsByDir.export || [], 1),
                 row: exportRowCount,
                 column: COLS.length + 1,
                 frozen: { type: 'rangeBoth', range: { row_focus: 0, column_focus: 1 } },
