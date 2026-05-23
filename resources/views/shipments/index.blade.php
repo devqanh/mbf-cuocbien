@@ -428,11 +428,12 @@
 
             <span id="filterChip"></span>
 
-            <a href="{{ route('reports.payable.initial.index') }}" class="btn btn-outline-secondary"
+            {{-- [2026-05-23] Ẩn nút NCC — user yêu cầu, vẫn truy cập được qua menu Báo cáo --}}
+            {{-- <a href="{{ route('reports.payable.initial.index') }}" class="btn btn-outline-secondary"
                target="_blank" title="Cấu hình danh sách NCC — mở tab mới">
                 <i class="bi bi-people me-1"></i> NCC
                 <span class="badge bg-secondary ms-1">{{ count($suppliers) }}</span>
-            </a>
+            </a> --}}
             <a class="btn btn-outline-success" href="{{ route('shipments.export', ['period' => $period]) }}"
                title="Tải file Excel toàn bộ dữ liệu tháng này">
                 <i class="bi bi-file-earmark-excel me-1"></i> Xuất Excel
