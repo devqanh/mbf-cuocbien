@@ -292,6 +292,98 @@ a { text-decoration: none; }
 
 /* ---------- Toast ---------- */
 .toast-container { z-index: 2000; }
+.toast-container .toast { min-width: 260px; }
+
+/* ---------- Bell notification ---------- */
+.bell-wrap { position: relative; }
+.bell-badge {
+    position: absolute; top: 2px; right: 2px;
+    min-width: 18px; height: 18px;
+    background: var(--azia-danger); color: #fff;
+    border: 2px solid #fff;
+    border-radius: 999px;
+    font-size: 10px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0 4px; line-height: 1;
+}
+.bell-menu {
+    min-width: 360px; max-width: 380px;
+    border: 1px solid var(--azia-border);
+    border-radius: 14px;
+    padding: 0; overflow: hidden;
+    box-shadow: 0 12px 32px rgba(28,39,60,.14);
+}
+.bell-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px;
+    background: #fafbfd;
+    border-bottom: 1px solid var(--azia-border);
+}
+.bell-head strong { font-size: 14px; }
+.bell-list { max-height: 380px; overflow-y: auto; }
+.bell-empty {
+    padding: 36px 16px;
+    text-align: center;
+    color: var(--azia-muted);
+}
+.bell-empty i { font-size: 32px; opacity: .4; }
+.bell-item {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 12px 16px;
+    border-bottom: 1px solid #f0f3fa;
+    color: var(--azia-text); text-decoration: none;
+    transition: background .12s;
+    position: relative;
+}
+.bell-item:last-child { border-bottom: none; }
+.bell-item:hover { background: #fafbfd; }
+.bell-item.is-read { opacity: .65; }
+.bell-item-icon {
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0; font-size: 16px;
+}
+.bell-item-body { flex: 1; min-width: 0; }
+.bell-item-text {
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--azia-text);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.bell-item-time {
+    font-size: 11px;
+    color: var(--azia-muted);
+    margin-top: 2px;
+}
+.bell-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--azia-primary);
+    flex-shrink: 0;
+    margin-top: 6px;
+}
+.bell-foot {
+    display: block; padding: 10px 16px;
+    background: #fafbfd;
+    border-top: 1px solid var(--azia-border);
+    text-align: center;
+    font-size: 13px; font-weight: 600;
+    color: var(--azia-primary);
+    text-decoration: none;
+}
+.bell-foot:hover { background: var(--azia-primary-soft); }
+
+kbd {
+    background: var(--azia-border);
+    color: var(--azia-text);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: ui-monospace, monospace;
+}
 
 /* ---------- SweetAlert2 theme (đồng bộ với app) ---------- */
 .app-swal-popup {

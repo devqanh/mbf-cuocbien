@@ -28,7 +28,18 @@ class PayableReportController extends Controller
     {
         $report->load('lines', 'creator:id,name');
         $previous = $this->payable->previousReport($report);
-        return view('reports.payable.show', compact('report', 'previous'));
+
+        // Notes/Tasks gắn vào báo cáo này (polymorphic)
+        $tasks = \App\Models\Task::query()
+            ->where('linkable_type', PayableReport::class)
+            ->where('linkable_id', $report->id)
+            ->with(['assignees:id,name', 'creator:id,name'])
+            ->orderByRaw('CASE WHEN status = "done" THEN 1 ELSE 0 END')
+            ->orderBy('due_at')
+            ->orderByDesc('id')
+            ->get();
+
+        return view('reports.payable.show', compact('report', 'previous', 'tasks'));
     }
 
     public function store(Request $request): RedirectResponse

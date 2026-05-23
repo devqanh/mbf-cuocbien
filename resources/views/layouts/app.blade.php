@@ -57,6 +57,16 @@
                     </li>
                     @endcan
 
+                    {{-- Ghi chú & công việc --}}
+                    @can('tasks.view')
+                    <li class="nav-item">
+                        <a class="nav-link {{ request()->routeIs('tasks.*') ? 'active' : '' }}"
+                           href="{{ route('tasks.index') }}">
+                            <i class="bi bi-check2-square"></i> Công việc
+                        </a>
+                    </li>
+                    @endcan
+
                     {{-- Quản trị — chỉ hiện nếu có ít nhất 1 quyền users.view hoặc roles.view --}}
                     @if(auth()->user()->hasAnyPermission(['users.view', 'roles.view']))
                     <li class="nav-item dropdown">
@@ -81,6 +91,40 @@
                 </ul>
 
                 <div class="header-actions d-flex align-items-center gap-2">
+                    @can('tasks.create')
+                    <button class="icon-btn" type="button" title="Tạo task nhanh (phím N)"
+                            data-bs-toggle="modal" data-bs-target="#quickTaskModal">
+                        <i class="bi bi-plus-lg"></i>
+                    </button>
+                    @endcan
+
+                    {{-- Bell notification --}}
+                    <div class="dropdown bell-wrap">
+                        <button id="bellBtn" type="button" class="icon-btn position-relative"
+                                data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false"
+                                title="Thông báo">
+                            <i class="bi bi-bell"></i>
+                            <span id="bellBadge" class="bell-badge d-none">0</span>
+                        </button>
+                        <div class="dropdown-menu dropdown-menu-end bell-menu">
+                            <div class="bell-head">
+                                <strong>Thông báo</strong>
+                                <button type="button" class="btn btn-link btn-sm p-0" id="bellMarkAll">
+                                    Đánh dấu đã đọc
+                                </button>
+                            </div>
+                            <div id="bellList" class="bell-list">
+                                <div class="bell-empty">
+                                    <i class="bi bi-bell-slash"></i>
+                                    <div class="small text-muted mt-2">Chưa có thông báo</div>
+                                </div>
+                            </div>
+                            <a href="{{ route('notifications.index') }}" class="bell-foot">
+                                Xem tất cả <i class="bi bi-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
+
                     <button class="icon-btn" type="button" title="Toàn màn hình" onclick="toggleFullscreen()">
                         <i class="bi bi-arrows-fullscreen"></i>
                     </button>
@@ -141,8 +185,89 @@
     @endif
 </div>
 
+{{-- Quick Task modal (global — phím tắt N hoặc nút + ở header) --}}
+@can('tasks.create')
+<div class="modal fade" id="quickTaskModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border:none; border-radius:14px;">
+            <form id="quickTaskForm" method="POST" action="{{ route('tasks.store') }}">
+                @csrf
+                <div class="modal-header" style="border-bottom: 1px solid var(--azia-border);">
+                    <h5 class="modal-title">
+                        <i class="bi bi-plus-circle me-1" style="color: var(--azia-primary)"></i>
+                        Tạo task nhanh
+                        <small class="text-muted ms-2" style="font-size:11px;font-weight:500">phím <kbd>N</kbd></small>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Tiêu đề <span class="text-danger">*</span></label>
+                        <input type="text" name="title" class="form-control" required autofocus
+                               placeholder="vd: Đối chiếu công nợ MSC trước 30/05">
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Hạn (tuỳ chọn)</label>
+                            <input type="datetime-local" name="due_at" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Nhắc trước</label>
+                            <select name="remind_before" class="form-select">
+                                <option value="">Không nhắc</option>
+                                <option value="0">Đúng giờ hạn</option>
+                                <option value="30">30 phút trước</option>
+                                <option value="60" selected>1 giờ trước</option>
+                                <option value="240">4 giờ trước</option>
+                                <option value="1440">1 ngày trước</option>
+                                <option value="2880">2 ngày trước</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row g-3 mt-1">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Độ ưu tiên</label>
+                            <select name="priority" class="form-select">
+                                <option value="low">Thấp</option>
+                                <option value="normal" selected>Bình thường</option>
+                                <option value="high">Cao</option>
+                                <option value="urgent">Khẩn cấp</option>
+                            </select>
+                        </div>
+                        @can('tasks.assign_others')
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Giao cho</label>
+                            <select name="assignees[]" class="form-select" multiple id="quickAssignees" size="3">
+                                @foreach(\App\Models\User::orderBy('name')->get(['id','name']) as $u)
+                                    <option value="{{ $u->id }}" {{ $u->id === auth()->id() ? 'selected' : '' }}>{{ $u->name }}</option>
+                                @endforeach
+                            </select>
+                            <small class="text-muted">Giữ Ctrl/Cmd để chọn nhiều</small>
+                        </div>
+                        @endcan
+                    </div>
+                    <div class="mb-2 mt-3">
+                        <label class="form-label fw-semibold">Ghi chú</label>
+                        <textarea name="body" class="form-control" rows="3"
+                                  placeholder="Mô tả chi tiết, link tham khảo…"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer" style="border-top: 1px solid var(--azia-border);">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Huỷ</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check2-circle me-1"></i> Tạo task
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+@endcan
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="https://cdn.jsdelivr.net/npm/pusher-js@8.4.0/dist/web/pusher.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/laravel-echo@1.16.1/dist/echo.iife.js"></script>
 <script>
     function toggleFullscreen() {
         if (!document.fullscreenElement) document.documentElement.requestFullscreen();
@@ -203,6 +328,169 @@
         });
         return res.isConfirmed;
     };
+
+    // ---- Realtime Echo init (1 lần cho cả app) ----
+    @auth
+    const REVERB_CFG = {
+        key:    @json(config('broadcasting.connections.reverb.key')),
+        host:   @json(config('broadcasting.connections.reverb.options.host', request()->getHost())),
+        port:   @json((int) config('broadcasting.connections.reverb.options.port', 8080)),
+        scheme: @json(config('broadcasting.connections.reverb.options.scheme', 'http')),
+    };
+    const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]').content;
+    const AUTH_USER  = @json(['id' => auth()->id(), 'name' => auth()->user()->name]);
+
+    try {
+        if (!window.Echo && typeof Echo !== 'undefined' && REVERB_CFG.key) {
+            window.Echo = new Echo({
+                broadcaster: 'reverb',
+                key:     REVERB_CFG.key,
+                wsHost:  REVERB_CFG.host,
+                wsPort:  REVERB_CFG.port,
+                wssPort: REVERB_CFG.port,
+                forceTLS: REVERB_CFG.scheme === 'https',
+                enabledTransports: ['ws', 'wss'],
+                auth: { headers: { 'X-CSRF-TOKEN': CSRF_TOKEN } },
+            });
+        }
+    } catch (e) { console.warn('Echo init failed:', e); }
+
+    // ---- Bell (notification) ----
+    const Bell = {
+        $btn:    document.getElementById('bellBtn'),
+        $badge:  document.getElementById('bellBadge'),
+        $list:   document.getElementById('bellList'),
+        $markAll:document.getElementById('bellMarkAll'),
+        unread: 0,
+
+        setUnread(n) {
+            this.unread = Math.max(0, n);
+            if (!this.$badge) return;
+            if (this.unread <= 0) {
+                this.$badge.classList.add('d-none');
+                this.$badge.textContent = '0';
+            } else {
+                this.$badge.classList.remove('d-none');
+                this.$badge.textContent = this.unread > 99 ? '99+' : String(this.unread);
+            }
+        },
+
+        renderItems(items) {
+            if (!this.$list) return;
+            if (!items || items.length === 0) {
+                this.$list.innerHTML = '<div class="bell-empty"><i class="bi bi-bell-slash"></i>'
+                                     + '<div class="small text-muted mt-2">Chưa có thông báo</div></div>';
+                return;
+            }
+            const colorMap = { primary:'#0153a9', info:'#00b8d4', warning:'#ffb822', danger:'#ff5b5b', success:'#24d39f' };
+            const html = items.map(n => {
+                const d = n.data || {};
+                const color = colorMap[d.color] || '#7987a1';
+                const icon  = d.icon || 'bell';
+                return `<a class="bell-item ${n.read ? 'is-read' : ''}" href="${d.url || '#'}"
+                            data-id="${n.id}" onclick="Bell.markRead('${n.id}')">
+                    <span class="bell-item-icon" style="background:${color}22;color:${color}">
+                        <i class="bi bi-${icon}"></i>
+                    </span>
+                    <div class="bell-item-body">
+                        <div class="bell-item-text">${(d.message || '').replace(/</g,'&lt;')}</div>
+                        <div class="bell-item-time">${n.created_human || ''}</div>
+                    </div>
+                    ${n.read ? '' : '<span class="bell-dot"></span>'}
+                </a>`;
+            }).join('');
+            this.$list.innerHTML = html;
+        },
+
+        async fetchFeed() {
+            try {
+                const res = await fetch(@json(route('notifications.feed')), {
+                    headers: { 'Accept': 'application/json' },
+                    credentials: 'same-origin',
+                });
+                if (!res.ok) return;
+                const json = await res.json();
+                this.setUnread(json.unread || 0);
+                this.renderItems(json.notifications || []);
+            } catch (e) { /* silent */ }
+        },
+
+        async markRead(id) {
+            this.setUnread(this.unread - 1);
+            try {
+                await fetch(`/notifications/${id}/read`, {
+                    method: 'POST',
+                    headers: { 'X-CSRF-TOKEN': CSRF_TOKEN, 'Accept': 'application/json' },
+                    credentials: 'same-origin',
+                });
+            } catch (e) {}
+        },
+
+        async markAll() {
+            this.setUnread(0);
+            try {
+                await fetch(@json(route('notifications.readAll')), {
+                    method: 'POST',
+                    headers: { 'X-CSRF-TOKEN': CSRF_TOKEN, 'Accept': 'application/json' },
+                    credentials: 'same-origin',
+                });
+                await this.fetchFeed();
+            } catch (e) {}
+        },
+
+        toast(notif) {
+            // In-app toast khi nhận event realtime mới
+            const d = notif || {};
+            const colorMap = { primary:'#0153a9', info:'#00b8d4', warning:'#ffb822', danger:'#ff5b5b', success:'#24d39f' };
+            const color = colorMap[d.color] || '#0153a9';
+            const $c = document.querySelector('.toast-container');
+            if (!$c) return;
+            const $t = document.createElement('div');
+            $t.className = 'toast align-items-center border-0 show';
+            $t.style.cssText = `background:${color};color:#fff;`;
+            $t.innerHTML = `<div class="d-flex">
+                <div class="toast-body">
+                    <i class="bi bi-${d.icon || 'bell'} me-2"></i>
+                    <a href="${d.url || '#'}" class="text-white text-decoration-none">${(d.message || 'Thông báo mới').replace(/</g,'&lt;')}</a>
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>`;
+            $c.appendChild($t);
+            setTimeout(() => bootstrap.Toast.getOrCreateInstance($t).hide(), 6000);
+        },
+    };
+    window.Bell = Bell;
+
+    if (Bell.$btn) Bell.$btn.addEventListener('click', () => Bell.fetchFeed());
+    if (Bell.$markAll) Bell.$markAll.addEventListener('click', () => Bell.markAll());
+
+    // Initial load
+    Bell.fetchFeed();
+
+    // Realtime subscribe — chờ Echo sẵn sàng
+    try {
+        if (window.Echo) {
+            window.Echo.private(`App.Models.User.${AUTH_USER.id}`)
+                .notification((notif) => {
+                    Bell.setUnread(Bell.unread + 1);
+                    Bell.toast(notif);
+                });
+        }
+    } catch (e) { console.warn('Bell subscribe failed:', e); }
+
+    // Phím tắt N → mở quick task modal (chỉ khi không đang nhập trong input/textarea)
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== 'n' && e.key !== 'N') return;
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        const t = e.target;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        const $modal = document.getElementById('quickTaskModal');
+        if ($modal) {
+            e.preventDefault();
+            bootstrap.Modal.getOrCreateInstance($modal).show();
+        }
+    });
+    @endauth
 </script>
 @stack('scripts')
 </body>

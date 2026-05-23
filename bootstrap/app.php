@@ -31,6 +31,12 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('snapshots:prune --days=30 --keep=10 --optimize')
             ->monthlyOn(1, '03:00')
             ->withoutOverlapping();
+
+        // Reminder cho task tới hạn — chạy mỗi phút.
+        // Cần crontab dòng: * * * * * cd /path && php artisan schedule:run >> /dev/null 2>&1
+        $schedule->command('tasks:remind')
+            ->everyMinute()
+            ->withoutOverlapping(5);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

@@ -1,11 +1,15 @@
 <?php
 
 use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PayableReportController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\ShipmentController;
+use App\Http\Controllers\TaskCommentController;
+use App\Http\Controllers\TaskController;
 use App\Http\Controllers\UserController;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -101,6 +105,39 @@ Route::middleware('auth')->group(function () {
     Route::middleware('permission:users.delete')->group(function () {
         Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
     });
+
+    // ===== Tasks (Ghi chú & công việc) =====
+    Route::middleware('permission:tasks.view')->group(function () {
+        Route::get('/tasks',           [TaskController::class, 'index'])->name('tasks.index');
+        Route::get('/tasks/{task}',    [TaskController::class, 'show'])->name('tasks.show');
+    });
+    Route::middleware('permission:tasks.create')->group(function () {
+        Route::post('/tasks',                  [TaskController::class, 'store'])->name('tasks.store');
+        Route::put ('/tasks/{task}',           [TaskController::class, 'update'])->name('tasks.update');
+        Route::put ('/tasks/{task}/status',    [TaskController::class, 'toggleStatus'])->name('tasks.toggleStatus');
+        Route::delete('/tasks/{task}',         [TaskController::class, 'destroy'])->name('tasks.destroy');
+
+        // Comments
+        Route::post  ('/tasks/{task}/comments',                   [TaskCommentController::class, 'store'])->name('tasks.comments.store');
+        Route::delete('/tasks/{task}/comments/{comment}',         [TaskCommentController::class, 'destroy'])->name('tasks.comments.destroy');
+    });
+
+    // Endpoint cho mention picker (search users) — chỉ cần đã login
+    Route::get('/api/users/search', function (Request $request) {
+        $q = trim((string) $request->get('q', ''));
+        return \App\Models\User::query()
+            ->when($q, fn ($qb) => $qb->where('name', 'like', "%$q%"))
+            ->orderBy('name')
+            ->limit(8)
+            ->get(['id', 'name']);
+    })->name('users.search');
+
+    // ===== Notifications =====
+    Route::get   ('/notifications',                   [NotificationController::class, 'index'])->name('notifications.index');
+    Route::get   ('/notifications/feed',              [NotificationController::class, 'feed'])->name('notifications.feed');
+    Route::post  ('/notifications/{id}/read',         [NotificationController::class, 'markRead'])->name('notifications.read');
+    Route::post  ('/notifications/read-all',          [NotificationController::class, 'markAllRead'])->name('notifications.readAll');
+    Route::delete('/notifications/{id}',              [NotificationController::class, 'destroy'])->name('notifications.destroy');
 
     // ===== Roles =====
     Route::middleware('permission:roles.view')->group(function () {

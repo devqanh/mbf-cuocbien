@@ -515,8 +515,7 @@
 @push('scripts')
     <script src="https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/plugins/js/plugin.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/luckysheet.umd.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/pusher-js@8.4.0/dist/web/pusher.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/laravel-echo@1.16.1/dist/echo.iife.js"></script>
+    {{-- Pusher + Echo đã được layout load, không cần load lại --}}
 
     <script>
         const PERIOD = @json($period);
@@ -1934,16 +1933,20 @@
 
         function setupRealtime() {
             try {
-                window.Echo = new Echo({
-                    broadcaster: 'reverb',
-                    key:     REVERB.key,
-                    wsHost:  REVERB.host,
-                    wsPort:  REVERB.port,
-                    wssPort: REVERB.port,
-                    forceTLS: REVERB.scheme === 'https',
-                    enabledTransports: ['ws', 'wss'],
-                    auth: { headers: { 'X-CSRF-TOKEN': CSRF } },
-                });
+                // Echo đã được layout init sẵn. Chỉ tạo mới nếu chưa có (defensive).
+                if (! window.Echo && typeof Echo !== 'undefined') {
+                    window.Echo = new Echo({
+                        broadcaster: 'reverb',
+                        key:     REVERB.key,
+                        wsHost:  REVERB.host,
+                        wsPort:  REVERB.port,
+                        wssPort: REVERB.port,
+                        forceTLS: REVERB.scheme === 'https',
+                        enabledTransports: ['ws', 'wss'],
+                        auth: { headers: { 'X-CSRF-TOKEN': CSRF } },
+                    });
+                }
+                if (! window.Echo) throw new Error('Echo unavailable');
                 const status = document.getElementById('liveStatus');
                 const pc = window.Echo.connector.pusher.connection;
                 pc.bind('connected',    () => { status.innerHTML = '<i class="bi bi-wifi"></i> Live'; status.className = 'badge badge-soft-success'; });

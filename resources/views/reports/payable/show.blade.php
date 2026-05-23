@@ -425,4 +425,130 @@
             </table>
         </div>
     </div>
+
+    {{-- ============ NOTES & TASKS GẮN VỚI BÁO CÁO NÀY ============ --}}
+    <div class="card mt-3" id="notesCard">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+                <i class="bi bi-sticky-fill me-1" style="color: var(--azia-warning)"></i>
+                Ghi chú &amp; công việc liên quan
+                @if($tasks->count())
+                    <span class="badge badge-soft-primary ms-2">{{ $tasks->count() }}</span>
+                @endif
+            </div>
+            @can('tasks.create')
+                <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#linkedTaskModal">
+                    <i class="bi bi-plus-lg me-1"></i> Thêm ghi chú / task
+                </button>
+            @endcan
+        </div>
+        <div class="card-body p-0">
+            @forelse($tasks as $t)
+                @php
+                    $sColor = match($t->status) { 'done' => 'success', 'doing' => 'primary', default => 'secondary' };
+                    $sLabel = match($t->status) { 'done' => 'Hoàn thành', 'doing' => 'Đang làm', default => 'Chưa làm' };
+                    $isOverdue = $t->isOverdue();
+                @endphp
+                <div class="d-flex align-items-center gap-3 px-3 py-3 border-bottom" style="border-color: var(--azia-border)!important">
+                    <span class="badge badge-soft-{{ $sColor }}" style="min-width: 80px">{{ $sLabel }}</span>
+                    <div class="flex-grow-1 min-w-0">
+                        <a href="{{ route('tasks.show', $t) }}" class="fw-semibold text-decoration-none" style="color: var(--azia-text)">
+                            {{ $t->title }}
+                        </a>
+                        <div class="small text-muted mt-1 d-flex flex-wrap gap-2">
+                            <span><i class="bi bi-person"></i> {{ $t->creator?->name }}</span>
+                            @if($t->due_at)
+                                <span class="{{ $isOverdue ? 'text-danger fw-semibold' : '' }}">
+                                    <i class="bi bi-{{ $isOverdue ? 'alarm-fill' : 'clock' }}"></i>
+                                    {{ $t->due_at->format('d/m H:i') }}
+                                    @if($isOverdue) (quá hạn) @endif
+                                </span>
+                            @endif
+                            @if($t->assignees->count())
+                                <span><i class="bi bi-people"></i>
+                                    {{ $t->assignees->pluck('name')->take(3)->implode(', ') }}
+                                    @if($t->assignees->count() > 3) +{{ $t->assignees->count() - 3 }} @endif
+                                </span>
+                            @endif
+                        </div>
+                    </div>
+                    <a href="{{ route('tasks.show', $t) }}" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-arrow-right"></i>
+                    </a>
+                </div>
+            @empty
+                <div class="text-center text-muted py-4 small">
+                    <i class="bi bi-sticky" style="font-size: 32px; opacity: .3"></i>
+                    <div class="mt-2">Chưa có ghi chú nào gắn với báo cáo này.</div>
+                </div>
+            @endforelse
+        </div>
+    </div>
+
+    {{-- Modal tạo task gắn vào báo cáo này --}}
+    @can('tasks.create')
+    <div class="modal fade" id="linkedTaskModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content" style="border:none; border-radius:14px;">
+                <form method="POST" action="{{ route('tasks.store') }}">
+                    @csrf
+                    <input type="hidden" name="linkable_type" value="report">
+                    <input type="hidden" name="linkable_id" value="{{ $report->id }}">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            <i class="bi bi-sticky-fill me-1" style="color: var(--azia-warning)"></i>
+                            Tạo ghi chú / task gắn vào báo cáo này
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-info small mb-3">
+                            <i class="bi bi-link-45deg"></i>
+                            Task sẽ được gắn vào <strong>Báo cáo {{ $report->report_date->format('d/m/Y') }}</strong>.
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Tiêu đề <span class="text-danger">*</span></label>
+                            <input type="text" name="title" class="form-control" required autofocus
+                                   placeholder="vd: Đối chiếu lại số phải trả MSC kỳ này">
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Hạn</label>
+                                <input type="datetime-local" name="due_at" class="form-control">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Nhắc trước</label>
+                                <select name="remind_before" class="form-select">
+                                    <option value="">Không nhắc</option>
+                                    <option value="60" selected>1 giờ trước</option>
+                                    <option value="1440">1 ngày trước</option>
+                                </select>
+                            </div>
+                        </div>
+                        @can('tasks.assign_others')
+                        <div class="mt-3">
+                            <label class="form-label fw-semibold">Giao cho</label>
+                            <select name="assignees[]" class="form-select" multiple size="3">
+                                @foreach(\App\Models\User::orderBy('name')->get(['id','name']) as $u)
+                                    <option value="{{ $u->id }}" {{ $u->id === auth()->id() ? 'selected' : '' }}>{{ $u->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        @endcan
+                        <div class="mt-3">
+                            <label class="form-label fw-semibold">Ghi chú</label>
+                            <textarea name="body" class="form-control" rows="3"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Huỷ</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check2-circle me-1"></i> Tạo
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    @endcan
 @endsection

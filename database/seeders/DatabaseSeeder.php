@@ -26,6 +26,7 @@ class DatabaseSeeder extends Seeder
             'roles.view',     'roles.create',     'roles.update',     'roles.delete',
             'shipments.view', 'shipments.create', 'shipments.update', 'shipments.delete',
             'reports.view',   'reports.create',   'reports.delete',
+            'tasks.view',     'tasks.create',     'tasks.assign_others', 'tasks.manage_all',
         ];
         foreach ($permissions as $p) {
             Permission::firstOrCreate(['name' => $p, 'guard_name' => 'web']);
@@ -44,12 +45,17 @@ class DatabaseSeeder extends Seeder
             'roles.view',
             'shipments.view', 'shipments.create', 'shipments.update', 'shipments.delete',
             'reports.view', 'reports.create', 'reports.delete',
+            'tasks.view', 'tasks.create', 'tasks.assign_others', 'tasks.manage_all',
         ]);
         $editor->syncPermissions([
             'dashboard.view', 'shipments.view', 'shipments.create', 'shipments.update',
             'reports.view', 'reports.create',
+            'tasks.view', 'tasks.create', 'tasks.assign_others',
         ]);
-        $user->syncPermissions(['dashboard.view', 'shipments.view', 'reports.view']);
+        $user->syncPermissions([
+            'dashboard.view', 'shipments.view', 'reports.view',
+            'tasks.view', 'tasks.create',
+        ]);
 
         // --- Super admin user ---
         $sa = User::updateOrCreate(

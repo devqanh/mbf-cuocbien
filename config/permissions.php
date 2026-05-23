@@ -42,6 +42,12 @@ return [
             'color'       => '#00b8d4',
             'description' => 'Báo cáo phải trả, công nợ NCC',
         ],
+        'tasks' => [
+            'label'       => 'Ghi chú & công việc',
+            'icon'        => 'check2-square',
+            'color'       => '#ff9f43',
+            'description' => 'Ghi chú nội bộ, giao việc, nhắc hẹn theo lô hàng / báo cáo',
+        ],
     ],
 
     // Mỗi permission có nhãn ngắn + mô tả cụ thể để user hiểu hệ quả
@@ -66,6 +72,11 @@ return [
         'reports.view'   => ['label' => 'Xem báo cáo',     'desc' => 'Xem danh sách báo cáo tài chính'],
         'reports.create' => ['label' => 'Tạo báo cáo',     'desc' => 'Tạo báo cáo phải trả, cấu hình đầu kỳ NCC'],
         'reports.delete' => ['label' => 'Xoá báo cáo',     'desc' => 'Xoá báo cáo đã tạo'],
+
+        'tasks.view'           => ['label' => 'Xem ghi chú & công việc',  'desc' => 'Xem danh sách ghi chú và task được giao'],
+        'tasks.create'         => ['label' => 'Tạo ghi chú & công việc',  'desc' => 'Tạo task / ghi chú mới, đặt hạn nhắc'],
+        'tasks.assign_others'  => ['label' => 'Giao việc cho người khác', 'desc' => 'Có quyền này mới gán task cho người khác; nếu không chỉ tự gán cho mình'],
+        'tasks.manage_all'     => ['label' => 'Quản trị toàn bộ công việc','desc' => 'Xem/sửa/xoá mọi task trong hệ thống (admin)'],
     ],
 
     // Mô tả từng vai trò (dùng cho 4 role mặc định; role tự tạo dùng fallback)

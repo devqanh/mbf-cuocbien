@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -19,6 +20,9 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        // Carbon locale → diffForHumans() trả "1 phút trước" thay vì "1 minute ago"
+        Carbon::setLocale(config('app.locale', 'vi'));
+
         // Đăng ký route /broadcasting/auth cho private channel auth (Laravel 11/12 cần khai báo thủ công)
         Broadcast::routes(['middleware' => ['web', 'auth']]);
 
