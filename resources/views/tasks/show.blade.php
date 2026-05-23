@@ -83,42 +83,123 @@
         color: var(--azia-text);
     }
 
-    /* ========== Segmented status control ========== */
-    .status-segmented {
-        display: inline-flex;
-        background: #fafbfd;
-        border: 1px solid var(--azia-border);
-        border-radius: 10px;
-        padding: 4px;
-        gap: 2px;
+    /* ========== Progress stepper status ========== */
+    .status-stepper {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        padding: 8px 12px 4px;
+        gap: 0;
+        position: relative;
     }
-    .status-segmented form { margin: 0; }
-    .status-seg-btn {
+    .step-form { margin: 0; flex: 0 0 auto; position: relative; z-index: 2; }
+    .step-btn {
         background: transparent;
         border: none;
-        padding: 8px 18px;
-        border-radius: 8px;
-        font-size: 13px;
+        padding: 0;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        min-width: 100px;
+    }
+    .step-btn:disabled { cursor: default; }
+
+    .step-circle {
+        width: 44px; height: 44px;
+        border-radius: 50%;
+        display: inline-flex; align-items: center; justify-content: center;
+        font-size: 18px;
+        background: #fff;
+        border: 2px solid var(--azia-border);
+        color: var(--azia-muted);
+        transition: all .25s cubic-bezier(.2, .8, .3, 1);
+        position: relative;
+    }
+    .step-label {
+        font-size: 12.5px;
         font-weight: 600;
         color: var(--azia-muted);
-        display: inline-flex; align-items: center; gap: 6px;
-        cursor: pointer;
-        transition: all .15s;
+        transition: color .2s;
         white-space: nowrap;
     }
-    .status-seg-btn:hover:not(.is-active) { background: #fff; color: var(--azia-text); }
-    .status-seg-btn.is-active {
-        background: #fff;
-        color: var(--azia-text);
-        box-shadow: 0 1px 3px rgba(28,39,60,.08);
+
+    /* Hover trên step chưa active → highlight */
+    .step-btn:not(:disabled):hover .step-circle {
+        border-color: var(--azia-primary);
+        color: var(--azia-primary);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(1, 83, 169, .15);
     }
-    .status-seg-btn.is-active.color-secondary { color: var(--azia-muted); }
-    .status-seg-btn.is-active.color-primary   { color: var(--azia-primary); }
-    .status-seg-btn.is-active.color-success   { color: var(--azia-success); }
-    .status-seg-btn .dot {
-        width: 8px; height: 8px; border-radius: 50%;
-        background: currentColor;
-        display: inline-block;
+    .step-btn:not(:disabled):hover .step-label { color: var(--azia-primary); }
+
+    /* Passed step (đã qua) — màu primary đậm, check icon */
+    .step-passed .step-circle {
+        background: var(--azia-primary);
+        border-color: var(--azia-primary);
+        color: #fff;
+    }
+    .step-passed .step-label { color: var(--azia-primary); }
+
+    /* Current step (đang ở) — gradient + glow + pulse */
+    .step-current .step-circle {
+        background: linear-gradient(135deg, var(--azia-primary) 0%, #4a8fd9 100%);
+        border-color: var(--azia-primary);
+        color: #fff;
+        box-shadow: 0 0 0 6px rgba(1, 83, 169, .12), 0 8px 20px rgba(1, 83, 169, .25);
+        transform: scale(1.08);
+    }
+    .step-current .step-label {
+        color: var(--azia-primary);
+        font-weight: 700;
+    }
+    .step-current .step-circle::after {
+        content: '';
+        position: absolute;
+        inset: -4px;
+        border-radius: 50%;
+        border: 2px solid rgba(1, 83, 169, .3);
+        animation: stepPulse 2s ease-out infinite;
+    }
+    @keyframes stepPulse {
+        0%   { transform: scale(1);   opacity: 1; }
+        100% { transform: scale(1.4); opacity: 0; }
+    }
+
+    /* Done state (step Hoàn thành đang là current) — đổi sang xanh success */
+    .step-current.step-done .step-circle {
+        background: linear-gradient(135deg, var(--azia-success) 0%, #1aa37e 100%);
+        border-color: var(--azia-success);
+        box-shadow: 0 0 0 6px rgba(36, 211, 159, .15), 0 8px 20px rgba(36, 211, 159, .25);
+    }
+    .step-current.step-done .step-label { color: var(--azia-success); }
+    .step-current.step-done .step-circle::after { border-color: rgba(36, 211, 159, .3); }
+
+    /* Connector line giữa các step */
+    .step-connector {
+        flex: 1;
+        height: 3px;
+        background: var(--azia-border);
+        margin: 21px -10px 0;       /* căn giữa với circle 44px (44/2 ~ 22px) */
+        position: relative;
+        z-index: 1;
+        border-radius: 2px;
+        overflow: hidden;
+    }
+    .step-connector::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, var(--azia-primary), #4a8fd9);
+        transform-origin: left;
+        transform: scaleX(0);
+        transition: transform .5s cubic-bezier(.2, .8, .3, 1);
+    }
+    .step-connector.is-filled::after { transform: scaleX(1); }
+    /* Connector đến step "done" → xanh success */
+    .step-connector.is-filled.to-done::after {
+        background: linear-gradient(90deg, var(--azia-primary), var(--azia-success));
     }
 
     /* ========== Comments thread ========== */
@@ -358,28 +439,52 @@
                 </div>
             </div>
 
-            {{-- Status quick actions — segmented control --}}
+            {{-- Status — progress stepper --}}
             @if($canEdit)
+            @php
+                // Index hiện tại trong sequence todo → doing → done
+                $statusKeys = array_keys($statusOptions);    // ['todo','doing','done']
+                $currentIdx = array_search($task->status, $statusKeys, true);
+            @endphp
             <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <div>
-                        <i class="bi bi-lightning-charge me-1" style="color: var(--azia-primary)"></i>
-                        Cập nhật trạng thái
-                    </div>
+                <div class="card-header">
+                    <i class="bi bi-lightning-charge me-1" style="color: var(--azia-primary)"></i>
+                    Tiến trình
                 </div>
                 <div class="card-body">
-                    <div class="status-segmented">
+                    <div class="status-stepper">
                         @foreach($statusOptions as $key => $opt)
-                            <form method="POST" action="{{ route('tasks.toggleStatus', $task) }}">
+                            @php
+                                $idx = array_search($key, $statusKeys, true);
+                                $isPassed  = $idx < $currentIdx;
+                                $isCurrent = $idx === $currentIdx;
+                                $stepClass = $isCurrent ? 'step-current' : ($isPassed ? 'step-passed' : '');
+                                if ($isCurrent && $key === 'done') $stepClass .= ' step-done';
+                                // Icon: đã qua = check, current = icon theo trạng thái, chưa tới = số/icon mờ
+                                $icon = $isPassed ? 'check-lg' : $opt['icon'];
+                            @endphp
+                            <form method="POST" action="{{ route('tasks.toggleStatus', $task) }}"
+                                  class="step-form {{ $stepClass }}"
+                                  data-task-title="{{ $task->title }}"
+                                  data-needs-confirm="{{ $key === 'done' ? '1' : '0' }}">
                                 @csrf @method('PUT')
                                 <input type="hidden" name="status" value="{{ $key }}">
-                                <button type="submit"
-                                        class="status-seg-btn color-{{ $opt['color'] }} {{ $task->status === $key ? 'is-active' : '' }}"
-                                        {{ $task->status === $key ? 'disabled' : '' }}
-                                        title="{{ $opt['lbl'] }}">
-                                    <span class="dot"></span> {{ $opt['lbl'] }}
+                                <button type="submit" class="step-btn"
+                                        {{ $isCurrent ? 'disabled' : '' }}
+                                        title="{{ $isCurrent ? 'Đang ở trạng thái này' : 'Chuyển sang: ' . $opt['lbl'] }}">
+                                    <span class="step-circle">
+                                        <i class="bi bi-{{ $icon }}"></i>
+                                    </span>
+                                    <span class="step-label">{{ $opt['lbl'] }}</span>
                                 </button>
                             </form>
+                            @if(! $loop->last)
+                                @php
+                                    $connFilled = $idx < $currentIdx;
+                                    $connToDone = $idx + 1 === array_search('done', $statusKeys, true);
+                                @endphp
+                                <span class="step-connector {{ $connFilled ? 'is-filled' : '' }} {{ $connFilled && $connToDone ? 'to-done' : '' }}"></span>
+                            @endif
                         @endforeach
                     </div>
                 </div>
@@ -506,8 +611,97 @@
 
         {{-- Sidebar --}}
         <div class="col-lg-4">
+            {{-- ========= LỊCH NHẮC — inline editable ========= --}}
+            @php
+                $remindLabel = function ($n) {
+                    if ($n === null) return '—';
+                    if ($n === 0) return 'Đúng giờ hạn';
+                    if ($n < 60)   return $n . ' phút trước';
+                    if ($n < 1440) return intdiv($n, 60) . ' giờ trước';
+                    return intdiv($n, 1440) . ' ngày trước';
+                };
+            @endphp
+            <div class="card mb-3" id="dueCard">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div>
+                        <i class="bi bi-alarm me-1" style="color: var(--azia-primary)"></i> Lịch nhắc
+                    </div>
+                    @if($canEdit)
+                        <button type="button" class="btn btn-sm btn-outline-secondary border-0" id="btnEditDue" title="Sửa hạn / nhắc trước">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                    @endif
+                </div>
+                <div class="card-body">
+                    {{-- VIEW MODE --}}
+                    <div id="dueView">
+                        <div class="info-row">
+                            <span class="label"><i class="bi bi-{{ $overdue ? 'alarm-fill text-danger' : 'clock' }}"></i> Hạn chót</span>
+                            <span class="value {{ $overdue ? 'text-danger' : '' }}">
+                                {{ $task->due_at ? $task->due_at->format('d/m/Y H:i') : '—' }}
+                            </span>
+                        </div>
+                        @if($task->due_at)
+                            <div class="info-row">
+                                <span class="label"><i class="bi bi-bell"></i> Nhắc trước</span>
+                                <span class="value">{{ $remindLabel($task->remind_before) }}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="label"><i class="bi bi-hourglass-split"></i> Còn lại</span>
+                                <span class="value {{ $overdue ? 'text-danger fw-bold' : '' }}">
+                                    {{ $overdue ? 'Quá hạn ' . $task->due_at->diffForHumans(now(), true) : $task->due_at->diffForHumans() }}
+                                </span>
+                            </div>
+                        @endif
+                    </div>
+
+                    {{-- EDIT MODE (ẩn mặc định) --}}
+                    @if($canEdit)
+                        <div id="dueEdit" class="d-none">
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold small">Hạn chót</label>
+                                <input type="text" id="dueEditInput" class="form-control js-datetimepicker"
+                                       placeholder="Chọn ngày & giờ…"
+                                       value="{{ $task->due_at?->format('Y-m-d H:i') }}">
+                                <small class="text-muted">Để trống nếu không cần hạn</small>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold small">Nhắc trước</label>
+                                <select id="remindEditSelect" class="form-select">
+                                    <option value="">Không nhắc</option>
+                                    <option value="0"    {{ $task->remind_before === 0    ? 'selected' : '' }}>Đúng giờ hạn</option>
+                                    <option value="15"   {{ $task->remind_before === 15   ? 'selected' : '' }}>15 phút trước</option>
+                                    <option value="30"   {{ $task->remind_before === 30   ? 'selected' : '' }}>30 phút trước</option>
+                                    <option value="60"   {{ $task->remind_before === 60   ? 'selected' : '' }}>1 giờ trước</option>
+                                    <option value="240"  {{ $task->remind_before === 240  ? 'selected' : '' }}>4 giờ trước</option>
+                                    <option value="1440" {{ $task->remind_before === 1440 ? 'selected' : '' }}>1 ngày trước</option>
+                                    <option value="2880" {{ $task->remind_before === 2880 ? 'selected' : '' }}>2 ngày trước</option>
+                                    <option value="10080"{{ $task->remind_before === 10080? 'selected' : '' }}>1 tuần trước</option>
+                                </select>
+                            </div>
+                            <div class="d-flex gap-2 mt-3">
+                                <button type="button" class="btn btn-sm btn-primary flex-fill" id="btnSaveDue">
+                                    <i class="bi bi-check2 me-1"></i> Lưu
+                                </button>
+                                <button type="button" class="btn btn-sm btn-light" id="btnCancelDue">Huỷ</button>
+                            </div>
+                        </div>
+                    @endif
+                </div>
+            </div>
+
+            {{-- ========= CHI TIẾT khác — readonly ========= --}}
             <div class="card mb-3">
-                <div class="card-header"><i class="bi bi-info-square me-1" style="color: var(--azia-primary)"></i> Chi tiết</div>
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div>
+                        <i class="bi bi-info-square me-1" style="color: var(--azia-primary)"></i> Chi tiết
+                    </div>
+                    @if($canEdit)
+                        <button type="button" class="btn btn-sm btn-outline-secondary border-0" id="btnEditPriority" title="Đổi độ ưu tiên">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                    @endif
+                </div>
                 <div class="card-body">
                     <div class="info-row">
                         <span class="label">Trạng thái</span>
@@ -517,43 +711,43 @@
                             </span>
                         </span>
                     </div>
-                    <div class="info-row">
+                    <div class="info-row" id="priorityView">
                         <span class="label">Độ ưu tiên</span>
                         <span class="value">
                             <span class="badge badge-soft-{{ $priorityOptions[$task->priority]['color'] }}">
-                                {{ $priorityOptions[$task->priority]['lbl'] }}
+                                <i class="bi bi-flag-fill"></i> {{ $priorityOptions[$task->priority]['lbl'] }}
                             </span>
                         </span>
                     </div>
-                    @if($task->due_at)
-                    <div class="info-row">
-                        <span class="label">Hạn chót</span>
-                        <span class="value {{ $overdue ? 'text-danger' : '' }}">
-                            {{ $task->due_at->format('d/m/Y H:i') }}
-                        </span>
-                    </div>
-                    @if($task->remind_before !== null)
-                    <div class="info-row">
-                        <span class="label">Nhắc trước</span>
-                        <span class="value">
-                            @if($task->remind_before === 0) Đúng giờ
-                            @elseif($task->remind_before < 60) {{ $task->remind_before }} phút
-                            @elseif($task->remind_before < 1440) {{ intdiv($task->remind_before, 60) }} giờ
-                            @else {{ intdiv($task->remind_before, 1440) }} ngày
-                            @endif
-                        </span>
-                    </div>
-                    @endif
+                    @if($canEdit)
+                        <div id="priorityEdit" class="d-none mb-2">
+                            <label class="form-label fw-semibold small mb-1">Đổi độ ưu tiên</label>
+                            <select id="priorityEditSelect" class="form-select form-select-sm">
+                                @foreach($priorityOptions as $k => $o)
+                                    <option value="{{ $k }}" {{ $task->priority === $k ? 'selected' : '' }}>{{ $o['lbl'] }}</option>
+                                @endforeach
+                            </select>
+                            <div class="d-flex gap-2 mt-2">
+                                <button type="button" class="btn btn-sm btn-primary flex-fill" id="btnSavePriority">
+                                    <i class="bi bi-check2 me-1"></i> Lưu
+                                </button>
+                                <button type="button" class="btn btn-sm btn-light" id="btnCancelPriority">Huỷ</button>
+                            </div>
+                        </div>
                     @endif
                     @if($task->completed_at)
-                    <div class="info-row">
-                        <span class="label">Hoàn thành lúc</span>
-                        <span class="value">{{ $task->completed_at->format('d/m/Y H:i') }}</span>
-                    </div>
+                        <div class="info-row">
+                            <span class="label">Hoàn thành lúc</span>
+                            <span class="value">{{ $task->completed_at->format('d/m/Y H:i') }}</span>
+                        </div>
                     @endif
                     <div class="info-row">
                         <span class="label">Người tạo</span>
                         <span class="value">{{ $task->creator?->name ?? '—' }}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Tạo lúc</span>
+                        <span class="value small text-muted">{{ $task->created_at->format('d/m/Y H:i') }}</span>
                     </div>
                 </div>
             </div>
@@ -620,6 +814,136 @@
 
     @push('scripts')
     <script>
+    // ---- Helper chung: PUT update task với partial fields ----
+    const TASK_UPDATE_URL = @json(route('tasks.update', $task));
+    const TASK_TITLE = @json($task->title);
+    const CSRF_TOK = document.querySelector('meta[name="csrf-token"]').content;
+
+    async function updateTaskField(payload) {
+        const fd = new URLSearchParams();
+        fd.append('title', TASK_TITLE);   // validate yêu cầu title — luôn gửi kèm
+        for (const [k, v] of Object.entries(payload)) {
+            if (v === null || v === undefined) {
+                fd.append(k, '');         // gửi rỗng để clear (Laravel nullable)
+            } else {
+                fd.append(k, v);
+            }
+        }
+        const res = await fetch(TASK_UPDATE_URL, {
+            method: 'PUT',
+            headers: {
+                'X-CSRF-TOKEN': CSRF_TOK,
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Accept': 'application/json',
+            },
+            body: fd.toString(),
+            credentials: 'same-origin',
+        });
+        if (! res.ok) throw new Error('HTTP ' + res.status);
+        return res;
+    }
+
+    function showErrorAlert() {
+        Swal && Swal.fire({
+            ...APP_SWAL, icon: 'error',
+            title: 'Lưu thất bại',
+            html: 'Không cập nhật được. Thử lại sau.',
+            showCancelButton: false, confirmButtonText: 'Đóng',
+        });
+    }
+
+    // ---- Inline edit Lịch nhắc (deadline + remind_before) ----
+    (function () {
+        const $btnEdit   = document.getElementById('btnEditDue');
+        const $view      = document.getElementById('dueView');
+        const $edit      = document.getElementById('dueEdit');
+        const $btnSave   = document.getElementById('btnSaveDue');
+        const $btnCancel = document.getElementById('btnCancelDue');
+        if (! $btnEdit || ! $view || ! $edit) return;
+
+        $btnEdit.addEventListener('click', () => {
+            $view.classList.add('d-none');
+            $edit.classList.remove('d-none');
+        });
+
+        $btnCancel.addEventListener('click', () => {
+            $edit.classList.add('d-none');
+            $view.classList.remove('d-none');
+        });
+
+        $btnSave.addEventListener('click', async () => {
+            const dueInput = document.getElementById('dueEditInput');
+            const remindSel = document.getElementById('remindEditSelect');
+            $btnSave.disabled = true;
+            $btnSave.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Đang lưu';
+            try {
+                await updateTaskField({
+                    due_at:        dueInput.value || null,
+                    remind_before: remindSel.value === '' ? null : remindSel.value,
+                });
+                // Reload để render lại view với data mới (giữ đơn giản, đảm bảo nhất quán)
+                window.location.reload();
+            } catch (e) {
+                $btnSave.disabled = false;
+                $btnSave.innerHTML = '<i class="bi bi-check2 me-1"></i> Lưu';
+                showErrorAlert();
+            }
+        });
+    })();
+
+    // ---- Inline edit Độ ưu tiên ----
+    (function () {
+        const $btnEdit   = document.getElementById('btnEditPriority');
+        const $view      = document.getElementById('priorityView');
+        const $edit      = document.getElementById('priorityEdit');
+        const $btnSave   = document.getElementById('btnSavePriority');
+        const $btnCancel = document.getElementById('btnCancelPriority');
+        if (! $btnEdit || ! $view || ! $edit) return;
+
+        $btnEdit.addEventListener('click', () => {
+            $view.classList.add('d-none');
+            $edit.classList.remove('d-none');
+        });
+
+        $btnCancel.addEventListener('click', () => {
+            $edit.classList.add('d-none');
+            $view.classList.remove('d-none');
+        });
+
+        $btnSave.addEventListener('click', async () => {
+            const sel = document.getElementById('priorityEditSelect');
+            $btnSave.disabled = true;
+            $btnSave.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
+            try {
+                await updateTaskField({ priority: sel.value });
+                window.location.reload();
+            } catch (e) {
+                $btnSave.disabled = false;
+                $btnSave.innerHTML = '<i class="bi bi-check2 me-1"></i> Lưu';
+                showErrorAlert();
+            }
+        });
+    })();
+
+    // ---- Confirm SweetAlert khi click bước "Hoàn thành" trong stepper ----
+    document.querySelectorAll('.step-form[data-needs-confirm="1"]').forEach(($form) => {
+        $form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const title = $form.dataset.taskTitle || 'task này';
+            const ok = await confirmAction({
+                icon: 'question',
+                title: 'Đã hoàn thành task?',
+                text: `Đánh dấu <b>"${title.replace(/</g,'&lt;')}"</b> là <b>Hoàn thành</b>?`,
+                confirmText: '<i class="bi bi-check2-circle me-1"></i> Đã xong',
+            });
+            if (ok) {
+                const $btn = $form.querySelector('button[type=submit]');
+                if ($btn) $btn.disabled = true;
+                $form.submit();
+            }
+        });
+    });
+
     // ---- Inline edit assignees (card "Được giao") ----
     (function () {
         const $btnEdit   = document.getElementById('btnEditAssignees');
@@ -996,8 +1320,9 @@
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label fw-semibold">Hạn</label>
-                                <input type="datetime-local" name="due_at" class="form-control"
-                                       value="{{ $task->due_at?->format('Y-m-d\TH:i') }}">
+                                <input type="text" name="due_at" class="form-control js-datetimepicker"
+                                       placeholder="Chọn ngày & giờ…"
+                                       value="{{ $task->due_at?->format('Y-m-d H:i') }}">
                             </div>
                         </div>
                         <div class="row g-3 mt-1">

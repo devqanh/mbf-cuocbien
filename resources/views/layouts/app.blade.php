@@ -12,6 +12,8 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
     {{-- Select2 4.1 --}}
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css">
+    {{-- Flatpickr (date/time picker hiện đại) --}}
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css">
 
     <link rel="stylesheet" href="@assetVer('css/app.css')">
     @stack('styles')
@@ -221,7 +223,8 @@
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">Hạn (tuỳ chọn)</label>
-                            <input type="datetime-local" name="due_at" class="form-control">
+                            <input type="text" name="due_at" class="form-control js-datetimepicker"
+                                   placeholder="Chọn ngày & giờ…">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">Nhắc trước</label>
@@ -279,6 +282,8 @@
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/vn.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script src="https://cdn.jsdelivr.net/npm/pusher-js@8.4.0/dist/web/pusher.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/laravel-echo@1.16.1/dist/echo.iife.js"></script>
@@ -342,6 +347,55 @@
         });
         return res.isConfirmed;
     };
+
+    // ---- Flatpickr (date/time picker) init ----
+    if (typeof flatpickr !== 'undefined') {
+        // Thiết lập locale VN làm mặc định
+        if (flatpickr.l10ns && flatpickr.l10ns.vn) {
+            flatpickr.localize(flatpickr.l10ns.vn);
+        }
+
+        window.initDateTimePicker = function (el) {
+            if (! el || el._flatpickr) return;
+            const isDate = el.dataset.type === 'date'; // class js-datepicker → chỉ ngày
+            return flatpickr(el, {
+                enableTime: ! isDate,
+                time_24hr: true,
+                dateFormat: isDate ? 'Y-m-d' : 'Y-m-d H:i',
+                altInput: true,
+                altFormat: isDate ? 'd/m/Y' : 'd/m/Y · H:i',
+                minuteIncrement: 5,
+                allowInput: false,
+                // Nút "Đóng" — fix UX user feedback: không tìm được chỗ đóng
+                closeOnSelect: false,
+                onReady(_, __, instance) {
+                    if (! instance.calendarContainer.querySelector('.fp-done-btn')) {
+                        const $bar = document.createElement('div');
+                        $bar.className = 'fp-action-bar';
+                        $bar.innerHTML = `
+                            <button type="button" class="fp-btn fp-clear-btn">
+                                <i class="bi bi-x-lg me-1"></i>Xoá
+                            </button>
+                            <button type="button" class="fp-btn fp-done-btn">
+                                <i class="bi bi-check2 me-1"></i>Xong
+                            </button>
+                        `;
+                        instance.calendarContainer.appendChild($bar);
+                        $bar.querySelector('.fp-done-btn').addEventListener('click', () => instance.close());
+                        $bar.querySelector('.fp-clear-btn').addEventListener('click', () => { instance.clear(); instance.close(); });
+                    }
+                },
+            });
+        };
+
+        // Auto-init mọi input có class `.js-datetimepicker` hoặc `.js-datepicker`
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.js-datetimepicker, .js-datepicker').forEach((el) => {
+                if (el.classList.contains('js-datepicker')) el.dataset.type = 'date';
+                window.initDateTimePicker(el);
+            });
+        });
+    }
 
     // ---- Select2 init cho mọi field "Giao cho" / multi-user picker ----
     // CAPTURE jQuery reference NGAY BÂY GIỜ — phòng trường hợp các thư viện

@@ -514,7 +514,8 @@
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label class="form-label fw-semibold">Hạn</label>
-                                <input type="datetime-local" name="due_at" class="form-control">
+                                <input type="text" name="due_at" class="form-control js-datetimepicker"
+                                       placeholder="Chọn ngày & giờ…">
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label fw-semibold">Nhắc trước</label>

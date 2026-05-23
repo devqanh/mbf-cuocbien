@@ -418,6 +418,168 @@ a { text-decoration: none; }
 .app-toast.color-success { border-left-color: var(--azia-success); }
 .app-toast.color-success .app-toast-progress span { background: var(--azia-success); }
 
+/* ---------- Flatpickr — theme match app ---------- */
+.flatpickr-calendar {
+    border-radius: 14px !important;
+    border: 1px solid var(--azia-border) !important;
+    box-shadow: 0 12px 32px rgba(28, 39, 60, .14) !important;
+    overflow: hidden;
+    padding-bottom: 0 !important;
+    z-index: 10000;
+}
+.flatpickr-calendar.open { z-index: 1060; }  /* trên modal backdrop */
+
+/* Header (tháng + năm + arrow) */
+.flatpickr-months {
+    background: linear-gradient(135deg, #0153a9 0%, #013f80 100%);
+    padding: 10px 8px 8px;
+    border-top-left-radius: 14px;
+    border-top-right-radius: 14px;
+}
+.flatpickr-months .flatpickr-month,
+.flatpickr-current-month,
+.flatpickr-current-month input.cur-year,
+.flatpickr-monthDropdown-months {
+    color: #fff !important;
+    fill: #fff !important;
+}
+.flatpickr-current-month .flatpickr-monthDropdown-months {
+    background: transparent !important;
+    border: none !important;
+    font-weight: 700 !important;
+}
+.flatpickr-current-month .flatpickr-monthDropdown-months option {
+    color: var(--azia-text);
+    background: #fff;
+}
+.flatpickr-current-month input.cur-year { font-weight: 700 !important; }
+.flatpickr-months .flatpickr-prev-month,
+.flatpickr-months .flatpickr-next-month {
+    fill: #fff !important;
+    color: #fff !important;
+    padding: 6px;
+}
+.flatpickr-months .flatpickr-prev-month:hover,
+.flatpickr-months .flatpickr-next-month:hover {
+    background: rgba(255,255,255,.15);
+    border-radius: 8px;
+}
+.flatpickr-months .flatpickr-prev-month svg,
+.flatpickr-months .flatpickr-next-month svg { fill: #fff !important; }
+
+/* Day labels (Mon, Tue…) */
+.flatpickr-weekdays { background: #fff; padding: 8px 0 4px; }
+.flatpickr-weekday {
+    color: var(--azia-muted) !important;
+    font-weight: 700 !important;
+    font-size: 11px !important;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+}
+
+/* Days grid */
+.flatpickr-days { padding: 8px; }
+.dayContainer { padding: 0; }
+.flatpickr-day {
+    border-radius: 8px !important;
+    color: var(--azia-text);
+    font-weight: 500;
+    border: none !important;
+    margin: 1px;
+    max-width: calc(100% / 7 - 2px);
+    height: 38px;
+    line-height: 38px;
+}
+.flatpickr-day:hover {
+    background: var(--azia-primary-soft) !important;
+    color: var(--azia-primary) !important;
+}
+.flatpickr-day.today {
+    border: 1.5px solid var(--azia-primary) !important;
+    color: var(--azia-primary) !important;
+    font-weight: 700;
+}
+.flatpickr-day.today:hover { background: var(--azia-primary-soft) !important; }
+.flatpickr-day.selected,
+.flatpickr-day.selected:hover {
+    background: var(--azia-primary) !important;
+    color: #fff !important;
+    font-weight: 700;
+    box-shadow: 0 4px 12px rgba(1, 83, 169, .3);
+}
+.flatpickr-day.prevMonthDay, .flatpickr-day.nextMonthDay {
+    color: #cbd5e1;
+}
+.flatpickr-day.flatpickr-disabled { color: #e1e6f1; }
+
+/* Time picker */
+.flatpickr-time {
+    border-top: 1px solid var(--azia-border) !important;
+    background: #fafbfd;
+    padding: 6px 0;
+}
+.flatpickr-time .flatpickr-time-separator,
+.flatpickr-time input {
+    color: var(--azia-text) !important;
+    font-weight: 700 !important;
+    font-size: 16px !important;
+    background: transparent !important;
+}
+.flatpickr-time input:hover,
+.flatpickr-time input:focus,
+.flatpickr-time .flatpickr-am-pm:hover {
+    background: var(--azia-primary-soft) !important;
+}
+.flatpickr-time .numInputWrapper:hover { background: var(--azia-primary-soft) !important; }
+
+/* Action bar tự thêm: Xoá / Xong */
+.fp-action-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px 10px;
+    background: #fafbfd;
+    border-top: 1px solid var(--azia-border);
+}
+.fp-btn {
+    background: transparent;
+    border: 1px solid var(--azia-border);
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--azia-text);
+    cursor: pointer;
+    transition: all .12s;
+    display: inline-flex; align-items: center;
+}
+.fp-btn:hover {
+    background: #fff;
+    border-color: var(--azia-primary);
+    color: var(--azia-primary);
+}
+.fp-btn.fp-done-btn {
+    background: var(--azia-primary);
+    color: #fff;
+    border-color: var(--azia-primary);
+}
+.fp-btn.fp-done-btn:hover { background: var(--azia-primary-dark); }
+.fp-btn.fp-clear-btn {
+    color: var(--azia-danger);
+    border-color: rgba(255, 91, 91, .3);
+}
+.fp-btn.fp-clear-btn:hover {
+    background: rgba(255, 91, 91, .08);
+    border-color: var(--azia-danger);
+}
+
+/* Input có flatpickr binding — không show calendar icon native nữa */
+input.flatpickr-input,
+input.flatpickr-alt-input {
+    background-color: #fff;
+}
+
 /* ---------- Select2 — theme match app ---------- */
 .select2-container--default .select2-selection--multiple,
 .select2-container--default .select2-selection--single {
