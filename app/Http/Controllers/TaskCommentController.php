@@ -98,18 +98,51 @@ class TaskCommentController extends Controller
 
     /**
      * Tìm tất cả @<Tên User> trong body và trả về list user_id matched.
-     * Match theo tên chính xác (case-insensitive), longest-first để tránh prefix.
+     *
+     * Tối ưu cho scale:
+     * 1. Regex pre-filter: lấy 50 ký tự sau mỗi `@` làm "candidate"
+     * 2. Query CHỈ những user có name nằm trong candidates (LIKE ... OR LIKE ...)
+     * 3. Verify với stripos để đảm bảo exact match (vì LIKE có thể false positive)
+     *
+     * Trước: load TOÀN BỘ users table (lãng phí với 1000+ users)
+     * Sau:    chỉ load tối đa số `@` token trong body
      */
     private function extractMentions(string $body): array
     {
-        // Lấy tất cả user (đủ ít — đây không phải hot path)
-        $users = User::orderByRaw('CHAR_LENGTH(name) DESC')->get(['id', 'name']);
-        $matched = [];
+        // 1) Trích tất cả token sau dấu @ — lấy 50 char để bao trùm tên có dấu cách
+        if (! preg_match_all('/@([^\r\n@]{1,50})/u', $body, $m)) {
+            return [];
+        }
+        $candidates = $m[1];   // mảng chuỗi sau '@'
+        if (empty($candidates)) return [];
 
-        foreach ($users as $user) {
-            $needle = '@' . $user->name;
-            if (stripos($body, $needle) !== false) {
-                $matched[] = $user->id;
+        // 2) Lấy first-word của mỗi candidate để query LIKE — giảm pool
+        //    User name "Nguyễn Văn A" có firstWord "Nguyễn" → tìm user có name LIKE "Nguyễn%"
+        $firstWords = collect($candidates)
+            ->map(fn ($c) => mb_strtolower(explode(' ', trim($c))[0]))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($firstWords)) return [];
+
+        // 3) Query candidate users — chỉ user có name bắt đầu bằng 1 trong các firstWord
+        $query = User::query();
+        $query->where(function ($q) use ($firstWords) {
+            foreach ($firstWords as $w) {
+                $q->orWhere('name', 'like', $w . '%');
+            }
+        });
+        $candidates_users = $query->orderByRaw('CHAR_LENGTH(name) DESC')
+            ->limit(50)   // hard cap chống abuse
+            ->get(['id', 'name']);
+
+        // 4) Verify bằng stripos trên body — exact match "@Name"
+        $matched = [];
+        foreach ($candidates_users as $u) {
+            if (stripos($body, '@' . $u->name) !== false) {
+                $matched[] = $u->id;
             }
         }
 

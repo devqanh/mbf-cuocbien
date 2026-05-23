@@ -278,6 +278,24 @@
         width: 28px; height: 28px;
         font-size: 11px;
     }
+    .reply-item.is-collapsed { display: none; }
+
+    .btn-show-older-replies {
+        background: transparent;
+        border: none;
+        color: var(--azia-primary);
+        padding: 4px 10px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        border-radius: 6px;
+        margin-bottom: 6px;
+        display: inline-flex; align-items: center;
+        transition: background .12s;
+    }
+    .btn-show-older-replies:hover {
+        background: var(--azia-primary-soft);
+    }
 
     /* Inline reply form */
     .reply-form-wrap {
@@ -511,6 +529,14 @@
                 </div>
 
                 <div class="comment-list">
+                    @if(($hiddenCount ?? 0) > 0)
+                        <a href="{{ route('tasks.show', $task) }}?all_comments=1" class="d-block text-center py-2 small text-decoration-none"
+                           style="background:#fafbfd; color:var(--azia-primary); font-weight:600; border-bottom:1px solid var(--azia-border);">
+                            <i class="bi bi-arrow-up-circle me-1"></i>
+                            Xem {{ $hiddenCount }} bình luận cũ hơn (tổng {{ $totalTopLevel }})
+                        </a>
+                    @endif
+
                     @forelse($task->comments as $c)
                         <div class="comment-item" id="comment-{{ $c->id }}">
                             <span class="comment-av">{{ strtoupper(mb_substr($c->author?->name ?? 'U', 0, 1)) }}</span>
@@ -533,11 +559,29 @@
                                 </div>
                                 @endif
 
-                                {{-- Replies (nested 1 level only - flat thread) --}}
-                                @if($c->replies->isNotEmpty())
-                                    <div class="replies-block">
-                                        @foreach($c->replies as $r)
-                                            <div class="comment-item" id="comment-{{ $r->id }}">
+                                {{-- Replies (flat thread). Hiển thị MẶC ĐỊNH 5 mới nhất; nếu nhiều hơn → collapse --}}
+                                @php
+                                    $repliesAll = $c->replies;
+                                    $maxRepliesVisible = \App\Models\Task::REPLIES_PAGE_SIZE;
+                                    $hiddenReplies = max(0, $repliesAll->count() - $maxRepliesVisible);
+                                @endphp
+                                @if($repliesAll->isNotEmpty())
+                                    <div class="replies-block" data-replies-of="{{ $c->id }}">
+                                        @if($hiddenReplies > 0)
+                                            <button type="button" class="btn-show-older-replies small text-decoration-none"
+                                                    data-target="replies-of-{{ $c->id }}">
+                                                <i class="bi bi-chevron-down me-1"></i>
+                                                Xem {{ $hiddenReplies }} trả lời cũ hơn
+                                            </button>
+                                        @endif
+
+                                        @foreach($repliesAll as $idx => $r)
+                                            @php
+                                                $isHidden = $hiddenReplies > 0 && $idx < $hiddenReplies;
+                                            @endphp
+                                            <div class="comment-item reply-item {{ $isHidden ? 'is-collapsed' : '' }}"
+                                                 id="comment-{{ $r->id }}"
+                                                 data-replies-of-{{ $c->id }}>
                                                 <span class="comment-av">{{ strtoupper(mb_substr($r->author?->name ?? 'U', 0, 1)) }}</span>
                                                 <div class="comment-body">
                                                     <div class="comment-head">
@@ -1140,6 +1184,18 @@
             });
         });
     })();
+
+    // ---- Toggle collapse cũ hơn cho replies (scale UI khi thread dài) ----
+    document.querySelectorAll('.btn-show-older-replies').forEach(($btn) => {
+        $btn.addEventListener('click', () => {
+            const $block = $btn.closest('.replies-block');
+            if (! $block) return;
+            $block.querySelectorAll('.reply-item.is-collapsed').forEach((el) => {
+                el.classList.remove('is-collapsed');
+            });
+            $btn.remove();   // ẩn nút sau khi expand
+        });
+    });
 
     // ---- Toggle reply form: click "Trả lời" → mở form tương ứng, auto prefill @Tên ----
     (function () {

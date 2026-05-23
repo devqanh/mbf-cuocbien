@@ -70,18 +70,40 @@ class TaskController extends Controller
     {
         $this->authorizeView($request->user(), $task);
 
-        // Eager load tất cả relation cần render trong 1 lượt → tránh N+1
-        // - comments() đã pre-defined: chỉ top-level + with(replies.author + author)
+        // Eager load relation thông thường
         $task->load([
             'assignees:id,name',
             'watchers:id,name',
             'creator:id,name',
             'linkable',
-            'comments',
         ]);
 
+        // ===== Load comments theo PAGINATION (scale) =====
+        $showAll = $request->boolean('all_comments');
+        $pageSize = Task::COMMENTS_PAGE_SIZE;
+        $totalTopLevel = $task->topLevelComments()->count();
+        $hiddenCount = 0;
+
+        $topLevelQuery = $task->topLevelComments()
+            ->with([
+                'author:id,name',
+                'replies.author:id,name',     // load all replies, view sẽ tự collapse
+            ]);
+
+        if ($showAll || $totalTopLevel <= $pageSize) {
+            $comments = $topLevelQuery->oldest()->get();
+        } else {
+            // Lấy LATEST N theo created_at DESC, sau đó reverse cho chronological order
+            $comments = $topLevelQuery->latest()->limit($pageSize)->get()->reverse()->values();
+            $hiddenCount = $totalTopLevel - $pageSize;
+        }
+        $task->setRelation('comments', $comments);
+
+        // Prime mention cache 1 lần — tránh N+1 trong renderedBody()
+        \App\Models\TaskComment::primeMentionCache($task->comments);
+
         $users = User::orderBy('name')->get(['id', 'name']);
-        return view('tasks.show', compact('task', 'users'));
+        return view('tasks.show', compact('task', 'users', 'hiddenCount', 'totalTopLevel'));
     }
 
     public function store(Request $request): RedirectResponse

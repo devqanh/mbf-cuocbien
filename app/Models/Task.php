@@ -63,9 +63,16 @@ class Task extends Model
             ->withTimestamps();
     }
 
+    /** Hằng số: số top-level comments hiển thị mặc định (page-load đầu). */
+    public const COMMENTS_PAGE_SIZE = 30;
+    /** Hằng số: số replies hiển thị mặc định cho mỗi comment cha. */
+    public const REPLIES_PAGE_SIZE  = 5;
+
     /**
      * Chỉ lấy comment top-level (parent_id IS NULL), kèm replies + author (eager) để tránh N+1.
      * Composite index (task_id, parent_id, created_at) cover toàn bộ query.
+     *
+     * LƯU Ý: Mặc định KHÔNG limit. Để giới hạn N latest, dùng query builder ở controller.
      */
     public function comments(): HasMany
     {
@@ -82,6 +89,12 @@ class Task extends Model
     public function allComments(): HasMany
     {
         return $this->hasMany(TaskComment::class);
+    }
+
+    /** Đếm top-level comments — dùng để biết có ẩn cũ hơn không. */
+    public function topLevelComments(): HasMany
+    {
+        return $this->hasMany(TaskComment::class)->whereNull('parent_id');
     }
 
     /** Tất cả user liên quan (assignee + watcher + creator) — dùng để broadcast. */

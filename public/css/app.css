@@ -774,11 +774,15 @@ input.flatpickr-alt-input {
 }
 .bell-badge.badge-pulse { animation: badgePulse .8s ease-out; }
 .bell-menu {
-    min-width: 360px; max-width: 380px;
+    min-width: 420px; max-width: 460px;
     border: 1px solid var(--azia-border);
     border-radius: 14px;
     padding: 0; overflow: hidden;
     box-shadow: 0 12px 32px rgba(28,39,60,.14);
+}
+/* Mobile: full width trừ padding */
+@media (max-width: 576px) {
+    .bell-menu { min-width: calc(100vw - 24px); max-width: calc(100vw - 24px); }
 }
 .bell-head {
     display: flex; justify-content: space-between; align-items: center;
@@ -817,9 +821,10 @@ input.flatpickr-alt-input {
     line-height: 1.45;
     color: var(--azia-text);
     display: -webkit-box;
-    -webkit-line-clamp: 2;
+    -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
+    word-break: break-word;
 }
 .bell-item-time {
     font-size: 11px;
