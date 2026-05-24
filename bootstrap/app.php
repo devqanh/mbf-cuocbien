@@ -18,6 +18,11 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission'        => \Spatie\Permission\Middleware\PermissionMiddleware::class,
             'role_or_permission'=> \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
         ]);
+
+        // Chặn browser cache HTML pages — fix bug bấm Back về login (cached login HTML).
+        $middleware->web(append: [
+            \App\Http\Middleware\NoCacheHeaders::class,
+        ]);
     })
     ->withSchedule(function (Schedule $schedule): void {
         // Prune snapshot history cũ hơn 30 ngày, giữ tối thiểu 10 version gần nhất per key.

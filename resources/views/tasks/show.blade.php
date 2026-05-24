@@ -362,29 +362,59 @@
     }
     .title-editable:hover .edit-icon { opacity: 1; }
 
-    /* Inline title input mode */
+    /* Inline title input mode — wrap container layout flex để nút luôn show */
+    .title-edit-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;       /* mobile sẽ wrap xuống dòng */
+        width: 100%;
+    }
     .title-input {
         background: rgba(255,255,255,.18);
-        border: 1px solid rgba(255,255,255,.3);
+        border: 1px solid rgba(255,255,255,.35);
         color: #fff;
         font-size: 22px; font-weight: 700;
-        padding: 4px 10px;
+        padding: 6px 12px;
         border-radius: 8px;
         outline: none;
-        width: 100%;
+        flex: 1 1 280px;       /* grow + shrink, min 280px */
+        min-width: 240px;
         max-width: 600px;
     }
+    .title-input::placeholder { color: rgba(255,255,255,.5); }
     .title-input:focus {
         background: rgba(255,255,255,.25);
-        border-color: rgba(255,255,255,.5);
+        border-color: rgba(255,255,255,.6);
+        box-shadow: 0 0 0 3px rgba(255,255,255,.15);
     }
     .title-edit-actions {
-        display: inline-flex; gap: 6px; margin-left: 8px;
+        display: inline-flex;
+        gap: 6px;
+        flex-shrink: 0;        /* không cho ép — nút luôn show */
     }
-    .title-edit-actions .btn-sm {
-        padding: 4px 12px;
-        font-size: 12px;
+    .title-edit-actions .btn {
+        padding: 8px 16px;
+        font-size: 13px;
+        font-weight: 600;
         border-radius: 8px;
+        white-space: nowrap;
+    }
+    .title-edit-actions .btn-save {
+        background: #fff;
+        border: 1px solid #fff;
+        color: var(--azia-primary);
+    }
+    .title-edit-actions .btn-save:hover {
+        background: #f4f5f8; color: var(--azia-primary);
+    }
+    .title-edit-actions .btn-cancel {
+        background: transparent;
+        border: 1px solid rgba(255,255,255,.5);
+        color: #fff;
+    }
+    .title-edit-actions .btn-cancel:hover {
+        background: rgba(255,255,255,.12);
     }
 </style>
 @endpush
@@ -1094,13 +1124,20 @@
 
             const current = document.getElementById('taskTitleText').textContent.trim();
             $wrap.innerHTML = `
-                <input type="text" class="title-input" value="${current.replace(/"/g, '&quot;')}" maxlength="255">
-                <span class="title-edit-actions">
-                    <button type="button" class="btn btn-sm btn-light" data-action="cancel">Huỷ</button>
-                    <button type="button" class="btn btn-sm btn-primary" data-action="save">
-                        <i class="bi bi-check2 me-1"></i>Lưu
-                    </button>
-                </span>
+                <div class="title-edit-wrap">
+                    <input type="text" class="title-input"
+                           value="${current.replace(/"/g, '&quot;')}"
+                           maxlength="255"
+                           placeholder="Nhập tên task…">
+                    <span class="title-edit-actions">
+                        <button type="button" class="btn btn-save" data-action="save">
+                            <i class="bi bi-check2-circle me-1"></i>Lưu
+                        </button>
+                        <button type="button" class="btn btn-cancel" data-action="cancel">
+                            <i class="bi bi-x-lg me-1"></i>Huỷ
+                        </button>
+                    </span>
+                </div>
             `;
             const $input = $wrap.querySelector('input');
             $input.focus();
