@@ -2393,18 +2393,15 @@
                     return;
                 }
 
-                // Thông báo
+                // Thông báo — đơn giản, người dùng dễ hiểu
                 if (updatedNew > 0) {
                     let msg = `Đã lưu — gán <strong>${updatedNew}</strong> No. mới.`;
-                    if (newRowsRecovered > 0)  msg += ` (${newRowsRecovered} dòng phục hồi)`;
-                    if (updatesRecovered > 0)  msg += ` (${updatesRecovered} update phục hồi)`;
-                    if (json.deleted > 0)      msg += ` Đã XÓA <strong>${json.deleted}</strong> dòng.`;
+                    if (json.deleted > 0) msg += ` Đã XÓA <strong>${json.deleted}</strong> dòng.`;
                     toast(msg, 'success');
                 } else {
-                    let msg = `Đã lưu ${json.saved} dòng (v${json.version})`;
-                    if (updatesRecovered > 0)  msg += ` — ${updatesRecovered} dòng phục hồi từ so sánh DB`;
-                    if (json.deleted > 0)      msg += `. Đã XÓA ${json.deleted} dòng`;
-                    toast(msg + '.');
+                    let msg = `Đã lưu ${json.saved} dòng`;
+                    if (json.deleted > 0) msg += `, đã XÓA ${json.deleted} dòng`;
+                    toast(msg + '.', 'success');
                 }
                 updateVersionBadge(CURRENT_USER, new Date().toISOString());
             });
