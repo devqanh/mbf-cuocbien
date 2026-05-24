@@ -45,7 +45,9 @@ class LoginController extends Controller
 
         $request->session()->regenerate();
 
-        return redirect()->intended(route('shipments.index'))
+        // Luôn về Follow Up Shipment sau đăng nhập (bỏ ->intended() để không redirect
+        // về trang user đã ở khi session expired — vd /users).
+        return redirect()->route('shipments.index')
             ->with('success', 'Chào mừng ' . Auth::user()->name . ' quay trở lại!');
     }
 
