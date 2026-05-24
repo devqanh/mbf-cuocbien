@@ -1145,10 +1145,19 @@
 
             $input.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') { e.preventDefault(); save(); }
-                else if (e.key === 'Escape') { cancel(); }
+                else if (e.key === 'Escape') { e.stopPropagation(); cancel(); }
             });
-            $wrap.querySelector('[data-action=save]').addEventListener('click', save);
-            $wrap.querySelector('[data-action=cancel]').addEventListener('click', cancel);
+            // stopPropagation để click button không bubble lên $wrap (gây enterEditMode lại)
+            $wrap.querySelector('[data-action=save]').addEventListener('click', (e) => {
+                e.stopPropagation();
+                save();
+            });
+            $wrap.querySelector('[data-action=cancel]').addEventListener('click', (e) => {
+                e.stopPropagation();
+                cancel();
+            });
+            // Click vào input cũng đừng bubble
+            $input.addEventListener('click', (e) => e.stopPropagation());
         };
 
         const renderTitle = (title) => {
@@ -1191,7 +1200,7 @@
             } catch (e) {
                 $input.disabled = false;
                 $saveBtn.disabled = false;
-                $saveBtn.innerHTML = '<i class="bi bi-check2 me-1"></i>Lưu';
+                $saveBtn.innerHTML = '<i class="bi bi-check2-circle me-1"></i>Lưu';
                 Swal && Swal.fire({
                     ...APP_SWAL, icon: 'error',
                     title: 'Lưu thất bại', html: 'Không cập nhật được. Thử lại sau.',
@@ -1202,7 +1211,6 @@
 
         $wrap.addEventListener('click', (e) => {
             if ($wrap.dataset.editing === '1') return;
-            // Không trigger khi click vào edit-icon hoặc actions sau khi render lại
             enterEditMode();
         });
     })();

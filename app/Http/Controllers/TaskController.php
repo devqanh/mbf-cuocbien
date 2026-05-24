@@ -10,6 +10,8 @@ use App\Notifications\TaskAssignedNotification;
 use App\Notifications\TaskUpdatedNotification;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Validation\Rule;
@@ -106,7 +108,7 @@ class TaskController extends Controller
         return view('tasks.show', compact('task', 'users', 'hiddenCount', 'totalTopLevel'));
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request): SymfonyResponse
     {
         abort_unless($request->user()->can('tasks.create'), 403);
 
@@ -142,7 +144,7 @@ class TaskController extends Controller
         return redirect()->route('tasks.show', $task)->with('success', 'Đã tạo task.');
     }
 
-    public function update(Request $request, Task $task): RedirectResponse
+    public function update(Request $request, Task $task): SymfonyResponse
     {
         $this->authorizeEdit($request->user(), $task);
 
@@ -206,7 +208,7 @@ class TaskController extends Controller
     }
 
     /** Đổi status nhanh (todo↔doing↔done) qua action button trong list. */
-    public function toggleStatus(Request $request, Task $task): RedirectResponse
+    public function toggleStatus(Request $request, Task $task): SymfonyResponse
     {
         $this->authorizeEdit($request->user(), $task);
 
