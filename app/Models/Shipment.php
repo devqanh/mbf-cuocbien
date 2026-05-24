@@ -20,6 +20,8 @@ class Shipment extends Model
     public const DECIMAL_FIELDS = [
         'payment_amount', 'cost_recognized', 'trucking_cost',
         'agent_fee', 'agent_fee_vnd',
+        // Agent receivable (credit note)
+        'credit_note_agent', 'agent_receivable_amount', 'credit_note_agent_vnd', 'agent_received_amount',
         'receivable_amount', 'received_amount', 'revenue_recognized',
     ];
 
@@ -30,6 +32,8 @@ class Shipment extends Model
         'report_close_date_increase', 'report_close_date_decrease',
         'supplier_paid_date', 'purchase_invoice_date',
         'agent_due_date', 'agent_paid_date',
+        // Agent receivable dates
+        'agent_receivable_due_date', 'agent_received_date',
         'receivable_due_date', 'received_date', 'sale_invoice_date',
     ];
 
@@ -52,6 +56,9 @@ class Shipment extends Model
         // agent
         'driver_hoa', 'agent_fee', 'agent_name', 'agent_fee_vnd',
         'agent_due_date', 'agent_paid_date',
+        // agent receivable (credit note)
+        'credit_note_agent', 'agent_receivable_amount', 'credit_note_agent_vnd',
+        'agent_receivable_due_date', 'agent_received_amount', 'agent_received_date',
         // bán / KH
         'sale_note', 'receivable_amount', 'customer', 'received_amount',
         'receivable_due_date', 'received_date',
@@ -66,20 +73,26 @@ class Shipment extends Model
         'report_close_date_decrease'=> 'date',
         'supplier_paid_date'        => 'date',
         'purchase_invoice_date' => 'date',
-        'agent_due_date'        => 'date',
-        'agent_paid_date'       => 'date',
-        'receivable_due_date'   => 'date',
-        'received_date'         => 'date',
-        'sale_invoice_date'     => 'date',
+        'agent_due_date'            => 'date',
+        'agent_paid_date'           => 'date',
+        'agent_receivable_due_date' => 'date',
+        'agent_received_date'       => 'date',
+        'receivable_due_date'       => 'date',
+        'received_date'             => 'date',
+        'sale_invoice_date'         => 'date',
 
-        'payment_amount'        => 'decimal:2',
-        'cost_recognized'       => 'decimal:2',
-        'trucking_cost'         => 'decimal:2',
-        'agent_fee'             => 'decimal:2',
-        'agent_fee_vnd'         => 'decimal:2',
-        'receivable_amount'     => 'decimal:2',
-        'received_amount'       => 'decimal:2',
-        'revenue_recognized'    => 'decimal:2',
+        'payment_amount'            => 'decimal:2',
+        'cost_recognized'           => 'decimal:2',
+        'trucking_cost'             => 'decimal:2',
+        'agent_fee'                 => 'decimal:2',
+        'agent_fee_vnd'             => 'decimal:2',
+        'credit_note_agent'         => 'decimal:2',
+        'agent_receivable_amount'   => 'decimal:2',
+        'credit_note_agent_vnd'     => 'decimal:2',
+        'agent_received_amount'     => 'decimal:2',
+        'receivable_amount'         => 'decimal:2',
+        'received_amount'           => 'decimal:2',
+        'revenue_recognized'        => 'decimal:2',
     ];
 
     public function scopeInPeriod(Builder $q, string $period): Builder

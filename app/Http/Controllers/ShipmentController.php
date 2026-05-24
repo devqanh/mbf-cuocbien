@@ -258,13 +258,21 @@ class ShipmentController extends Controller
             'purchase_invoice_no'   => $code,
             'purchase_invoice_date' => $date,
 
-            // Agent
+            // Agent (payable)
             'driver_hoa'      => $shortText,
             'agent_fee'       => $money,
             'agent_name'      => $shortText,
             'agent_fee_vnd'   => $money,
             'agent_due_date'  => $date,
             'agent_paid_date' => $date,
+
+            // Agent receivable (credit note)
+            'credit_note_agent'         => $money,
+            'agent_receivable_amount'   => $money,
+            'credit_note_agent_vnd'     => $money,
+            'agent_receivable_due_date' => $date,
+            'agent_received_amount'     => $money,
+            'agent_received_date'       => $date,
 
             // Bán / KH
             'sale_note'           => ['nullable', 'string'],
