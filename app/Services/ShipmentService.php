@@ -245,6 +245,7 @@ class ShipmentService
         ?array $snapshot,
         int $clientVersion,
         User $editor,
+        array $deletedIds = [],
     ): array {
         $key = $this->sheetKey($period);
 
@@ -252,6 +253,15 @@ class ShipmentService
             || empty(array_filter($editor->column_permissions ?? [], fn ($v) => in_array($v, ['hidden', 'view'])));
 
         $editableKeys = $this->editableColumnKeysFor($editor);
+
+        // DELETE rows user đã xóa khỏi sheet (require shipments.delete permission).
+        // Filter theo period để tránh xóa nhầm row của period khác (defensive).
+        $deletedCount = 0;
+        if (! empty($deletedIds) && $editor->can('shipments.delete')) {
+            $deletedCount = Shipment::inPeriod($period)
+                ->whereIn('id', array_unique(array_map('intval', $deletedIds)))
+                ->delete();
+        }
 
         $ids = DB::transaction(function () use ($rowsByDirection, $period, $editableKeys, $editor) {
             $isSuper = $editor->isSuperAdmin();
@@ -380,6 +390,7 @@ class ShipmentService
 
         return [
             'saved'             => count($ids),
+            'deleted'           => $deletedCount,
             'ids'               => $ids,
             'version'           => $newVersion,
             'snapshot_conflict' => $snapshotConflict,

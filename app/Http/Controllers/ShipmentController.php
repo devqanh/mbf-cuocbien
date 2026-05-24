@@ -159,6 +159,8 @@ class ShipmentController extends Controller
             'rows'                          => ['required', 'array'],
             'rows.import'                   => ['array',  'max:5000'],
             'rows.export'                   => ['array',  'max:5000'],
+            'deleted_ids'                   => ['nullable', 'array', 'max:5000'],
+            'deleted_ids.*'                 => ['integer'],
             'snapshot'                      => ['nullable', 'array'],
             'snapshot.formatting'           => ['nullable', 'array'],
             'snapshot.formatting.import'    => ['nullable', 'array'],
@@ -180,6 +182,7 @@ class ShipmentController extends Controller
                 snapshot:      $payload['snapshot']       ?? null,
                 clientVersion: $payload['client_version'] ?? 0,
                 editor:        $request->user(),
+                deletedIds:    $payload['deleted_ids']    ?? [],
             );
         } catch (DomainException $e) {
             return response()->json(['ok' => false, 'message' => $e->getMessage()] + $e->context(), $e->httpStatus());

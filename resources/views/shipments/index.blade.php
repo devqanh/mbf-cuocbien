@@ -1466,6 +1466,20 @@
         let snapshot = null;
         let sheetVersion = 0;
 
+        // Track IDs hiện có trong DB lúc load → diff với currentIds lúc save để
+        // tìm rows user đã xóa khỏi sheet (Luckysheet's delete row chỉ remove
+        // visually, không có hook nên dùng diff approach).
+        let _originalIds = { import: new Set(), export: new Set() };
+
+        function recordOriginalIds() {
+            _originalIds = { import: new Set(), export: new Set() };
+            ['import', 'export'].forEach(dir => {
+                (rowsByDir[dir] || []).forEach(r => {
+                    if (r.id != null) _originalIds[dir].add(parseInt(r.id));
+                });
+            });
+        }
+
         async function loadData() {
             const res  = await fetch(ROUTES.data, { headers: { 'Accept': 'application/json' } });
             const json = await res.json();
@@ -1491,6 +1505,7 @@
                 }, 300);
             }
 
+            recordOriginalIds();
             resetDirty();
             _needsResync = false;
         }
@@ -1612,9 +1627,10 @@
                     }, 100);
                 }
 
-                // Update local cache + badge
+                // Update local cache + badge + originalIds (cho diff deletion lần save kế)
                 rowsByDir = newRowsByDir;
                 snapshot  = json.snapshot;
+                recordOriginalIds();
                 updateVersionBadge(json.editor, json.updatedAt);
 
                 // Apply formatting overlay (bg colors etc.) — không destroy sheet
@@ -2119,6 +2135,26 @@
                 const importRows = dirtyMeta.filter(m => m.sheetOrder === 0).map(m => m.data);
                 const exportRows = dirtyMeta.filter(m => m.sheetOrder === 1).map(m => m.data);
 
+                // Diff deletion: IDs có trong _originalIds nhưng KHÔNG có trong current sheet
+                // → user đã xóa rows này (Luckysheet delete row không có hook nên dùng diff).
+                const currentIds = { import: new Set(), export: new Set() };
+                [0, 1].forEach((sheetOrder) => {
+                    const dir = sheetOrder === 0 ? 'import' : 'export';
+                    const allRows = readSheetRowsWithMeta(sheetOrder);
+                    allRows.forEach(m => {
+                        if (m.data.id != null) currentIds[dir].add(parseInt(m.data.id));
+                    });
+                });
+                const deletedIds = [];
+                ['import', 'export'].forEach(dir => {
+                    _originalIds[dir].forEach(id => {
+                        if (! currentIds[dir].has(id)) deletedIds.push(id);
+                    });
+                });
+                if (deletedIds.length > 0) {
+                    console.log('[save] deletedIds:', deletedIds);
+                }
+
                 // Detect formatting + column width changes
                 let formattingChanged = false;
                 let columnlenChanged  = false;
@@ -2144,8 +2180,8 @@
                                 '| CAN_SAVE:', CAN_SAVE_FORMATTING);
                 }
 
-                // Không có row dirty + không có format/columnlen thay đổi → khỏi gọi API
-                if (dirtyMeta.length === 0 && ! formattingChanged && ! columnlenChanged) {
+                // Không có row dirty + không có deletion + không có format/columnlen → khỏi API
+                if (dirtyMeta.length === 0 && deletedIds.length === 0 && ! formattingChanged && ! columnlenChanged) {
                     console.log('[save] EARLY RETURN — no changes');
                     return toast('Không có thay đổi cần lưu.', 'info');
                 }
@@ -2177,6 +2213,7 @@
                     },
                     body: JSON.stringify({
                         rows: { import: importRows, export: exportRows },
+                        deleted_ids: deletedIds,
                         snapshot: formattingPayload,
                         client_version: sheetVersion,
                     })
@@ -2236,10 +2273,29 @@
                 // SELECTIVE clear — chỉ xóa dirty entries đã SENT (giữ entries user typing trong lúc fetch)
                 removeDirtyMatching(dirtyAtStart);
 
+                // Update originalIds: rows đã DELETE khỏi DB không còn trong "original"
+                deletedIds.forEach(id => {
+                    _originalIds.import.delete(id);
+                    _originalIds.export.delete(id);
+                });
+                // Cộng thêm IDs mới được tạo (json.ids) vào originalIds
+                if (Array.isArray(json.ids)) {
+                    json.ids.forEach((id, i) => {
+                        if (id != null && dirtyMeta[i]?.isNew) {
+                            const dir = dirtyMeta[i].sheetOrder === 0 ? 'import' : 'export';
+                            _originalIds[dir].add(parseInt(id));
+                        }
+                    });
+                }
+
                 // Update local snapshot cache — tránh stale ở lần save kế (formattingChanged compare)
                 if (currentFmt) {
                     if (! snapshot) snapshot = {};
                     snapshot.formatting = currentFmt;
+                }
+                if (currentColumnlen) {
+                    if (! snapshot) snapshot = {};
+                    snapshot.columnlen = currentColumnlen;
                 }
 
                 // FORMAT RESAVE — sau khi inject new IDs, re-extract formatting + save lại.
@@ -2279,10 +2335,12 @@
                     let msg = `Đã lưu — gán <strong>${updatedNew}</strong> No. mới.`;
                     if (newRowsRecovered > 0)  msg += ` (${newRowsRecovered} dòng phục hồi)`;
                     if (updatesRecovered > 0)  msg += ` (${updatesRecovered} update phục hồi)`;
+                    if (json.deleted > 0)      msg += ` Đã XÓA <strong>${json.deleted}</strong> dòng.`;
                     toast(msg, 'success');
                 } else {
                     let msg = `Đã lưu ${json.saved} dòng (v${json.version})`;
-                    if (updatesRecovered > 0) msg += ` — ${updatesRecovered} dòng phục hồi từ so sánh DB`;
+                    if (updatesRecovered > 0)  msg += ` — ${updatesRecovered} dòng phục hồi từ so sánh DB`;
+                    if (json.deleted > 0)      msg += `. Đã XÓA ${json.deleted} dòng`;
                     toast(msg + '.');
                 }
                 updateVersionBadge(CURRENT_USER, new Date().toISOString());
