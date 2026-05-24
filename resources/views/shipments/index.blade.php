@@ -560,6 +560,9 @@
         // Cho save formatting: chỉ cần KHÔNG bị admin restrict (user-hidden OK).
         const CAN_SAVE_FORMATTING = ! ADMIN_RESTRICTED;
 
+        // Quyền xóa rows — từ backend (Spatie permission shipments.delete)
+        const CAN_DELETE_ROWS = @json($canDelete ?? false);
+
         // Filter:
         //  1. Bỏ cột admin đã ẩn
         //  2. Bỏ cột user tự chọn ẩn
@@ -2183,12 +2186,27 @@
                         if (m.data.id != null) currentIds[dir].add(parseInt(m.data.id));
                     });
                 });
-                const deletedIds = [];
+                let deletedIds = [];
                 ['import', 'export'].forEach(dir => {
                     _originalIds[dir].forEach(id => {
                         if (! currentIds[dir].has(id)) deletedIds.push(id);
                     });
                 });
+
+                // Check quyền xóa — nếu KHÔNG có quyền nhưng try xóa → warn + skip deletion
+                // (vẫn cho save các thay đổi khác). Sẽ trigger reload sau save để khôi phục
+                // rows visually đã xóa lỡ.
+                let _deleteBlocked = 0;
+                if (deletedIds.length > 0 && ! CAN_DELETE_ROWS) {
+                    _deleteBlocked = deletedIds.length;
+                    toast(
+                        `⚠️ Bạn KHÔNG có quyền xóa dòng (cần quyền 'shipments.delete'). ` +
+                        `<strong>${_deleteBlocked}</strong> dòng sẽ được khôi phục sau khi lưu. ` +
+                        `Liên hệ quản trị viên để cấp quyền.`,
+                        'danger'
+                    );
+                    deletedIds = [];   // không gửi lên backend
+                }
                 if (deletedIds.length > 0) {
                     console.log('[save] deletedIds:', deletedIds);
                 }
@@ -2366,6 +2384,13 @@
                             });
                         } catch (e) { console.warn('format resave failed:', e); }
                     }, 500);
+                }
+
+                // Nếu có delete bị block → reload để khôi phục rows visually
+                if (_deleteBlocked > 0) {
+                    updateVersionBadge(CURRENT_USER, new Date().toISOString());
+                    setTimeout(loadData, 800);   // delay cho toast warning user thấy trước
+                    return;
                 }
 
                 // Thông báo

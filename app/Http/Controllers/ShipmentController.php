@@ -67,6 +67,7 @@ class ShipmentController extends Controller
             'columnPerms' => $perms,
             'userPrefs'   => $user->shipment_column_prefs ?? [],
             'suppliers'   => $suppliers,
+            'canDelete'   => $user->can('shipments.delete'),
         ]);
     }
 
