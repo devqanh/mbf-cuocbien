@@ -354,13 +354,23 @@
     .title-editable:hover {
         background: rgba(255,255,255,.12);
     }
+    /* Bút chì luôn hiện để user biết tiêu đề có thể sửa */
     .title-editable .edit-icon {
-        opacity: 0;
-        font-size: 16px;
-        transition: opacity .12s;
-        color: rgba(255,255,255,.7);
+        opacity: .65;
+        font-size: 15px;
+        color: rgba(255,255,255,.85);
+        background: rgba(255,255,255,.12);
+        width: 26px; height: 26px;
+        border-radius: 50%;
+        display: inline-flex; align-items: center; justify-content: center;
+        transition: all .15s;
+        margin-left: 4px;
     }
-    .title-editable:hover .edit-icon { opacity: 1; }
+    .title-editable:hover .edit-icon {
+        opacity: 1;
+        background: rgba(255,255,255,.22);
+        transform: rotate(-8deg);
+    }
 
     /* Inline title input mode — wrap container layout flex để nút luôn show */
     .title-edit-wrap {
