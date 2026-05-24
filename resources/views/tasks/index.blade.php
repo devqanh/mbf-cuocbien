@@ -34,28 +34,46 @@
     // Group tasks by relative due-date bucket cho các view có time (mine, today, upcoming, all)
     $shouldGroup = in_array($view, ['mine', 'upcoming', 'created', 'all'], true);
     $groupedTasks = $tasks;
+    $dayLabels = [];   // labels cho D+2 đến D+7 (sẽ generate động)
+
     if ($shouldGroup) {
-        $today    = now()->startOfDay();
-        $tomorrow = now()->copy()->addDay()->startOfDay();
-        $weekEnd  = now()->copy()->endOfWeek();
-        $bucket = function ($task) use ($today, $tomorrow, $weekEnd) {
+        $today = now()->startOfDay();
+
+        // Pre-generate labels theo ngày cụ thể (Thứ X, DD/MM) cho D+2 đến D+7
+        $weekdayNames = [
+            'Mon' => 'Thứ 2', 'Tue' => 'Thứ 3', 'Wed' => 'Thứ 4',
+            'Thu' => 'Thứ 5', 'Fri' => 'Thứ 6', 'Sat' => 'Thứ 7', 'Sun' => 'Chủ nhật',
+        ];
+        for ($i = 2; $i <= 7; $i++) {
+            $d = $today->copy()->addDays($i);
+            $key = 'day-' . $d->format('Y-m-d');
+            $dayLabels[$key] = [
+                'lbl'   => $weekdayNames[$d->format('D')] . ', ' . $d->format('d/m'),
+                'icon'  => 'calendar-day',
+                'color' => 'primary',
+            ];
+        }
+
+        $bucket = function ($task) use ($today) {
             if (! $task->due_at) return 'no-due';
             if ($task->due_at->isPast() && $task->status !== 'done') return 'overdue';
-            if ($task->due_at->lt($tomorrow)) return 'today';
-            if ($task->due_at->lt($tomorrow->copy()->addDay())) return 'tomorrow';
-            if ($task->due_at->lte($weekEnd)) return 'this-week';
-            return 'later';
+            $dueDate = $task->due_at->copy()->startOfDay();
+            $diff = $today->diffInDays($dueDate, false);
+            if ($diff === 0) return 'today';
+            if ($diff === 1) return 'tomorrow';
+            if ($diff >= 2 && $diff <= 7) return 'day-' . $dueDate->format('Y-m-d');
+            return 'later';   // >7 ngày
         };
         $groupedTasks = $tasks->getCollection()->groupBy($bucket);
     }
 
     $groupLabels = [
-        'overdue'   => ['lbl' => 'Quá hạn',     'icon' => 'exclamation-circle-fill', 'color' => 'danger'],
-        'today'     => ['lbl' => 'Hôm nay',     'icon' => 'calendar-event-fill',     'color' => 'warning'],
-        'tomorrow'  => ['lbl' => 'Ngày mai',    'icon' => 'calendar-day',            'color' => 'info'],
-        'this-week' => ['lbl' => 'Tuần này',    'icon' => 'calendar-week',           'color' => 'primary'],
-        'later'     => ['lbl' => 'Sau đó',      'icon' => 'calendar3',               'color' => 'secondary'],
-        'no-due'    => ['lbl' => 'Không có hạn','icon' => 'infinity',                'color' => 'secondary'],
+        'overdue'   => ['lbl' => 'Quá hạn',         'icon' => 'exclamation-circle-fill', 'color' => 'danger'],
+        'today'     => ['lbl' => 'Hôm nay',         'icon' => 'calendar-event-fill',     'color' => 'warning'],
+        'tomorrow'  => ['lbl' => 'Ngày mai',        'icon' => 'calendar-day',            'color' => 'info'],
+        ...$dayLabels,
+        'later'     => ['lbl' => 'Sau 7 ngày tới',  'icon' => 'calendar3',               'color' => 'secondary'],
+        'no-due'    => ['lbl' => 'Không có hạn',    'icon' => 'infinity',                'color' => 'secondary'],
     ];
 @endphp
 
@@ -550,8 +568,14 @@
             @else
                 @php
                     // Nếu không group → wrap tất cả trong 1 group "ungrouped" cho consistent rendering
+                    // Thứ tự render: overdue → today → tomorrow → D+2..D+7 → later → no-due
+                    $renderOrder = array_merge(
+                        ['overdue', 'today', 'tomorrow'],
+                        array_keys($dayLabels),   // day-YYYY-MM-DD keys cho D+2..D+7
+                        ['later', 'no-due']
+                    );
                     $renderGroups = $shouldGroup
-                        ? collect(['overdue','today','tomorrow','this-week','later','no-due'])
+                        ? collect($renderOrder)
                             ->filter(fn($k) => isset($groupedTasks[$k]) && $groupedTasks[$k]->isNotEmpty())
                             ->mapWithKeys(fn($k) => [$k => $groupedTasks[$k]])
                         : collect(['_' => $tasks->getCollection()]);
