@@ -153,7 +153,7 @@ a { text-decoration: none; }
     border: 1px solid var(--azia-border);
     border-radius: 10px;
     box-shadow: 0 10px 24px rgba(28, 39, 60, .08);
-    min-width: 220px;
+    min-width: 340px;
     padding: 6px;
 }
 .app-nav .dropdown-item {
