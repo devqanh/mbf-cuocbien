@@ -1750,7 +1750,7 @@
                 celldata: buildCellData(rowsByDir.import || [], 0),
                 row: importRowCount,
                 column: COLS.length + 1,
-                frozen: { type: 'rangeBoth', range: { row_focus: 0, column_focus: 1 } },
+                frozen: { type: 'rangeBoth', range: { row_focus: 0, column_focus: 0 } },
                 defaultRowHeight: 36,
             };
             const exportSheet = {
@@ -1762,7 +1762,7 @@
                 celldata: buildCellData(rowsByDir.export || [], 1),
                 row: exportRowCount,
                 column: COLS.length + 1,
-                frozen: { type: 'rangeBoth', range: { row_focus: 0, column_focus: 1 } },
+                frozen: { type: 'rangeBoth', range: { row_focus: 0, column_focus: 0 } },
                 defaultRowHeight: 36,
             };
 
