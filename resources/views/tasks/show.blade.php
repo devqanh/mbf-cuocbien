@@ -583,7 +583,7 @@
                                 <div class="comment-head">
                                     <span class="comment-name">{{ $c->author?->name ?? 'Người dùng đã xoá' }}</span>
                                     <span class="comment-time" title="{{ $c->created_at->format('d/m/Y H:i') }}">
-                                        {{ $c->created_at->diffForHumans() }}
+                                        {{ $c->created_at->locale('vi')->diffForHumans() }}
                                     </span>
                                 </div>
                                 <div class="comment-text">{!! $c->renderedBody() !!}</div>
@@ -626,7 +626,7 @@
                                                     <div class="comment-head">
                                                         <span class="comment-name">{{ $r->author?->name ?? 'Người dùng đã xoá' }}</span>
                                                         <span class="comment-time" title="{{ $r->created_at->format('d/m/Y H:i') }}">
-                                                            {{ $r->created_at->diffForHumans() }}
+                                                            {{ $r->created_at->locale('vi')->diffForHumans() }}
                                                         </span>
                                                     </div>
                                                     <div class="comment-text">{!! $r->renderedBody() !!}</div>
@@ -725,7 +725,15 @@
                             <div class="info-row">
                                 <span class="label"><i class="bi bi-hourglass-split"></i> Còn lại</span>
                                 <span class="value {{ $overdue ? 'text-danger fw-bold' : '' }}">
-                                    {{ $overdue ? 'Quá hạn ' . $task->due_at->diffForHumans(now(), true) : $task->due_at->diffForHumans() }}
+                                    @php
+                                        // Explicit locale('vi') — không phụ thuộc app.locale của VPS env.
+                                        // Carbon tự pick unit lớn nhất: <1 phút → giây, <1h → phút, <1d → giờ, ≥1d → ngày.
+                                        $diff = $task->due_at->locale('vi')->diffForHumans(now(), [
+                                            'parts' => 1,            // chỉ unit lớn nhất (vd "2 giờ", không "2 giờ 15 phút")
+                                            'syntax' => \Carbon\CarbonInterface::DIFF_ABSOLUTE,
+                                        ]);
+                                    @endphp
+                                    {{ $overdue ? 'Quá hạn ' . $diff : 'Còn ' . $diff }}
                                 </span>
                             </div>
                         @endif
