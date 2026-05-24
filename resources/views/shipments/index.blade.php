@@ -1546,13 +1546,15 @@
                 const newRowsByDir = json.data;
                 sheetVersion = json.version ?? sheetVersion;
 
-                let updated = 0, appended = 0, skippedDirty = 0;
+                let updated = 0, appended = 0, deleted = 0, skippedDirty = 0;
                 const changedSheets = new Set();   // sheet orders có changes — để force redraw sau
 
                 [0, 1].forEach((sheetOrder) => {
                     const dir = sheetOrder === 0 ? 'import' : 'export';
                     const newRows = (newRowsByDir[dir] || []).filter(r => r.id != null);
                     const newById = new Map(newRows.map(r => [parseInt(r.id), r]));
+                    const newIdsSet = new Set(newRows.map(r => parseInt(r.id)));
+                    const toDeleteSheetRows = [];   // sheet rows cần xóa (user khác đã xóa rows này)
 
                     const rendered = readSheetRowsWithMeta(sheetOrder);
                     const dirtyMap = dirtyCells[sheetOrder] || new Map();
@@ -1575,7 +1577,16 @@
                         renderedIds.add(id);
 
                         const newRow = newById.get(id);
-                        if (! newRow) return;   // row deleted — skip cho gọn
+                        if (! newRow) {
+                            // Row đã bị user khác XÓA khỏi DB → mark để xóa khỏi sheet.
+                            // SKIP nếu user mình đang editing (có dirty cells) — preserve work,
+                            // backend dedup khi save sẽ tạo thành row mới.
+                            const rowDirtyKeys = dirtyMap.get(m.sheetRow);
+                            if (! rowDirtyKeys || rowDirtyKeys.size === 0) {
+                                toDeleteSheetRows.push(m.sheetRow);
+                            }
+                            return;
+                        }
 
                         const rowDirtyKeys = dirtyMap.get(m.sheetRow) || new Set();
 
@@ -1613,6 +1624,32 @@
                         appended++;
                         changedSheets.add(sheetOrder);
                     });
+
+                    // PASS 3: Delete rows mà user khác đã xóa khỏi DB.
+                    // Sort DESC để delete từ dưới lên — tránh index shift làm sai các delete sau.
+                    if (toDeleteSheetRows.length > 0) {
+                        toDeleteSheetRows.sort((a, b) => b - a);
+                        toDeleteSheetRows.forEach(r => {
+                            try {
+                                // Mark mọi cell trong row là system update → bypass hook markDirty
+                                for (let c = 0; c < COLS.length; c++) markSystemCell(sheetOrder, r, c, 800);
+                                luckysheet.deleteRowCol('row', r, 1, { order: sheetOrder });
+                                deleted++;
+                                changedSheets.add(sheetOrder);
+                            } catch (e) {
+                                // Fallback: nếu deleteRowCol fail (API khác version), clear cells
+                                console.warn('softMerge deleteRowCol failed, fallback clear:', e);
+                                try {
+                                    for (let c = 0; c < COLS.length; c++) {
+                                        markSystemCell(sheetOrder, r, c, 500);
+                                        luckysheet.setCellValue(r, c, '', { order: sheetOrder });
+                                    }
+                                    deleted++;
+                                    changedSheets.add(sheetOrder);
+                                } catch (e2) { console.warn('softMerge clear fallback failed:', e2); }
+                            }
+                        });
+                    }
                 });
 
                 // Force canvas redraw cho các sheet có changes — đảm bảo user thấy update
@@ -1639,11 +1676,11 @@
                     applyFormattingOverlay(1, json.snapshot.formatting.export || []);
                 }
 
-                return { updated, appended, skippedDirty };
+                return { updated, appended, deleted, skippedDirty };
             } catch (e) {
                 console.warn('softMerge failed, fallback loadData:', e);
                 await loadData();
-                return { updated: 0, appended: 0, skippedDirty: 0, fallback: true };
+                return { updated: 0, appended: 0, deleted: 0, skippedDirty: 0, fallback: true };
             }
         }
 
@@ -1988,7 +2025,7 @@
                     // SOFT MERGE — không reload toàn sheet, chỉ update cells thay đổi.
                     // Cells user đang sửa (dirty) sẽ được GIỮ NGUYÊN, không bị đè.
                     const result = await softMerge();
-                    const { updated, appended, skippedDirty, fallback } = result;
+                    const { updated, appended, deleted, skippedDirty, fallback } = result;
 
                     if (fallback) {
                         toast(`<i class="bi bi-person-fill-gear"></i> <strong>${e.editorName}</strong> vừa lưu (v${e.version}). Đã reload.`, 'info');
@@ -2003,6 +2040,7 @@
                     const parts = [];
                     if (updated > 0)      parts.push(`<strong>${updated}</strong> cell update`);
                     if (appended > 0)     parts.push(`<strong>${appended}</strong> dòng mới`);
+                    if (deleted > 0)      parts.push(`<strong>${deleted}</strong> dòng xóa`);
                     if (skippedDirty > 0) parts.push(`giữ ${skippedDirty} cell bạn đang sửa`);
                     if (parts.length > 0) {
                         msg += ' ' + parts.join(' • ') + '. ';
