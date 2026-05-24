@@ -24,6 +24,13 @@
         'urgent' => ['lbl' => 'Khẩn cấp',   'color' => '#ff5b5b'],
     ];
 
+    // Status options dùng cho status picker dropdown
+    $statusOptions = [
+        'todo'  => ['lbl' => 'Chưa làm',  'color' => 'secondary'],
+        'doing' => ['lbl' => 'Đang làm',  'color' => 'primary'],
+        'done'  => ['lbl' => 'Hoàn thành','color' => 'success'],
+    ];
+
     // Group tasks by relative due-date bucket cho các view có time (mine, today, upcoming, all)
     $shouldGroup = in_array($view, ['mine', 'upcoming', 'created', 'all'], true);
     $groupedTasks = $tasks;
@@ -129,48 +136,157 @@
         margin-left: 4px;
     }
 
-    /* ========== Task card list ========== */
-    .task-card {
-        background: #fff;
-        border: 1px solid var(--azia-border);
-        border-radius: 12px;
-        overflow: hidden;
+    /* ========== Task grid — 2 cột trên desktop, 1 cột mobile ========== */
+    .task-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+    }
+    @media (max-width: 992px) {
+        .task-grid { grid-template-columns: 1fr; }
     }
 
-    /* ========== Task row — modern minimalist ========== */
+    /* Mỗi task-row giờ là 1 card độc lập */
     .task-row {
         display: flex;
         align-items: center;
-        gap: 14px;
-        padding: 13px 18px;
-        border-bottom: 1px solid var(--azia-border);
-        transition: background .12s;
+        gap: 12px;
+        padding: 14px 16px;
+        background: #fff;
+        border: 1px solid var(--azia-border);
+        border-radius: 12px;
+        transition: all .12s;
         position: relative;
+        min-width: 0;
     }
-    .task-row:last-child { border-bottom: none; }
-    .task-row:hover { background: #fafbfd; }
-    .task-row.is-done { background: #fafbfd; }
+    .task-row:hover {
+        background: #fafbfd;
+        border-color: var(--azia-primary);
+        box-shadow: 0 4px 12px rgba(28, 39, 60, .06);
+    }
+    .task-row.is-done { background: #fafbfd; opacity: .85; }
     .task-row.is-done .task-title-link {
         text-decoration: line-through;
         color: var(--azia-muted);
     }
 
-    /* Checkbox: bi-circle (todo), bi-clock (doing), bi-check-circle-fill (done) */
-    .task-toggle {
-        background: none; border: none;
-        padding: 0;
-        font-size: 22px;
-        line-height: 1;
+    /* ========== Status Picker (dropdown 3 trạng thái) ========== */
+    .task-status-picker { position: relative; flex-shrink: 0; }
+
+    /* Nút tròn có BORDER RÕ — clearly "đây là 1 checkbox/button" */
+    .status-current {
+        width: 30px; height: 30px;
+        border-radius: 50%;
+        background: #fff;
+        border: 2px solid #d0d6e0;
         cursor: pointer;
-        transition: transform .1s, color .12s;
-        color: #c5cbd6;
+        display: inline-flex; align-items: center; justify-content: center;
+        padding: 0;
+        font-size: 14px;
+        color: #d0d6e0;
+        transition: all .15s;
+        position: relative;
+    }
+    .status-current:hover {
+        transform: scale(1.08);
+        box-shadow: 0 2px 8px rgba(28, 39, 60, .12);
+    }
+    .status-current::after {
+        /* Mũi tên nhỏ dưới góc — hint "có dropdown" */
+        content: '';
+        position: absolute;
+        bottom: -2px; right: -2px;
+        width: 10px; height: 10px;
+        background: #fff;
+        border: 1.5px solid #d0d6e0;
+        border-radius: 50%;
+        background-image: url("data:image/svg+xml;charset=utf-8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%237987a1'><path d='M3.204 5h9.592L8 10.481 3.204 5zm-.753.659 4.796 5.48a1 1 0 0 0 1.506 0l4.796-5.48c.566-.647.106-1.659-.753-1.659H3.204a1 1 0 0 0-.753 1.659z'/></svg>");
+        background-size: 7px; background-repeat: no-repeat; background-position: center;
+    }
+
+    /* Trạng thái: todo = empty circle */
+    .task-row:not(.is-doing):not(.is-done) .status-current {
+        color: transparent;       /* ẩn icon, chỉ thấy border */
+    }
+    .task-row:not(.is-doing):not(.is-done) .status-current:hover {
+        border-color: var(--azia-success);
+        background: rgba(36, 211, 159, .08);
+        color: var(--azia-success);
+    }
+
+    /* Trạng thái: doing = border primary + dot chính giữa */
+    .task-row.is-doing .status-current {
+        border-color: var(--azia-primary);
+        color: var(--azia-primary);
+    }
+    .task-row.is-doing .status-current::before {
+        content: '';
+        width: 12px; height: 12px;
+        border-radius: 50%;
+        background: var(--azia-primary);
+    }
+    .task-row.is-doing .status-current > * { display: none; } /* ẩn icon BS — chỉ dùng ::before */
+
+    /* Trạng thái: done = nền xanh đặc + check trắng */
+    .task-row.is-done .status-current {
+        background: var(--azia-success);
+        border-color: var(--azia-success);
+        color: #fff;
+    }
+    .task-row.is-done .status-current::after {
+        /* Cho biểu tượng tròn nhỏ ở góc cũng đổi sang trắng */
+        background-color: var(--azia-success);
+        border-color: rgba(255,255,255,.5);
+        background-image: url("data:image/svg+xml;charset=utf-8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23ffffff'><path d='M3.204 5h9.592L8 10.481 3.204 5zm-.753.659 4.796 5.48a1 1 0 0 0 1.506 0l4.796-5.48c.566-.647.106-1.659-.753-1.659H3.204a1 1 0 0 0-.753 1.659z'/></svg>");
+    }
+
+    /* Dropdown menu cho status picker */
+    .status-menu {
+        min-width: 200px;
+        padding: 6px;
+        border: 1px solid var(--azia-border);
+        border-radius: 12px;
+        box-shadow: 0 12px 32px rgba(28, 39, 60, .14);
+    }
+    .status-menu .status-item {
+        display: flex; align-items: center;
+        gap: 10px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        font-size: 13.5px;
+        font-weight: 500;
+        background: transparent;
+        border: none;
+        width: 100%;
+        text-align: left;
+        color: var(--azia-text);
+        cursor: pointer;
+        transition: background .12s;
+    }
+    .status-menu .status-item:hover { background: var(--azia-bg); }
+    .status-menu .status-item.is-current {
+        background: var(--azia-primary-soft);
+        color: var(--azia-primary);
+        font-weight: 700;
+    }
+    .status-menu .status-dot {
+        width: 14px; height: 14px;
+        border-radius: 50%;
+        border: 2px solid #d0d6e0;
+        background: #fff;
         flex-shrink: 0;
         display: inline-flex; align-items: center; justify-content: center;
-        width: 24px; height: 24px;
     }
-    .task-toggle:hover { transform: scale(1.1); color: var(--azia-primary); }
-    .task-row.is-doing .task-toggle { color: var(--azia-primary); }
-    .task-row.is-done  .task-toggle { color: var(--azia-success); }
+    .status-menu .status-dot.dot-doing { border-color: var(--azia-primary); background: var(--azia-primary); }
+    .status-menu .status-dot.dot-done {
+        border-color: var(--azia-success); background: var(--azia-success);
+        color: #fff; font-size: 9px;
+    }
+    .status-menu .status-item .check {
+        margin-left: auto;
+        color: var(--azia-primary);
+    }
+    .status-menu form { margin: 0; }
 
     /* Priority indicator: vertical bar on left of title */
     .priority-bar {
@@ -250,6 +366,89 @@
     .task-assignees .av:first-child { margin-left: 0; }
     .task-row:hover .task-assignees .av { transform: translateY(-1px); }
     .task-assignees .av.av-more { background: #cbd5e1; color: #475569; }
+
+    /* ========== Participants popover (hover hiện list user) ========== */
+    .has-popover { position: relative; cursor: default; }
+    .participants-popover {
+        position: absolute;
+        bottom: calc(100% + 8px);
+        left: 50%;
+        transform: translateX(-50%) translateY(6px);
+        background: #fff;
+        border: 1px solid var(--azia-border);
+        border-radius: 12px;
+        box-shadow: 0 12px 32px rgba(28, 39, 60, .14);
+        padding: 10px;
+        min-width: 240px;
+        max-width: 320px;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity .15s, transform .15s;
+        z-index: 50;
+        pointer-events: none;
+    }
+    .has-popover:hover .participants-popover {
+        opacity: 1;
+        visibility: visible;
+        transform: translateX(-50%) translateY(0);
+    }
+    /* Mũi tên trỏ xuống dưới popover */
+    .participants-popover::after {
+        content: '';
+        position: absolute;
+        top: 100%; left: 50%;
+        transform: translateX(-50%);
+        border: 7px solid transparent;
+        border-top-color: #fff;
+        margin-top: -1px;
+        filter: drop-shadow(0 2px 1px rgba(28,39,60,.08));
+    }
+    .popover-title {
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: .8px;
+        font-weight: 700;
+        color: var(--azia-muted);
+        margin-bottom: 6px;
+        padding: 0 4px;
+    }
+    .popover-row {
+        display: flex; align-items: center;
+        gap: 10px;
+        padding: 6px 4px;
+        border-radius: 8px;
+        font-size: 13px;
+        color: var(--azia-text);
+    }
+    .popover-row:hover { background: var(--azia-bg); }
+    .popover-row .popover-av {
+        width: 28px; height: 28px; border-radius: 50%;
+        background: var(--azia-primary); color: #fff;
+        display: inline-flex; align-items: center; justify-content: center;
+        font-size: 11px; font-weight: 700;
+        flex-shrink: 0;
+    }
+    .popover-row .popover-name { flex: 1; font-weight: 500; }
+    .popover-row .popover-tag {
+        font-size: 10px;
+        background: var(--azia-primary-soft);
+        color: var(--azia-primary);
+        padding: 1px 7px;
+        border-radius: 999px;
+        font-weight: 600;
+    }
+    /* Popover trên avatar stack (bên phải) → căn về phải để không bị tràn */
+    .task-right .has-popover .participants-popover {
+        left: auto; right: 0;
+        transform: translateY(6px);
+    }
+    .task-right .has-popover:hover .participants-popover {
+        transform: translateY(0);
+    }
+    .task-right .has-popover .participants-popover::after {
+        left: auto; right: 12px;
+        transform: none;
+    }
 
     /* Quick actions revealed on hover */
     .task-actions {
@@ -372,7 +571,7 @@
                             @endif
                         @endif
 
-                        <div class="task-card">
+                        <div class="task-grid">
                             @foreach($rows as $task)
                                 @php
                                     $overdue = $task->isOverdue();
@@ -381,9 +580,10 @@
                                         && ! $overdue
                                         && $task->status !== 'done';
                                     $togglerNext = $task->status === 'done' ? 'todo' : 'done';
+                                    // Icon clearer cho 3 status — không dùng clock-fill (gây nhầm deadline)
                                     $togglerIcon = match($task->status) {
                                         'done'  => 'check-circle-fill',
-                                        'doing' => 'clock-fill',
+                                        'doing' => 'record-circle-fill',
                                         default => 'circle',
                                     };
                                     $togglerTitle = $task->status === 'done' ? 'Mở lại' : 'Đánh dấu hoàn thành';
@@ -392,17 +592,37 @@
                                 <div class="task-row {{ $task->status === 'done' ? 'is-done' : '' }} {{ $task->status === 'doing' ? 'is-doing' : '' }}">
                                     <span class="priority-bar priority-{{ $task->priority }}"></span>
 
-                                    {{-- Toggle done — có confirm SweetAlert khi đánh dấu hoàn thành --}}
-                                    <form method="POST" action="{{ route('tasks.toggleStatus', $task) }}"
-                                          class="m-0 task-toggle-form"
-                                          data-task-title="{{ $task->title }}"
-                                          data-confirm="{{ $togglerNext === 'done' ? '1' : '0' }}">
-                                        @csrf @method('PUT')
-                                        <input type="hidden" name="status" value="{{ $togglerNext }}">
-                                        <button type="submit" class="task-toggle" title="{{ $togglerTitle }}">
-                                            <i class="bi bi-{{ $togglerIcon }}"></i>
+                                    {{-- Status picker — dropdown 3 trạng thái rõ ràng --}}
+                                    <div class="task-status-picker dropdown">
+                                        <button type="button" class="status-current"
+                                                data-bs-toggle="dropdown" aria-expanded="false"
+                                                title="Đổi trạng thái">
+                                            <i class="bi bi-check2"></i>
                                         </button>
-                                    </form>
+                                        <ul class="dropdown-menu status-menu">
+                                            @foreach($statusOptions as $key => $opt)
+                                                <li>
+                                                    <form method="POST" action="{{ route('tasks.toggleStatus', $task) }}"
+                                                          class="task-toggle-form"
+                                                          data-task-title="{{ $task->title }}"
+                                                          data-confirm="{{ $key === 'done' && $task->status !== 'done' ? '1' : '0' }}">
+                                                        @csrf @method('PUT')
+                                                        <input type="hidden" name="status" value="{{ $key }}">
+                                                        <button type="submit" class="status-item {{ $task->status === $key ? 'is-current' : '' }}"
+                                                                {{ $task->status === $key ? 'disabled' : '' }}>
+                                                            <span class="status-dot dot-{{ $key }}">
+                                                                @if($key === 'done')<i class="bi bi-check"></i>@endif
+                                                            </span>
+                                                            <span>{{ $opt['lbl'] }}</span>
+                                                            @if($task->status === $key)
+                                                                <i class="bi bi-check2 check"></i>
+                                                            @endif
+                                                        </button>
+                                                    </form>
+                                                </li>
+                                            @endforeach
+                                        </ul>
+                                    </div>
 
                                     {{-- Title + sub-line --}}
                                     <div class="task-content">
@@ -433,6 +653,15 @@
                                             @endif
                                         </div>
 
+                                        @php
+                                            // Gom creator + assignees thành "participants" (unique)
+                                            $participants = collect();
+                                            if ($task->creator) $participants->push($task->creator);
+                                            $participants = $participants->concat($task->assignees)
+                                                ->unique('id')
+                                                ->values();
+                                            $participantNames = $participants->pluck('name')->implode(', ');
+                                        @endphp
                                         <div class="task-subline">
                                             @if($task->due_at)
                                                 <span class="due {{ $overdue ? 'is-overdue' : ($isToday ? 'is-today' : '') }}"
@@ -447,19 +676,46 @@
                                                     @endif
                                                 </span>
                                             @endif
-                                            <span><i class="bi bi-person"></i> {{ $task->creator?->name ?? '—' }}</span>
+                                            {{-- Participants count — hover hiện popover list user --}}
+                                            <span class="has-popover">
+                                                <i class="bi bi-people-fill"></i> {{ $participants->count() }} người
+                                                <span class="participants-popover">
+                                                    <div class="popover-title">Người tham gia ({{ $participants->count() }})</div>
+                                                    @foreach($participants as $p)
+                                                        <div class="popover-row">
+                                                            <span class="popover-av">{{ strtoupper(mb_substr($p->name, 0, 1)) }}</span>
+                                                            <span class="popover-name">{{ $p->name }}</span>
+                                                            @if($p->id === $task->created_by)
+                                                                <span class="popover-tag">Tạo</span>
+                                                            @endif
+                                                        </div>
+                                                    @endforeach
+                                                </span>
+                                            </span>
                                         </div>
                                     </div>
 
-                                    {{-- Right: assignees + actions --}}
+                                    {{-- Right: avatar stack tất cả participants + action --}}
                                     <div class="task-right">
-                                        <div class="task-assignees">
-                                            @foreach($task->assignees->take(3) as $a)
-                                                <span class="av" title="{{ $a->name }}">{{ strtoupper(mb_substr($a->name, 0, 1)) }}</span>
+                                        <div class="task-assignees has-popover">
+                                            @foreach($participants->take(3) as $p)
+                                                <span class="av">{{ strtoupper(mb_substr($p->name, 0, 1)) }}</span>
                                             @endforeach
-                                            @if($task->assignees->count() > 3)
-                                                <span class="av av-more" title="{{ $task->assignees->skip(3)->pluck('name')->implode(', ') }}">+{{ $task->assignees->count() - 3 }}</span>
+                                            @if($participants->count() > 3)
+                                                <span class="av av-more">+{{ $participants->count() - 3 }}</span>
                                             @endif
+                                            <span class="participants-popover">
+                                                <div class="popover-title">Người tham gia ({{ $participants->count() }})</div>
+                                                @foreach($participants as $p)
+                                                    <div class="popover-row">
+                                                        <span class="popover-av">{{ strtoupper(mb_substr($p->name, 0, 1)) }}</span>
+                                                        <span class="popover-name">{{ $p->name }}</span>
+                                                        @if($p->id === $task->created_by)
+                                                            <span class="popover-tag">Tạo</span>
+                                                        @endif
+                                                    </div>
+                                                @endforeach
+                                            </span>
                                         </div>
 
                                         <div class="task-actions">
