@@ -18,10 +18,8 @@
 
 return [
     // === NHÓM 1 — THÔNG TIN LÔ HÀNG (14 cột) ===
-    // Client đặt TRƯỚC No. để chỉ Client được freeze (col 0). No. ở col 1 vẫn hiển thị
-    // nhưng sẽ scroll khi user scroll ngang — yêu cầu user: "chỉ đóng băng client".
-    ['key' => 'client',         'title' => 'Client',      'width' => 140, 'group' => 1],
     ['key' => 'id',             'title' => 'No.',         'width' => 50,  'group' => 1, 'readonly' => true],
+    ['key' => 'client',         'title' => 'Client',      'width' => 140, 'group' => 1],
     ['key' => 'hbl',            'title' => 'HB/L',        'width' => 120, 'group' => 1],
     ['key' => 'mbl_no',         'title' => 'MB/L NO',     'width' => 130, 'group' => 1],
     ['key' => 'bkg_no',         'title' => 'BKG NO.',     'width' => 130, 'group' => 1],
