@@ -24,22 +24,36 @@
 
 @push('styles')
 <style>
+    /* Header bao ngoài: overflow visible để dropdown menu thoát ra được.
+       Gradient + circle decor được render ở lớp con .task-detail-bg có overflow:hidden riêng. */
     .task-detail-header {
-        background: linear-gradient(135deg, #0153a9 0%, #013f80 100%);
         color: #fff;
         border-radius: 14px;
         padding: 24px 28px;
         margin-bottom: 20px;
         position: relative;
-        overflow: hidden;
+        overflow: visible;
     }
-    .task-detail-header::after {
+    .task-detail-header > .task-detail-bg {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(135deg, #0153a9 0%, #013f80 100%);
+        border-radius: 14px;
+        overflow: hidden;
+        z-index: 0;
+    }
+    .task-detail-header > .task-detail-bg::after {
         content: '';
         position: absolute;
         width: 320px; height: 320px;
         border-radius: 50%;
         background: rgba(255,255,255,.06);
         top: -120px; right: -100px;
+    }
+    /* Mọi children content nằm trên layer bg */
+    .task-detail-header > *:not(.task-detail-bg) {
+        position: relative;
+        z-index: 1;
     }
     .task-detail-header h1 {
         font-size: 22px; font-weight: 700; margin: 0; position: relative; z-index: 1;
@@ -49,13 +63,72 @@
         display: flex; flex-wrap: wrap; gap: 14px; position: relative; z-index: 1;
     }
     .task-detail-header .meta i { margin-right: 4px; }
+    /* Status pill — giờ là dropdown button */
     .status-pill {
         display: inline-flex; align-items: center; gap: 6px;
-        padding: 5px 12px; border-radius: 999px;
+        padding: 6px 14px; border-radius: 999px;
         background: rgba(255,255,255,.2);
-        font-size: 12px; font-weight: 600;
+        font-size: 12.5px; font-weight: 700;
         position: relative; z-index: 1;
+        border: 1px solid rgba(255,255,255,.25);
+        color: #fff;
+        cursor: pointer;
+        transition: all .15s;
     }
+    .status-pill:hover {
+        background: rgba(255,255,255,.3);
+        border-color: rgba(255,255,255,.5);
+    }
+    .status-pill.show {           /* khi dropdown đang mở */
+        background: rgba(255,255,255,.32);
+        border-color: rgba(255,255,255,.6);
+    }
+
+    /* Dropdown menu cho status picker */
+    .status-pill-menu {
+        min-width: 220px;
+        padding: 6px;
+        border: 1px solid var(--azia-border);
+        border-radius: 12px;
+        box-shadow: 0 12px 32px rgba(28, 39, 60, .14);
+    }
+    .status-pill-menu form { margin: 0; }
+    .status-pill-item {
+        display: flex; align-items: center;
+        gap: 10px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        font-size: 13.5px;
+        font-weight: 500;
+        background: transparent;
+        border: none;
+        width: 100%;
+        text-align: left;
+        color: var(--azia-text);
+        cursor: pointer;
+        transition: background .12s;
+    }
+    .status-pill-item:hover:not(:disabled) { background: var(--azia-bg); }
+    .status-pill-item.is-current {
+        background: var(--azia-primary-soft);
+        color: var(--azia-primary);
+        font-weight: 700;
+    }
+    .status-pill-item:disabled { cursor: default; }
+    .status-pill-item .status-dot {
+        width: 14px; height: 14px;
+        border-radius: 50%;
+        border: 2px solid #d0d6e0;
+        background: #fff;
+        flex-shrink: 0;
+        display: inline-flex; align-items: center; justify-content: center;
+        font-size: 9px;
+    }
+    .status-pill-item .status-dot.dot-doing { border-color: var(--azia-primary); background: var(--azia-primary); }
+    .status-pill-item .status-dot.dot-done {
+        border-color: var(--azia-success); background: var(--azia-success); color: #fff;
+    }
+    .status-pill-item .check { margin-left: auto; color: var(--azia-primary); }
 
     .info-row {
         display: flex; justify-content: space-between; align-items: center;
@@ -83,124 +156,7 @@
         color: var(--azia-text);
     }
 
-    /* ========== Progress stepper status ========== */
-    .status-stepper {
-        display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        padding: 8px 12px 4px;
-        gap: 0;
-        position: relative;
-    }
-    .step-form { margin: 0; flex: 0 0 auto; position: relative; z-index: 2; }
-    .step-btn {
-        background: transparent;
-        border: none;
-        padding: 0;
-        cursor: pointer;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 8px;
-        min-width: 100px;
-    }
-    .step-btn:disabled { cursor: default; }
-
-    .step-circle {
-        width: 44px; height: 44px;
-        border-radius: 50%;
-        display: inline-flex; align-items: center; justify-content: center;
-        font-size: 18px;
-        background: #fff;
-        border: 2px solid var(--azia-border);
-        color: var(--azia-muted);
-        transition: all .25s cubic-bezier(.2, .8, .3, 1);
-        position: relative;
-    }
-    .step-label {
-        font-size: 12.5px;
-        font-weight: 600;
-        color: var(--azia-muted);
-        transition: color .2s;
-        white-space: nowrap;
-    }
-
-    /* Hover trên step chưa active → highlight */
-    .step-btn:not(:disabled):hover .step-circle {
-        border-color: var(--azia-primary);
-        color: var(--azia-primary);
-        transform: translateY(-2px);
-        box-shadow: 0 6px 16px rgba(1, 83, 169, .15);
-    }
-    .step-btn:not(:disabled):hover .step-label { color: var(--azia-primary); }
-
-    /* Passed step (đã qua) — màu primary đậm, check icon */
-    .step-passed .step-circle {
-        background: var(--azia-primary);
-        border-color: var(--azia-primary);
-        color: #fff;
-    }
-    .step-passed .step-label { color: var(--azia-primary); }
-
-    /* Current step (đang ở) — gradient + glow + pulse */
-    .step-current .step-circle {
-        background: linear-gradient(135deg, var(--azia-primary) 0%, #4a8fd9 100%);
-        border-color: var(--azia-primary);
-        color: #fff;
-        box-shadow: 0 0 0 6px rgba(1, 83, 169, .12), 0 8px 20px rgba(1, 83, 169, .25);
-        transform: scale(1.08);
-    }
-    .step-current .step-label {
-        color: var(--azia-primary);
-        font-weight: 700;
-    }
-    .step-current .step-circle::after {
-        content: '';
-        position: absolute;
-        inset: -4px;
-        border-radius: 50%;
-        border: 2px solid rgba(1, 83, 169, .3);
-        animation: stepPulse 2s ease-out infinite;
-    }
-    @keyframes stepPulse {
-        0%   { transform: scale(1);   opacity: 1; }
-        100% { transform: scale(1.4); opacity: 0; }
-    }
-
-    /* Done state (step Hoàn thành đang là current) — đổi sang xanh success */
-    .step-current.step-done .step-circle {
-        background: linear-gradient(135deg, var(--azia-success) 0%, #1aa37e 100%);
-        border-color: var(--azia-success);
-        box-shadow: 0 0 0 6px rgba(36, 211, 159, .15), 0 8px 20px rgba(36, 211, 159, .25);
-    }
-    .step-current.step-done .step-label { color: var(--azia-success); }
-    .step-current.step-done .step-circle::after { border-color: rgba(36, 211, 159, .3); }
-
-    /* Connector line giữa các step */
-    .step-connector {
-        flex: 1;
-        height: 3px;
-        background: var(--azia-border);
-        margin: 21px -10px 0;       /* căn giữa với circle 44px (44/2 ~ 22px) */
-        position: relative;
-        z-index: 1;
-        border-radius: 2px;
-        overflow: hidden;
-    }
-    .step-connector::after {
-        content: '';
-        position: absolute;
-        inset: 0;
-        background: linear-gradient(90deg, var(--azia-primary), #4a8fd9);
-        transform-origin: left;
-        transform: scaleX(0);
-        transition: transform .5s cubic-bezier(.2, .8, .3, 1);
-    }
-    .step-connector.is-filled::after { transform: scaleX(1); }
-    /* Connector đến step "done" → xanh success */
-    .step-connector.is-filled.to-done::after {
-        background: linear-gradient(90deg, var(--azia-primary), var(--azia-success));
-    }
+    /* (Đã gỡ progress stepper to — chuyển sang status pill dropdown gọn hơn) */
 
     /* ========== Comments thread ========== */
     .comment-list { padding: 0; }
@@ -246,6 +202,45 @@
     .comment-form textarea {
         resize: none;
         font-size: 13.5px;
+    }
+
+    /* ========== Contenteditable comment editor (Facebook-style chip mention) ========== */
+    .comment-editor {
+        background: #fff;
+        border: 1px solid var(--azia-border);
+        border-radius: 10px;
+        padding: 10px 14px;
+        min-height: 64px;
+        max-height: 240px;
+        overflow-y: auto;
+        font-size: 13.5px;
+        line-height: 1.55;
+        color: var(--azia-text);
+        outline: none;
+        transition: border-color .12s, box-shadow .12s;
+        cursor: text;
+    }
+    .comment-editor:focus {
+        border-color: var(--azia-primary);
+        box-shadow: 0 0 0 3px rgba(1, 83, 169, .12);
+    }
+    .comment-editor:empty::before {
+        content: attr(data-placeholder);
+        color: var(--azia-muted);
+        pointer-events: none;
+    }
+    /* Chip mention — không thể edit từng ký tự, xoá là xoá nguyên cụm */
+    .mention-chip-input {
+        display: inline-block;
+        background: var(--azia-primary-soft);
+        color: var(--azia-primary);
+        padding: 1px 8px;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 12.5px;
+        margin: 0 2px;
+        user-select: none;
+        vertical-align: baseline;
     }
     .comment-empty {
         text-align: center;
@@ -432,6 +427,7 @@
 @section('content')
     {{-- Header --}}
     <div class="task-detail-header">
+        <div class="task-detail-bg"></div>
         <div class="d-flex flex-wrap justify-content-between gap-3 align-items-start">
             <div style="flex: 1; min-width: 0;">
                 <nav class="breadcrumb" style="position:relative;z-index:1">
@@ -464,10 +460,44 @@
                 </div>
             </div>
             <div class="d-flex flex-column align-items-end gap-2" style="position:relative;z-index:1">
-                <span class="status-pill">
-                    <i class="bi bi-{{ $statusOptions[$task->status]['icon'] }}"></i>
-                    {{ $statusOptions[$task->status]['lbl'] }}
-                </span>
+                @if($canEdit)
+                    {{-- Status pill = dropdown button: click → chọn 1 trong 3 trạng thái --}}
+                    <div class="dropdown">
+                        <button type="button" class="status-pill" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="bi bi-{{ $statusOptions[$task->status]['icon'] }}"></i>
+                            {{ $statusOptions[$task->status]['lbl'] }}
+                            <i class="bi bi-chevron-down ms-1" style="font-size:10px; opacity:.75"></i>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end status-pill-menu">
+                            @foreach($statusOptions as $key => $opt)
+                                <li>
+                                    <form method="POST" action="{{ route('tasks.toggleStatus', $task) }}"
+                                          class="task-toggle-form"
+                                          data-task-title="{{ $task->title }}"
+                                          data-target-status="{{ $key }}"
+                                          data-target-label="{{ $opt['lbl'] }}"
+                                          data-confirm="1">
+                                        @csrf @method('PUT')
+                                        <input type="hidden" name="status" value="{{ $key }}">
+                                        <button type="submit" class="status-pill-item {{ $task->status === $key ? 'is-current' : '' }}"
+                                                {{ $task->status === $key ? 'disabled' : '' }}>
+                                            <span class="status-dot dot-{{ $key }}">
+                                                @if($key === 'done')<i class="bi bi-check"></i>@endif
+                                            </span>
+                                            <span>{{ $opt['lbl'] }}</span>
+                                            @if($task->status === $key)<i class="bi bi-check2 check"></i>@endif
+                                        </button>
+                                    </form>
+                                </li>
+                            @endforeach
+                        </ul>
+                    </div>
+                @else
+                    <span class="status-pill">
+                        <i class="bi bi-{{ $statusOptions[$task->status]['icon'] }}"></i>
+                        {{ $statusOptions[$task->status]['lbl'] }}
+                    </span>
+                @endif
             </div>
         </div>
     </div>
@@ -497,57 +527,7 @@
                 </div>
             </div>
 
-            {{-- Status — progress stepper --}}
-            @if($canEdit)
-            @php
-                // Index hiện tại trong sequence todo → doing → done
-                $statusKeys = array_keys($statusOptions);    // ['todo','doing','done']
-                $currentIdx = array_search($task->status, $statusKeys, true);
-            @endphp
-            <div class="card">
-                <div class="card-header">
-                    <i class="bi bi-lightning-charge me-1" style="color: var(--azia-primary)"></i>
-                    Tiến trình
-                </div>
-                <div class="card-body">
-                    <div class="status-stepper">
-                        @foreach($statusOptions as $key => $opt)
-                            @php
-                                $idx = array_search($key, $statusKeys, true);
-                                $isPassed  = $idx < $currentIdx;
-                                $isCurrent = $idx === $currentIdx;
-                                $stepClass = $isCurrent ? 'step-current' : ($isPassed ? 'step-passed' : '');
-                                if ($isCurrent && $key === 'done') $stepClass .= ' step-done';
-                                // Icon: đã qua = check, current = icon theo trạng thái, chưa tới = số/icon mờ
-                                $icon = $isPassed ? 'check-lg' : $opt['icon'];
-                            @endphp
-                            <form method="POST" action="{{ route('tasks.toggleStatus', $task) }}"
-                                  class="step-form {{ $stepClass }}"
-                                  data-task-title="{{ $task->title }}"
-                                  data-needs-confirm="{{ $key === 'done' ? '1' : '0' }}">
-                                @csrf @method('PUT')
-                                <input type="hidden" name="status" value="{{ $key }}">
-                                <button type="submit" class="step-btn"
-                                        {{ $isCurrent ? 'disabled' : '' }}
-                                        title="{{ $isCurrent ? 'Đang ở trạng thái này' : 'Chuyển sang: ' . $opt['lbl'] }}">
-                                    <span class="step-circle">
-                                        <i class="bi bi-{{ $icon }}"></i>
-                                    </span>
-                                    <span class="step-label">{{ $opt['lbl'] }}</span>
-                                </button>
-                            </form>
-                            @if(! $loop->last)
-                                @php
-                                    $connFilled = $idx < $currentIdx;
-                                    $connToDone = $idx + 1 === array_search('done', $statusKeys, true);
-                                @endphp
-                                <span class="step-connector {{ $connFilled ? 'is-filled' : '' }} {{ $connFilled && $connToDone ? 'to-done' : '' }}"></span>
-                            @endif
-                        @endforeach
-                    </div>
-                </div>
-            </div>
-            @endif
+            {{-- Status đổi qua dropdown ở header pill (gọn hơn stepper) --}}
 
             {{-- ============ COMMENTS THREAD ============ --}}
             @php
@@ -646,14 +626,16 @@
                                     </div>
                                 @endif
 
-                                {{-- Inline reply form (ẩn mặc định) --}}
+                                {{-- Inline reply form (ẩn mặc định) — cũng dùng contenteditable + chip --}}
                                 @if($canComment)
                                 <div class="reply-form-wrap" id="reply-{{ $c->id }}">
                                     <form method="POST" action="{{ route('tasks.comments.store', $task) }}" class="comment-reply-form mt-2">
                                         @csrf
                                         <input type="hidden" name="parent_id" value="{{ $c->id }}">
-                                        <textarea name="body" class="form-control reply-textarea" rows="2" required
-                                                  placeholder="Trả lời… Gõ @ để tag đồng nghiệp"></textarea>
+                                        <div class="comment-editor js-mention-editor reply-editor"
+                                             contenteditable="true"
+                                             data-placeholder="Trả lời… Gõ @ để tag đồng nghiệp"></div>
+                                        <textarea name="body" class="d-none reply-textarea-hidden"></textarea>
                                         <div class="d-flex justify-content-end gap-2 mt-2">
                                             <button type="button" class="btn btn-sm btn-light btn-cancel-reply">Huỷ</button>
                                             <button type="submit" class="btn btn-sm btn-primary reply-submit-btn">
@@ -676,8 +658,13 @@
                 @if($canComment)
                 <form method="POST" action="{{ route('tasks.comments.store', $task) }}" class="comment-form" id="commentForm">
                     @csrf
-                    <textarea name="body" class="form-control" rows="2" required
-                              placeholder="Viết bình luận… Gõ @ để tag đồng nghiệp" id="commentBody"></textarea>
+                    {{-- Contenteditable editor — render chip cho @mention, không edit lẻ tẻ được --}}
+                    <div class="comment-editor js-mention-editor"
+                         contenteditable="true"
+                         id="commentBody"
+                         data-placeholder="Viết bình luận… Gõ @ để tag đồng nghiệp"></div>
+                    {{-- Hidden textarea để form submit gửi giá trị đã serialize từ editor --}}
+                    <textarea name="body" class="d-none" id="commentBodyHidden"></textarea>
                     <div class="d-flex justify-content-between align-items-center mt-2">
                         <small class="text-muted">
                             <i class="bi bi-info-circle"></i>
@@ -1009,17 +996,40 @@
         });
     })();
 
-    // ---- Confirm SweetAlert khi click bước "Hoàn thành" trong stepper ----
-    document.querySelectorAll('.step-form[data-needs-confirm="1"]').forEach(($form) => {
+    // ---- Confirm SweetAlert cho MỌI lần đổi trạng thái — message theo target status ----
+    document.querySelectorAll('.task-toggle-form[data-confirm="1"]').forEach(($form) => {
         $form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const title = $form.dataset.taskTitle || 'task này';
-            const ok = await confirmAction({
-                icon: 'question',
-                title: 'Đã hoàn thành task?',
-                text: `Đánh dấu <b>"${title.replace(/</g,'&lt;')}"</b> là <b>Hoàn thành</b>?`,
-                confirmText: '<i class="bi bi-check2-circle me-1"></i> Đã xong',
-            });
+            const title = ($form.dataset.taskTitle || 'task này').replace(/</g,'&lt;');
+            const target = $form.dataset.targetStatus;
+            const label  = $form.dataset.targetLabel || 'mới';
+
+            // Message + icon theo từng target status
+            let opts;
+            if (target === 'done') {
+                opts = {
+                    icon: 'question',
+                    title: 'Đã hoàn thành task?',
+                    text: `Đánh dấu <b>"${title}"</b> là <b>Hoàn thành</b>?`,
+                    confirmText: '<i class="bi bi-check2-circle me-1"></i> Đã xong',
+                };
+            } else if (target === 'doing') {
+                opts = {
+                    icon: 'question',
+                    title: 'Bắt đầu làm task?',
+                    text: `Chuyển <b>"${title}"</b> sang trạng thái <b>Đang làm</b>?`,
+                    confirmText: '<i class="bi bi-play-fill me-1"></i> Bắt đầu',
+                };
+            } else { // todo
+                opts = {
+                    icon: 'warning',
+                    title: 'Đặt lại về Chưa làm?',
+                    text: `Task <b>"${title}"</b> sẽ trở về trạng thái <b>Chưa làm</b>.`,
+                    confirmText: '<i class="bi bi-arrow-counterclockwise me-1"></i> Đặt lại',
+                };
+            }
+
+            const ok = await confirmAction(opts);
             if (ok) {
                 const $btn = $form.querySelector('button[type=submit]');
                 if ($btn) $btn.disabled = true;
@@ -1225,17 +1235,40 @@
         });
     })();
 
-    // ---- Form submit loading: cho mọi form trong card bình luận ----
+    // ---- Form submit: sync editor → hidden textarea + validate + loading state ----
     (function () {
         document.querySelectorAll('#commentForm, .comment-reply-form').forEach(($form) => {
-            const $btn = $form.querySelector('button[type=submit]');
-            if (! $btn) return;
-            const origHTML = $btn.innerHTML;
+            const $btn    = $form.querySelector('button[type=submit]');
+            const $editor = $form.querySelector('.comment-editor');
+            const $hidden = $form.querySelector('textarea[name=body]');
+            if (! $btn || ! $editor || ! $hidden) return;
 
             $form.addEventListener('submit', (e) => {
                 if ($btn.disabled) { e.preventDefault(); return; }
+
+                // Serialize contenteditable → plain text "@Name normal text"
+                // .innerText giữ text trong chips (vd "@Super Admin") + xuống dòng
+                const text = ($editor.innerText || '').trim();
+                if (! text) {
+                    e.preventDefault();
+                    $editor.focus();
+                    return;
+                }
+                $hidden.value = text;
+
                 $btn.disabled = true;
                 $btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Đang gửi…';
+            });
+        });
+    })();
+
+    // ---- Paste: chỉ chấp nhận plain text vào editor (chặn HTML từ clipboard) ----
+    (function () {
+        document.querySelectorAll('.js-mention-editor').forEach(($ed) => {
+            $ed.addEventListener('paste', (e) => {
+                e.preventDefault();
+                const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+                document.execCommand('insertText', false, text);
             });
         });
     })();
@@ -1288,28 +1321,30 @@
         });
     })();
 
-    // ---- @mention picker: gắn vào MỌI textarea trong card bình luận (cả main + reply) ----
+    // ---- @mention picker cho CONTENTEDITABLE editor (chip-style như Facebook) ----
     (function () {
         const searchUrl = @json(route('users.search'));
-        const textareas = document.querySelectorAll('#commentBody, .reply-textarea');
-        if (! textareas.length) return;
+        const editors = document.querySelectorAll('.js-mention-editor');
+        if (! editors.length) return;
 
-        // 1 picker dùng chung, bám theo textarea đang active
         let picker = null;
-        let activeTa = null;
+        let activeEd = null;
         let users = [];
         let activeIdx = 0;
-        let searchAt = -1;
         let lastQ = '';
+        let savedRange = null;   // lưu range cursor để insert chip đúng chỗ
 
-        const closePicker = () => { if (picker) { picker.remove(); picker = null; users = []; searchAt = -1; activeTa = null; } };
+        const closePicker = () => {
+            if (picker) { picker.remove(); picker = null; }
+            users = []; activeEd = null; savedRange = null;
+        };
 
-        const openPicker = ($ta) => {
+        const openPicker = ($ed) => {
             closePicker();
-            activeTa = $ta;
+            activeEd = $ed;
             picker = document.createElement('div');
             picker.className = 'mention-picker';
-            const rect = $ta.getBoundingClientRect();
+            const rect = $ed.getBoundingClientRect();
             picker.style.left = (window.scrollX + rect.left + 12) + 'px';
             picker.style.top  = (window.scrollY + rect.bottom + 4) + 'px';
             document.body.appendChild(picker);
@@ -1331,7 +1366,7 @@
                 el.addEventListener('mousedown', (e) => {
                     e.preventDefault();
                     activeIdx = parseInt(el.dataset.idx, 10);
-                    insertMention();
+                    insertChip();
                 });
             });
         };
@@ -1347,50 +1382,111 @@
             } catch (e) { return []; }
         };
 
-        const insertMention = () => {
-            if (! picker || ! users.length || ! activeTa) return;
+        // Insert chip element thay cho @partial text
+        const insertChip = () => {
+            if (! picker || ! users.length || ! activeEd || ! savedRange) return;
             const u = users[activeIdx];
-            const before = activeTa.value.slice(0, searchAt);
-            const after  = activeTa.value.slice(activeTa.selectionStart);
-            const insert = '@' + u.name + ' ';
-            activeTa.value = before + insert + after;
-            const pos = (before + insert).length;
-            activeTa.setSelectionRange(pos, pos);
-            activeTa.focus();
+
+            // Restore range cursor đã lưu
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(savedRange);
+
+            const range = sel.getRangeAt(0);
+            const node = range.startContainer;
+            if (node.nodeType !== Node.TEXT_NODE) { closePicker(); return; }
+
+            const cursorOffset = range.startOffset;
+            const text = node.textContent;
+            const lastAt = text.lastIndexOf('@', cursorOffset - 1);
+            if (lastAt < 0) { closePicker(); return; }
+
+            // Cắt text node: trước '@' giữ lại, sau cursor sẽ thành text node mới
+            const beforeAt = text.slice(0, lastAt);
+            const afterCursor = text.slice(cursorOffset);
+            node.textContent = beforeAt;
+
+            // Tạo chip: contentEditable=false → xoá là xoá nguyên cụm
+            const chip = document.createElement('span');
+            chip.className = 'mention-chip-input';
+            chip.contentEditable = 'false';
+            chip.dataset.userId = u.id;
+            chip.textContent = '@' + u.name;
+
+            // Space sau chip (non-breaking để cursor có chỗ đậu)
+            const space = document.createTextNode(' ' + afterCursor);
+
+            // Insert vào DOM ngay sau text node hiện tại
+            const parent = node.parentNode;
+            if (node.nextSibling) {
+                parent.insertBefore(chip, node.nextSibling);
+                parent.insertBefore(space, chip.nextSibling);
+            } else {
+                parent.appendChild(chip);
+                parent.appendChild(space);
+            }
+
+            // Đặt cursor sau chip + 1 ký tự (sau space)
+            const newRange = document.createRange();
+            newRange.setStart(space, 1);
+            newRange.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(newRange);
+
+            activeEd.focus();
             closePicker();
         };
 
-        const bind = ($ta) => {
-            $ta.addEventListener('input', async () => {
-                const pos = $ta.selectionStart;
-                const text = $ta.value.slice(0, pos);
-                const match = text.match(/@([^\s@]{0,40})$/);
-                if (! match) { closePicker(); return; }
+        const onInput = async ($ed) => {
+            const sel = window.getSelection();
+            if (! sel.rangeCount) { closePicker(); return; }
+            const range = sel.getRangeAt(0);
+            const node = range.startContainer;
+            if (node.nodeType !== Node.TEXT_NODE) { closePicker(); return; }
+            if (! $ed.contains(node)) { closePicker(); return; }
 
-                searchAt = text.length - match[0].length;
-                const q = match[1];
-                if (q === lastQ && picker && activeTa === $ta) return;
-                lastQ = q;
+            const text = node.textContent.slice(0, range.startOffset);
+            const match = text.match(/@([^\s@]{0,40})$/);
+            if (! match) { closePicker(); return; }
 
-                users = await fetchUsers(q);
-                activeIdx = 0;
-                if (! picker || activeTa !== $ta) openPicker($ta);
-                renderPicker();
-            });
+            const q = match[1];
+            if (q === lastQ && picker && activeEd === $ed) return;
+            lastQ = q;
+            savedRange = range.cloneRange();
 
-            $ta.addEventListener('keydown', (e) => {
-                if (! picker || ! users.length || activeTa !== $ta) return;
+            users = await fetchUsers(q);
+            activeIdx = 0;
+            if (! picker || activeEd !== $ed) openPicker($ed);
+            renderPicker();
+        };
+
+        const bind = ($ed) => {
+            $ed.addEventListener('input', () => onInput($ed));
+
+            $ed.addEventListener('keydown', (e) => {
+                if (! picker || ! users.length || activeEd !== $ed) return;
                 if (e.key === 'ArrowDown') { e.preventDefault(); activeIdx = (activeIdx + 1) % users.length; renderPicker(); }
                 else if (e.key === 'ArrowUp') { e.preventDefault(); activeIdx = (activeIdx - 1 + users.length) % users.length; renderPicker(); }
-                else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertMention(); }
+                else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertChip(); }
                 else if (e.key === 'Escape') { closePicker(); }
+            });
+
+            // Cập nhật savedRange khi user click/move cursor (cho lần insert tiếp theo)
+            $ed.addEventListener('keyup', () => {
+                const sel = window.getSelection();
+                if (sel.rangeCount && $ed.contains(sel.getRangeAt(0).startContainer)) {
+                    savedRange = sel.getRangeAt(0).cloneRange();
+                }
             });
         };
 
-        textareas.forEach(bind);
+        editors.forEach(bind);
 
+        // Click ra ngoài → đóng picker
         document.addEventListener('click', (e) => {
-            if (picker && ! picker.contains(e.target) && e.target !== activeTa) closePicker();
+            if (picker && ! picker.contains(e.target) && ! e.target.classList.contains('js-mention-editor')) {
+                closePicker();
+            }
         });
     })();
     </script>

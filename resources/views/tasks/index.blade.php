@@ -605,7 +605,9 @@
                                                     <form method="POST" action="{{ route('tasks.toggleStatus', $task) }}"
                                                           class="task-toggle-form"
                                                           data-task-title="{{ $task->title }}"
-                                                          data-confirm="{{ $key === 'done' && $task->status !== 'done' ? '1' : '0' }}">
+                                                          data-target-status="{{ $key }}"
+                                                          data-target-label="{{ $opt['lbl'] }}"
+                                                          data-confirm="1">
                                                         @csrf @method('PUT')
                                                         <input type="hidden" name="status" value="{{ $key }}">
                                                         <button type="submit" class="status-item {{ $task->status === $key ? 'is-current' : '' }}"
@@ -748,15 +750,35 @@
 
             $form.addEventListener('submit', async (e) => {
                 e.preventDefault();
-                const title = $form.dataset.taskTitle || 'task này';
-                const ok = await confirmAction({
-                    icon: 'question',
-                    title: 'Đã hoàn thành task?',
-                    text: `Đánh dấu <b>"${title.replace(/</g,'&lt;')}"</b> là <b>Hoàn thành</b>?<br><small class="text-muted">Task sẽ ẩn khỏi danh sách "Được giao cho tôi".</small>`,
-                    confirmText: '<i class="bi bi-check2-circle me-1"></i> Đã xong',
-                });
+                const title  = ($form.dataset.taskTitle || 'task này').replace(/</g,'&lt;');
+                const target = $form.dataset.targetStatus;
+
+                let opts;
+                if (target === 'done') {
+                    opts = {
+                        icon: 'question',
+                        title: 'Đã hoàn thành task?',
+                        text: `Đánh dấu <b>"${title}"</b> là <b>Hoàn thành</b>?<br><small class="text-muted">Task sẽ ẩn khỏi danh sách "Được giao cho tôi".</small>`,
+                        confirmText: '<i class="bi bi-check2-circle me-1"></i> Đã xong',
+                    };
+                } else if (target === 'doing') {
+                    opts = {
+                        icon: 'question',
+                        title: 'Bắt đầu làm task?',
+                        text: `Chuyển <b>"${title}"</b> sang trạng thái <b>Đang làm</b>?`,
+                        confirmText: '<i class="bi bi-play-fill me-1"></i> Bắt đầu',
+                    };
+                } else { // todo
+                    opts = {
+                        icon: 'warning',
+                        title: 'Đặt lại về Chưa làm?',
+                        text: `Task <b>"${title}"</b> sẽ trở về trạng thái <b>Chưa làm</b>.`,
+                        confirmText: '<i class="bi bi-arrow-counterclockwise me-1"></i> Đặt lại',
+                    };
+                }
+
+                const ok = await confirmAction(opts);
                 if (ok) {
-                    // Disable nút để chống double-click khi đang gửi
                     const $btn = $form.querySelector('button[type=submit]');
                     if ($btn) $btn.disabled = true;
                     $form.submit();
