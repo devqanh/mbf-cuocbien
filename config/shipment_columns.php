@@ -63,11 +63,11 @@ return [
     ['key' => 'agent_paid_date',         'title' => 'Ngày trả (Agent)',                    'width' => 120, 'type' => 'date',   'group' => 3],
 
     // Agent receivable (credit note) — phải thu từ agent
-    ['key' => 'credit_note_agent',       'title' => 'Credit note agent',                   'width' => 130, 'type' => 'number', 'group' => 3],
-    ['key' => 'agent_receivable_amount', 'title' => 'Phải thu agent',                      'width' => 130, 'type' => 'vnd',    'group' => 3],
-    ['key' => 'credit_note_agent_vnd',   'title' => 'Quy đổi credit note sang VNĐ',        'width' => 170, 'type' => 'vnd',    'group' => 3],
+    ['key' => 'credit_note_agent',       'title' => 'Credit note (Agent)',                  'width' => 140, 'type' => 'number', 'group' => 3],
+    ['key' => 'agent_receivable_amount', 'title' => 'Phải thu (Agent)',                    'width' => 130, 'type' => 'vnd',    'group' => 3],
+    ['key' => 'credit_note_agent_vnd',   'title' => 'Quy đổi credit note sang VNĐ (Agent)','width' => 180, 'type' => 'vnd',    'group' => 3],
     ['key' => 'agent_receivable_due_date','title'=> 'Hạn phải thu (Agent)',                'width' => 130, 'type' => 'date',   'group' => 3],
-    ['key' => 'agent_received_amount',   'title' => 'Đã thu agent',                        'width' => 130, 'type' => 'vnd',    'group' => 3],
+    ['key' => 'agent_received_amount',   'title' => 'Đã thu (Agent)',                      'width' => 130, 'type' => 'vnd',    'group' => 3],
     ['key' => 'agent_received_date',     'title' => 'Ngày thu (Agent)',                    'width' => 120, 'type' => 'date',   'group' => 3],
 
     // === NHÓM 4 — DOANH THU KHÁCH HÀNG (9 cột) ===
