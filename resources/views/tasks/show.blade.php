@@ -199,6 +199,11 @@
         border-top: 1px solid var(--azia-border);
         position: relative;
     }
+    /* Khi form đặt ở ĐẦU card-body → đường kẻ chuyển xuống dưới */
+    .comment-form.is-top {
+        border-top: none;
+        border-bottom: 1px solid var(--azia-border);
+    }
     .comment-form textarea {
         resize: none;
         font-size: 13.5px;
@@ -548,14 +553,28 @@
                     </div>
                 </div>
 
+                {{-- Form viết bình luận đặt LÊN ĐẦU — đỡ phải scroll xuống cuối khi list dài --}}
+                @if($canComment)
+                <form method="POST" action="{{ route('tasks.comments.store', $task) }}" class="comment-form is-top" id="commentForm">
+                    @csrf
+                    <div class="comment-editor js-mention-editor"
+                         contenteditable="true"
+                         id="commentBody"
+                         data-placeholder="Viết bình luận… Gõ @ để tag đồng nghiệp"></div>
+                    <textarea name="body" class="d-none" id="commentBodyHidden"></textarea>
+                    <div class="d-flex justify-content-between align-items-center mt-2">
+                        <small class="text-muted">
+                            <i class="bi bi-info-circle"></i>
+                            Tag người: gõ <code>@</code> rồi chọn từ danh sách.
+                        </small>
+                        <button type="submit" class="btn btn-sm btn-primary" id="commentSubmitBtn">
+                            <i class="bi bi-send me-1"></i> Gửi bình luận
+                        </button>
+                    </div>
+                </form>
+                @endif
+
                 <div class="comment-list">
-                    @if(($hiddenCount ?? 0) > 0)
-                        <a href="{{ route('tasks.show', $task) }}?all_comments=1" class="d-block text-center py-2 small text-decoration-none"
-                           style="background:#fafbfd; color:var(--azia-primary); font-weight:600; border-bottom:1px solid var(--azia-border);">
-                            <i class="bi bi-arrow-up-circle me-1"></i>
-                            Xem {{ $hiddenCount }} bình luận cũ hơn (tổng {{ $totalTopLevel }})
-                        </a>
-                    @endif
 
                     @forelse($task->comments as $c)
                         <div class="comment-item" id="comment-{{ $c->id }}">
@@ -653,30 +672,16 @@
                             <div class="small mt-2">Chưa có bình luận. Hãy là người đầu tiên góp ý.</div>
                         </div>
                     @endforelse
-                </div>
 
-                @if($canComment)
-                <form method="POST" action="{{ route('tasks.comments.store', $task) }}" class="comment-form" id="commentForm">
-                    @csrf
-                    {{-- Contenteditable editor — render chip cho @mention, không edit lẻ tẻ được --}}
-                    <div class="comment-editor js-mention-editor"
-                         contenteditable="true"
-                         id="commentBody"
-                         data-placeholder="Viết bình luận… Gõ @ để tag đồng nghiệp"></div>
-                    {{-- Hidden textarea để form submit gửi giá trị đã serialize từ editor --}}
-                    <textarea name="body" class="d-none" id="commentBodyHidden"></textarea>
-                    <div class="d-flex justify-content-between align-items-center mt-2">
-                        <small class="text-muted">
-                            <i class="bi bi-info-circle"></i>
-                            Tag người: gõ <code>@</code> rồi chọn từ danh sách.
-                            Người được tag sẽ nhận thông báo.
-                        </small>
-                        <button type="submit" class="btn btn-sm btn-primary" id="commentSubmitBtn">
-                            <i class="bi bi-send me-1"></i> Gửi bình luận
-                        </button>
-                    </div>
-                </form>
-                @endif
+                    {{-- Banner xuống cuối list để khi scroll xuống mới thấy "xem cũ hơn" --}}
+                    @if(($hiddenCount ?? 0) > 0)
+                        <a href="{{ route('tasks.show', $task) }}?all_comments=1#commentForm" class="d-block text-center py-2 small text-decoration-none"
+                           style="background:#fafbfd; color:var(--azia-primary); font-weight:600; border-top:1px solid var(--azia-border);">
+                            <i class="bi bi-arrow-down-circle me-1"></i>
+                            Xem {{ $hiddenCount }} bình luận cũ hơn (tổng {{ $totalTopLevel }})
+                        </a>
+                    @endif
+                </div>
             </div>
         </div>
 

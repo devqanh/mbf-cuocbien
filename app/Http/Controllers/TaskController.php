@@ -92,11 +92,11 @@ class TaskController extends Controller
                 'replies.author:id,name',     // load all replies, view sẽ tự collapse
             ]);
 
+        // Sắp xếp newest first — comment mới ở trên cùng, đỡ phải scroll xuống cuối
         if ($showAll || $totalTopLevel <= $pageSize) {
-            $comments = $topLevelQuery->oldest()->get();
+            $comments = $topLevelQuery->latest()->get();
         } else {
-            // Lấy LATEST N theo created_at DESC, sau đó reverse cho chronological order
-            $comments = $topLevelQuery->latest()->limit($pageSize)->get()->reverse()->values();
+            $comments = $topLevelQuery->latest()->limit($pageSize)->get();
             $hiddenCount = $totalTopLevel - $pageSize;
         }
         $task->setRelation('comments', $comments);
