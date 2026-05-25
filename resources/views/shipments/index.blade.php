@@ -488,41 +488,6 @@
         </div>
     </div>
 
-    {{-- Modal Money Repeater — click cell tiền → liệt kê các khoản, tổng tự động --}}
-    <div class="modal fade" id="moneyRepeaterModal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">
-                        <i class="bi bi-calculator me-1"></i>
-                        <span id="mrTitle">Chi tiết khoản tiền</span>
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="form-text mb-2">
-                        Liệt kê các khoản. Tổng sẽ tự động tính + điền vào ô khi bấm <strong>OK</strong>.
-                    </div>
-                    <div id="mrLines"></div>
-                    <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="mrAddBtn">
-                        <i class="bi bi-plus-lg"></i> Thêm dòng
-                    </button>
-                    <hr>
-                    <div class="d-flex justify-content-between align-items-center">
-                        <strong class="text-muted">Tổng cộng:</strong>
-                        <strong class="fs-4 text-primary" id="mrTotal">0</strong>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Hủy</button>
-                    <button type="button" class="btn btn-primary" id="mrConfirmBtn">
-                        <i class="bi bi-check-lg me-1"></i> OK — Điền tổng vào ô
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     {{-- Modal tạo tháng --}}
     <div class="modal fade" id="periodModal" tabindex="-1">
         <div class="modal-dialog">
@@ -1897,12 +1862,6 @@
                                     toast(`Cột "<strong>${colDef.title}</strong>" tự động tạo, không sửa được.`, 'info');
                                     return false;
                                 }
-                                // Money cell (vnd/number) + data row (≥1) → mở repeater modal
-                                // thay vì inline edit. User nhập từng khoản, tổng auto tính.
-                                if ((colDef.type === 'vnd' || colDef.type === 'number') && startRow >= 1) {
-                                    openMoneyRepeaterModal(startRow, c, colDef);
-                                    return false;
-                                }
                             }
                         }
                     },
@@ -2030,121 +1989,6 @@
             });
         }
 
-        // ===== MONEY REPEATER MODAL =====
-        // User click cell type='vnd' hoặc 'number' → modal liệt kê các khoản → tổng tự auto.
-        let _mrTarget = null;   // { sheetRow, colIdx, sheetOrder, colDef }
-
-        function openMoneyRepeaterModal(sheetRow, colIdx, colDef) {
-            const sheetOrder = luckysheet.getSheet()?.order ?? 0;
-            _mrTarget = { sheetRow, colIdx, sheetOrder, colDef };
-            console.log('[mr] OPEN', { sheetRow, colIdx, colKey: colDef.key, sheetOrder });
-
-            // Read current cell value để prefill
-            let currentVal = 0;
-            try {
-                const raw = luckysheet.getCellValue(sheetRow, colIdx, { order: sheetOrder });
-                if (raw != null && raw !== '') {
-                    const cleaned = String(raw).replace(/[^0-9.\-]/g, '');
-                    currentVal = parseFloat(cleaned) || 0;
-                }
-            } catch (e) {}
-
-            document.getElementById('mrTitle').textContent = 'Chi tiết: ' + colDef.title;
-            const linesEl = document.getElementById('mrLines');
-            linesEl.innerHTML = '';
-            mrAddLine(currentVal > 0 ? currentVal : '');
-            mrAddLine('');   // thêm 1 line trống sẵn để user gõ ngay
-            mrUpdateTotal();
-
-            const modalEl = document.getElementById('moneyRepeaterModal');
-            bootstrap.Modal.getOrCreateInstance(modalEl).show();
-            // Auto-focus line đầu sau khi modal hiển thị
-            setTimeout(() => {
-                const first = linesEl.querySelector('.mr-amount');
-                if (first) first.focus();
-            }, 300);
-        }
-
-        function mrAddLine(amount = '', note = '') {
-            const linesEl = document.getElementById('mrLines');
-            const lineEl = document.createElement('div');
-            lineEl.className = 'row g-2 mb-2 align-items-center';
-            lineEl.innerHTML = `
-                <div class="col-5">
-                    <input type="number" class="form-control mr-amount" placeholder="Số tiền"
-                           step="any" value="${amount === '' ? '' : amount}"
-                           style="text-align: right; font-variant-numeric: tabular-nums;">
-                </div>
-                <div class="col-6">
-                    <input type="text" class="form-control mr-note" placeholder="Ghi chú (tùy chọn)" value="${note}">
-                </div>
-                <div class="col-1">
-                    <button type="button" class="btn btn-outline-danger w-100 mr-remove" title="Xóa">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </div>
-            `;
-            linesEl.appendChild(lineEl);
-            const amtInput = lineEl.querySelector('.mr-amount');
-            amtInput.addEventListener('input', mrUpdateTotal);
-            amtInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    mrAddLine('');
-                    document.getElementById('mrLines')
-                        .lastElementChild?.querySelector('.mr-amount')?.focus();
-                }
-            });
-            lineEl.querySelector('.mr-remove').addEventListener('click', () => {
-                lineEl.remove();
-                mrUpdateTotal();
-            });
-        }
-
-        function mrUpdateTotal() {
-            const inputs = document.querySelectorAll('#mrLines .mr-amount');
-            let total = 0;
-            inputs.forEach(inp => {
-                const v = parseFloat(inp.value);
-                if (! isNaN(v)) total += v;
-            });
-            document.getElementById('mrTotal').textContent = total.toLocaleString('vi-VN');
-            document.getElementById('mrTotal').dataset.value = total;
-        }
-
-        function mrConfirm() {
-            console.log('[mr] CONFIRM clicked. target:', _mrTarget);
-            if (! _mrTarget) {
-                console.warn('[mr] CONFIRM aborted — no target');
-                toast('Lỗi: không xác định được ô cần điền. Đóng modal và thử lại.', 'danger');
-                return;
-            }
-            const total = parseFloat(document.getElementById('mrTotal').dataset.value || '0') || 0;
-            console.log('[mr] CONFIRM total:', total, '→ cell', _mrTarget.sheetRow, _mrTarget.colIdx);
-            try {
-                // KHÔNG markSystemCell → cellUpdated hook fire bình thường → markDirty + whisper auto.
-                luckysheet.setCellValue(_mrTarget.sheetRow, _mrTarget.colIdx, total, { order: _mrTarget.sheetOrder });
-                console.log('[mr] setCellValue OK');
-            } catch (e) {
-                console.error('[mr] setCellValue failed:', e);
-                toast('Lỗi điền giá trị vào ô: ' + e.message, 'danger');
-            }
-            bootstrap.Modal.getInstance(document.getElementById('moneyRepeaterModal'))?.hide();
-            _mrTarget = null;
-        }
-
-        // Register events 1 lần khi DOM ready
-        function setupMoneyRepeater() {
-            document.getElementById('mrAddBtn')?.addEventListener('click', () => mrAddLine(''));
-            document.getElementById('mrConfirmBtn')?.addEventListener('click', mrConfirm);
-
-            // Cleanup khi modal đóng bằng X / Esc / click outside → tránh stale _mrTarget
-            const modalEl = document.getElementById('moneyRepeaterModal');
-            modalEl?.addEventListener('hidden.bs.modal', () => {
-                _mrTarget = null;
-            });
-        }
-
         function setupRealtime() {
             try {
                 // Echo đã được layout init sẵn (là instance, có .connector).
@@ -2233,7 +2077,6 @@
         document.addEventListener('DOMContentLoaded', () => {
             loadData();
             setupRealtime();
-            setupMoneyRepeater();
 
             document.getElementById('btnReload').addEventListener('click', loadData);
 
