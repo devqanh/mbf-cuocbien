@@ -2037,6 +2037,7 @@
         function openMoneyRepeaterModal(sheetRow, colIdx, colDef) {
             const sheetOrder = luckysheet.getSheet()?.order ?? 0;
             _mrTarget = { sheetRow, colIdx, sheetOrder, colDef };
+            console.log('[mr] OPEN', { sheetRow, colIdx, colKey: colDef.key, sheetOrder });
 
             // Read current cell value để prefill
             let currentVal = 0;
@@ -2112,12 +2113,22 @@
         }
 
         function mrConfirm() {
-            if (! _mrTarget) return;
+            console.log('[mr] CONFIRM clicked. target:', _mrTarget);
+            if (! _mrTarget) {
+                console.warn('[mr] CONFIRM aborted — no target');
+                toast('Lỗi: không xác định được ô cần điền. Đóng modal và thử lại.', 'danger');
+                return;
+            }
             const total = parseFloat(document.getElementById('mrTotal').dataset.value || '0') || 0;
+            console.log('[mr] CONFIRM total:', total, '→ cell', _mrTarget.sheetRow, _mrTarget.colIdx);
             try {
                 // KHÔNG markSystemCell → cellUpdated hook fire bình thường → markDirty + whisper auto.
                 luckysheet.setCellValue(_mrTarget.sheetRow, _mrTarget.colIdx, total, { order: _mrTarget.sheetOrder });
-            } catch (e) { console.warn('mrConfirm setCellValue failed:', e); }
+                console.log('[mr] setCellValue OK');
+            } catch (e) {
+                console.error('[mr] setCellValue failed:', e);
+                toast('Lỗi điền giá trị vào ô: ' + e.message, 'danger');
+            }
             bootstrap.Modal.getInstance(document.getElementById('moneyRepeaterModal'))?.hide();
             _mrTarget = null;
         }
@@ -2126,6 +2137,12 @@
         function setupMoneyRepeater() {
             document.getElementById('mrAddBtn')?.addEventListener('click', () => mrAddLine(''));
             document.getElementById('mrConfirmBtn')?.addEventListener('click', mrConfirm);
+
+            // Cleanup khi modal đóng bằng X / Esc / click outside → tránh stale _mrTarget
+            const modalEl = document.getElementById('moneyRepeaterModal');
+            modalEl?.addEventListener('hidden.bs.modal', () => {
+                _mrTarget = null;
+            });
         }
 
         function setupRealtime() {
