@@ -2067,22 +2067,31 @@
         function mrAddLine(amount = '', note = '') {
             const linesEl = document.getElementById('mrLines');
             const lineEl = document.createElement('div');
-            lineEl.className = 'd-flex gap-2 mb-2';
+            lineEl.className = 'row g-2 mb-2 align-items-center';
             lineEl.innerHTML = `
-                <input type="number" class="form-control mr-amount" placeholder="Số tiền" step="any" value="${amount === '' ? '' : amount}">
-                <input type="text" class="form-control mr-note" placeholder="Ghi chú (tùy chọn)" value="${note}">
-                <button type="button" class="btn btn-outline-danger mr-remove" title="Xóa dòng">
-                    <i class="bi bi-trash"></i>
-                </button>
+                <div class="col-5">
+                    <input type="number" class="form-control mr-amount" placeholder="Số tiền"
+                           step="any" value="${amount === '' ? '' : amount}"
+                           style="text-align: right; font-variant-numeric: tabular-nums;">
+                </div>
+                <div class="col-6">
+                    <input type="text" class="form-control mr-note" placeholder="Ghi chú (tùy chọn)" value="${note}">
+                </div>
+                <div class="col-1">
+                    <button type="button" class="btn btn-outline-danger w-100 mr-remove" title="Xóa">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
             `;
             linesEl.appendChild(lineEl);
-            lineEl.querySelector('.mr-amount').addEventListener('input', mrUpdateTotal);
-            lineEl.querySelector('.mr-amount').addEventListener('keydown', (e) => {
+            const amtInput = lineEl.querySelector('.mr-amount');
+            amtInput.addEventListener('input', mrUpdateTotal);
+            amtInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     mrAddLine('');
-                    const linesEl2 = document.getElementById('mrLines');
-                    linesEl2.querySelector('.mr-amount:last-of-type, div:last-child .mr-amount')?.focus();
+                    document.getElementById('mrLines')
+                        .lastElementChild?.querySelector('.mr-amount')?.focus();
                 }
             });
             lineEl.querySelector('.mr-remove').addEventListener('click', () => {
