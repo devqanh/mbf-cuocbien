@@ -43,7 +43,8 @@
                     </li>
                     @endcan
 
-                    {{-- Follow Up Shipment --}}
+                    {{-- Follow Up Shipment — TẠM TẮT qua config features.shipments --}}
+                    @if(config('features.shipments'))
                     @can('shipments.view')
                     <li class="nav-item">
                         <a class="nav-link {{ request()->routeIs('shipments.*') ? 'active' : '' }}"
@@ -52,6 +53,7 @@
                         </a>
                     </li>
                     @endcan
+                    @endif
 
                     {{-- Ghi chú & công việc (đặt trước Báo cáo để dễ thấy) --}}
                     @can('tasks.view')

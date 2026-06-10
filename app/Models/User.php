@@ -24,6 +24,8 @@ class User extends Authenticatable
         'avatar',
         'column_permissions',
         'shipment_column_prefs',
+        'trucking_column_permissions',
+        'trucking_column_prefs',
     ];
 
     protected $hidden = [
@@ -36,8 +38,10 @@ class User extends Authenticatable
         return [
             'email_verified_at'      => 'datetime',
             'password'               => 'hashed',
-            'column_permissions'     => 'array',
-            'shipment_column_prefs'  => 'array',
+            'column_permissions'         => 'array',
+            'shipment_column_prefs'      => 'array',
+            'trucking_column_permissions'=> 'array',
+            'trucking_column_prefs'      => 'array',
         ];
     }
 
@@ -86,5 +90,25 @@ class User extends Authenticatable
     public function canEditColumn(string $key): bool
     {
         return $this->columnPermission($key) === self::PERM_EDIT;
+    }
+
+    // ===== Trucking — phân quyền cột riêng (bộ cột khác shipments) =====
+
+    public function truckingColumnPermission(string $columnKey): string
+    {
+        if ($this->isSuperAdmin()) return self::PERM_EDIT;
+
+        $perms = $this->trucking_column_permissions ?? [];
+        return $perms[$columnKey] ?? self::PERM_EDIT;
+    }
+
+    public function canViewTruckingColumn(string $key): bool
+    {
+        return $this->truckingColumnPermission($key) !== self::PERM_HIDDEN;
+    }
+
+    public function canEditTruckingColumn(string $key): bool
+    {
+        return $this->truckingColumnPermission($key) === self::PERM_EDIT;
     }
 }

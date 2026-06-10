@@ -35,7 +35,19 @@ class UserController extends Controller
         // Pass shipment columns + groups info để render modal cấu hình
         $shipmentColumns = config('shipment_columns', []);
 
-        return view('users.index', compact('users', 'roles', 'q', 'shipmentColumns'));
+        // Trucking columns — union 2 sheet (dedupe theo key), bỏ cột id
+        $tcfg = config('trucking_columns', []);
+        $seen = [];
+        $truckingColumns = [];
+        foreach (['hph', 'icd'] as $s) {
+            foreach ($tcfg[$s] ?? [] as $c) {
+                if ($c['key'] === 'id' || isset($seen[$c['key']])) continue;
+                $seen[$c['key']] = true;
+                $truckingColumns[] = $c;
+            }
+        }
+
+        return view('users.index', compact('users', 'roles', 'q', 'shipmentColumns', 'truckingColumns'));
     }
 
     public function store(Request $request): RedirectResponse
@@ -115,5 +127,28 @@ class UserController extends Controller
         $user->save();
 
         return back()->with('success', "Đã cập nhật quyền cột cho {$user->name}.");
+    }
+
+    /** Lưu permission từng cột TRUCKING cho user. */
+    public function updateTruckingColumnPermissions(Request $request, User $user): RedirectResponse
+    {
+        $data = $request->validate([
+            'permissions'   => ['array'],
+            'permissions.*' => ['in:hidden,view,edit'],
+        ]);
+
+        // Key hợp lệ = union 2 sheet trucking
+        $tcfg = config('trucking_columns', []);
+        $valid = [];
+        foreach (['hph', 'icd'] as $s) {
+            foreach ($tcfg[$s] ?? [] as $c) $valid[$c['key']] = true;
+        }
+        $perms = array_intersect_key($data['permissions'] ?? [], $valid);
+        $perms = array_filter($perms, fn ($v) => $v !== 'edit');   // bỏ default 'edit'
+
+        $user->trucking_column_permissions = $perms ?: null;
+        $user->save();
+
+        return back()->with('success', "Đã cập nhật quyền cột Trucking cho {$user->name}.");
     }
 }

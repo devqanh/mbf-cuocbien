@@ -20,7 +20,14 @@ class TruckingController extends Controller
     /** Trang Trucking — 2 sheet HẠ HPH + HẠ ICD. */
     public function index(Request $request)
     {
+        $user = $request->user();
         $cols = config('trucking_columns', []);
+
+        // Map quyền cột { key => 'hidden'|'view'|'edit' } cho union 2 sheet
+        $perms = [];
+        foreach ($this->trucking->allColumns() as $col) {
+            $perms[$col['key']] = $user->truckingColumnPermission($col['key']);
+        }
 
         // Danh sách NCC cho dropdown (loại tên có dấu phẩy — Luckysheet dùng ',' separator)
         $suppliers = $this->payable->availableSuppliers()
@@ -29,26 +36,48 @@ class TruckingController extends Controller
             ->all();
 
         return view('trucking.index', [
-            'colsHph'   => $cols['hph'] ?? [],
-            'colsIcd'   => $cols['icd'] ?? [],
-            'suppliers' => $suppliers,
-            'canDelete' => $request->user()->can('shipments.delete'),
+            'colsHph'     => $cols['hph'] ?? [],
+            'colsIcd'     => $cols['icd'] ?? [],
+            'columnPerms' => $perms,
+            'userPrefs'   => $user->trucking_column_prefs ?? [],
+            'suppliers'   => $suppliers,
+            'canDelete'   => $user->can('shipments.delete'),
         ]);
     }
 
-    /** API: dữ liệu 2 sheet + formatting snapshot. */
-    public function data(): JsonResponse
+    /** API: dữ liệu 2 sheet + formatting snapshot (đã lọc theo quyền cột). */
+    public function data(Request $request): JsonResponse
     {
-        $rows = $this->trucking->listForGrid();
+        $user = $request->user();
+        $rows = $this->trucking->listForGrid($user);
         $snap = $this->snapshots->get($this->trucking->sheetKey());
+        $payload = $this->trucking->filterSnapshotForUser($snap?->payload, $user);
 
         return response()->json([
             'data'      => ['hph' => $rows['hph'], 'icd' => $rows['icd']],
             'version'   => $snap?->version ?? 0,
             'editor'    => $snap?->editor?->only(['id', 'name']),
             'updatedAt' => $snap?->updated_at?->toIso8601String(),
-            'snapshot'  => $snap?->payload,
+            'snapshot'  => $payload,
         ]);
+    }
+
+    /** Lưu cột user tự chọn ẩn (preference cá nhân). */
+    public function updateColumnPrefs(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'hidden'   => ['array'],
+            'hidden.*' => ['string'],
+        ]);
+
+        $validKeys = array_column($this->trucking->allColumns(), 'key');
+        $hidden = array_values(array_intersect($data['hidden'] ?? [], $validKeys));
+
+        $user = $request->user();
+        $user->trucking_column_prefs = $hidden ?: null;
+        $user->save();
+
+        return response()->json(['ok' => true, 'hidden' => $hidden]);
     }
 
     public function bulk(Request $request): JsonResponse

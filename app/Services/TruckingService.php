@@ -32,22 +32,86 @@ class TruckingService
         return self::SHEET_KEY;
     }
 
+    /** Union các cột 2 sheet (dedupe theo key) — dùng cho phân quyền. */
+    public function allColumns(): array
+    {
+        $cols = config('trucking_columns', []);
+        $byKey = [];
+        foreach (['hph', 'icd'] as $sheet) {
+            foreach ($cols[$sheet] ?? [] as $c) {
+                if (! isset($byKey[$c['key']])) $byKey[$c['key']] = $c;
+            }
+        }
+        return array_values($byKey);
+    }
+
+    /** Key các cột user KHÔNG được xem (admin set hidden). */
+    public function hiddenColumnKeys(User $user): array
+    {
+        if ($user->isSuperAdmin()) return [];
+        $perms = $user->trucking_column_permissions ?? [];
+        return array_keys(array_filter($perms, fn ($v) => $v === User::PERM_HIDDEN));
+    }
+
+    /** Key các cột user được PHÉP sửa. */
+    public function editableColumnKeysFor(User $user): array
+    {
+        $cols = $this->allColumns();
+        $always = ['customer'];   // bắt buộc để identify dòng
+
+        if ($user->isSuperAdmin()) {
+            return array_merge($always, array_column($cols, 'key'));
+        }
+        $editable = [];
+        foreach ($cols as $col) {
+            if (! empty($col['readonly'])) continue;
+            if ($user->canEditTruckingColumn($col['key'])) $editable[] = $col['key'];
+        }
+        return array_unique(array_merge($always, $editable));
+    }
+
     /**
-     * Lấy entries group theo sheet.
+     * Lấy entries group theo sheet. Nếu có $user → bỏ cột admin-hidden khỏi từng row.
      *
      * @return array{hph: \Illuminate\Support\Collection, icd: \Illuminate\Support\Collection}
      */
-    public function listForGrid(): array
+    public function listForGrid(?User $user = null): array
     {
         $bySheet = TruckingEntry::query()
             ->orderBy('id')
             ->get()
             ->groupBy('sheet');
 
+        $hidden = $user ? $this->hiddenColumnKeys($user) : [];
+        $mapRow = function (TruckingEntry $e) use ($hidden) {
+            $row = $this->toGridRow($e);
+            foreach ($hidden as $k) unset($row[$k]);
+            return $row;
+        };
+
         return [
-            'hph' => ($bySheet[TruckingEntry::SHEET_HPH] ?? collect())->values()->map(fn ($e) => $this->toGridRow($e)),
-            'icd' => ($bySheet[TruckingEntry::SHEET_ICD] ?? collect())->values()->map(fn ($e) => $this->toGridRow($e)),
+            'hph' => ($bySheet[TruckingEntry::SHEET_HPH] ?? collect())->values()->map($mapRow),
+            'icd' => ($bySheet[TruckingEntry::SHEET_ICD] ?? collect())->values()->map($mapRow),
         ];
+    }
+
+    /** Lọc formatting overlay — bỏ entry của cột user không được xem (anchored theo col key). */
+    public function filterSnapshotForUser(?array $snapshot, User $user): ?array
+    {
+        if (! $snapshot || $user->isSuperAdmin()) return $snapshot;
+        $hidden = array_flip($this->hiddenColumnKeys($user));
+        if (empty($hidden)) return $snapshot;
+
+        if (isset($snapshot['formatting']) && is_array($snapshot['formatting'])) {
+            foreach (['hph', 'icd'] as $sheet) {
+                if (! isset($snapshot['formatting'][$sheet]) || ! is_array($snapshot['formatting'][$sheet])) continue;
+                $snapshot['formatting'][$sheet] = array_values(array_filter(
+                    $snapshot['formatting'][$sheet],
+                    fn ($entry) => ! isset($hidden[$entry['col'] ?? ''])
+                ));
+            }
+        }
+        return $snapshot;
     }
 
     public function toGridRow(TruckingEntry $e): array
@@ -83,13 +147,19 @@ class TruckingService
     ): array {
         $key = $this->sheetKey();
 
+        $isSuper      = $editor->isSuperAdmin();
+        $editableKeys = $this->editableColumnKeysFor($editor);
+        // Chỉ cho lưu formatting toàn workbook nếu KHÔNG bị admin hạn chế cột nào
+        $canUpdateSnapshot = $isSuper
+            || empty(array_filter($editor->trucking_column_permissions ?? [], fn ($v) => in_array($v, ['hidden', 'view'])));
+
         // DELETE rows user đã xóa (require quyền)
         $deletedCount = 0;
         if (! empty($deletedIds) && $editor->can('shipments.delete')) {
             $deletedCount = TruckingEntry::whereIn('id', array_unique(array_map('intval', $deletedIds)))->delete();
         }
 
-        $ids = DB::transaction(function () use ($rowsBySheet) {
+        $ids = DB::transaction(function () use ($rowsBySheet, $isSuper, $editableKeys) {
             $now = now()->format('Y-m-d H:i:s');
 
             // Pre-check tồn tại ID — 1 query
@@ -119,6 +189,11 @@ class TruckingService
                     if (! $id && empty($row['customer'])) continue;
 
                     if ($id) $seenIds[] = $id;
+
+                    // Non-super: chỉ giữ cột được phép sửa (+ cell_formulas là metadata cấp row)
+                    if (! $isSuper) {
+                        $row = array_intersect_key($row, array_flip([...$editableKeys, 'cell_formulas']));
+                    }
 
                     if ($id) {
                         if (empty($row)) { $saved[] = $id; continue; }
@@ -161,7 +236,7 @@ class TruckingService
         $snapshotConflict = false;
         $newVersion = $this->snapshots->currentVersion($key);
 
-        if ($snapshot) {
+        if ($snapshot && $canUpdateSnapshot) {
             if (isset($snapshot['formatting']) && is_array($snapshot['formatting'])) {
                 $snapshot = $this->mergeFormattingWithExisting($key, $snapshot);
             }

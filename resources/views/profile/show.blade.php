@@ -67,7 +67,7 @@
     <div class="page-header">
         <div>
             <nav class="breadcrumb">
-                <a href="{{ route('shipments.index') }}">Trang chủ</a>
+                <a href="{{ route('trucking.index') }}">Trang chủ</a>
                 <span class="mx-2">/</span>
                 <span>Thông tin cá nhân</span>
             </nav>

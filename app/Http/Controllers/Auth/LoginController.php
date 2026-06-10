@@ -16,7 +16,7 @@ class LoginController extends Controller
     public function showLogin()
     {
         if (Auth::check()) {
-            return redirect()->route('shipments.index');
+            return redirect()->route('trucking.index');
         }
         return view('auth.login');
     }
@@ -47,7 +47,7 @@ class LoginController extends Controller
 
         // Luôn về Follow Up Shipment sau đăng nhập (bỏ ->intended() để không redirect
         // về trang user đã ở khi session expired — vd /users).
-        return redirect()->route('shipments.index')
+        return redirect()->route('trucking.index')
             ->with('success', 'Chào mừng ' . Auth::user()->name . ' quay trở lại!');
     }
 

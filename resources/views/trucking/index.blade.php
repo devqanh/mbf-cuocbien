@@ -22,6 +22,38 @@
     .filter-chip { display: inline-flex; align-items: center; gap: 6px; background: rgba(36,211,159,.15); color: #169a72; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; margin-left: 6px; }
     .filter-chip button { background: transparent; border: none; color: #169a72; cursor: pointer; padding: 0; margin-left: 4px; display: inline-flex; align-items: center; }
     .filter-chip button:hover { color: var(--azia-danger); }
+
+    /* ===== Column visibility offcanvas ===== */
+    .cv-offcanvas { width: 400px !important; max-width: 100vw; display: flex !important; flex-direction: column !important; }
+    .cv-header { background: linear-gradient(135deg, #0153a9 0%, #013f80 100%); color:#fff; padding:14px 18px; display:flex; align-items:center; justify-content:space-between; }
+    .cv-title { font-size:13px; font-weight:700; }
+    .cv-counter { background: rgba(255,255,255,.18); font-size:11px; font-weight:600; padding:3px 10px; border-radius:999px; }
+    .cv-search { padding:10px 14px; border-bottom:1px solid var(--azia-border); background:#fafbfd; }
+    .cv-search input { width:100%; padding:7px 12px; border:1px solid var(--azia-border); border-radius:8px; font-size:13px; }
+    .cv-quick { display:flex; gap:6px; padding:10px 14px; border-bottom:1px solid var(--azia-border); background:#fafbfd; }
+    .cv-quick button { flex:1; font-size:11px; padding:4px 8px; border:1px solid var(--azia-border); background:#fff; border-radius:6px; cursor:pointer; font-weight:600; }
+    .cv-quick button:hover { background: var(--azia-primary-soft); color: var(--azia-primary); }
+    .cv-body { flex:1 1 auto; min-height:0; overflow-y:auto; padding:4px 0; }
+    .cv-header,.cv-search,.cv-quick,.cv-footer { flex:0 0 auto; }
+    .cv-sheet-title { font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.5px; color:#013f80; padding:10px 14px 4px; background:#eef3fb; display:flex; align-items:center; justify-content:space-between; }
+    .cv-group { padding:6px 14px 4px; border-left:4px solid transparent; margin-bottom:2px; }
+    .cv-group.g-1 { border-left-color:#D4E6B5; } .cv-group.g-2 { border-left-color:#FCE4D6; }
+    .cv-group.g-3 { border-left-color:#DEEBF7; } .cv-group.g-4 { border-left-color:#FFF2CC; } .cv-group.g-5 { border-left-color:#E2D9F3; }
+    .cv-group-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
+    .cv-group-title { font-size:10px; text-transform:uppercase; letter-spacing:1px; color:var(--azia-muted); font-weight:700; }
+    .cv-sheet-btns, .cv-group-btns { display:inline-flex; gap:4px; }
+    .cv-mini-btn { border:1px solid var(--azia-border); background:#fff; border-radius:6px; cursor:pointer; font-size:11px; line-height:1; padding:3px 7px; color:var(--azia-muted); }
+    .cv-mini-btn:hover { color: var(--azia-primary); border-color: var(--azia-primary); background: var(--azia-primary-soft); }
+    .cv-row { display:flex; align-items:center; gap:10px; padding:5px 8px; border-radius:6px; cursor:pointer; }
+    .cv-row:hover { background:#fafbfd; }
+    .cv-switch { position:relative; width:32px; height:18px; background:#d5dae3; border-radius:999px; flex-shrink:0; transition:background .2s; }
+    .cv-switch::after { content:''; position:absolute; top:2px; left:2px; width:14px; height:14px; background:#fff; border-radius:50%; transition:transform .2s; box-shadow:0 1px 3px rgba(0,0,0,.2); }
+    .cv-row input:checked + .cv-switch { background: var(--azia-primary); }
+    .cv-row input:checked + .cv-switch::after { transform: translateX(14px); }
+    .cv-row input { position:absolute; opacity:0; pointer-events:none; }
+    .cv-label { flex:1; font-size:13px; color:var(--azia-text); min-width:0; }
+    .cv-empty { text-align:center; padding:30px 20px; color:var(--azia-muted); font-size:13px; }
+    .cv-footer { display:flex; gap:8px; padding:12px 14px; background:#fafbfd; border-top:1px solid var(--azia-border); }
 </style>
 @endpush
 
@@ -36,6 +68,77 @@
             </nav>
         </div>
         <div class="d-flex gap-2">
+            {{-- Cột hiển thị (ẩn/hiện cho riêng user) --}}
+            @php
+                $groupTitles = [1=>'Thông tin lô hàng', 2=>'Chi phí', 3=>'Chi phí xe ngoài / TT', 4=>'Chi phí xe MBF chạy', 5=>'Doanh thu'];
+                $sheetsCfg = ['HẠ HPH' => $colsHph, 'HẠ ICD' => $colsIcd];
+                $userHidden = $userPrefs ?? [];
+                $shownCount = 0; $toggleable = 0;
+                foreach ($sheetsCfg as $sCols) foreach ($sCols as $c) {
+                    if ($c['key'] === 'id') continue;
+                    if (($columnPerms[$c['key']] ?? 'edit') === 'hidden') continue;
+                    $toggleable++;
+                    if (! in_array($c['key'], $userHidden)) $shownCount++;
+                }
+            @endphp
+            <button class="btn btn-outline-secondary" type="button" data-bs-toggle="offcanvas" data-bs-target="#cvOffcanvas">
+                <i class="bi bi-layout-three-columns me-1"></i> Cột hiển thị
+                <span class="badge bg-primary ms-1" id="colsCountBadge">{{ $shownCount }}</span>
+            </button>
+            <div class="offcanvas offcanvas-end cv-offcanvas" tabindex="-1" id="cvOffcanvas">
+                <div class="cv-header">
+                    <div class="cv-title"><i class="bi bi-layout-three-columns me-1"></i> Tuỳ chỉnh cột hiển thị</div>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="cv-counter"><span id="cvShownNum">{{ $shownCount }}</span> / {{ $toggleable }} cột</span>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button>
+                    </div>
+                </div>
+                <div class="cv-search"><input type="search" id="cvSearch" placeholder="Tìm cột theo tên..."></div>
+                <div class="cv-quick">
+                    <button type="button" onclick="toggleAllCols(true)"><i class="bi bi-eye"></i> Hiện tất cả</button>
+                    <button type="button" onclick="toggleAllCols(false)"><i class="bi bi-eye-slash"></i> Ẩn tất cả</button>
+                </div>
+                <div class="cv-body" id="cvBody">
+                    @foreach($sheetsCfg as $sheetName => $sCols)
+                        @php $sheetCols = collect($sCols)->filter(fn($c)=>$c['key']!=='id' && (($columnPerms[$c['key']] ?? 'edit') !== 'hidden')); @endphp
+                        @if($sheetCols->isEmpty()) @continue @endif
+                        <div class="cv-sheet" data-sheet-section>
+                            <div class="cv-sheet-title">
+                                <span>{{ $sheetName }}</span>
+                                <span class="cv-sheet-btns">
+                                    <button type="button" class="cv-mini-btn" onclick="toggleSheetCols(this, true)" title="Hiện cả sheet"><i class="bi bi-eye"></i></button>
+                                    <button type="button" class="cv-mini-btn" onclick="toggleSheetCols(this, false)" title="Ẩn cả sheet"><i class="bi bi-eye-slash"></i></button>
+                                </span>
+                            </div>
+                            @foreach($sheetCols->groupBy('group') as $gid => $grp)
+                                <div class="cv-group g-{{ $gid }}" data-group-section>
+                                    <div class="cv-group-head">
+                                        <span class="cv-group-title">{{ $groupTitles[$gid] ?? "Nhóm $gid" }}</span>
+                                        <span class="cv-group-btns">
+                                            <button type="button" class="cv-mini-btn" onclick="toggleGroupCols(this, true)" title="Hiện cả nhóm"><i class="bi bi-eye"></i></button>
+                                            <button type="button" class="cv-mini-btn" onclick="toggleGroupCols(this, false)" title="Ẩn cả nhóm"><i class="bi bi-eye-slash"></i></button>
+                                        </span>
+                                    </div>
+                                    @foreach($grp as $col)
+                                        <label class="cv-row" data-name="{{ mb_strtolower($col['title']) }}">
+                                            <input class="col-pref-toggle" type="checkbox" data-key="{{ $col['key'] }}"
+                                                   {{ ! in_array($col['key'], $userHidden) ? 'checked' : '' }}>
+                                            <span class="cv-switch"></span>
+                                            <span class="cv-label"><span class="name">{{ $col['title'] }}</span></span>
+                                        </label>
+                                    @endforeach
+                                </div>
+                            @endforeach
+                        </div>
+                    @endforeach
+                    <div class="cv-empty d-none" id="cvEmpty"><i class="bi bi-search d-block mb-2"></i> Không tìm thấy cột.</div>
+                </div>
+                <div class="cv-footer">
+                    <button type="button" class="btn btn-light flex-grow-1" data-bs-dismiss="offcanvas"><i class="bi bi-x-lg"></i> Đóng</button>
+                    <button type="button" class="btn btn-primary flex-grow-1" id="btnApplyCols"><i class="bi bi-check2-circle me-1"></i> Áp dụng</button>
+                </div>
+            </div>
+
             {{-- Lọc theo cột ngày --}}
             <div class="dropdown">
                 <button class="btn btn-outline-success dropdown-toggle" type="button"
@@ -134,9 +237,22 @@
         };
         const CURRENT_USER = @json(['id' => auth()->id(), 'name' => auth()->user()->name]);
         const CAN_DELETE_ROWS = @json($canDelete ?? false);
+        const ROUTE_COLUMN_PREFS = @json(route('trucking.columnPrefs'));
+
+        // ===== Phân quyền cột =====
+        const COLUMN_PERMS = @json($columnPerms ?? new \stdClass());   // {key: 'hidden'|'view'|'edit'}
+        const USER_HIDDEN  = new Set(@json($userPrefs ?? []));          // [key,...] user tự ẩn
+        const ADMIN_RESTRICTED    = Object.values(COLUMN_PERMS).some(p => p === 'hidden' || p === 'view');
+        const CAN_SAVE_FORMATTING = ! ADMIN_RESTRICTED;
 
         // ===== Cột theo từng sheet (order 0 = HẠ HPH, order 1 = HẠ ICD) =====
-        const COLS_BY_ORDER = [@json($colsHph), @json($colsIcd)];
+        // Lọc: bỏ cột admin ẩn → bỏ cột user tự ẩn → mark readonly cho cột 'view'.
+        const ALL_COLS_BY_ORDER = [@json($colsHph), @json($colsIcd)];
+        const COLS_BY_ORDER = ALL_COLS_BY_ORDER.map(sheetCols => sheetCols
+            .filter(c => (COLUMN_PERMS[c.key] || 'edit') !== 'hidden')
+            .filter(c => ! USER_HIDDEN.has(c.key))
+            .map(c => ({ ...c, readonly: c.readonly || (COLUMN_PERMS[c.key] || 'edit') === 'view' }))
+        );
         const SHEET_NAMES   = ['HẠ HPH', 'HẠ ICD'];
         const SHEET_DIRS    = ['hph', 'icd'];
         const SHEET_COLORS  = ['#24d39f', '#0153a9'];
@@ -596,6 +712,39 @@
             });
             document.getElementById('btnApplyFilter').addEventListener('click', applyDateFilter);
             document.getElementById('btnClearFilter').addEventListener('click', () => clearDateFilter());
+        }
+
+        // ===== Cột hiển thị (ẩn/hiện cá nhân) =====
+        window.toggleAllCols = function (show) {
+            document.querySelectorAll('.col-pref-toggle').forEach(cb => cb.checked = show);
+            updateCvCounters();
+        };
+        // Bật/tắt cả 1 NHÓM (theo nút bấm trong nhóm đó)
+        window.toggleGroupCols = function (btn, show) {
+            btn.closest('.cv-group').querySelectorAll('.col-pref-toggle').forEach(cb => cb.checked = show);
+            updateCvCounters();
+        };
+        // Bật/tắt cả 1 SHEET (HẠ HPH / HẠ ICD)
+        window.toggleSheetCols = function (btn, show) {
+            btn.closest('.cv-sheet').querySelectorAll('.col-pref-toggle').forEach(cb => cb.checked = show);
+            updateCvCounters();
+        };
+        function updateCvCounters() {
+            let shown = 0;
+            document.querySelectorAll('.col-pref-toggle').forEach(cb => { if (cb.checked) shown++; });
+            const a = document.getElementById('cvShownNum'); if (a) a.textContent = shown;
+            const b = document.getElementById('colsCountBadge'); if (b) b.textContent = shown;
+        }
+        function setupCvSearch() {
+            const input = document.getElementById('cvSearch'); if (! input) return;
+            input.addEventListener('input', (e) => {
+                const q = e.target.value.trim().toLowerCase(); let any = false;
+                document.querySelectorAll('#cvBody .cv-row').forEach(row => {
+                    const match = ! q || (row.dataset.name || '').includes(q);
+                    row.style.display = match ? '' : 'none'; if (match) any = true;
+                });
+                document.getElementById('cvEmpty').classList.toggle('d-none', any);
+            });
         }
 
         // ===== Build celldata cho 1 sheet =====
@@ -1153,6 +1302,23 @@
             const lsEl = document.getElementById('luckysheet');
             if (lsEl) lsEl.addEventListener('click', () => setTimeout(updateFormulaHint, 30));
 
+            // Cột hiển thị
+            document.querySelectorAll('.col-pref-toggle').forEach(cb => cb.addEventListener('change', updateCvCounters));
+            setupCvSearch();
+            const btnApplyCols = document.getElementById('btnApplyCols');
+            if (btnApplyCols) btnApplyCols.addEventListener('click', async () => {
+                const hidden = [];
+                document.querySelectorAll('.col-pref-toggle').forEach(cb => { if (! cb.checked) hidden.push(cb.dataset.key); });
+                const res = await fetch(ROUTE_COLUMN_PREFS, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json' },
+                    body: JSON.stringify({ hidden: [...new Set(hidden)] })
+                });
+                const json = await res.json();
+                if (json.ok) { toast(`Đã lưu (ẩn ${json.hidden.length} cột). Đang tải lại…`); setTimeout(() => location.reload(), 600); }
+                else toast('Lưu thất bại.', 'danger');
+            });
+
             document.getElementById('btnSaveAll').addEventListener('click', async () => {
                 if (dateFilterState.active) clearDateFilter(false);
                 try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {}
@@ -1224,16 +1390,21 @@
                     deletedIds = [];
                 }
 
-                // Formatting + width changes
-                const currentFmt = { hph: extractFormatting(0), icd: extractFormatting(1) };
-                const formattingChanged = JSON.stringify(currentFmt) !== JSON.stringify(snapshot?.formatting || { hph: [], icd: [] });
-                const currentColumnlen = { hph: extractColumnWidths(0), icd: extractColumnWidths(1) };
-                const columnlenChanged = JSON.stringify(currentColumnlen) !== JSON.stringify(snapshot?.columnlen || { hph: {}, icd: {} });
+                // Formatting + width changes — chỉ khi user KHÔNG bị admin hạn chế cột
+                let currentFmt = null, currentColumnlen = null, formattingChanged = false, columnlenChanged = false;
+                if (CAN_SAVE_FORMATTING) {
+                    currentFmt = { hph: extractFormatting(0), icd: extractFormatting(1) };
+                    formattingChanged = JSON.stringify(currentFmt) !== JSON.stringify(snapshot?.formatting || { hph: [], icd: [] });
+                    currentColumnlen = { hph: extractColumnWidths(0), icd: extractColumnWidths(1) };
+                    columnlenChanged = JSON.stringify(currentColumnlen) !== JSON.stringify(snapshot?.columnlen || { hph: {}, icd: {} });
+                }
 
                 if (dirtyMeta.length === 0 && deletedIds.length === 0 && ! formattingChanged && ! columnlenChanged) return toast('Không có thay đổi cần lưu.', 'info');
 
                 const socketId = (() => { try { return window.Echo?.socketId?.() ?? ''; } catch (e) { return ''; } })();
-                const formattingPayload = { formatting: currentFmt, formatting_scope: [...colsForOrder(0), ...colsForOrder(1)].map(c => c.key), columnlen: currentColumnlen };
+                const formattingPayload = CAN_SAVE_FORMATTING
+                    ? { formatting: currentFmt, formatting_scope: [...colsForOrder(0), ...colsForOrder(1)].map(c => c.key), columnlen: currentColumnlen }
+                    : null;
 
                 const res = await fetch(ROUTES.bulk, {
                     method: 'POST',
@@ -1260,8 +1431,10 @@
                 deletedIds.forEach(id => { _originalIds.hph.delete(id); _originalIds.icd.delete(id); });
                 if (Array.isArray(json.ids)) json.ids.forEach((id, i) => { if (id != null && dirtyMeta[i]?.isNew) { _originalIds[dirForOrder(dirtyMeta[i].sheetOrder)].add(parseInt(id)); } });
 
-                if (! snapshot) snapshot = {};
-                snapshot.formatting = currentFmt; snapshot.columnlen = currentColumnlen;
+                if (CAN_SAVE_FORMATTING) {
+                    if (! snapshot) snapshot = {};
+                    snapshot.formatting = currentFmt; snapshot.columnlen = currentColumnlen;
+                }
 
                 if (_deleteBlocked > 0) { updateVersionBadge(CURRENT_USER, new Date().toISOString()); setTimeout(loadData, 800); return; }
 

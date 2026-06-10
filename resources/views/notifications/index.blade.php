@@ -41,7 +41,7 @@
         <div>
             <h1><i class="bi bi-bell me-1" style="color: var(--azia-primary)"></i> Thông báo</h1>
             <nav class="breadcrumb mt-1">
-                <a href="{{ route('shipments.index') }}">Trang chủ</a>
+                <a href="{{ route('trucking.index') }}">Trang chủ</a>
                 <span class="mx-2">/</span>
                 <span>Thông báo</span>
             </nav>

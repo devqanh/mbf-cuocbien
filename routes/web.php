@@ -31,7 +31,8 @@ Route::middleware('auth')->group(function () {
     Route::put('/profile/info',      [ProfileController::class, 'updateInfo'])->name('profile.info');
     Route::put('/profile/password',  [ProfileController::class, 'updatePassword'])->name('profile.password');
 
-    // ===== Follow Up Shipment =====
+    // ===== Follow Up Shipment ===== (TẠM TẮT qua config features.shipments)
+    if (config('features.shipments')) {
     Route::middleware('permission:shipments.view')->group(function () {
         Route::get('/shipments',             [ShipmentController::class, 'redirectToCurrent'])->name('shipments.index');
         Route::get('/shipments/{period}',    [ShipmentController::class, 'show'])->name('shipments.show')->where('period', '\d{4}-\d{2}');
@@ -74,11 +75,13 @@ Route::middleware('auth')->group(function () {
     Route::middleware('permission:shipments.delete')->group(function () {
         Route::delete('/shipments/row/{shipment}', [ShipmentController::class, 'destroy'])->name('shipments.destroy');
     });
+    } // end if features.shipments
 
     // ===== Trucking (2 sheet HẠ HPH + HẠ ICD) — tái dùng quyền shipments.* =====
     Route::middleware('permission:shipments.view')->group(function () {
         Route::get('/trucking',      [TruckingController::class, 'index'])->name('trucking.index');
         Route::get('/trucking/data', [TruckingController::class, 'data'])->name('trucking.data');
+        Route::put('/me/trucking-column-prefs', [TruckingController::class, 'updateColumnPrefs'])->name('trucking.columnPrefs');
     });
     Route::middleware('permission:shipments.update')->group(function () {
         Route::post('/trucking/bulk',           [TruckingController::class, 'bulk'])->name('trucking.bulk');
@@ -114,6 +117,7 @@ Route::middleware('auth')->group(function () {
     Route::middleware('permission:users.update')->group(function () {
         Route::put('/users/{user}', [UserController::class, 'update'])->name('users.update');
         Route::put('/users/{user}/column-permissions', [UserController::class, 'updateColumnPermissions'])->name('users.columnPermissions');
+        Route::put('/users/{user}/trucking-column-permissions', [UserController::class, 'updateTruckingColumnPermissions'])->name('users.truckingColumnPermissions');
     });
     Route::middleware('permission:users.delete')->group(function () {
         Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');

@@ -23,7 +23,7 @@
         <div>
             <h1>Danh sách thành viên</h1>
             <nav class="breadcrumb mt-1">
-                <a href="{{ route('shipments.index') }}">Trang chủ</a>
+                <a href="{{ route('trucking.index') }}">Trang chủ</a>
                 <span class="mx-2">/</span>
                 <span>Quản trị</span>
                 <span class="mx-2">/</span>
@@ -105,14 +105,22 @@
                         @php
                             $uJson = $u->only(["id","name","email"]) + ["roles" => $u->roles->pluck("name")];
                             $uPermsJson = ['id' => $u->id, 'name' => $u->name, 'permissions' => (object) ($u->column_permissions ?? [])];
+                            $uTruckPermsJson = ['id' => $u->id, 'name' => $u->name, 'permissions' => (object) ($u->trucking_column_permissions ?? [])];
                         @endphp
                         <td class="text-end">
                             <div class="action-group">
-                                <button type="button" class="action-btn action-view" title="Quyền cột"
+                                <button type="button" class="action-btn action-view" title="Quyền cột Trucking"
+                                        onclick='openTruckingColumnPermsModal(@json($uTruckPermsJson))'
+                                        data-bs-toggle="modal" data-bs-target="#truckingColumnPermsModal">
+                                    <i class="bi bi-truck-front"></i>
+                                </button>
+                                @if(config('features.shipments'))
+                                <button type="button" class="action-btn action-view" title="Quyền cột Shipment"
                                         onclick='openColumnPermsModal(@json($uPermsJson))'
                                         data-bs-toggle="modal" data-bs-target="#columnPermsModal">
                                     <i class="bi bi-grid-3x3-gap"></i>
                                 </button>
+                                @endif
                                 <button type="button" class="action-btn action-edit" title="Sửa"
                                         onclick='openUserModal(@json($uJson))'
                                         data-bs-toggle="modal" data-bs-target="#userModal">
@@ -290,6 +298,99 @@
             </div>
         </div>
     </div>
+
+    {{-- ===== Modal QUYỀN CỘT TRUCKING ===== --}}
+    @php
+        $tGrouped = collect($truckingColumns ?? [])->groupBy('group');
+        $tGroupNames = [
+            1 => ['title' => 'NHÓM 1 — Thông tin lô hàng',        'color' => '#D4E6B5'],
+            2 => ['title' => 'NHÓM 2 — Chi phí',                  'color' => '#FCE4D6'],
+            3 => ['title' => 'NHÓM 3 — Chi phí xe ngoài / TT',    'color' => '#DEEBF7'],
+            4 => ['title' => 'NHÓM 4 — Chi phí xe MBF chạy',      'color' => '#FFF2CC'],
+            5 => ['title' => 'NHÓM 5 — Doanh thu',                'color' => '#E2D9F3'],
+        ];
+    @endphp
+    <div class="modal fade" id="truckingColumnPermsModal" tabindex="-1">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <form id="truckingColumnPermsForm" method="POST">
+                    @csrf
+                    @method('PUT')
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            <i class="bi bi-truck-front me-1" style="color: var(--azia-primary)"></i>
+                            Quyền cột TRUCKING — <span id="tcp_user_name" class="text-primary"></span>
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-info d-flex gap-2 mb-3">
+                            <i class="bi bi-info-circle-fill fs-5"></i>
+                            <div>
+                                Cấu hình từng cột: <strong class="text-success">Sửa</strong> (mặc định)
+                                / <strong class="text-warning">Chỉ xem</strong> / <strong class="text-danger">Ẩn</strong>.
+                                Áp dụng cho cả 2 sheet HẠ HPH &amp; HẠ ICD (cột trùng tên dùng chung 1 quyền).
+                            </div>
+                        </div>
+
+                        <div class="mb-2">
+                            <input type="search" id="tcpSearch" class="form-control form-control-sm" placeholder="Tìm cột theo tên...">
+                        </div>
+                        <div class="d-flex justify-content-end mb-2 gap-1">
+                            <button type="button" class="btn btn-sm btn-light" onclick="setAllTruckingPerms('edit')">Tất cả: Sửa</button>
+                            <button type="button" class="btn btn-sm btn-light" onclick="setAllTruckingPerms('view')">Tất cả: Chỉ xem</button>
+                            <button type="button" class="btn btn-sm btn-light" onclick="setAllTruckingPerms('hidden')">Tất cả: Ẩn</button>
+                        </div>
+
+                        @foreach($tGrouped as $gid => $cols)
+                            <div class="card mb-3" style="border-color: {{ $tGroupNames[$gid]['color'] ?? '#e1e6f1' }}">
+                                <div class="card-header d-flex justify-content-between align-items-center"
+                                     style="background: {{ $tGroupNames[$gid]['color'] ?? '#fafbfd' }}; color:#000">
+                                    <strong>{{ $tGroupNames[$gid]['title'] ?? "Nhóm $gid" }}</strong>
+                                    <div>
+                                        <button type="button" class="btn btn-sm btn-light" onclick="setGroupTruckingPerms({{ $gid }}, 'edit')">Sửa</button>
+                                        <button type="button" class="btn btn-sm btn-light" onclick="setGroupTruckingPerms({{ $gid }}, 'view')">Chỉ xem</button>
+                                        <button type="button" class="btn btn-sm btn-light" onclick="setGroupTruckingPerms({{ $gid }}, 'hidden')">Ẩn</button>
+                                    </div>
+                                </div>
+                                <div class="table-responsive">
+                                    <table class="table table-sm mb-0 align-middle">
+                                        <thead>
+                                            <tr>
+                                                <th>Cột</th>
+                                                <th class="text-center" style="width:110px"><i class="bi bi-pencil-fill text-success"></i> Sửa</th>
+                                                <th class="text-center" style="width:110px"><i class="bi bi-eye-fill text-warning"></i> Chỉ xem</th>
+                                                <th class="text-center" style="width:110px"><i class="bi bi-eye-slash-fill text-danger"></i> Ẩn</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                        @foreach($cols as $col)
+                                            <tr data-group="{{ $gid }}" data-key="{{ $col['key'] }}" data-name="{{ mb_strtolower($col['title']) }}">
+                                                <td><strong>{{ $col['title'] }}</strong> <code class="text-muted small ms-1">{{ $col['key'] }}</code></td>
+                                                @foreach(['edit','view','hidden'] as $p)
+                                                    <td class="text-center">
+                                                        <input type="radio" class="form-check-input tcp-radio"
+                                                               data-key="{{ $col['key'] }}"
+                                                               name="permissions[{{ $col['key'] }}]"
+                                                               value="{{ $p }}" {{ $p === 'edit' ? 'checked' : '' }}>
+                                                    </td>
+                                                @endforeach
+                                            </tr>
+                                        @endforeach
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Đóng</button>
+                        <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i> Lưu quyền cột</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 @endsection
 
 @push('scripts')
@@ -317,6 +418,35 @@
         document.querySelectorAll(`tr[data-group="${gid}"] .cp-radio[value="${value}"]`)
                 .forEach(r => r.checked = true);
     }
+
+    // ===== Trucking Column Permissions Modal =====
+    function openTruckingColumnPermsModal(user) {
+        document.getElementById('tcp_user_name').textContent = user.name;
+        document.getElementById('truckingColumnPermsForm').action = `${URL_UPDATE_BASE}/${user.id}/trucking-column-permissions`;
+        const perms = user.permissions || {};
+        document.querySelectorAll('.tcp-radio[value="edit"]').forEach(r => r.checked = true);
+        Object.entries(perms).forEach(([key, val]) => {
+            const r = document.querySelector(`.tcp-radio[data-key="${key}"][value="${val}"]`);
+            if (r) r.checked = true;
+        });
+    }
+    function setAllTruckingPerms(value) {
+        document.querySelectorAll(`.tcp-radio[value="${value}"]`).forEach(r => r.checked = true);
+    }
+    function setGroupTruckingPerms(gid, value) {
+        document.querySelectorAll(`#truckingColumnPermsModal tr[data-group="${gid}"] .tcp-radio[value="${value}"]`)
+                .forEach(r => r.checked = true);
+    }
+    // Search trong modal trucking
+    document.addEventListener('DOMContentLoaded', () => {
+        const s = document.getElementById('tcpSearch');
+        if (s) s.addEventListener('input', (e) => {
+            const q = e.target.value.trim().toLowerCase();
+            document.querySelectorAll('#truckingColumnPermsModal tr[data-key]').forEach(tr => {
+                tr.style.display = (! q || (tr.dataset.name || '').includes(q)) ? '' : 'none';
+            });
+        });
+    });
 
     function openUserModal(user) {
         const form = document.getElementById('userForm');

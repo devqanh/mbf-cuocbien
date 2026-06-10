@@ -9,7 +9,7 @@
         <div>
             <h1><i class="bi bi-pencil-square me-1" style="color: var(--azia-primary)"></i> Cấu hình đầu kỳ NCC</h1>
             <nav class="breadcrumb mt-1">
-                <a href="{{ route('shipments.index') }}">Trang chủ</a>
+                <a href="{{ route('trucking.index') }}">Trang chủ</a>
                 <span class="mx-2">/</span>
                 <a href="{{ route('reports.payable.index') }}">Báo cáo phải trả</a>
                 <span class="mx-2">/</span>

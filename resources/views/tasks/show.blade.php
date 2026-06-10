@@ -436,7 +436,7 @@
         <div class="d-flex flex-wrap justify-content-between gap-3 align-items-start">
             <div style="flex: 1; min-width: 0;">
                 <nav class="breadcrumb" style="position:relative;z-index:1">
-                    <a href="{{ route('shipments.index') }}" class="text-white opacity-75">Trang chủ</a>
+                    <a href="{{ route('trucking.index') }}" class="text-white opacity-75">Trang chủ</a>
                     <span class="mx-2 opacity-75">/</span>
                     <a href="{{ route('tasks.index') }}" class="text-white opacity-75">Công việc</a>
                     <span class="mx-2 opacity-75">/</span>

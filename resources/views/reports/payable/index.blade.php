@@ -7,7 +7,7 @@
         <div>
             <h1><i class="bi bi-cash-stack me-1" style="color: var(--azia-primary)"></i> Báo cáo phải trả</h1>
             <nav class="breadcrumb mt-1">
-                <a href="{{ route('shipments.index') }}">Trang chủ</a>
+                <a href="{{ route('trucking.index') }}">Trang chủ</a>
                 <span class="mx-2">/</span>
                 <span>Báo cáo</span>
                 <span class="mx-2">/</span>
