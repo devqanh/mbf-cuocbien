@@ -17,6 +17,10 @@ Route::get('/', function () {
     return redirect()->route(auth()->check() ? 'trucking.index' : 'login');
 });
 
+// ===== Tài liệu Trucking — CÔNG KHAI (không cần đăng nhập) để gửi kế toán =====
+Route::get('/tailieu',          [TruckingController::class, 'docs'])->name('trucking.docs');
+Route::get('/tailieu/download', [TruckingController::class, 'docsDownload'])->name('trucking.docsDownload');
+
 // Auth
 Route::middleware('guest')->group(function () {
     Route::get('/login',  [LoginController::class, 'showLogin'])->name('login');
@@ -82,8 +86,6 @@ Route::middleware('auth')->group(function () {
         Route::get('/trucking',      [TruckingController::class, 'index'])->name('trucking.index');
         Route::get('/trucking/data', [TruckingController::class, 'data'])->name('trucking.data');
         Route::put('/me/trucking-column-prefs', [TruckingController::class, 'updateColumnPrefs'])->name('trucking.columnPrefs');
-        Route::get('/tailieu',          [TruckingController::class, 'docs'])->name('trucking.docs');
-        Route::get('/tailieu/download', [TruckingController::class, 'docsDownload'])->name('trucking.docsDownload');
     });
     Route::middleware('permission:shipments.update')->group(function () {
         Route::post('/trucking/bulk',           [TruckingController::class, 'bulk'])->name('trucking.bulk');
