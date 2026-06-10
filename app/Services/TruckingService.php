@@ -45,6 +45,79 @@ class TruckingService
         return array_values($byKey);
     }
 
+    /** Diễn giải công thức bằng TÊN CỘT tiếng Việt (cho tài liệu). */
+    public function formulaLabel(array $spec, array $titleByKey): string
+    {
+        $t = fn ($key) => $titleByKey[$key] ?? $key;
+        return match ($spec['op'] ?? '') {
+            'sum'  => implode(' + ', array_map($t, $spec['cols'])),
+            'sub'  => implode(' − ', array_map($t, $spec['cols'])),
+            'mul'  => $t($spec['col']) . ' × ' . (($spec['factor'] ?? 0) * 100) . '%',
+            'expr' => str_replace(['*', '+', '-'], [' × ', ' + ', ' − '],
+                        preg_replace_callback('/\{(\w+)\}/', fn ($m) => $t($m[1]), $spec['template'])),
+            default => '',
+        };
+    }
+
+    /**
+     * Sinh tài liệu Markdown mô tả toàn bộ cột + công thức 2 sheet (cho kế toán).
+     * Sinh trực tiếp từ config nên luôn khớp hệ thống.
+     */
+    public function buildMarkdownDoc(): string
+    {
+        $cfg = config('trucking_columns', []);
+        $groupNames = [
+            1 => 'Thông tin lô hàng', 2 => 'Chi phí', 3 => 'Chi phí xe ngoài / Thanh toán',
+            4 => 'Chi phí xe MBF chạy', 5 => 'Doanh thu',
+        ];
+        $typeLabel = ['text' => 'Chữ', 'date' => 'Ngày', 'vnd' => 'Tiền (VNĐ)', 'number' => 'Số'];
+        $sheetNames = ['hph' => 'HẠ HPH (Hải Phòng)', 'icd' => 'HẠ ICD (Quế Võ)'];
+
+        // map key→title (toàn cục, để diễn giải công thức)
+        $titleByKey = [];
+        foreach ($cfg as $list) foreach ($list as $c) $titleByKey[$c['key']] = $c['title'];
+
+        $md = "# Tài liệu cột & công thức — Bảng TRUCKING\n\n";
+        $md .= "> Tài liệu này sinh tự động từ cấu hình hệ thống. Hệ thống gồm **2 sheet**: HẠ HPH và HẠ ICD.\n";
+        $md .= "> Các ô **TỔNG / VAT / CÒN NỢ / PHẢI THU** tự tính theo công thức (cập nhật ngay khi nhập). Cột tô màu xám là **ô tính tự động**, không nhập tay.\n\n";
+
+        foreach (['hph', 'icd'] as $sheet) {
+            $cols = $cfg[$sheet] ?? [];
+            $md .= "---\n\n## SHEET: " . ($sheetNames[$sheet] ?? $sheet) . "\n\n";
+            $md .= "Tổng số cột: **" . count($cols) . "**\n\n";
+
+            $byGroup = [];
+            foreach ($cols as $c) $byGroup[$c['group'] ?? 0][] = $c;
+            ksort($byGroup);
+
+            foreach ($byGroup as $gid => $gcols) {
+                $md .= "### Nhóm {$gid} — " . ($groupNames[$gid] ?? "Nhóm {$gid}") . "\n\n";
+                $md .= "| Cột | Kiểu | Công thức / Ghi chú |\n|---|---|---|\n";
+                foreach ($gcols as $c) {
+                    $type = $typeLabel[$c['type'] ?? 'text'] ?? 'Chữ';
+                    if (! empty($c['readonly'])) {
+                        $note = '_Tự động (số thứ tự dòng)_';
+                    } elseif (! empty($c['formula'])) {
+                        $note = '**= ' . $this->formulaLabel($c['formula'], $titleByKey) . '**';
+                    } else {
+                        $note = 'Nhập tay';
+                    }
+                    $md .= '| ' . $c['title'] . ' | ' . $type . ' | ' . $note . " |\n";
+                }
+                $md .= "\n";
+            }
+        }
+
+        $md .= "---\n\n## Ghi chú nghiệp vụ\n\n";
+        $md .= "- **BÊN TT** = bên thanh toán (ghi chữ: tài xế / A.Hoàn / xe ngoài / lập từ TK công ty…), **không** cộng vào tổng.\n";
+        $md .= "- **SỐ TIỀN** = các ô nhập số tiền, được cộng vào các ô tổng tương ứng.\n";
+        $md .= "- Tiền nhập kiểu Việt Nam đều được: gõ `3000000`, `3.000.000` hay `3,000,000` đều ra `3,000,000 VNĐ`.\n";
+        $md .= "- Ngày nhập dạng `20/10/2026` (dd/mm/yyyy).\n";
+        $md .= "- Click vào ô tổng để xem công thức hiển thị ngay dưới tiêu đề bảng.\n";
+
+        return $md;
+    }
+
     /** Key các cột user KHÔNG được xem (admin set hidden). */
     public function hiddenColumnKeys(User $user): array
     {

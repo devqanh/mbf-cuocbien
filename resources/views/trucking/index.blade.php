@@ -189,6 +189,9 @@
             </div>
             <span id="filterChip"></span>
 
+            <a class="btn btn-outline-info" href="{{ route('trucking.docs') }}" target="_blank" title="Tài liệu cột & công thức cho kế toán">
+                <i class="bi bi-file-earmark-text me-1"></i> Tài liệu
+            </a>
             <button class="btn btn-outline-secondary" id="btnReload"><i class="bi bi-arrow-clockwise me-1"></i> Tải lại</button>
             <button class="btn btn-primary" id="btnSaveAll"><i class="bi bi-cloud-arrow-up me-1"></i> Lưu thay đổi</button>
         </div>

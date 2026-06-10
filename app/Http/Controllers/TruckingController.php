@@ -122,4 +122,24 @@ class TruckingController extends Controller
         $this->trucking->resetSnapshot();
         return response()->json(['ok' => true]);
     }
+
+    /** /tailieu — tài liệu cột & công thức (render Markdown → HTML) cho kế toán xem. */
+    public function docs()
+    {
+        $md   = $this->trucking->buildMarkdownDoc();
+        $html = \Illuminate\Support\Str::markdown($md, ['html_input' => 'allow']);
+
+        return view('trucking.docs', ['html' => $html]);
+    }
+
+    /** Tải file .md để gửi kế toán. */
+    public function docsDownload(): \Symfony\Component\HttpFoundation\Response
+    {
+        $md = $this->trucking->buildMarkdownDoc();
+
+        return response($md, 200, [
+            'Content-Type'        => 'text/markdown; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="TRUCKING_COLUMNS.md"',
+        ]);
+    }
 }
