@@ -63,9 +63,12 @@ class Shipment extends Model
         'sale_note', 'receivable_amount', 'customer', 'received_amount',
         'receivable_due_date', 'received_date',
         'revenue_recognized', 'sale_invoice_no', 'sale_invoice_date',
+        // formula per-cell (map { colKey: "=SUM(...)" })
+        'cell_formulas',
     ];
 
     protected $casts = [
+        'cell_formulas' => 'array',
         'etd'                   => 'date',
         'eta'                   => 'date',
         'supplier_due_date'         => 'date',

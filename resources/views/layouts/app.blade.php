@@ -23,7 +23,7 @@
 <header class="app-header">
     <nav class="navbar navbar-expand-lg">
         <div class="container-fluid p-0">
-            <a class="navbar-brand brand-logo" href="{{ route('shipments.index') }}">
+            <a class="navbar-brand brand-logo" href="{{ route('trucking.index') }}">
                 MBF
             </a>
 
@@ -33,6 +33,16 @@
 
             <div class="collapse navbar-collapse app-nav" id="mainNav">
                 <ul class="navbar-nav me-auto">
+                    {{-- Trucking (HẠ HPH + HẠ ICD) --}}
+                    @can('shipments.view')
+                    <li class="nav-item">
+                        <a class="nav-link {{ request()->routeIs('trucking.*') ? 'active' : '' }}"
+                           href="{{ route('trucking.index') }}">
+                            <i class="bi bi-truck-front"></i> Trucking
+                        </a>
+                    </li>
+                    @endcan
+
                     {{-- Follow Up Shipment --}}
                     @can('shipments.view')
                     <li class="nav-item">

@@ -8,12 +8,13 @@ use App\Http\Controllers\RoleController;
 use App\Http\Controllers\ShipmentController;
 use App\Http\Controllers\TaskCommentController;
 use App\Http\Controllers\TaskController;
+use App\Http\Controllers\TruckingController;
 use App\Http\Controllers\UserController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
-    return redirect()->route(auth()->check() ? 'shipments.index' : 'login');
+    return redirect()->route(auth()->check() ? 'trucking.index' : 'login');
 });
 
 // Auth
@@ -72,6 +73,16 @@ Route::middleware('auth')->group(function () {
     });
     Route::middleware('permission:shipments.delete')->group(function () {
         Route::delete('/shipments/row/{shipment}', [ShipmentController::class, 'destroy'])->name('shipments.destroy');
+    });
+
+    // ===== Trucking (2 sheet HẠ HPH + HẠ ICD) — tái dùng quyền shipments.* =====
+    Route::middleware('permission:shipments.view')->group(function () {
+        Route::get('/trucking',      [TruckingController::class, 'index'])->name('trucking.index');
+        Route::get('/trucking/data', [TruckingController::class, 'data'])->name('trucking.data');
+    });
+    Route::middleware('permission:shipments.update')->group(function () {
+        Route::post('/trucking/bulk',           [TruckingController::class, 'bulk'])->name('trucking.bulk');
+        Route::post('/trucking/reset-snapshot', [TruckingController::class, 'resetSnapshot'])->name('trucking.resetSnapshot');
     });
 
     // ===== Reports - Payable =====

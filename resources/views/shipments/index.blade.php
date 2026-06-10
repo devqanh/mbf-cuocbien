@@ -1135,16 +1135,19 @@
 
             rows.forEach((row, ri) => {
                 const rowOverlay = row.id != null ? overlayMap.get(parseInt(row.id)) : null;
+                const rowFormulas = (row.cell_formulas && typeof row.cell_formulas === 'object')
+                    ? row.cell_formulas : null;
 
                 COLS.forEach((c, ci) => {
                     const raw = row[c.key];
                     const isEmpty = raw == null || raw === '';
                     const readonly = isReadonly(c);
                     const overlayFmt = rowOverlay?.get(c.key) || null;
+                    const formula = rowFormulas?.[c.key] || null;
 
-                    // Skip cell editable rỗng + KHÔNG có overlay format
-                    // (Cell rỗng nhưng có bg yellow vẫn phải render!)
-                    if (isEmpty && ! readonly && ! overlayFmt) return;
+                    // Skip cell editable rỗng + KHÔNG có overlay format + KHÔNG có formula
+                    // (Cell có formula nhưng v=null vẫn phải render để giữ formula!)
+                    if (isEmpty && ! readonly && ! overlayFmt && ! formula) return;
 
                     let displayed;
                     if (c.type === 'vnd')        displayed = fmtVND(raw);
@@ -1160,6 +1163,11 @@
                         vt: 0,
                     };
                     if (c.type === 'vnd' || c.type === 'number') cell.ht = 2;
+
+                    // Restore formula — giữ v/m (cached) để cell hiển thị ngay.
+                    // Recompute thực sự được trigger ở workbookCreateAfter qua setCellValue
+                    // (xem renderSheet > hook > workbookCreateAfter).
+                    if (formula) cell.f = formula;
 
                     if (readonly) {
                         cell.bg = '#f4f6fb';
@@ -1181,6 +1189,43 @@
                 });
             });
             return celldata;
+        }
+
+        // Re-register formulas vào Luckysheet's calcChain (dependency graph).
+        // Khi load lại từ DB, celldata có cell.f nhưng Luckysheet 2.1.x đôi khi
+        // KHÔNG auto-register vào calcChain → khi user edit cell phụ thuộc, formula
+        // không auto-recompute live. Fix: setCellValue lại formula như STRING ("=SUM..")
+        // → Luckysheet parse, register calcChain, compute.
+        function recomputeAllFormulas() {
+            const sheets = luckysheet.getAllSheets();
+            if (! Array.isArray(sheets) || sheets.length === 0) return;
+
+            // Collect (r,c,f,sheetOrder) trước khi setCellValue (tránh mutation lúc duyệt).
+            const targets = [];
+            sheets.forEach((sheet, sheetOrder) => {
+                if (! Array.isArray(sheet.celldata)) return;
+                sheet.celldata.forEach(cd => {
+                    const cell = cd?.v;
+                    if (! cell || typeof cell.f !== 'string' || cell.f.length === 0) return;
+                    targets.push({ r: cd.r, c: cd.c, f: cell.f, order: sheetOrder });
+                });
+            });
+            if (targets.length === 0) return;
+
+            // Wrap _systemUpdate để không markDirty.
+            _systemUpdate = true;
+            try {
+                targets.forEach(t => {
+                    try {
+                        // Truyền formula STRING (bắt đầu '=') → Luckysheet parse + register calcChain.
+                        luckysheet.setCellValue(t.r, t.c, t.f, { order: t.order });
+                    } catch (e) {
+                        console.warn(`recomputeFormula r${t.r}c${t.c} failed:`, e);
+                    }
+                });
+            } finally {
+                setTimeout(() => { _systemUpdate = false; }, 80);
+            }
         }
 
         // Parse value từ cell — ưu tiên v (giá trị gốc), fallback m (hiển thị)
@@ -1248,6 +1293,7 @@
             const rows = [];
             Array.from(rowIndices).sort((a, b) => a - b).forEach(r => {
                 const obj = {};
+                const formulas = {};
                 COLS.forEach((c, ci) => {
                     // Ưu tiên data[r][ci], fallback celldata
                     let cell = sheet.data?.[r]?.[ci];
@@ -1257,7 +1303,14 @@
                     let v = parseCellValue(cell, c.type);
                     if (c.key === 'id') v = v === '' ? null : (parseInt(v) || null);
                     obj[c.key] = v;
+
+                    // Bắt formula nếu cell có cell.f = "=SUM(...)" (Luckysheet lưu vào field f)
+                    if (cell && typeof cell.f === 'string' && cell.f.length > 0 && c.key !== 'id') {
+                        formulas[c.key] = cell.f;
+                    }
                 });
+                // cell_formulas: chỉ gắn khi có ít nhất 1 formula → backend null hóa khi empty
+                obj.cell_formulas = Object.keys(formulas).length > 0 ? formulas : null;
                 rows.push({ data: obj, sheetRow: r });
             });
             return rows;
@@ -1833,6 +1886,11 @@
                         // applyFormattingOverlay ở đây (setCellFormat có thể reset bg do
                         // Luckysheet quirk khi gọi cho cell vừa render). Giữ overlay cho
                         // softMerge dynamic update khi user khác đổi format realtime.
+
+                        // Recompute formulas — Luckysheet dùng cached v khi render init,
+                        // không re-evaluate. Trigger compute = setCellValue lại f cho mỗi
+                        // cell có formula (đẩy qua formula engine).
+                        try { recomputeAllFormulas(); } catch (e) { console.warn('recomputeAllFormulas failed:', e); }
                     },
                     // Helper kiểm cột readonly bằng index c
                     // (COLS đã filter theo perms, nên COLS[c] tương ứng đúng cột hiển thị tại index c)
@@ -2140,6 +2198,7 @@
                             // (vd: cellUpdated không fire, _systemUpdate timing, hoặc cell
                             // được lưu trong celldata mà không phải data[]).
                             const dbRow = dbRowsById.get(parseInt(effectiveId));
+                            let formulasDirty = false;
                             if (dbRow) {
                                 const before = dirtyKeys.size;
                                 COLS.forEach(col => {
@@ -2151,13 +2210,25 @@
                                     }
                                 });
                                 if (dirtyKeys.size > before) updatesRecovered++;
+
+                                // Compare cell_formulas (object) via JSON — đơn giản & an toàn
+                                const a = JSON.stringify(data.cell_formulas || null);
+                                const b = JSON.stringify(dbRow.cell_formulas || null);
+                                if (a !== b) formulasDirty = true;
+                            } else if (data.cell_formulas) {
+                                formulasDirty = true;
                             }
 
-                            if (dirtyKeys.size === 0) return;
+                            if (dirtyKeys.size === 0 && ! formulasDirty) return;
                             const payload = { id: effectiveId };
                             dirtyKeys.forEach(key => {
                                 payload[key] = data[key] === undefined ? null : data[key];
                             });
+                            // Khi có formula change HOẶC value dirty → gửi full formulas map
+                            // (backend overwrite — múc cell_formulas của row này)
+                            if (formulasDirty || dirtyKeys.size > 0) {
+                                payload.cell_formulas = data.cell_formulas || null;
+                            }
                             dirtyMeta.push({ data: payload, sheetRow: m.sheetRow, sheetOrder, isNew: false });
                         } else {
                             // CREATE — bắt buộc có client (text non-empty)

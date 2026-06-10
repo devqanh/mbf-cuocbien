@@ -205,6 +205,10 @@ class ShipmentService
         foreach (Shipment::DECIMAL_FIELDS as $f) {
             $row[$f] = $s->{$f} !== null ? (float) $s->{$f} : null;
         }
+
+        // cell_formulas — đã cast ARRAY, đảm bảo object (không phải null) cho frontend
+        $row['cell_formulas'] = is_array($s->cell_formulas) ? $s->cell_formulas : null;
+
         return $row;
     }
 
@@ -301,7 +305,8 @@ class ShipmentService
                     if ($id) $seenIds[] = $id;
 
                     if (! $isSuper) {
-                        $row = array_intersect_key($row, array_flip($editableKeys));
+                        // cell_formulas là metadata cấp row, không phải column — luôn cho qua
+                        $row = array_intersect_key($row, array_flip([...$editableKeys, 'cell_formulas']));
                     }
 
                     if ($id) {
@@ -514,6 +519,25 @@ class ShipmentService
         }
         foreach (Shipment::DECIMAL_FIELDS as $f) {
             if (array_key_exists($f, $row)) $row[$f] = $this->parseDecimal($row[$f]);
+        }
+
+        // cell_formulas: array { colKey: "=SUM(...)" } → JSON encode để dùng được với
+        // Shipment::where->update() và DB::table->insert() (bypass Eloquent cast).
+        // Empty map → null để xoá formula đã lưu.
+        if (array_key_exists('cell_formulas', $row)) {
+            $v = $row['cell_formulas'];
+            if (! is_array($v) || empty(array_filter($v, fn ($x) => $x !== null && $x !== ''))) {
+                $row['cell_formulas'] = null;
+            } else {
+                // Drop entries empty/null, chỉ giữ string formula bắt đầu bằng '='
+                $clean = [];
+                foreach ($v as $k => $val) {
+                    if (is_string($val) && $val !== '') {
+                        $clean[$k] = $val;
+                    }
+                }
+                $row['cell_formulas'] = empty($clean) ? null : json_encode($clean, JSON_UNESCAPED_UNICODE);
+            }
         }
         return $row;
     }
