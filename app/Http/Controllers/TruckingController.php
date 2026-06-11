@@ -126,10 +126,22 @@ class TruckingController extends Controller
     /** /tailieu — tài liệu cột & công thức (render Markdown → HTML) cho kế toán xem. */
     public function docs()
     {
-        $md   = $this->trucking->buildMarkdownDoc();
-        $html = \Illuminate\Support\Str::markdown($md, ['html_input' => 'allow']);
+        $md    = $this->trucking->buildMarkdownDoc();
+        $html  = \Illuminate\Support\Str::markdown($md, ['html_input' => 'allow']);
+        $notes = file_exists(storage_path('app/trucking_notes.md'))
+            ? file_get_contents(storage_path('app/trucking_notes.md'))
+            : '';
 
-        return view('trucking.docs', ['html' => $html]);
+        return view('trucking.docs', ['html' => $html, 'notes' => $notes]);
+    }
+
+    /** Lưu góp ý kế toán vào file. */
+    public function saveNotes(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $text = $request->input('notes', '');
+        file_put_contents(storage_path('app/trucking_notes.md'), $text);
+
+        return response()->json(['ok' => true]);
     }
 
     /** Tải file .md để gửi kế toán. */

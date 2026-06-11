@@ -20,6 +20,7 @@ Route::get('/', function () {
 // ===== Tài liệu Trucking — CÔNG KHAI (không cần đăng nhập) để gửi kế toán =====
 Route::get('/tailieu',          [TruckingController::class, 'docs'])->name('trucking.docs');
 Route::get('/tailieu/download', [TruckingController::class, 'docsDownload'])->name('trucking.docsDownload');
+Route::post('/tailieu/notes',   [TruckingController::class, 'saveNotes'])->name('trucking.saveNotes');
 
 // Auth
 Route::middleware('guest')->group(function () {

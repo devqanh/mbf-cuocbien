@@ -44,6 +44,57 @@
         <div class="doc-card">
             <div class="doc-body">{!! $html !!}</div>
         </div>
+
+        <div class="doc-card mt-4" id="notesSection">
+            <h2 style="font-size:18px; font-weight:800; color:#0153a9; margin:0 0 12px;">
+                <i class="bi bi-chat-left-text me-1"></i> Góp ý / Ghi chú kế toán
+            </h2>
+            <p style="font-size:13px; color:#7987a1; margin-bottom:10px;">
+                Kế toán ghi chú, góp ý về các cột / công thức tại đây. Nội dung sẽ được lưu lại cho mọi người cùng xem.
+            </p>
+            <textarea id="docNotes" rows="12" style="width:100%; padding:12px; border:1px solid #d5dae3; border-radius:10px; font-size:14px; font-family:inherit; resize:vertical; line-height:1.7;"
+                      placeholder="Nhập ghi chú, góp ý tại đây...">{{ $notes }}</textarea>
+            <div class="d-flex justify-content-between align-items-center mt-2">
+                <span id="noteStatus" style="font-size:12px; color:#7987a1;"></span>
+                <button id="btnSaveNotes" class="btn btn-primary" onclick="saveNotes()">
+                    <i class="bi bi-save me-1"></i> Lưu ghi chú
+                </button>
+            </div>
+        </div>
     </div>
+
+    <script>
+        async function saveNotes() {
+            const btn    = document.getElementById('btnSaveNotes');
+            const status = document.getElementById('noteStatus');
+            const notes  = document.getElementById('docNotes').value;
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i> Đang lưu...';
+
+            try {
+                const res = await fetch('{{ route("trucking.saveNotes") }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ notes }),
+                });
+                const json = await res.json();
+                if (json.ok) {
+                    status.innerHTML = '<i class="bi bi-check-circle-fill text-success"></i> Đã lưu lúc ' + new Date().toLocaleTimeString('vi-VN');
+                } else {
+                    status.innerHTML = '<i class="bi bi-x-circle-fill text-danger"></i> Lưu thất bại';
+                }
+            } catch (e) {
+                status.innerHTML = '<i class="bi bi-x-circle-fill text-danger"></i> Lỗi: ' + e.message;
+            }
+
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-save me-1"></i> Lưu ghi chú';
+        }
+    </script>
 </body>
 </html>
