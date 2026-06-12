@@ -1460,17 +1460,23 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap 
     if (!v || list.includes(v)) { setDraft(""); return; }
     setCfg(sel, [...list, v]); setDraft("");
   };
+  // Đổi tên: các map gắn THEO TÊN (ký hiệu/đơn giá/màu/loại xe) phải chuyển sang tên mới, không mất
+  const rekey = (mapKey, map, old, v) => { if (map[old] === undefined) return; const m = { ...map }; m[v] = m[old]; delete m[old]; setCfg(mapKey, m); };
   const rename = (i, v) => {
     const old = list[i]; const next = [...list]; next[i] = v; setCfg(sel, next);
-    if (g && g.colored && v !== old && costColors[old] !== undefined) {
-      const nc = { ...costColors }; nc[v] = nc[old]; delete nc[old]; setCfg("costColors", nc);
-    }
+    if (v === old) return;
+    if (g && g.coded)   rekey("locationCode", locCode, old, v);
+    if (g && g.priced)  rekey("prices", prices, old, v);
+    if (g && g.colored) rekey("costColors", costColors, old, v);
+    if (g && g.fleet)   rekey("vehicleType", vehType, old, v);
   };
   const remove = (i) => {
     const old = list[i]; setCfg(sel, list.filter((_, j) => j !== i));
-    if (g && g.colored && costColors[old] !== undefined) {
-      const nc = { ...costColors }; delete nc[old]; setCfg("costColors", nc);
-    }
+    const drop = (mapKey, map) => { if (map[old] === undefined) return; const m = { ...map }; delete m[old]; setCfg(mapKey, m); };
+    if (g && g.coded)   drop("locationCode", locCode);
+    if (g && g.priced)  drop("prices", prices);
+    if (g && g.colored) drop("costColors", costColors);
+    if (g && g.fleet)   drop("vehicleType", vehType);
   };
   return (
       <div style={{ display: "grid", gridTemplateColumns: "210px 1fr", gap: 18, padding: "14px 0 4px", minHeight: 380 }}>
