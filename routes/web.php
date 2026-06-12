@@ -109,6 +109,7 @@ Route::middleware('auth')->group(function () {
             // Mỗi danh mục Cài đặt = 1 endpoint riêng (1 bảng)
             Route::put ('/catalog/{type}',         [TruckingV2Controller::class, 'saveCatalog'])->name('catalog.save');
             Route::put ('/customers',              [TruckingV2Controller::class, 'saveCustomers'])->name('customers.save');
+            Route::put ('/customer-rename',        [TruckingV2Controller::class, 'renameCustomer'])->name('customerRename');
             Route::put ('/vehicles',               [TruckingV2Controller::class, 'saveVehicles'])->name('vehicles.save');
             Route::put ('/settings',               [TruckingV2Controller::class, 'saveSettings'])->name('settings.save');
             Route::post('/price-import',           [TruckingV2Controller::class, 'importPrices'])->name('priceImport');

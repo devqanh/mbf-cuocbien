@@ -957,7 +957,7 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
         ) : (
           <>
             <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr", gap: 12, padding: "10px 0 0" }}>
-              <Field label="Tên container"><Txt value={ship.contNo} onChange={(x) => set({ contNo: x })} placeholder="TGHU 123 4567" /></Field>
+              <Field label="Số container"><Txt value={ship.contNo} onChange={(x) => set({ contNo: x })} placeholder="TGHU 123 4567" /></Field>
               <Field label="Loại cont" hint="danh mục"><Combo value={ship.contType} onChange={(x) => set({ contType: x })} options={cfg.contTypes || []} onCreate={(v) => add("contTypes", v)} placeholder="40HC…" /></Field>
               <Field label="Kho" hint="danh mục"><Combo value={ship.kho} onChange={(x) => set({ kho: x })} options={cfg.warehouses || []} onCreate={(v) => add("warehouses", v)} placeholder="Kho A2…" /></Field>
             </div>
@@ -1385,6 +1385,25 @@ function CustomerManager({ cfg, setCfg }) {
   const cur = sel != null && customers.includes(sel) ? sel : (customers[0] || null);
   const data = (cur && info[cur]) || {};
   const setField = (k, v) => setCfg("customerInfo", { ...info, [cur]: { ...data, [k]: v } });
+  const T = window.__TRK || {}; const ROUTES = T.routes || {};
+  const [nameDraft, setNameDraft] = useState(cur || "");
+  React.useEffect(() => { setNameDraft(cur || ""); }, [cur]);
+  // Đổi tên khách (server update theo id — giữ liên kết lô & bảng giá), rồi rekey cfg cục bộ
+  const renameCustomer = async () => {
+    const nn = (nameDraft || "").trim();
+    if (!cur || !nn || nn === cur) return;
+    if (customers.includes(nn)) { window.trkToast && window.trkToast("Tên khách hàng đã tồn tại", "error"); return; }
+    if (!ROUTES.customerRename) return;
+    try {
+      const res = await fetch(ROUTES.customerRename, { method: "PUT", headers: { "Content-Type": "application/json", "Accept": "application/json", "X-CSRF-TOKEN": T.csrf }, body: JSON.stringify({ old: cur, new: nn }) }).then((r) => r.json());
+      if (res && res.ok) {
+        setCfg("customers", customers.map((c) => (c === cur ? nn : c)));
+        const ni = { ...info }; ni[nn] = ni[cur] || {}; if (nn !== cur) delete ni[cur]; setCfg("customerInfo", ni);
+        setSel(nn); setNameDraft(nn);
+        window.trkToast && window.trkToast("Đã đổi tên khách hàng");
+      } else { window.trkToast && window.trkToast((res && res.message) || "Đổi tên lỗi", "error"); }
+    } catch (e) { window.trkToast && window.trkToast("Lỗi kết nối khi đổi tên", "error"); }
+  };
   const add = () => {
     const n = draft.trim();
     if (!n || customers.includes(n)) { setDraft(""); return; }
@@ -1432,14 +1451,27 @@ function CustomerManager({ cfg, setCfg }) {
       {/* detail */}
       {cur ? (
         <div>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
-            <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.01em" }}>{cur}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-4)", textTransform: "uppercase", letterSpacing: "0.04em" }}>Tên khách hàng</div>
+            <div style={{ flex: 1 }} />
             <button type="button" onClick={() => remove(cur)} title="Xóa khách hàng"
               style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 11px", fontSize: 12.5, fontWeight: 500, border: "1px solid var(--line)", borderRadius: 8, background: "#fff", color: "var(--ink-3)", cursor: "pointer" }}
               onMouseEnter={(e) => { e.currentTarget.style.background = "#fce8e8"; e.currentTarget.style.color = "var(--danger)"; e.currentTarget.style.borderColor = "#f3c9c9"; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "var(--ink-3)"; e.currentTarget.style.borderColor = "var(--line)"; }}>
               <I.trash /> Xóa
             </button>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14 }}>
+            <input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} placeholder="Tên khách hàng…"
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); renameCustomer(); } }}
+              style={{ flex: 1, padding: "9px 12px", fontSize: 15, fontWeight: 700, border: "1px solid var(--line)", borderRadius: 9, outline: "none" }}
+              onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
+            {(() => { const can = !!(nameDraft && nameDraft.trim() && nameDraft.trim() !== cur); return (
+              <button type="button" onClick={renameCustomer} disabled={!can}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 16px", fontSize: 13.5, fontWeight: 600, border: "none", borderRadius: 10, whiteSpace: "nowrap", cursor: can ? "pointer" : "default", color: can ? "#fff" : "var(--ink-4)", background: can ? "var(--accent)" : "var(--line-2)" }}>
+                <I.check /> Cập nhật tên
+              </button>
+            ); })()}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             {CUST_FIELDS.map((f) => (

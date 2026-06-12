@@ -15,6 +15,7 @@ window.__TRK = {
   routes: {
     catalog: '{{ url("trucking-v2/catalog") }}/',
     customers: '{{ route("trucking2.customers.save") }}',
+    customerRename: '{{ route("trucking2.customerRename") }}',
     vehicles: '{{ route("trucking2.vehicles.save") }}',
     settings: '{{ route("trucking2.settings.save") }}',
   },

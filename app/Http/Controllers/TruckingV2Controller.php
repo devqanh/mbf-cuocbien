@@ -139,6 +139,13 @@ class TruckingV2Controller extends Controller
         return response()->json(['ok' => true]);
     }
 
+    /** Đổi tên khách hàng (giữ liên kết). */
+    public function renameCustomer(Request $request): JsonResponse
+    {
+        $data = $request->validate(['old' => ['required', 'string'], 'new' => ['required', 'string']]);
+        return response()->json($this->svc->renameCustomer($data['old'], $data['new']));
+    }
+
     /** Lưu danh mục Đội xe (biển số + loại). */
     public function saveVehicles(Request $request): JsonResponse
     {

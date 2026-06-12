@@ -255,11 +255,12 @@ function ShipmentsApp() {
   };
 
   // ---- Import lô hàng từ Excel ----
-  const IMP_COLS = ["Khách hàng", "SỐ BOOKING/BILL", "NHẬP/XUẤT", "SỐ LƯỢNG", "LOẠI", "CẮT MÁNG", "NƠI LẤY", "NƠI HẠ", "NGÀY", "GIỜ", "KHO", "INVOICE"];
+  const IMP_COLS = ["Khách hàng", "SỐ BOOKING/BILL", "NHẬP/XUẤT", "SỐ LƯỢNG", "LOẠI", "SỐ CONTAINER", "CẮT MÁNG", "NƠI LẤY", "NƠI HẠ", "NGÀY", "GIỜ", "KHO", "INVOICE"];
   const downloadTemplate = () => {
     if (typeof XLSX === "undefined") { window.alert("Thư viện Excel chưa tải xong."); return; }
-    const ex = { "Khách hàng": "Canon Vietnam", "SỐ BOOKING/BILL": "BL-ICD-0001", "NHẬP/XUẤT": "Nhập", "SỐ LƯỢNG": 1, "LOẠI": "40HC", "CẮT MÁNG": "14/05/2026 10:00", "NƠI LẤY": "ICD Quế Võ", "NƠI HẠ": "KCN Tiên Sơn", "NGÀY": "14/05/2026", "GIỜ": "08:00", "KHO": "Kho A2", "INVOICE": "INV-001" };
-    const ws = XLSX.utils.json_to_sheet([ex], { header: IMP_COLS });
+    const ex1 = { "Khách hàng": "Canon Vietnam", "SỐ BOOKING/BILL": "BL-ICD-0001", "NHẬP/XUẤT": "Nhập", "SỐ LƯỢNG": 3, "LOẠI": "40HC", "SỐ CONTAINER": "TGHU1234567\nMSKU9981122\nCSNU4567788", "CẮT MÁNG": "14/05/2026 10:00", "NƠI LẤY": "ICD Quế Võ", "NƠI HẠ": "KCN Tiên Sơn", "NGÀY": "14/05/2026", "GIỜ": "08:00", "KHO": "Kho A2", "INVOICE": "INV-001" };
+    const ex2 = { "Khách hàng": "Canon Vietnam", "SỐ BOOKING/BILL": "BL-ICD-0002", "NHẬP/XUẤT": "Xuất", "SỐ LƯỢNG": 2, "LOẠI": "20DC", "SỐ CONTAINER": "", "CẮT MÁNG": "15/05/2026 09:00", "NƠI LẤY": "ICD Quế Võ", "NƠI HẠ": "KCN Tiên Sơn", "NGÀY": "15/05/2026", "GIỜ": "07:30", "KHO": "Kho B1", "INVOICE": "INV-002" };
+    const ws = XLSX.utils.json_to_sheet([ex1, ex2], { header: IMP_COLS });
     ws["!cols"] = IMP_COLS.map((c) => ({ wch: Math.max(12, c.length + 2) }));
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Lô hàng");
     XLSX.writeFile(wb, "mau-import-lo-hang.xlsx");
@@ -282,7 +283,7 @@ function ShipmentsApp() {
     if (hi < 0) hi = 0;
     const header = (aoa[hi] || []).map(normH);
     const col = (...kws) => header.findIndex((h) => kws.some((k) => h.includes(k)));
-    const C = { customer: col("khách", "nhà máy"), booking: col("booking", "bill"), io: col("nhập", "xuất"), qty: col("lượng"), contType: col("loại"), cutOff: col("máng"), from: col("lấy"), to: col("hạ"), ngay: col("ngày"), gio: col("giờ"), kho: col("kho"), inv: col("invoice", "inv") };
+    const C = { customer: col("khách", "nhà máy"), booking: col("booking", "bill"), io: col("nhập", "xuất"), qty: col("lượng"), contType: col("loại"), contNo: col("container", "tên cont", "số cont"), cutOff: col("máng"), from: col("lấy"), to: col("hạ"), ngay: col("ngày"), gio: col("giờ"), kho: col("kho"), inv: col("invoice", "inv") };
     const out = [];
     for (let r = hi + 1; r < aoa.length; r++) {
       const row = aoa[r] || []; const g = (i) => (i >= 0 ? String(row[i] == null ? "" : row[i]).trim() : "");
@@ -291,7 +292,7 @@ function ShipmentsApp() {
       const gioDenDuKien = ngayIso ? `${ngayIso}T${hm || "00:00"}` : "";
       const cmRaw = g(C.cutOff); const cmDate = toIsoDate(cmRaw); const cmHm = toHm(cmRaw);
       const cutOff = cmDate ? `${cmDate}T${cmHm || "00:00"}` : cmRaw;
-      out.push({ customer: g(C.customer), booking: g(C.booking), io: g(C.io), qty: g(C.qty).replace(/[^\d]/g, ""), contType: g(C.contType), cutOff, from: g(C.from), to: g(C.to), kho: g(C.kho), inv: g(C.inv), gioDenDuKien });
+      out.push({ customer: g(C.customer), booking: g(C.booking), io: g(C.io), qty: g(C.qty).replace(/[^\d]/g, ""), contType: g(C.contType), contNo: g(C.contNo), cutOff, from: g(C.from), to: g(C.to), kho: g(C.kho), inv: g(C.inv), gioDenDuKien });
     }
     return out;
   };

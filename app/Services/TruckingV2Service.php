@@ -301,6 +301,20 @@ class TruckingV2Service
     }
 
     public function saveCustomers(array $cfg): void { DB::transaction(fn () => $this->reconcileCustomers($cfg)); }
+
+    /** Đổi TÊN khách hàng (update theo id — giữ nguyên liên kết lô hàng & bảng giá). */
+    public function renameCustomer(string $old, string $new): array
+    {
+        $old = trim($old); $new = trim($new);
+        if ($new === '') return ['ok' => false, 'message' => 'Tên mới không được trống'];
+        $cust = TruckingCustomer::where('name', $old)->first();
+        if (! $cust) return ['ok' => false, 'message' => 'Không tìm thấy khách hàng'];
+        if ($new !== $old && TruckingCustomer::where('name', $new)->exists()) {
+            return ['ok' => false, 'message' => 'Tên khách hàng đã tồn tại'];
+        }
+        $cust->update(['name' => $new]);
+        return ['ok' => true];
+    }
     public function saveVehicles(array $cfg): void  { DB::transaction(fn () => $this->reconcileVehicles($cfg)); }
     public function saveSettings(array $cfg): void  { DB::transaction(fn () => $this->reconcileSettings($cfg)); }
 
@@ -433,12 +447,12 @@ class TruckingV2Service
         return DB::transaction(function () use ($sheet, $rows, $vat, $norm) {
             $ships = [];
             foreach ($rows as $row) {
-                $ship = $this->saveShipment([
+                $base = [
                     'customer'     => $row['customer'] ?? null,
                     'booking'      => $row['booking'] ?? null,
                     'inv'          => $row['inv'] ?? null,
                     'io'           => $row['io'] ?? null,
-                    'qty'          => $row['qty'] ?? null,
+                    'qty'          => 1,
                     'contType'     => $row['contType'] ?? null,
                     'cutOff'       => $row['cutOff'] ?? null,
                     'from'         => $norm($row['from'] ?? null),
@@ -447,8 +461,21 @@ class TruckingV2Service
                     'gioDenDuKien' => $row['gioDenDuKien'] ?? null,
                     'cost'         => ['items' => []],
                     'rev'          => ['vatRate' => $vat, 'doanhThu' => [], 'choHo' => [], 'payments' => []],
-                ], $sheet);
-                $ships[] = $this->shipmentToArray($ship);
+                ];
+                // Ưu tiên 1: Tên container có nhiều số (mỗi dòng 1 số) → tách mỗi số 1 lô
+                $conts = array_values(array_filter(array_map('trim', preg_split('/[\r\n;,]+/', (string) ($row['contNo'] ?? ''))), fn ($v) => $v !== ''));
+                if (count($conts)) {
+                    foreach ($conts as $cn) {
+                        $ships[] = $this->shipmentToArray($this->saveShipment($base + ['contNo' => $cn], $sheet));
+                    }
+                    continue;
+                }
+                // Ưu tiên 2: cont trống → nhân bản theo SỐ LƯỢNG (để điền số cont sau)
+                $qd = preg_replace('/[^\d]/', '', (string) ($row['qty'] ?? ''));
+                $n = $qd === '' ? 1 : max(1, (int) $qd);
+                for ($k = 0; $k < $n; $k++) {
+                    $ships[] = $this->shipmentToArray($this->saveShipment($base + ['contNo' => null], $sheet));
+                }
             }
             return ['valid' => true, 'created' => count($ships), 'ships' => $ships, 'errors' => [], 'total' => count($rows)];
         });
