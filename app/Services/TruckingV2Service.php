@@ -108,6 +108,8 @@ class TruckingV2Service
                     'date'     => $this->outDate($c->date),
                     'billable' => (bool) $c->billable,
                     'color'    => $c->color ?? '',
+                    'src'      => $c->src ?? '',
+                    'note'     => $c->note ?? '',
                 ])->all(),
             ],
             'rev' => [
@@ -185,6 +187,8 @@ class TruckingV2Service
                     'date'     => $this->inDate($c['date'] ?? null),
                     'billable' => ! empty($c['billable']),
                     'color'    => $this->str($c['color'] ?? null),
+                    'src'      => $this->str($c['src'] ?? null),
+                    'note'     => $this->str($c['note'] ?? null),
                     'sort'     => $i,
                 ]);
             }

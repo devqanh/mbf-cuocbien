@@ -635,11 +635,14 @@ function CostLineRows({ rows = [], onChange, options = [], onCreate, payers = []
         ))}
       </div>
       {rows.map((e) => {
+        const locked = !!e.src;
         const hex = colorHex(costColors[e.item] || "");
         const missing = !!hex && !toNum(e.amount);
         return (
-        <div key={e.id} style={{ display: "grid", gridTemplateColumns: cols, gap: 9, alignItems: "center", padding: "5px 0", background: e.billable ? "var(--good-weak)" : "transparent", borderRadius: 8 }}>
-          <Combo value={e.item} onChange={(x) => pickItem(e, x)} options={options} onCreate={onCreate} placeholder="Chọn khoản chi phí…" small />
+        <div key={e.id} style={{ display: "grid", gridTemplateColumns: cols, gap: 9, alignItems: "center", padding: "5px 0", background: locked ? "var(--accent-weak-2)" : (e.billable ? "var(--good-weak)" : "transparent"), borderRadius: 8 }}>
+          {locked
+            ? <div title="Khoản từ “Thuê xe ngoài” (Thông tin lô) — sửa số tiền được, không xóa được ở đây" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "var(--ink-2)", padding: "0 4px", minWidth: 0 }}><span style={{ color: "var(--accent)", flexShrink: 0 }}><I.link /></span><span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.item || "Cước xe ngoài"}</span></div>
+            : <Combo value={e.item} onChange={(x) => pickItem(e, x)} options={options} onCreate={onCreate} placeholder="Chọn khoản chi phí…" small />}
           <Money value={e.amount} onChange={(x) => set(e.id, { amount: x })} dim />
           <Combo value={e.payer} onChange={(x) => set(e.id, { payer: x })} options={payers} onCreate={onCreatePayer} placeholder="Người chi…" small />
           <DateField value={e.date} onChange={(x) => set(e.id, { date: x })} />
@@ -651,12 +654,14 @@ function CostLineRows({ rows = [], onChange, options = [], onCreate, payers = []
               {missing && <span style={{ fontSize: 9.5, fontWeight: 700, color: "var(--warn)" }}>!</span>}
             </span>
           </div>
-          <button type="button" onClick={() => del(e.id)} title="Xóa"
-            style={{ width: 28, height: 28, display: "grid", placeItems: "center", border: "none", borderRadius: 7, background: "transparent", color: "var(--ink-4)", cursor: "pointer" }}
-            onMouseEnter={(ev) => { ev.currentTarget.style.background = "#fce8e8"; ev.currentTarget.style.color = "var(--danger)"; }}
-            onMouseLeave={(ev) => { ev.currentTarget.style.background = "transparent"; ev.currentTarget.style.color = "var(--ink-4)"; }}>
-            <I.trash />
-          </button>
+          {locked
+            ? <span title="Khóa — gỡ bằng cách bỏ tích “Thuê xe ngoài” ở Thông tin lô" style={{ width: 28, height: 28, display: "grid", placeItems: "center", color: "var(--ink-4)", fontSize: 12 }}>🔒</span>
+            : <button type="button" onClick={() => del(e.id)} title="Xóa"
+                style={{ width: 28, height: 28, display: "grid", placeItems: "center", border: "none", borderRadius: 7, background: "transparent", color: "var(--ink-4)", cursor: "pointer" }}
+                onMouseEnter={(ev) => { ev.currentTarget.style.background = "#fce8e8"; ev.currentTarget.style.color = "var(--danger)"; }}
+                onMouseLeave={(ev) => { ev.currentTarget.style.background = "transparent"; ev.currentTarget.style.color = "var(--ink-4)"; }}>
+                <I.trash />
+              </button>}
         </div>
       ); })}
       {!rows.length && <div style={{ fontSize: 13, color: "var(--ink-4)", padding: "10px 0" }}>Chưa có khoản chi phí nào.</div>}
@@ -903,6 +908,17 @@ function Seg({ value, onChange, options }) {
 function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], onClose, onDelete, canDelete, isHph, cfg = {}, addCfg }) {
   const set = (np) => patch(np);
   const add = (k, v) => addCfg && addCfg(k, v);
+  // Thuê xe ngoài → 1 dòng chi phí "Cước xe ngoài" (src=extTruck) link sang Chi phí lô hàng
+  const cost = ship.cost || {};
+  const costItems = cost.items || [];
+  const extLine = costItems.find((it) => it.src === "extTruck");
+  const extHired = !!extLine;
+  const setCostItems = (arr) => patch({ cost: { ...cost, items: arr } });
+  const toggleExt = (on) => {
+    if (on && !extLine) setCostItems([...costItems, { id: Date.now() + Math.random(), src: "extTruck", item: "Cước xe ngoài", amount: "", payer: "Xe ngoài", date: "", billable: false, color: "", note: "" }]);
+    else if (!on && extLine) setCostItems(costItems.filter((it) => it.src !== "extTruck"));
+  };
+  const setExt = (np) => setCostItems(costItems.map((it) => (it.src === "extTruck" ? { ...it, ...np } : it)));
   const sibOpts = siblings.map((s) => ({ value: s.id, label: (s.contNo || "(chưa có cont)") + " — " + (s.booking || "(chưa có booking)") }));
   const raMode = ship.raMode || "self";
   const other = (raMode === "other" && ship.raOtherId != null) ? siblings.find((s) => s.id === ship.raOtherId) : null;
@@ -964,6 +980,23 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: "12px 0 0" }}>
               <Field label="BKS vào"><Combo value={ship.bksVao} onChange={(x) => set({ bksVao: x })} options={cfg.vehicles || []} onCreate={(v) => add("vehicles", v)} placeholder="15C-123.45…" /></Field>
               <Field label="BKS ra"><Combo value={ship.bksRa} onChange={(x) => set({ bksRa: x })} options={cfg.vehicles || []} onCreate={(v) => add("vehicles", v)} placeholder="15C-678.90…" /></Field>
+            </div>
+          </>
+        )}
+      </Section>
+
+      <Section title="Thuê xe ngoài">
+        <div style={{ padding: "8px 0 2px" }}>
+          <ChkBox checked={extHired} onChange={toggleExt} label="Có thuê xe ngoài cho lô này" />
+        </div>
+        {extHired && (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 12, padding: "10px 0 4px", alignItems: "end" }}>
+              <Field label="Số tiền (cước xe ngoài)"><Money value={extLine.amount} onChange={(x) => setExt({ amount: x })} dim /></Field>
+              <Field label="Ghi chú thông tin nhà xe"><Txt value={extLine.note} onChange={(x) => setExt({ note: x })} placeholder="Tên nhà xe, SĐT, biển số…" /></Field>
+            </div>
+            <div style={{ fontSize: 11.5, color: "var(--ink-4)", padding: "2px 0 6px", display: "flex", alignItems: "center", gap: 6, lineHeight: 1.5 }}>
+              <I.link /> Số tiền này là khoản <b style={{ color: "var(--ink-3)" }}>“Cước xe ngoài”</b> trong <b style={{ color: "var(--ink-3)" }}>Chi phí lô hàng</b> — kế toán sửa được ở đó nhưng không xóa được. Bỏ tích ở đây để gỡ khoản này.
             </div>
           </>
         )}
