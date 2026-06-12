@@ -14,6 +14,7 @@ window.__TRK = {
   canDelete: {{ $canDelete ? 'true' : 'false' }},
   routes: {
     create: '{{ route("trucking2.statements.create") }}',
+    view: '{{ url("trucking-v2/bang-ke") }}/',
     statement: '{{ url("trucking-v2/statements") }}/',
   },
   boot: @json($boot),
@@ -26,30 +27,16 @@ window.__TRK = {
 @verbatim
 <script type="text/babel" data-presets="react">
 (() => {
-const { useState, useRef } = React;
-const { KePage, SavedStatementModal } = window.__ui;
+const { useState } = React;
+const { KePage } = window.__ui;
 
 function StatementsApp() {
   const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
-  const api = (method, url, body) => fetch(url, { method, headers: { "Content-Type": "application/json", "Accept": "application/json", "X-CSRF-TOKEN": T.csrf }, body: body ? JSON.stringify(body) : undefined }).then((r) => r.json());
-
-  const [ke, setKe] = useState(B.ke || []);
-  const [viewKe, setViewKe] = useState(null);
-  const dirtyIds = useRef(new Set());
-  const isDirty = (id) => dirtyIds.current.has(id);
-  const saveStatement = (ns) => api("PUT", ROUTES.statement + ns.id, { statement: ns })
-    .then((r) => { if (r && r.ok) { dirtyIds.current.delete(ns.id); window.trkToast && window.trkToast("Đã lưu"); return true; } window.trkToast && window.trkToast("Lưu thất bại", "error"); return false; })
-    .catch(() => { window.trkToast && window.trkToast("Lỗi kết nối khi lưu", "error"); return false; });
+  const [ke] = useState(B.ke || []);
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
-      <KePage ke={ke} onNew={() => { window.location.href = ROUTES.create; }} onOpen={(st) => setViewKe(st)} />
-      {viewKe && <SavedStatementModal st={viewKe}
-        onDelete={(id) => { setKe((k) => k.filter((x) => x.id !== id)); dirtyIds.current.delete(id); api("DELETE", ROUTES.statement + id); }}
-        onUpdate={(ns) => { dirtyIds.current.add(ns.id); setKe((k) => k.map((x) => (x.id === ns.id ? ns : x))); setViewKe(ns); }}
-        onSave={() => saveStatement(viewKe)}
-        isDirty={isDirty}
-        onClose={() => setViewKe(null)} />}
+      <KePage ke={ke} onNew={() => { window.location.href = ROUTES.create; }} onOpen={(st) => { window.location.href = ROUTES.view + st.id; }} />
     </div>
   );
 }

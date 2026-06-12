@@ -95,9 +95,15 @@ Route::middleware('auth')->group(function () {
         Route::middleware('permission:shipments.view')->group(function () {
             Route::get('/', fn () => redirect()->route('trucking2.shipments'));
             Route::get('/lo-hang',   [TruckingV2Controller::class, 'shipments'])->name('shipments');
+            Route::get('/shipments-page', [TruckingV2Controller::class, 'shipmentsPage'])->name('shipmentsPage');
+            Route::get('/config', [TruckingV2Controller::class, 'configData'])->name('configData');
             Route::get('/bang-gia',  [TruckingV2Controller::class, 'prices'])->name('prices');
+            Route::get('/customer-prices', [TruckingV2Controller::class, 'customerPrices'])->name('customerPrices');
             Route::get('/bang-ke',     [TruckingV2Controller::class, 'statements'])->name('statements');
             Route::get('/bang-ke/tao', [TruckingV2Controller::class, 'createStatement'])->name('statements.create');
+            Route::get('/bang-ke/{statement}', [TruckingV2Controller::class, 'viewStatement'])->name('statements.view')->whereNumber('statement');
+            Route::get('/bang-ke/{statement}/context', [TruckingV2Controller::class, 'statementContext'])->name('statements.context')->whereNumber('statement');
+            Route::get('/bang-ke/{statement}/excel', [TruckingV2Controller::class, 'exportStatement'])->name('statements.excel')->whereNumber('statement');
             Route::get('/cai-dat',   [TruckingV2Controller::class, 'settings'])->name('settings');
             Route::get('/bootstrap', [TruckingV2Controller::class, 'bootstrap'])->name('bootstrap');
         });

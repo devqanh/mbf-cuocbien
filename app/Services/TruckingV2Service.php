@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\TruckingContType;
 use App\Models\TruckingCostItem;
+use App\Models\TruckingCostLine;
 use App\Models\TruckingChohoItem;
 use App\Models\TruckingCustomer;
 use App\Models\TruckingDriver;
@@ -29,21 +30,22 @@ class TruckingV2Service
 {
     /**
      * Mỗi danh mục = 1 bảng riêng. Map: cfgKey => [modelClass, priced?, coded?, colored?].
-     * priced = có đơn giá mặc định; coded = có ký hiệu viết tắt (địa điểm);
+     * priced  = có đơn giá mặc định;
+     * coded   = false HOẶC tên khóa map ký hiệu trong cfg (vd 'locationCode', 'warehouseCode');
      * colored = có màu "theo dõi" cấp danh mục (dùng cho filter lọc khoản chưa điền tiền).
      */
     private function lookups(): array
     {
         return [
-            'locations'  => [TruckingLocation::class,    false, true,  false],
-            'payers'     => [TruckingPayer::class,       false, false, false],
-            'contTypes'  => [TruckingContType::class,    false, false, false],
-            'warehouses' => [TruckingWarehouse::class,   false, false, false],
-            'drivers'    => [TruckingDriver::class,      false, false, false],
-            'costItems'  => [TruckingCostItem::class,    true,  false, true],
-            'choHoItems' => [TruckingChohoItem::class,   true,  false, false],
-            'revItems'   => [TruckingRevenueItem::class, true,  false, false],
-            'vehItems'   => [TruckingVehItem::class,     true,  false, false],
+            'locations'  => [TruckingLocation::class,    false, 'locationCode',  false],
+            'payers'     => [TruckingPayer::class,       false, false,           false],
+            'contTypes'  => [TruckingContType::class,    false, false,           false],
+            'warehouses' => [TruckingWarehouse::class,   false, 'warehouseCode', false],
+            'drivers'    => [TruckingDriver::class,      false, false,           false],
+            'costItems'  => [TruckingCostItem::class,    true,  false,           true],
+            'choHoItems' => [TruckingChohoItem::class,   true,  false,           false],
+            'revItems'   => [TruckingRevenueItem::class, true,  false,           false],
+            'vehItems'   => [TruckingVehItem::class,     true,  false,           false],
         ];
     }
 
@@ -69,6 +71,205 @@ class TruckingV2Service
             ->get()
             ->map(fn ($s) => $this->shipmentToArray($s))
             ->all();
+    }
+
+    /**
+     * Trang Lô hàng — phân trang SERVER-SIDE (20 lô/trang) + tìm kiếm + lọc + sắp xếp.
+     * Aggregate (tổng chi phí, đếm bộ lọc, follow theo màu) tính TOÀN CỤC trên tập đã
+     * tìm (q), độc lập với lựa chọn lọc/follow đang chọn — để con số luôn đúng dù chỉ
+     * hiển thị 1 trang. $p: page,q,filter(all|out|notout),follow(all|any|missing|#hex),
+     * sort(default|customer|cost),dir(1|-1),all(xuất Excel = bỏ phân trang).
+     *
+     * @return array{data:array,page:int,perPage:int,total:int,lastPage:int,totalCost:int,filterCounts:array,followStats:array}
+     */
+    public function pagedShipments(string $sheet, array $p): array
+    {
+        $perPage = 20;
+        $page    = max(1, (int) ($p['page'] ?? 1));
+        $q       = trim((string) ($p['q'] ?? ''));
+        $filter  = (string) ($p['filter'] ?? 'all');
+        $filter  = in_array($filter, ['all', 'out', 'notout'], true) ? $filter : 'all';
+        $follow  = (string) ($p['follow'] ?? 'all');
+        $sortKey = (string) ($p['sort'] ?? 'default');
+        $sortKey = in_array($sortKey, ['default', 'customer', 'cost'], true) ? $sortKey : 'default';
+        $dir     = ((int) ($p['dir'] ?? 1)) < 0 ? 'desc' : 'asc';
+        $all     = ! empty($p['all']);
+
+        // Khoản chi phí "theo dõi" (có màu trong danh mục) → tên + hex
+        $followItems = TruckingCostItem::whereNotNull('color')->where('color', '!=', '')->get(['name', 'color']);
+        $followNames = $followItems->pluck('name')->all();
+        $nameHex     = $followItems->mapWithKeys(fn ($i) => [$i->name => $this->colorHex($i->color)])->all();
+
+        // Áp tìm kiếm (khách / container / booking / invoice / tờ khai) lên 1 builder lô.
+        $applySearch = function ($b) use ($q) {
+            if ($q === '') return;
+            $like = '%' . str_replace(['%', '_'], ['\%', '\_'], $q) . '%';
+            $b->where(function ($w) use ($like) {
+                $w->where('cont_no', 'like', $like)
+                  ->orWhere('booking', 'like', $like)
+                  ->orWhere('inv', 'like', $like)
+                  ->orWhere('declaration_no', 'like', $like)
+                  ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', $like));
+            });
+        };
+        // Builder lô của tập "đã tìm" (chỉ áp q) — dùng cho aggregate.
+        $searched = function () use ($sheet, $applySearch) {
+            $b = TruckingShipment::ofSheet($sheet);
+            $applySearch($b);
+            return $b;
+        };
+
+        // --- Aggregate toàn cục trên tập đã tìm ---
+        $totalCost = (int) round((float) TruckingCostLine::whereIn('shipment_id', $searched()->select('id'))->sum('amount'));
+
+        $allCount = $searched()->count();
+        $outCount = $searched()->whereNotNull('bks_ra')->where('bks_ra', '!=', '')->count();
+        $filterCounts = ['all' => $allCount, 'out' => $outCount, 'notout' => $allCount - $outCount];
+
+        $followStats = $this->followStats($searched(), $followNames, $nameHex);
+
+        // --- Danh sách hiển thị: q + lọc + follow + sort + phân trang ---
+        $list = $searched();
+        if ($filter === 'out') {
+            $list->whereNotNull('bks_ra')->where('bks_ra', '!=', '');
+        } elseif ($filter === 'notout') {
+            $list->where(fn ($w) => $w->whereNull('bks_ra')->orWhere('bks_ra', ''));
+        }
+        if ($followNames) {
+            if ($follow === 'any') {
+                $list->whereHas('costLines', fn ($c) => $c->whereIn('item', $followNames));
+            } elseif ($follow === 'missing') {
+                $list->whereHas('costLines', fn ($c) => $c->whereIn('item', $followNames)
+                    ->where(fn ($x) => $x->whereNull('amount')->orWhere('amount', 0)));
+            } elseif (str_starts_with($follow, '#')) {
+                $names = array_keys(array_filter($nameHex, fn ($h) => $h === $follow));
+                $list->whereHas('costLines', fn ($c) => $c->whereIn('item', $names ?: ['']));
+            }
+        }
+
+        $total    = $all ? $allCount : $list->count();
+        $lastPage = max(1, (int) ceil(($total ?: 1) / $perPage));
+        $page     = min($page, $lastPage);
+
+        if ($sortKey === 'customer') {
+            $list->leftJoin('trucking_customers', 'trucking_customers.id', '=', 'trucking_shipments.customer_id')
+                 ->orderBy('trucking_customers.name', $dir)
+                 ->select('trucking_shipments.*');
+        } elseif ($sortKey === 'cost') {
+            $list->withSum('costLines as cost_total', 'amount')->orderBy('cost_total', $dir);
+        } else {
+            $list->orderBy('id');
+        }
+
+        $list->with(['customer', 'costLines', 'revenueLines', 'payments']);
+        if (! $all) $list->forPage($page, $perPage);
+        $data = $list->get()->map(fn ($s) => $this->shipmentToArray($s))->all();
+
+        return [
+            'data'         => $data,
+            'page'         => $page,
+            'perPage'      => $perPage,
+            'total'        => $total,
+            'lastPage'     => $lastPage,
+            'totalCost'    => $totalCost,
+            'filterCounts' => $filterCounts,
+            'followStats'  => $followStats,
+            'sibs'         => $this->siblingsList($sheet),
+        ];
+    }
+
+    /**
+     * Danh sách rút gọn mọi lô (id + cont + booking) cho picker "ra hộ" — KHÔNG kèm
+     * dòng con nên rất nhẹ; đủ để chọn lô khác cầm container ra dù lô đó ở trang khác.
+     *
+     * @return array<int,array{id:int,contNo:string,booking:string}>
+     */
+    public function siblingsList(string $sheet): array
+    {
+        return TruckingShipment::ofSheet($sheet)->orderBy('id')
+            ->toBase()->get(['id', 'cont_no', 'booking'])   // không hydrate model — chỉ cần 3 cột
+            ->map(fn ($s) => ['id' => $s->id, 'contNo' => $s->cont_no ?? '', 'booking' => $s->booking ?? ''])
+            ->all();
+    }
+
+    /**
+     * Thống kê cờ theo dõi trên tập lô (builder) — gom theo màu, đếm lô có cờ &
+     * lô có cờ nhưng CHƯA điền tiền. Chỉ nạp đúng các dòng chi phí thuộc khoản
+     * "theo dõi" (không nạp toàn bộ dòng con) → nhẹ.
+     */
+    private function followStats($shipQuery, array $followNames, array $nameHex): array
+    {
+        if (! $followNames) return ['anyShips' => 0, 'missShips' => 0, 'byColor' => []];
+
+        $lines = TruckingCostLine::whereIn('shipment_id', $shipQuery->select('id'))
+            ->whereIn('item', $followNames)
+            ->get(['shipment_id', 'item', 'amount'])
+            ->groupBy('shipment_id');
+
+        $anyShips = 0; $missShips = 0; $buckets = [];
+        foreach ($lines as $shipLines) {
+            $anyShips++;
+            $shipHasMiss = false;
+            $seen = [];   // hex => có-dòng-thiếu-tiền-trong-lô-này
+            foreach ($shipLines as $l) {
+                $hex = $nameHex[$l->item] ?? '';
+                if ($hex === '') continue;
+                $miss = ((int) round((float) $l->amount)) === 0;
+                if ($miss) $shipHasMiss = true;
+                if (! isset($seen[$hex])) $seen[$hex] = $miss;
+                elseif ($miss) $seen[$hex] = true;
+            }
+            if ($shipHasMiss) $missShips++;
+            foreach ($seen as $hex => $miss) {
+                $buckets[$hex] ??= ['hex' => $hex, 'total' => 0, 'miss' => 0];
+                $buckets[$hex]['total']++;
+                if ($miss) $buckets[$hex]['miss']++;
+            }
+        }
+        $byColor = array_values($buckets);
+        usort($byColor, fn ($a, $b) => ($b['miss'] - $a['miss']) ?: ($b['total'] - $a['total']));
+
+        return ['anyShips' => $anyShips, 'missShips' => $missShips, 'byColor' => $byColor];
+    }
+
+    /** Chuẩn hóa id màu cũ (amber/blue/...) → hex; đã là hex thì giữ. Khớp colorHex() phía client. */
+    private function colorHex(?string $c): string
+    {
+        if (! $c) return '';
+        return ['amber' => '#e0a92e', 'blue' => '#2a6fdb', 'green' => '#1f8a5b', 'red' => '#d64545'][$c] ?? $c;
+    }
+
+    /** Chỉ các lô theo id (cho trang Xem bảng kê — tránh nạp toàn bộ lô). */
+    public function shipmentsByIds(array $ids): array
+    {
+        $ids = array_values(array_filter($ids, 'is_numeric'));
+        if (! $ids) return [];
+
+        return TruckingShipment::whereIn('id', $ids)
+            ->with(['customer', 'costLines', 'revenueLines', 'payments'])
+            ->get()
+            ->map(fn ($s) => $this->shipmentToArray($s))
+            ->all();
+    }
+
+    /**
+     * Cấu hình TỐI THIỂU để định giá (priceFor) phía client — chỉ ký hiệu địa điểm,
+     * ngưỡng free time và bảng giá của ĐÚNG 1 khách. Tránh nạp full config()
+     * (mọi khách + mọi danh mục) cho trang Xem bảng kê.
+     */
+    public function pricingCfg(?string $customer): array
+    {
+        $cfg = [
+            'locationCode'  => TruckingLocation::whereNotNull('code')->pluck('code', 'name')->all(),
+            'freeTimeHours' => TruckingSetting::get('free_time_hours', '4'),
+            'customerInfo'  => [],
+        ];
+        if ($customer && ($cust = TruckingCustomer::with('priceRows')->where('name', trim($customer))->first())) {
+            $cfg['customerInfo'][$cust->name] = [
+                'priceList' => $cust->priceRows->map(fn ($p) => $this->priceRowToArray($p))->all(),
+            ];
+        }
+        return $cfg;
     }
 
     // ===================================================================
@@ -232,16 +433,16 @@ class TruckingV2Service
     // ===================================================================
     // CONFIG (master data) — serialize & persist
     // ===================================================================
-    public function config(): array
+    public function config(bool $withPrices = true, bool $priceCounts = false): array
     {
-        $cfg = ['locationCode' => [], 'prices' => [], 'costColors' => []];
+        $cfg = ['locationCode' => [], 'warehouseCode' => [], 'prices' => [], 'costColors' => []];
 
         // Mỗi danh mục một bảng riêng
         foreach ($this->lookups() as $key => [$cls, $priced, $coded, $colored]) {
             $rows = $cls::orderBy('sort')->orderBy('name')->get();
             $cfg[$key] = $rows->pluck('name')->all();
             if ($coded) {
-                $cfg['locationCode'] = $rows->filter(fn ($r) => $r->code)
+                $cfg[$coded] = $rows->filter(fn ($r) => $r->code)
                     ->mapWithKeys(fn ($r) => [$r->name => $r->code])->all();
             }
             if ($priced) {
@@ -260,20 +461,32 @@ class TruckingV2Service
         $lockedIds = TruckingPriceRow::query()->whereNotNull('location_id')->distinct()->pluck('location_id');
         $cfg['locationLocked'] = TruckingLocation::whereIn('id', $lockedIds)->pluck('name')->all();
 
-        // Khách hàng + thông tin + bảng giá
-        $customers = TruckingCustomer::with('priceRows')->orderBy('name')->get();
+        // Khách hàng + thông tin + bảng giá.
+        //  - $withPrices=true  : kèm full priceList (trang dùng priceFor: Bảng kê / Tạo bảng kê).
+        //  - $priceCounts=true : chỉ kèm priceCount cho badge (trang Bảng giá lazy-load từng khách).
+        //  - cả hai false      : không bảng giá (trang Lô hàng / Cài đặt).
+        // Lưu ý: KHÔNG set key 'priceList' ở chế độ count — để save (reconcileCustomers) không
+        // tưởng nhầm "gửi danh sách rỗng" rồi xóa sạch bảng giá của khách chưa mở.
+        $customers = TruckingCustomer::query()
+            ->when($withPrices, fn ($q) => $q->with('priceRows'))
+            ->when($priceCounts, fn ($q) => $q->withCount('priceRows'))
+            ->orderBy('name')->get();
         $cfg['customers'] = $customers->pluck('name')->all();
-        $cfg['customerInfo'] = $customers->mapWithKeys(fn ($c) => [$c->name => [
-            'shortName' => $c->short_name ?? '',
-            'taxCode'   => $c->tax_code ?? '',
-            'phone'     => $c->phone ?? '',
-            'contact'   => $c->contact ?? '',
-            'email'     => $c->email ?? '',
-            'termDays'  => $c->term_days !== null ? (string) $c->term_days : '',
-            'address'   => $c->address ?? '',
-            'note'      => $c->note ?? '',
-            'priceList' => $c->priceRows->map(fn ($p) => $this->priceRowToArray($p))->all(),
-        ]])->all();
+        $cfg['customerInfo'] = $customers->mapWithKeys(function ($c) use ($withPrices, $priceCounts) {
+            $entry = [
+                'shortName' => $c->short_name ?? '',
+                'taxCode'   => $c->tax_code ?? '',
+                'phone'     => $c->phone ?? '',
+                'contact'   => $c->contact ?? '',
+                'email'     => $c->email ?? '',
+                'termDays'  => $c->term_days !== null ? (string) $c->term_days : '',
+                'address'   => $c->address ?? '',
+                'note'      => $c->note ?? '',
+            ];
+            if ($withPrices)  $entry['priceList']  = $c->priceRows->map(fn ($p) => $this->priceRowToArray($p))->all();
+            if ($priceCounts) $entry['priceCount'] = (int) ($c->price_rows_count ?? 0);
+            return [$c->name => $entry];
+        })->all();
 
         // Đội xe + loại
         $vehicles = TruckingVehicle::orderBy('plate')->get();
@@ -288,6 +501,69 @@ class TruckingV2Service
         $cfg['freeTimeHours'] = TruckingSetting::get('free_time_hours', '4');
 
         return $cfg;
+    }
+
+    /**
+     * Bảng giá của ĐÚNG 1 khách (lazy-load cho trang Bảng giá). Dùng toBase() để KHÔNG
+     * hydrate model Eloquent — chỉ đọc + serialize nên stdClass đủ; bảng giá lớn (hàng
+     * trăm dòng) nhờ vậy nhẹ RAM/CPU hơn nhiều.
+     */
+    public function customerPriceList(string $name): array
+    {
+        $name = trim($name);
+        if ($name === '') return [];
+        $custId = TruckingCustomer::where('name', $name)->value('id');
+        if (! $custId) return [];
+
+        return TruckingPriceRow::where('customer_id', $custId)->orderBy('sort')
+            ->toBase()->get()
+            ->map(fn ($p) => $this->priceRowToArray($p))->all();
+    }
+
+    /**
+     * Cfg TỐI THIỂU cho bảng danh sách Lô hàng (không có popup): chỉ màu theo dõi (chip
+     * "chưa điền" trên dòng), ngưỡng free time (cột lịch trình) và VAT mặc định (thêm lô).
+     * Toàn bộ danh mục dropdown (địa điểm, kho, khách, loại cont...) lazy-load khi mở popup.
+     */
+    public function shipmentBoardConfig(): array
+    {
+        return [
+            'costColors'    => TruckingCostItem::whereNotNull('color')->where('color', '!=', '')
+                                  ->pluck('color', 'name')->all(),
+            'freeTimeHours' => TruckingSetting::get('free_time_hours', '4'),
+            'vatDefault'    => [
+                'hph' => TruckingSetting::get('vat_default_hph', '8'),
+                'icd' => TruckingSetting::get('vat_default_icd', '0'),
+            ],
+        ];
+    }
+
+    /**
+     * Cfg cho trang Bảng giá: chỉ khách hàng (+ đếm dòng giá cho badge) và địa điểm
+     * (autocomplete trong PriceList). KHÔNG nạp các danh mục khác (kho/payer/loại cont...)
+     * vì trang Bảng giá không dùng.
+     */
+    public function priceBookConfig(): array
+    {
+        $locations = TruckingLocation::orderBy('sort')->orderBy('name')->get();
+        $customers = TruckingCustomer::withCount('priceRows')->orderBy('name')->get();
+
+        return [
+            'locations'    => $locations->pluck('name')->all(),
+            'locationCode' => $locations->filter(fn ($l) => $l->code)->mapWithKeys(fn ($l) => [$l->name => $l->code])->all(),
+            'customers'    => $customers->pluck('name')->all(),
+            'customerInfo' => $customers->mapWithKeys(fn ($c) => [$c->name => [
+                'shortName' => $c->short_name ?? '',
+                'taxCode'   => $c->tax_code ?? '',
+                'phone'     => $c->phone ?? '',
+                'contact'   => $c->contact ?? '',
+                'email'     => $c->email ?? '',
+                'termDays'  => $c->term_days !== null ? (string) $c->term_days : '',
+                'address'   => $c->address ?? '',
+                'note'      => $c->note ?? '',
+                'priceCount' => (int) ($c->price_rows_count ?? 0),
+            ]])->all(),
+        ];
     }
 
     /** Lưu toàn bộ cfg (tương thích cũ) — gọi reconcile cho mọi key có mặt. */
@@ -336,13 +612,13 @@ class TruckingV2Service
     public function catalogKeys(): array { return array_keys($this->lookups()); }
 
     // --- reconcile từng bảng (dùng chung cho saveConfig & endpoint riêng) ---
-    private function reconcileLookup(string $cls, bool $priced, bool $coded, bool $colored, array $cfg, string $key): void
+    private function reconcileLookup(string $cls, bool $priced, $coded, bool $colored, array $cfg, string $key): void
     {
         $names = array_values(array_filter(array_map('trim', $cfg[$key] ?? []), fn ($v) => $v !== ''));
         $cls::whereNotIn('name', $names ?: [''])->delete();
         foreach ($names as $i => $name) {
             $attrs = ['sort' => $i];
-            if ($coded)   $attrs['code']  = $cfg['locationCode'][$name] ?? null;
+            if ($coded)   $attrs['code']  = $cfg[$coded][$name] ?? null;
             if ($priced)  $attrs['default_price'] = isset($cfg['prices'][$name]) ? $this->inMoney($cfg['prices'][$name]) : null;
             if ($colored) $attrs['color'] = $cfg['costColors'][$name] ?? null;
             $cls::updateOrCreate(['name' => $name], $attrs);
@@ -543,9 +819,9 @@ class TruckingV2Service
     }
 
     /**
-     * "Điểm Hạ" → location_id theo KÝ HIỆU (code).
-     * Khớp theo code; nếu không có thử khớp theo name; chưa có thì tạo mới
-     * (name = code) rồi link. Trả id để sau xử lý quan hệ.
+     * "Điểm Hạ" → location_id: CHỈ khớp địa điểm đã có (theo code rồi name),
+     * KHÔNG tự tạo địa điểm mới từ điểm hạ. Danh mục Địa điểm được nạp từ
+     * cột FROM + TO (xem registerLocationCode). Chưa khớp → null.
      */
     private function resolveLocationId(?string $code): ?int
     {
@@ -555,13 +831,27 @@ class TruckingV2Service
         $loc = TruckingLocation::where('code', $code)->first()
             ?? TruckingLocation::where('name', $code)->first();
 
+        return $loc?->id;
+    }
+
+    /**
+     * Đăng ký 1 KÝ HIỆU (FROM / TO) vào danh mục Địa điểm.
+     * Đã có code → giữ; có name trùng nhưng thiếu code → gán code;
+     * chưa có → tạo mới (name = code = ký hiệu) để user đặt tên sau.
+     */
+    private function registerLocationCode(?string $code): void
+    {
+        $code = trim((string) $code);
+        if ($code === '') return;
+
+        $loc = TruckingLocation::where('code', $code)->first()
+            ?? TruckingLocation::where('name', $code)->first();
+
         if (! $loc) {
-            $loc = TruckingLocation::create(['name' => $code, 'code' => $code]);
+            TruckingLocation::create(['name' => $code, 'code' => $code]);
         } elseif (! $loc->code) {
             $loc->update(['code' => $code]);
         }
-
-        return $loc->id;
     }
 
     /**
@@ -604,16 +894,20 @@ class TruckingV2Service
                 }
             }
 
-            // 4 cột TO → tự thêm vào danh mục Kho (warehouses)
+            // Ký hiệu FROM + TO → danh mục Địa điểm; đồng thời TO → danh mục Kho.
+            // (Điểm Hạ KHÔNG dùng để tạo địa điểm nữa.)
             $whNames = [];
             foreach ($rows as $p) {
+                $this->registerLocationCode($p['from'] ?? null);
                 foreach (['to1', 'to2', 'to3', 'to4'] as $k) {
                     $v = trim((string) ($p[$k] ?? ''));
-                    if ($v !== '') $whNames[$v] = true;
+                    if ($v === '') continue;
+                    $this->registerLocationCode($v);
+                    $whNames[$v] = true;
                 }
             }
             foreach (array_keys($whNames) as $name) {
-                TruckingWarehouse::firstOrCreate(['name' => $name]);
+                TruckingWarehouse::firstOrCreate(['name' => $name], ['code' => $name]);
             }
 
             $cust->load('priceRows');
@@ -635,6 +929,31 @@ class TruckingV2Service
             ->map(fn ($st) => $this->statementToArray($st))->all();
     }
 
+    /**
+     * Danh sách bảng kê cho trang Bảng kê (KePage) — CHỈ tóm tắt + payments, KHÔNG nạp
+     * lines (snapshot từng lô) vì trang danh sách không hiển thị. Tránh hydrate hàng trăm
+     * dòng statement_lines vô ích.
+     */
+    public function statementsForList(): array
+    {
+        return TruckingStatement::with(['payments', 'customer'])->orderBy('id')->get()
+            ->map(fn ($st) => [
+                'id'       => $st->id,
+                'no'       => $st->no,
+                'customer' => $st->customer_name ?? $st->customer?->name ?? '',
+                'date'     => $this->outDate($st->date),
+                'from'     => $this->outDate($st->period_from),
+                'to'       => $this->outDate($st->period_to),
+                'tongThu'  => (int) round((float) $st->total),
+                'payments' => $st->payments->map(fn ($p) => [
+                    'id'     => $p->id,
+                    'date'   => $this->outDate($p->date),
+                    'amount' => $this->outMoney($p->amount),
+                    'note'   => $p->note ?? '',
+                ])->all(),
+            ])->all();
+    }
+
     public function statementToArray(TruckingStatement $st): array
     {
         return [
@@ -651,11 +970,20 @@ class TruckingV2Service
                 'booking'   => $l->booking ?? '',
                 'sheet'     => $l->sheet ?? '',
                 'io'        => $l->io ?? '',
+                'declNo'    => $l->decl_no ?? '',
+                'contType'  => $l->cont_type ?? '',
+                'inv'       => $l->inv ?? '',
+                'contNo'    => $l->cont_no ?? '',
+                'bks'       => $l->bks ?? '',
                 'from'      => $l->from_loc ?? '',
                 'to'        => $l->to_loc ?? '',
                 'date'      => $this->outDate($l->date),
                 'contLabel' => $l->cont_label ?? '',
                 'phaiThu'   => (int) round((float) $l->phai_thu),
+                'cuoc'      => (int) round((float) $l->cuoc),
+                'thanhLy'   => (int) round((float) $l->thanh_ly),
+                'note'      => $l->note ?? '',
+                'detail'    => $l->detail,
             ])->all(),
             'payments'  => $st->payments->map(fn ($p) => [
                 'id'     => $p->id,
@@ -694,11 +1022,20 @@ class TruckingV2Service
                     'booking'     => $this->str($l['booking'] ?? null),
                     'sheet'       => $this->str($l['sheet'] ?? null),
                     'io'          => $this->str($l['io'] ?? null),
+                    'decl_no'     => $this->str($l['declNo'] ?? null),
+                    'cont_type'   => $this->str($l['contType'] ?? null),
+                    'inv'         => $this->str($l['inv'] ?? null),
+                    'cont_no'     => $this->str($l['contNo'] ?? null),
+                    'bks'         => $this->str($l['bks'] ?? null),
                     'from_loc'    => $this->str($l['from'] ?? null),
                     'to_loc'      => $this->str($l['to'] ?? null),
                     'date'        => $this->inDate($l['date'] ?? null),
                     'cont_label'  => $this->str($l['contLabel'] ?? null),
                     'phai_thu'    => $this->inMoney($l['phaiThu'] ?? null) ?? 0,
+                    'cuoc'        => $this->inMoney($l['cuoc'] ?? null) ?? 0,
+                    'thanh_ly'    => $this->inMoney($l['thanhLy'] ?? null) ?? 0,
+                    'note'        => $this->str($l['note'] ?? null),
+                    'detail'      => is_array($l['detail'] ?? null) ? $l['detail'] : null,
                     'sort'        => $i,
                 ]);
             }

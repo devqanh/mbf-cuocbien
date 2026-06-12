@@ -49,6 +49,7 @@
     .ke-printonly { display: inline !important; }
   }
   @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+  @keyframes trk-spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }
 /* tích hợp layout app */
 main.app-body{padding:0 !important;}
 #trk-root{overflow:hidden;background:var(--bg);}

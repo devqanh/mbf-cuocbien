@@ -13,6 +13,7 @@ const onlyDigits = (s) => (s || "").toString().replace(/[^\d]/g, "");
 const groupVND = (d) => { d = onlyDigits(d); return d ? d.replace(/\B(?=(\d{3})+(?!\d))/g, ".") : ""; };
 const toNum = (d) => { d = onlyDigits(d); return d ? parseInt(d, 10) : 0; };
 const fmtVND = (n) => (n || 0).toLocaleString("vi-VN") + " ₫";
+const fmtNum = (n) => (n || 0).toLocaleString("vi-VN");   // số đầy đủ, có dấu phân cách, không làm tròn
 const fmtShort = (n) => {
   n = n || 0;
   if (n >= 1e9) return (n / 1e9).toFixed(n % 1e9 ? 1 : 0).replace(".", ",") + " tỷ";
@@ -414,7 +415,7 @@ const fmtHours = (h) => {
   return (neg ? "-" : "") + (mm ? `${hh}h${String(mm).padStart(2, "0")}` : `${hh}h`);
 };
 
-window.__lib = { useState, useRef, useMemo, useEffect, useCallback, onlyDigits, groupVND, toNum, fmtVND, fmtShort, fmtDate, PAYERS, VAT_RATE, I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours };
+window.__lib = { useState, useRef, useMemo, useEffect, useCallback, onlyDigits, groupVND, toNum, fmtVND, fmtNum, fmtShort, fmtDate, PAYERS, VAT_RATE, I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours };
 })();
 
 </script>
@@ -422,7 +423,7 @@ window.__lib = { useState, useRef, useMemo, useEffect, useCallback, onlyDigits, 
 
 (() => {
 const { useState, useMemo } = React;
-const { I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, fmtVND, fmtShort, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum } = window.__lib;
+const { I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, fmtVND, fmtNum, fmtShort, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum } = window.__lib;
 
 /* datetime-local field */
 function DTField({ value, onChange }) {
@@ -715,7 +716,7 @@ function CostLineRows({ rows = [], onChange, options = [], onCreate, payers = []
         return (
         <div key={e.id} style={{ display: "grid", gridTemplateColumns: cols, gap: 9, alignItems: "center", padding: "5px 0", background: locked ? "var(--accent-weak-2)" : (e.billable ? "var(--good-weak)" : "transparent"), borderRadius: 8 }}>
           {locked
-            ? <div title="Khoản từ “Thuê xe ngoài” (Thông tin lô) — sửa số tiền được, không xóa được ở đây" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "var(--ink-2)", padding: "0 4px", minWidth: 0 }}><span style={{ color: "var(--accent)", flexShrink: 0 }}><I.link /></span><span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.item || "Cước xe ngoài"}</span></div>
+            ? <div title="Khoản liên kết từ Thông tin lô — sửa số tiền được, không xóa được ở đây (gỡ ở Thông tin lô)" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "var(--ink-2)", padding: "0 4px", minWidth: 0 }}><span style={{ color: "var(--accent)", flexShrink: 0 }}><I.link /></span><span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.item || "Cước xe ngoài"}</span></div>
             : <Combo value={e.item} onChange={(x) => pickItem(e, x)} options={options} onCreate={onCreate} placeholder="Chọn khoản chi phí…" small />}
           <Money value={e.amount} onChange={(x) => set(e.id, { amount: x })} dim />
           <Combo value={e.payer} onChange={(x) => set(e.id, { payer: x })} options={payers} onCreate={onCreatePayer} placeholder="Người chi…" small />
@@ -982,7 +983,8 @@ function Seg({ value, onChange, options }) {
 function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], onClose, onDelete, canDelete, isHph, cfg = {}, addCfg }) {
   const set = (np) => patch(np);
   const add = (k, v) => addCfg && addCfg(k, v);
-  const hqFilled = [ship.declNo, ship.declNote, ship.thanhLy, ship.cshtNote].filter((v) => (v || "").toString().trim()).length;
+  const hqFee = ((ship.cost && ship.cost.items) || []).some((it) => it.src === "thanhLyFee" && toNum(it.amount) > 0);
+  const hqFilled = [ship.declNo, ship.declNote, ship.thanhLy, ship.cshtNote].filter((v) => (v || "").toString().trim()).length + (hqFee ? 1 : 0);
   const [hqOpen, setHqOpen] = useState(false);
   // Thuê xe ngoài → 1 dòng chi phí "Cước xe ngoài" (src=extTruck) link sang Chi phí lô hàng
   const cost = ship.cost || {};
@@ -995,6 +997,16 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
     else if (!on && extLine) setCostItems(costItems.filter((it) => it.src !== "extTruck"));
   };
   const setExt = (np) => setCostItems(costItems.map((it) => (it.src === "extTruck" ? { ...it, ...np } : it)));
+  // Phí thanh lý tờ khai (Hải Quan) → 1 dòng chi phí "Phí thanh lý tờ khai" (src=thanhLyFee) link sang Chi phí lô hàng
+  const tlLine = costItems.find((it) => it.src === "thanhLyFee");
+  const setTlFee = (val) => {
+    if (toNum(val) > 0) {
+      if (tlLine) setCostItems(costItems.map((it) => (it.src === "thanhLyFee" ? { ...it, amount: val } : it)));
+      else setCostItems([...costItems, { id: Date.now() + Math.random(), src: "thanhLyFee", item: "Phí thanh lý tờ khai", amount: val, payer: "", date: "", billable: false, color: "", note: "" }]);
+    } else if (tlLine) {
+      setCostItems(costItems.filter((it) => it.src !== "thanhLyFee"));
+    }
+  };
   const sibOpts = siblings.map((s) => ({ value: s.id, label: (s.contNo || "(chưa có cont)") + " — " + (s.booking || "(chưa có booking)") }));
   const raMode = ship.raMode || "self";
   const other = (raMode === "other" && ship.raOtherId != null) ? siblings.find((s) => s.id === ship.raOtherId) : null;
@@ -1083,6 +1095,9 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <Field label="Số tờ khai"><Txt value={ship.declNo} onChange={(x) => set({ declNo: x })} placeholder="VD: 103456789012" /></Field>
               <Field label="Ngày thanh lý"><DateField value={ship.thanhLy} onChange={(x) => set({ thanhLy: x })} /></Field>
+            </div>
+            <div style={{ marginTop: 12, maxWidth: 240 }}>
+              <Field label="Phí thanh lý tờ khai" hint="link sang Chi phí"><Money value={tlLine ? tlLine.amount : ""} onChange={(x) => setTlFee(x)} dim /></Field>
             </div>
             <div style={{ marginTop: 12 }}>
               <Field label="Ghi chú tờ khai">
@@ -1226,10 +1241,10 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
 
 /* ===================== CONFIG (master data) POPUP ===================== */
 const CFG_GROUPS = [
-  { key: "locations", label: "Địa điểm", hint: "depot, cảng, ICD, KCN — dùng cho Tuyến · thêm ký hiệu viết tắt", ph: "VD: Cảng Tân Vũ", coded: true },
+  { key: "locations", label: "Địa điểm", hint: "depot, cảng, ICD, KCN — dùng cho Tuyến · thêm ký hiệu viết tắt; tự thêm khi import bảng giá (cột FROM + TO)", ph: "VD: Cảng Tân Vũ", coded: true, codeKey: "locationCode", codeNameLabel: "Tên địa điểm" },
   { key: "customers", label: "Khách hàng", hint: "quản lý khách hàng — MST, liên hệ, hạn thanh toán, ghi chú…", ph: "VD: Canon Vietnam" },
   { key: "contTypes", label: "Loại container", hint: "dùng cho cột Cont", ph: "VD: 40HC" },
-  { key: "warehouses", label: "Kho", hint: "kho hàng — dùng cho lô (chọn tối đa 3); tự thêm khi import bảng giá (cột TO)", ph: "VD: Kho A2" },
+  { key: "warehouses", label: "Kho", hint: "kho hàng — dùng cho lô (chọn tối đa 3) · thêm ký hiệu viết tắt; tự thêm khi import bảng giá (cột TO)", ph: "VD: Kho A2", coded: true, codeKey: "warehouseCode", codeNameLabel: "Tên kho" },
   { key: "payers", label: "Bên thanh toán", hint: "dùng cho mọi dòng chi phí", ph: "VD: Tài xế" },
   { key: "costItems", label: "Khoản chi phí", hint: "gắn màu “theo dõi” cho khoản cần nhắc khi chưa điền số tiền — dùng chung cho mọi lô", ph: "VD: Phí cân xe", colored: true },
   { key: "choHoItems", label: "Khoản thu/chi hộ", hint: "dùng cho mục Thu chi hộ ở cả Chi phí & Doanh thu · có đơn giá mặc định", ph: "VD: Nâng", priced: true },
@@ -1500,7 +1515,7 @@ function PriceList({ rows = [], onChange, onImported, cfg = {}, customer }) {
           </div>
           <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 8, lineHeight: 1.5 }}>
             Cột nhận dạng theo tiêu đề: <b>Loại · Điểm Hạ · KIND · FROM · TO 1..4 · Distance (km) · Transport fee 40FT/20FT · Fuel fee 40FT/20FT</b>.
-            Trùng tuyến (Loại+Điểm Hạ+KIND+FROM+TO) sẽ cập nhật giá; chưa có thì tạo mới. Điểm Hạ tự link/khởi tạo ký hiệu địa điểm.
+            Trùng tuyến (Loại+Điểm Hạ+KIND+FROM+TO) sẽ cập nhật giá; chưa có thì tạo mới. Ký hiệu ở <b>FROM</b> và <b>TO</b> tự thêm vào danh mục <b>Địa điểm</b>; các <b>TO</b> đồng thời thêm vào danh mục <b>Kho</b>.
           </div>
         </div>
       ) : (
@@ -1664,8 +1679,15 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap 
   const setPrice = (name, val) => setCfg("prices", { ...prices, [name]: val });
   const vehType = cfg.vehicleType || {};
   const setVehType = (name, val) => setCfg("vehicleType", { ...vehType, [name]: val });
-  const locCode = cfg.locationCode || {};
-  const setLocCode = (name, val) => setCfg("locationCode", { ...locCode, [name]: val });
+  const codeKey = (g && g.codeKey) || "locationCode";
+  const locCode = cfg[codeKey] || {};
+  const setLocCode = (name, val) => setCfg(codeKey, { ...locCode, [name]: val });
+  // Phát hiện trùng ký hiệu trong cùng danh mục (chuẩn hóa hoa + bỏ khoảng trắng)
+  const normCode = (c) => (c || "").toString().trim().toUpperCase();
+  const codeCounts = {};
+  if (g && g.coded) list.forEach((nm) => { const c = normCode(locCode[nm]); if (c) codeCounts[c] = (codeCounts[c] || 0) + 1; });
+  const isDupCode = (nm) => { const c = normCode(locCode[nm]); return !!c && codeCounts[c] > 1; };
+  const hasDupCode = !!(g && g.coded) && Object.values(codeCounts).some((n) => n > 1);
   const costColors = cfg.costColors || {};
   const setColor = (name, val) => { const nc = { ...costColors }; if (val) nc[name] = val; else delete nc[name]; setCfg("costColors", nc); };
   const vatDefault = cfg.vatDefault || { hph: "8", icd: "0" };
@@ -1681,7 +1703,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap 
   const rename = (i, v) => {
     const old = list[i]; const next = [...list]; next[i] = v; setCfg(sel, next);
     if (v === old) return;
-    if (g && g.coded)   rekey("locationCode", locCode, old, v);
+    if (g && g.coded)   rekey(codeKey, locCode, old, v);
     if (g && g.priced)  rekey("prices", prices, old, v);
     if (g && g.colored) rekey("costColors", costColors, old, v);
     if (g && g.fleet)   rekey("vehicleType", vehType, old, v);
@@ -1689,7 +1711,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap 
   const remove = (i) => {
     const old = list[i]; setCfg(sel, list.filter((_, j) => j !== i));
     const drop = (mapKey, map) => { if (map[old] === undefined) return; const m = { ...map }; delete m[old]; setCfg(mapKey, m); };
-    if (g && g.coded)   drop("locationCode", locCode);
+    if (g && g.coded)   drop(codeKey, locCode);
     if (g && g.priced)  drop("prices", prices);
     if (g && g.colored) drop("costColors", costColors);
     if (g && g.fleet)   drop("vehicleType", vehType);
@@ -1725,15 +1747,17 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap 
               {dirty
                 ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "var(--warn)" }}><span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--warn)" }} /> Chưa lưu</span>
                 : <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600, color: "var(--good)" }}><I.check /> Đã lưu</span>}
-              <button type="button" onClick={onSave} disabled={!dirty || saving}
+              <button type="button" onClick={onSave} disabled={!dirty || saving || hasDupCode}
+                title={hasDupCode ? "Có ký hiệu bị trùng — sửa trước khi lưu" : ""}
                 style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 14px", fontSize: 13, fontWeight: 600, borderRadius: 9, border: "none",
-                  cursor: dirty && !saving ? "pointer" : "default", color: dirty && !saving ? "#fff" : "var(--ink-4)", background: dirty && !saving ? "var(--accent)" : "var(--line-2)",
-                  boxShadow: dirty && !saving ? "0 1px 2px rgba(42,111,219,.4)" : "none" }}>
+                  cursor: dirty && !saving && !hasDupCode ? "pointer" : "default", color: dirty && !saving && !hasDupCode ? "#fff" : "var(--ink-4)", background: dirty && !saving && !hasDupCode ? "var(--accent)" : "var(--line-2)",
+                  boxShadow: dirty && !saving && !hasDupCode ? "0 1px 2px rgba(42,111,219,.4)" : "none" }}>
                 <I.check /> {saving ? "Đang lưu…" : "Lưu mục này"}
               </button>
             </div>
           </div>
           <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginBottom: 10 }}>{g.hint}</div>
+          {hasDupCode && <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: "var(--danger)", background: "#fce8e8", border: "1px solid #f3c9c9", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>⚠ Có ký hiệu bị trùng — mỗi ký hiệu phải là duy nhất. Sửa các ô viền đỏ trước khi lưu.</div>}
           {sel === "customers" ? (
             <CustomerManager cfg={cfg} setCfg={setCfg} />
           ) : g.freetime ? (
@@ -1780,14 +1804,15 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap 
                   : "24px 1fr 28px";
                 const head = g.priced && g.colored ? [<span key="i" />, <span key="n">Tên khoản</span>, <span key="p" style={{ textAlign: "right" }}>Đơn giá mặc định</span>, <span key="c" style={{ textAlign: "center" }}>Theo dõi</span>, <span key="x" />]
                   : g.priced ? [<span key="i" />, <span key="n">Tên khoản</span>, <span key="p" style={{ textAlign: "right" }}>Đơn giá mặc định</span>, <span key="x" />]
-                  : g.coded ? [<span key="i" />, <span key="n">Tên địa điểm</span>, <span key="p">Ký hiệu</span>, <span key="x" />]
+                  : g.coded ? [<span key="i" />, <span key="n">{g.codeNameLabel || "Tên"}</span>, <span key="p">Ký hiệu</span>, <span key="x" />]
                   : g.fleet ? [<span key="i" />, <span key="n">Biển số</span>, <span key="p" style={{ textAlign: "center" }}>Loại xe</span>, <span key="x" />]
                   : null;
                 return head && <div style={{ display: "grid", gridTemplateColumns: grid, gap: 8, padding: "0 0 4px", fontSize: 11, fontWeight: 600, color: "var(--ink-4)", textTransform: "uppercase", letterSpacing: "0.04em" }}>{head}</div>;
               })()}
               <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: 300, overflowY: "auto" }}>
                 {list.map((it, i) => {
-                  const codeLocked = !!g.coded && locked.has(it); // chỉ khóa Ô KÝ HIỆU (đang được bảng giá link)
+                  const codeLocked = !!g.coded && codeKey === "locationCode" && locked.has(it); // chỉ khóa Ô KÝ HIỆU địa điểm (đang được bảng giá link)
+                  const dupCode = isDupCode(it);
                   const rowGrid = g.priced && g.colored ? "24px 1fr 150px 56px 28px"
                     : g.priced ? "24px 1fr 150px 28px"
                     : g.coded ? "24px 1fr 130px 28px"
@@ -1807,9 +1832,9 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap 
                       </div>
                     )}
                     {g.coded && <input value={locCode[it] || ""} readOnly={codeLocked} onChange={(e) => { if (!codeLocked) setLocCode(it, e.target.value); }} placeholder="VD: TV"
-                      title={codeLocked ? "Ký hiệu đang được bảng giá dùng — không sửa để giữ liên kết" : ""}
-                      style={{ width: "100%", padding: "7px 10px", fontSize: 13, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 8, outline: "none", textTransform: "uppercase", background: codeLocked ? "var(--line-2)" : "#fff", color: codeLocked ? "var(--ink-3)" : "var(--ink)", cursor: codeLocked ? "not-allowed" : "text" }}
-                      onFocus={(e) => { if (!codeLocked) e.target.style.borderColor = "var(--accent)"; }} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />}
+                      title={codeLocked ? "Ký hiệu đang được bảng giá dùng — không sửa để giữ liên kết" : (dupCode ? "Ký hiệu bị trùng với mục khác" : "")}
+                      style={{ width: "100%", padding: "7px 10px", fontSize: 13, fontWeight: 600, border: `1px solid ${dupCode ? "var(--danger)" : "var(--line)"}`, borderRadius: 8, outline: "none", textTransform: "uppercase", background: codeLocked ? "var(--line-2)" : (dupCode ? "#fce8e8" : "#fff"), color: codeLocked ? "var(--ink-3)" : (dupCode ? "var(--danger)" : "var(--ink)"), cursor: codeLocked ? "not-allowed" : "text" }}
+                      onFocus={(e) => { if (!codeLocked) e.target.style.borderColor = "var(--accent)"; }} onBlur={(e) => (e.target.style.borderColor = dupCode ? "var(--danger)" : "var(--line)")} />}
                     {g.fleet && (
                       <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 8, padding: 2 }}>
                         {["MBF", "Ngoài"].map((opt) => {
@@ -1863,7 +1888,7 @@ window.__pop = { CostPopup, RevenuePopup, CostPopupICD, RevenuePopupICD, InfoPop
 
 (() => {
 const { useState, useMemo, useEffect } = React;
-const { I, fmtVND, fmtShort, fmtDate, calcCost, calcRev, calcVeh, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn } = window.__lib;
+const { I, fmtVND, fmtNum, fmtShort, fmtDate, calcCost, calcRev, calcVeh, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn } = window.__lib;
 const { CostPopup, RevenuePopup, CostPopupICD, RevenuePopupICD, InfoPopup, ConfigPopup, PriceList, TRACK_COLORS, colorHex } = window.__pop;
 
 /* components dùng chung — export ra window.__ui */
@@ -1931,6 +1956,44 @@ const TD = ({ children, align = "left", sticky, pad = "9px 14px" }) => (
     position: sticky ? "sticky" : "static", left: sticky ? 0 : "auto", background: sticky ? "#fff" : "transparent", zIndex: sticky ? 1 : "auto" }}>{children}</td>
 );
 
+/* Bộ định giá lô theo BẢNG GIÁ của khách — dùng CHUNG cho Tạo bảng kê & Tính lại khi xem. */
+function makePricer(cfg) {
+  const locationCode = cfg.locationCode || {};
+  const codeOf = (name) => { const v = (name || "").toString().trim(); return locationCode[v] || v; };
+  const cont20 = (s) => /20/.test(s.contType || "");
+  const connOf = (s) => { const ft = calcFreeTime(s, cfg.freeTimeHours); return ft ? (ft.connect ? "Connect" : "Disconnect") : null; };
+  const isExport = (s) => (s.io || "").toString().toLowerCase().includes("xu");
+  const kindOf = (s) => s.cru ? (isExport(s) ? "External CRU transportation" : "Internal CRU transportation") : "Transportation 1 way of Import/Export";
+  const nk = (v) => (v || "").toString().trim().toLowerCase();
+  const priceFor = (s) => {
+    const list = ((cfg.customerInfo || {})[s.customer] || {}).priceList || [];
+    const fromRaw = (s.from || "").trim(), dropRaw = (s.to || "").trim();
+    const fromC = codeOf(s.from), dropC = codeOf(s.to), conn = connOf(s), kind = kindOf(s);
+    const eq = (a, b) => !!a && a === b;
+    const fromMatch = (p) => eq(codeOf(p.from), fromC) || eq((p.from || "").trim(), fromRaw);
+    const dropMatch = (p) => {
+      if (!dropRaw) return true;
+      const c = [codeOf(p.to1), (p.to1 || "").trim(), codeOf(p.loc), (p.loc || "").trim()];
+      return c.includes(dropC) || c.includes(dropRaw);
+    };
+    const kindMatch = (p) => nk(p.kind) === nk(kind);
+    let p = list.find((p) => fromMatch(p) && dropMatch(p) && kindMatch(p) && (!conn || (p.conn || "Connect") === conn));
+    if (!p) p = list.find((p) => fromMatch(p) && dropMatch(p) && kindMatch(p));
+    const is20 = cont20(s);
+    const cuoc = p ? toNum(is20 ? p.transFee20 : p.transFee40) : 0;
+    const dau = p ? toNum(is20 ? p.fuelFee20 : p.fuelFee40) : 0;
+    // Chi hộ = các khoản CHI PHÍ lô được tick "Chi hộ" (billable), thu lại từ khách
+    const items = (s.cost && s.cost.items) || [];
+    const choHoItems = items.filter((e) => e.billable).map((e) => ({ item: e.item || "(khoản)", amount: toNum(e.amount) }));
+    const costItems = items.map((e) => ({ item: e.item || "(khoản)", amount: toNum(e.amount), billable: !!e.billable, src: e.src || "" }));
+    const chiHo = choHoItems.reduce((a, e) => a + e.amount, 0);
+    const route = p ? ((p.from || "?") + " → " + (p.to1 || p.loc || "?")) : null;
+    const noDrop = !dropRaw && !!p;
+    return { matched: !!p, conn, kind, is20, cuoc, dau, chiHo, choHoItems, costItems, route, noDrop, phaiThu: cuoc + dau + chiHo };
+  };
+  return { priceFor, codeOf, connOf, cont20, kindOf };
+}
+
 function StatementForm({ hph, icd, cfg, onCancel, onSaved }) {
   const { useState, useMemo } = React;
   const customers = cfg.customers || [];
@@ -1941,30 +2004,8 @@ function StatementForm({ hph, icd, cfg, onCancel, onSaved }) {
   const info = (cfg.customerInfo || {})[cust] || {};
   const today = new Date().toISOString().slice(0, 10);
 
-  // ----- Định giá lô theo BẢNG GIÁ của khách -----
-  const locationCode = cfg.locationCode || {};
-  const codeOf = (name) => { const v = (name || "").toString().trim(); return locationCode[v] || v; };
-  const cont20 = (s) => /20/.test(s.contType || "");                       // loại cont → 20FT/40FT
-  const connOf = (s) => { const ft = calcFreeTime(s, cfg.freeTimeHours); return ft ? (ft.connect ? "Connect" : "Disconnect") : null; };
-  // KIND mục tiêu theo cờ CRU + Nhập/Xuất
-  const isExport = (s) => (s.io || "").toString().toLowerCase().includes("xu"); // "Xuất"
-  const kindOf = (s) => s.cru ? (isExport(s) ? "External CRU transportation" : "Internal CRU transportation") : "Transportation 1 way of Import/Export";
-  const nk = (v) => (v || "").toString().trim().toLowerCase();
-  const priceFor = (s) => {
-    const list = ((cfg.customerInfo || {})[s.customer] || {}).priceList || [];
-    const fromC = codeOf(s.from), dropC = codeOf(s.to), conn = connOf(s), kind = kindOf(s);
-    const fromMatch = (p) => codeOf(p.from) === fromC || (p.from || "").trim() === (s.from || "").trim();
-    // Điểm hạ = cột "Điểm Hạ" (loc) của bảng giá, khớp với Nơi hạ của lô (theo mã hoặc tên)
-    const dropMatch = (p) => { const c = [codeOf(p.loc), (p.loc || "").trim()]; return c.includes(dropC) || c.includes((s.to || "").trim()); };
-    const kindMatch = (p) => nk(p.kind) === nk(kind);
-    let p = list.find((p) => fromMatch(p) && dropMatch(p) && kindMatch(p) && (!conn || (p.conn || "Connect") === conn));
-    if (!p) p = list.find((p) => fromMatch(p) && dropMatch(p) && kindMatch(p)); // nới: bỏ qua Connect nếu không có giờ
-    const is20 = cont20(s);
-    const cuoc = p ? toNum(is20 ? p.transFee20 : p.transFee40) : 0;
-    const dau = p ? toNum(is20 ? p.fuelFee20 : p.fuelFee40) : 0;
-    const chiHo = ((s.rev && s.rev.choHo) || []).reduce((a, e) => a + toNum(e.amount), 0);
-    return { matched: !!p, conn, kind, is20, cuoc, dau, chiHo, phaiThu: cuoc + dau + chiHo };
-  };
+  // ----- Định giá lô theo BẢNG GIÁ của khách (dùng factory chung) -----
+  const { priceFor } = makePricer(cfg);
   const all = useMemo(() => {
     const mk = (s, sheet, date) => ({ s, sheet, date, pr: priceFor(s) });
     const rows = [];
@@ -1982,7 +2023,20 @@ function StatementForm({ hph, icd, cfg, onCancel, onSaved }) {
 
   const save = async () => {
     if (!sel.length) return;
-    const lines = sel.map((x) => ({ id: x.s.id, booking: x.s.booking, sheet: x.sheet, io: x.s.io, from: x.s.from, to: x.s.to, date: x.date, contLabel: (x.sheet === "HPH" ? (x.s.qty + " × " + x.s.contType) : ((x.s.contNo || x.s.contType) + (x.s.contNo ? " · " + x.s.contType : ""))), phaiThu: lineAmt(x) }));
+    const lines = sel.map((x) => {
+      const s = x.s;
+      const thanhLy = ((s.cost && s.cost.items) || []).reduce((a, e) => a + (e.src === "thanhLyFee" ? toNum(e.amount) : 0), 0);
+      const note = (s.ghiChu && s.ghiChu.trim()) || [s.from, s.to].filter(Boolean).join(" → ") + (x.pr.conn ? " · " + x.pr.conn : "");
+      return {
+        id: s.id, booking: s.booking, sheet: x.sheet, io: s.io,
+        declNo: s.declNo || "", contType: s.contType || "", inv: s.inv || "", contNo: s.contNo || "", bks: s.bksVao || s.bksRa || "",
+        from: s.from, to: s.to, date: x.date,
+        contLabel: (x.sheet === "HPH" ? (s.qty + " × " + s.contType) : ((s.contNo || s.contType) + (s.contNo ? " · " + s.contType : ""))),
+        phaiThu: lineAmt(x), cuoc: lineAmt(x), thanhLy, note,
+        // snapshot chi tiết khoản để hiển thị đối soát TĨNH (không cần query realtime khi xem)
+        detail: { matched: x.pr.matched, cuoc: x.pr.cuoc, dau: x.pr.dau, chiHo: x.pr.chiHo, choHoItems: x.pr.choHoItems, costItems: x.pr.costItems, phaiThu: x.pr.phaiThu },
+      };
+    });
     const payload = { id: Date.now(), no: keNo, customer: cust, info, date: today, from, to, lines, tongThu, payments: [], createdAt: new Date().toISOString() };
     // onSaved có thể async + trả về false để huỷ (vd bấm Huỷ ở confirm) → giữ nguyên trang
     const result = await Promise.resolve(onSaved && onSaved(payload));
@@ -2077,7 +2131,7 @@ function StatementForm({ hph, icd, cfg, onCancel, onSaved }) {
                     {x.s.from} → {x.s.to}<div style={{ fontSize: 11, color: "var(--ink-4)" }} className="tnum">{x.sheet === "HPH" ? (x.s.qty + " × " + x.s.contType) : ((x.s.contNo || x.s.contType) + (x.s.contNo ? " · " + x.s.contType : ""))}</div>
                     <div className="ke-noprint" style={{ fontSize: 10.5, marginTop: 3 }}>
                       {x.pr.matched
-                        ? <span style={{ color: "var(--good)" }}>✓ Bảng giá · {x.s.cru ? (/xu/i.test(x.s.io || "") ? "CRU ngoại" : "CRU nội") : "1 chiều"} · {x.pr.conn || "—"} · {x.pr.is20 ? "20FT" : "40FT"} — Cước {fmtShort(x.pr.cuoc)} + Dầu {fmtShort(x.pr.dau)}{x.pr.chiHo ? " + Chi hộ " + fmtShort(x.pr.chiHo) : ""}</span>
+                        ? <span style={{ color: "var(--good)" }}>✓ Bảng giá · {x.s.cru ? (/xu/i.test(x.s.io || "") ? "CRU ngoại" : "CRU nội") : "1 chiều"} · {x.pr.conn || "—"} · {x.pr.is20 ? "20FT" : "40FT"} · <span className="tnum">{x.pr.route}</span>{x.pr.noDrop ? <span style={{ color: "var(--warn)" }}> (lô chưa có Nơi hạ — khớp theo FROM)</span> : null} — <span className="tnum">Cước {fmtNum(x.pr.cuoc)} + Dầu {fmtNum(x.pr.dau)}{x.pr.chiHo ? " + Chi hộ " + fmtNum(x.pr.chiHo) : ""} = {fmtNum(x.pr.phaiThu)} ₫</span></span>
                         : <span style={{ color: "var(--warn)" }}>⚠ Chưa khớp bảng giá{x.pr.chiHo ? " · mới có Chi hộ " + fmtShort(x.pr.chiHo) : " · phải thu 0"}</span>}
                     </div>
                   </td>
@@ -2110,7 +2164,9 @@ function StatementForm({ hph, icd, cfg, onCancel, onSaved }) {
   );
 }
 
-function SavedStatementModal({ st, onClose, onDelete, onUpdate, onSave, isDirty }) {
+/* Thân chi tiết bảng kê (in được) — dùng CHUNG cho modal & trang xem riêng.
+   detailById: { [shipmentId]: { found, matched, cuoc, dau, choHoItems[], costItems[], phaiThu } } để đối soát. */
+function StatementDetailBody({ st, onUpdate, detailById = {} }) {
   const { useState } = React;
   const [payments, setPayments] = useState(st.payments || []);
   const sync = (arr) => { setPayments(arr); onUpdate && onUpdate({ ...st, payments: arr }); };
@@ -2123,32 +2179,27 @@ function SavedStatementModal({ st, onClose, onDelete, onUpdate, onSave, isDirty 
   const daTT = payments.reduce((a, p) => a + toNum(p.amount), 0);
   const conNo = tongThu - daTT;
   const info = st.info || {};
+  const setPeriod = (k, v) => onUpdate && onUpdate({ ...st, [k]: v });   // sửa kỳ cont ra (from/to)
   const th = (txt, align) => <th style={{ textAlign: align || "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>{txt}</th>;
-  const dirty = !!(isDirty && isDirty(st.id));
-  const handleSave = () => { if (onSave) onSave(); };
-  const footer = (
-    <div className="ke-noprint" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
-      <button type="button" onClick={() => { onDelete(st.id); onClose(); }}
-        style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", fontSize: 13, fontWeight: 500, border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--ink-3)", cursor: "pointer" }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = "#fce8e8"; e.currentTarget.style.color = "var(--danger)"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "var(--ink-3)"; }}>
-        <I.trash /> Xóa bảng kê
-      </button>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        {dirty && <span style={{ fontSize: 12, color: "var(--warn)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--warn)" }} />Có thay đổi chưa lưu</span>}
-        <Btn onClick={onClose}>Đóng</Btn>
-        <Btn variant="primary" onClick={handleSave} disabled={!dirty}>Lưu</Btn>
-        <Btn onClick={() => window.print()}>In / Xuất PDF</Btn>
-      </div>
-    </div>
-  );
   return (
-    <Modal title="Bảng kê cần thu" subtitle={st.no + " · " + st.customer} onClose={onClose} footer={footer} width={940} icon={<I.fx />}>
       <div className="ke-print" style={{ padding: "16px 4px 4px", background: "#fff" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 20, marginBottom: 14 }}>
           <div>
             <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em" }}>BẢNG KÊ CẦN THU</div>
-            <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 3 }} className="tnum">Số: {st.no} · Ngày lập: {fmtDate(st.date)}{(st.from || st.to) ? ` · Cont ra: ${fmtDate(st.from) || "…"} – ${fmtDate(st.to) || "…"}` : ""}</div>
+            <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 3 }} className="tnum">Số: {st.no} · Ngày lập: {fmtDate(st.date)}
+              <span className="ke-printonly" style={{ display: "none" }}>{(st.from || st.to) ? ` · Cont ra: ${fmtDate(st.from) || "…"} – ${fmtDate(st.to) || "…"}` : ""}</span>
+            </div>
+            {/* Kỳ cont ra — sửa được để tính lại theo khoảng ngày (ẩn khi in, in dùng dòng text trên) */}
+            <div className="ke-noprint" style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 7, fontSize: 12.5, color: "var(--ink-3)", flexWrap: "wrap" }}>
+              <span style={{ fontWeight: 600 }}>Cont ra từ</span>
+              <input type="date" value={st.from || ""} onChange={(e) => setPeriod("from", e.target.value)}
+                style={{ padding: "5px 8px", fontSize: 12.5, border: "1px solid var(--line)", borderRadius: 7, outline: "none", colorScheme: "light" }} />
+              <span style={{ fontWeight: 600 }}>đến</span>
+              <input type="date" value={st.to || ""} onChange={(e) => setPeriod("to", e.target.value)}
+                style={{ padding: "5px 8px", fontSize: 12.5, border: "1px solid var(--line)", borderRadius: 7, outline: "none", colorScheme: "light" }} />
+              {(st.from || st.to) && <button type="button" onClick={() => onUpdate && onUpdate({ ...st, from: "", to: "" })} title="Xóa khoảng ngày"
+                style={{ border: "none", background: "transparent", color: "var(--ink-4)", cursor: "pointer", fontSize: 12, padding: "2px 4px" }}>✕</button>}
+            </div>
           </div>
           <div style={{ textAlign: "right", fontSize: 12 }}>
             <div style={{ fontWeight: 700, color: "var(--accent)" }}>MBF JOINT STOCK COMPANY</div>
@@ -2167,13 +2218,17 @@ function SavedStatementModal({ st, onClose, onDelete, onUpdate, onSave, isDirty 
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
           <thead><tr style={{ background: "#fafbfc" }}>{th("#", "center")}{th("Lô / Booking")}{th("Tuyến · Cont")}{th("Cont ra")}{th("Phải thu", "right")}</tr></thead>
           <tbody>
-            {st.lines.map((l, i) => (
-              <tr key={l.id}>
-                <td className="tnum" style={{ textAlign: "center", padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-4)" }}>{i + 1}</td>
-                <td style={{ padding: "8px", borderBottom: "1px solid var(--line-2)" }}><div style={{ fontWeight: 600 }} className="tnum">{l.booking || "—"}</div><div style={{ fontSize: 11, color: "var(--ink-4)" }}>{l.sheet} · {l.io}</div></td>
-                <td style={{ padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{l.from} → {l.to}<div style={{ fontSize: 11, color: "var(--ink-4)" }} className="tnum">{l.contLabel}</div></td>
-                <td className="tnum" style={{ padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{fmtDate(l.date) || "—"}</td>
-                <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: "1px solid var(--line-2)", fontWeight: 600 }}>
+            {st.lines.map((l, i) => {
+              const d = detailById[l.id];
+              const diff = d && d.found && (d.phaiThu || 0) !== (l.phaiThu || 0);
+              return (
+              <React.Fragment key={l.id}>
+              <tr>
+                <td className="tnum" style={{ textAlign: "center", padding: "8px", borderBottom: d ? "none" : "1px solid var(--line-2)", color: "var(--ink-4)", verticalAlign: "top" }}>{i + 1}</td>
+                <td style={{ padding: "8px", borderBottom: d ? "none" : "1px solid var(--line-2)", verticalAlign: "top" }}><div style={{ fontWeight: 600 }} className="tnum">{l.booking || "—"}</div><div style={{ fontSize: 11, color: "var(--ink-4)" }}>{l.sheet} · {l.io}</div></td>
+                <td style={{ padding: "8px", borderBottom: d ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top" }}>{l.from} → {l.to}<div style={{ fontSize: 11, color: "var(--ink-4)" }} className="tnum">{l.contLabel}</div></td>
+                <td className="tnum" style={{ padding: "8px", borderBottom: d ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top" }}>{fmtDate(l.date) || "—"}</td>
+                <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d ? "none" : "1px solid var(--line-2)", fontWeight: 600, verticalAlign: "top" }}>
                   <span className="ke-noprint"><span style={{ position: "relative", display: "inline-block", width: 150 }}>
                     <input inputMode="numeric" value={(l.phaiThu || 0).toLocaleString("vi-VN")} onChange={(e) => setLine(l.id, parseInt(e.target.value.replace(/[^\d]/g, ""), 10) || 0)} className="tnum"
                       style={{ width: "100%", padding: "6px 22px 6px 8px", fontSize: 12.5, textAlign: "right", fontWeight: 600, border: "1px solid var(--line)", borderRadius: 7, outline: "none" }}
@@ -2183,7 +2238,28 @@ function SavedStatementModal({ st, onClose, onDelete, onUpdate, onSave, isDirty 
                   <span style={{ display: "none" }} className="ke-printonly">{fmtVND(l.phaiThu)}</span>
                 </td>
               </tr>
-            ))}
+              {d && d.found && (
+                <tr>
+                  <td style={{ borderBottom: "1px solid var(--line-2)" }}></td>
+                  <td colSpan={4} style={{ padding: "0 8px 9px", borderBottom: "1px solid var(--line-2)" }}>
+                    <div style={{ fontSize: 11.5, color: "var(--ink-3)", display: "flex", flexWrap: "wrap", alignItems: "center", gap: "3px 12px", lineHeight: 1.7 }}>
+                      {!d.matched && <span style={{ color: "var(--warn)", fontWeight: 700 }}>⚠ chưa khớp bảng giá</span>}
+                      <span>Cước <b className="tnum" style={{ color: "var(--ink-2)" }}>{fmtNum(d.cuoc)}</b></span>
+                      <span>+ Dầu <b className="tnum" style={{ color: "var(--ink-2)" }}>{fmtNum(d.dau)}</b></span>
+                      {d.choHoItems.map((c, j) => <span key={"h" + j} style={{ color: "var(--good)" }}>+ Chi hộ · {c.item} <b className="tnum">{fmtNum(c.amount)}</b></span>)}
+                      <span style={{ fontWeight: 700 }}>= <b className="tnum" style={{ color: "var(--accent)" }}>{fmtNum(d.phaiThu)} ₫</b></span>
+                      {diff && <span style={{ color: "var(--warn)", fontWeight: 600 }}>≠ đã lưu {fmtNum(l.phaiThu)} — bấm “Tính lại”</span>}
+                      {d.costItems.filter((c) => !c.billable).length > 0 &&
+                        <span style={{ color: "var(--ink-4)" }}>· Chi phí công ty (không thu khách): {d.costItems.filter((c) => !c.billable).map((c) => c.item + " " + fmtNum(c.amount)).join(" · ")}</span>}
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {d && !d.found && (
+                <tr><td style={{ borderBottom: "1px solid var(--line-2)" }}></td><td colSpan={4} style={{ padding: "0 8px 9px", borderBottom: "1px solid var(--line-2)", fontSize: 11.5, color: "var(--ink-4)" }}>Lô không còn trong hệ thống — giữ số đã lưu, không tính lại được.</td></tr>
+              )}
+              </React.Fragment>
+            );})}
           </tbody>
           <tfoot><tr style={{ fontWeight: 700 }}>
             <td colSpan={4} style={{ padding: "11px 8px", borderTop: "1.5px solid var(--line)", textAlign: "right" }}>TỔNG PHẢI THU</td>
@@ -2240,17 +2316,91 @@ function SavedStatementModal({ st, onClose, onDelete, onUpdate, onSave, isDirty 
           </div>
         </div>
       </div>
+  );
+}
+
+/* Hàng nút thao tác bảng kê (Xóa · trạng thái dirty · Lưu · In) dùng chung. */
+function StatementActions({ st, onDelete, onSave, isDirty, onClose, closeLabel = "Đóng" }) {
+  const dirty = !!(isDirty && isDirty(st.id));
+  return (
+    <div className="ke-noprint" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+      <button type="button" onClick={() => onDelete && onDelete(st.id)}
+        style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", fontSize: 13, fontWeight: 500, border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--ink-3)", cursor: "pointer" }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = "#fce8e8"; e.currentTarget.style.color = "var(--danger)"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "var(--ink-3)"; }}>
+        <I.trash /> Xóa bảng kê
+      </button>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {dirty && <span style={{ fontSize: 12, color: "var(--warn)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--warn)" }} />Có thay đổi chưa lưu</span>}
+        {onClose && <Btn onClick={onClose}>{closeLabel}</Btn>}
+        <Btn variant="primary" onClick={() => onSave && onSave()} disabled={!dirty}>Lưu</Btn>
+        <Btn onClick={() => window.print()}>In / Xuất PDF</Btn>
+      </div>
+    </div>
+  );
+}
+
+function SavedStatementModal({ st, onClose, onDelete, onUpdate, onSave, isDirty }) {
+  const footer = <StatementActions st={st} isDirty={isDirty} onSave={onSave} onClose={onClose}
+    onDelete={(id) => { onDelete(id); onClose(); }} />;
+  return (
+    <Modal title="Bảng kê cần thu" subtitle={st.no + " · " + st.customer} onClose={onClose} footer={footer} width={940} icon={<I.fx />}>
+      <StatementDetailBody st={st} onUpdate={onUpdate} />
     </Modal>
   );
 }
 
-function BangGiaPage({ cfg, setCfg, onImported }) {
-  const { useState } = React;
+/* Trang xem bảng kê đã lưu (route riêng) — chi tiết đầy đủ như lúc tạo. */
+function SavedStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUrl, onExcel, onRecalc, detailById }) {
+  const recalcDiff = detailById && (st.lines || []).some((l) => { const d = detailById[l.id]; return d && d.found && (d.phaiThu || 0) !== (l.phaiThu || 0); });
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
+      <div className="ke-noprint" style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 22px", background: "#fff", borderBottom: "1px solid var(--line)" }}>
+        <a href={backUrl} title="Về danh sách bảng kê"
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", fontSize: 13, fontWeight: 600, color: "var(--ink-2)", textDecoration: "none", border: "1px solid var(--line)", borderRadius: 9 }}>
+          <span style={{ transform: "rotate(180deg)", display: "inline-flex" }}><I.arrow /></span> Bảng kê
+        </a>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.01em" }}>Bảng kê cần thu</div>
+          <div className="tnum" style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{st.no} · {st.customer}</div>
+        </div>
+        {onRecalc && <button type="button" onClick={onRecalc} title="Tính lại phải thu từ dữ liệu lô hàng hiện tại"
+          style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 15px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: recalcDiff ? "#fff" : "var(--ink-2)", background: recalcDiff ? "var(--warn)" : "#fff", border: recalcDiff ? "none" : "1px solid var(--line)", borderRadius: 9 }}>
+          <I.fx /> Tính lại{recalcDiff ? " (có chênh lệch)" : ""}
+        </button>}
+        {onExcel && <button type="button" onClick={onExcel}
+          style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 15px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "#fff", background: "var(--good)", border: "none", borderRadius: 9 }}>
+          <I.check /> Xuất Excel
+        </button>}
+      </div>
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "22px" }}>
+        <div style={{ maxWidth: 940, margin: "0 auto", background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "8px 22px 18px" }}>
+          <StatementDetailBody st={st} onUpdate={onUpdate} detailById={detailById || {}} />
+          <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
+            <StatementActions st={st} isDirty={isDirty} onSave={onSave} onDelete={(id) => { Promise.resolve(onDelete && onDelete(id)).then(() => { window.location.href = backUrl; }); }} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BangGiaPage({ cfg, setCfg, onImported, loadPrices }) {
+  const { useState, useEffect } = React;
   const customers = cfg.customers || [];
   const info = cfg.customerInfo || {};
   const [sel, setSel] = useState(customers[0] || null);
   const cur = sel != null && customers.includes(sel) ? sel : (customers[0] || null);
   const data = (cur && info[cur]) || {};
+  const loaded = Array.isArray(data.priceList);   // có key priceList = đã lazy-load xong
+  const [loadingCur, setLoadingCur] = useState(false);
+  // Lazy-load bảng giá của khách đang chọn nếu chưa có (priceList chưa phải mảng)
+  useEffect(() => {
+    if (cur && loadPrices && !Array.isArray((info[cur] || {}).priceList)) {
+      setLoadingCur(true);
+      Promise.resolve(loadPrices(cur)).finally(() => setLoadingCur(false));
+    }
+  }, [cur]);
   const setPrice = (arr) => setCfg("customerInfo", { ...info, [cur]: { ...data, priceList: arr } });
   const priceImported = (arr) => (onImported ? onImported(cur, arr) : setPrice(arr));
   return (
@@ -2261,7 +2411,8 @@ function BangGiaPage({ cfg, setCfg, onImported }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
           {customers.map((name) => {
             const active = cur === name;
-            const n = ((info[name] || {}).priceList || []).length;
+            const ci = info[name] || {};
+            const n = Array.isArray(ci.priceList) ? ci.priceList.length : (ci.priceCount || 0);
             return (
               <button key={name} type="button" onClick={() => setSel(name)}
                 style={{ textAlign: "left", border: "none", cursor: "pointer", borderRadius: 8, padding: "9px 11px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
@@ -2285,7 +2436,9 @@ function BangGiaPage({ cfg, setCfg, onImported }) {
               <div style={{ fontSize: 13.5, color: "var(--ink-3)", marginTop: 3 }}>{cur}{data.taxCode ? ` · MST ${data.taxCode}` : ""}</div>
             </div>
             <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "16px 18px" }}>
-              <PriceList rows={data.priceList || []} onChange={setPrice} onImported={priceImported} cfg={cfg} customer={cur} />
+              {loaded
+                ? <PriceList rows={data.priceList || []} onChange={setPrice} onImported={priceImported} cfg={cfg} customer={cur} />
+                : <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "40px", color: "var(--ink-4)", fontSize: 13.5 }}><i className="bi bi-arrow-repeat" style={{ animation: "trk-spin 0.7s linear infinite" }} /> Đang tải bảng giá…</div>}
             </div>
           </div>
         ) : (
@@ -2312,7 +2465,7 @@ function KePage({ ke, onNew, onOpen }) {
         </div>
         <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
           <div style={{ display: "grid", gridTemplateColumns: "150px 1fr 120px 1fr 150px 150px", gap: 12, padding: "11px 16px", background: "#fafbfc", borderBottom: "1px solid var(--line)", fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-            <div>Số bảng kê</div><div>Khách hàng</div><div>Ngày lập</div><div>Kỳ</div><div style={{ textAlign: "right" }}>Tổng phải thu</div><div style={{ textAlign: "right" }}>Còn lại</div>
+            <div>Số bảng kê</div><div>Khách hàng</div><div>Ngày lập</div><div>Kỳ · cont ra (từ – đến)</div><div style={{ textAlign: "right" }}>Tổng phải thu</div><div style={{ textAlign: "right" }}>Còn lại</div>
           </div>
           {ke.length === 0 && <div style={{ padding: "44px", textAlign: "center", color: "var(--ink-4)", fontSize: 13.5 }}>Chưa có bảng kê nào. Bấm “Tạo bảng kê mới” để bắt đầu.</div>}
           {ke.slice().reverse().map((st) => (
@@ -2336,7 +2489,7 @@ function KePage({ ke, onNew, onOpen }) {
   );
 }
 
-window.__ui = { SortBtn, CellBtn, Badge, EditCell, TH, TD, StatementForm, SavedStatementModal, BangGiaPage, KePage };
+window.__ui = { SortBtn, CellBtn, Badge, EditCell, TH, TD, makePricer, StatementForm, StatementDetailBody, StatementActions, SavedStatementModal, SavedStatementPage, BangGiaPage, KePage };
 })();
 
 </script>

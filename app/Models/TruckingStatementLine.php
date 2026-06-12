@@ -10,12 +10,16 @@ class TruckingStatementLine extends Model
 {
     protected $fillable = [
         'statement_id', 'shipment_id', 'booking', 'sheet', 'io',
-        'from_loc', 'to_loc', 'date', 'cont_label', 'phai_thu', 'sort',
+        'decl_no', 'cont_type', 'inv', 'cont_no', 'bks',
+        'from_loc', 'to_loc', 'date', 'cont_label', 'phai_thu', 'cuoc', 'thanh_ly', 'note', 'detail', 'sort',
     ];
 
     protected $casts = [
         'date'     => 'date',
         'phai_thu' => 'decimal:2',
+        'cuoc'     => 'decimal:2',
+        'thanh_ly' => 'decimal:2',
+        'detail'   => 'array',
         'sort'     => 'integer',
     ];
 

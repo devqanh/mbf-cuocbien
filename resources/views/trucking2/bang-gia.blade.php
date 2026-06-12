@@ -15,6 +15,7 @@ window.__TRK = {
   routes: {
     customers: '{{ route("trucking2.customers.save") }}',
     priceImport: '{{ route("trucking2.priceImport") }}',
+    customerPrices: '{{ route("trucking2.customerPrices") }}',
   },
   boot: @json($boot),
 };
@@ -43,6 +44,14 @@ function PricesApp() {
   const setCfgKey = (key, val) => { setCfgState((c) => ({ ...c, [key]: val })); setDirty(true); };
   // Import đã lưu ở server → cập nhật bảng giá, không coi là thay đổi chưa lưu
   const onImported = (cust, arr) => setCfgState((c) => ({ ...c, customerInfo: { ...(c.customerInfo || {}), [cust]: { ...((c.customerInfo || {})[cust] || {}), priceList: arr } } }));
+  // Lazy-load bảng giá của 1 khách khi mở (không đánh dấu dirty). Tránh nạp toàn bộ khi vào trang.
+  const loadPrices = async (cust) => {
+    if (!cust) return;
+    try {
+      const r = await fetch(ROUTES.customerPrices + "?customer=" + encodeURIComponent(cust), { headers: { "Accept": "application/json" } }).then((x) => x.json());
+      if (r && r.ok) onImported(cust, r.priceList || []);
+    } catch (e) { /* giữ nguyên, người dùng có thể chọn lại */ }
+  };
 
   const save = () => {
     if (!dirty || saving) return;
@@ -80,7 +89,7 @@ function PricesApp() {
           </button>
         </div>
       </header>
-      <BangGiaPage cfg={cfg} setCfg={setCfgKey} onImported={onImported} />
+      <BangGiaPage cfg={cfg} setCfg={setCfgKey} onImported={onImported} loadPrices={loadPrices} />
     </div>
   );
 }
