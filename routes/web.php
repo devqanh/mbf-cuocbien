@@ -103,6 +103,8 @@ Route::middleware('auth')->group(function () {
         });
         Route::middleware('permission:shipments.update')->group(function () {
             Route::post('/shipments',             [TruckingV2Controller::class, 'storeShipment'])->name('shipments.store');
+            Route::post('/shipment-import/check',  [TruckingV2Controller::class, 'checkShipments'])->name('shipmentCheck');
+            Route::post('/shipment-import',        [TruckingV2Controller::class, 'importShipments'])->name('shipmentImport');
             Route::put ('/shipments/{shipment}',  [TruckingV2Controller::class, 'updateShipment'])->name('shipments.update');
             // Mỗi danh mục Cài đặt = 1 endpoint riêng (1 bảng)
             Route::put ('/catalog/{type}',         [TruckingV2Controller::class, 'saveCatalog'])->name('catalog.save');

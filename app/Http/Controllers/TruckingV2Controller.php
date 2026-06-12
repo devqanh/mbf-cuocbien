@@ -98,6 +98,27 @@ class TruckingV2Controller extends Controller
         return response()->json(['ok' => true]);
     }
 
+    /** Kiểm tra trước (dry-run) — không ghi DB, trả danh sách lỗi từng dòng. */
+    public function checkShipments(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'rows' => ['present', 'array'],
+        ]);
+        return response()->json(['ok' => true] + $this->svc->validateShipments($data['rows']));
+    }
+
+    /** Import lô hàng từ Excel — ALL-OR-NOTHING (1 lỗi là không import gì). */
+    public function importShipments(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'sheet' => ['required', 'in:hph,icd'],
+            'rows'  => ['present', 'array'],
+        ]);
+        $res = $this->svc->importShipments($data['sheet'], $data['rows']);
+
+        return response()->json(['ok' => true] + $res);
+    }
+
     // ===================== Config =====================
     /** Lưu RIÊNG 1 danh mục lookup (mỗi tab Cài đặt = 1 bảng). */
     public function saveCatalog(Request $request, string $type): JsonResponse

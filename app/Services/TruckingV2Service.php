@@ -365,6 +365,95 @@ class TruckingV2Service
         if (array_key_exists('freeTimeHours', $cfg)) TruckingSetting::put('free_time_hours', $cfg['freeTimeHours']);
     }
 
+    /** Map lower(name|code) ⇒ tên địa điểm chuẩn (để validate + chuẩn hóa NƠI LẤY/HẠ). */
+    private function locationNameMap(): array
+    {
+        $map = [];
+        foreach (TruckingLocation::get(['name', 'code']) as $l) {
+            if ($l->name) $map[mb_strtolower(trim($l->name))] = $l->name;
+            if ($l->code) $map[mb_strtolower(trim($l->code))] = $l->name ?: $l->code;
+        }
+        return $map;
+    }
+
+    /**
+     * Kiểm tra TRƯỚC toàn bộ dòng import (không ghi DB). Trả danh sách lỗi rõ
+     * ràng theo từng dòng/booking. Quy tắc: khách hàng + NƠI LẤY + NƠI HẠ đều
+     * phải có sẵn trong hệ thống.
+     */
+    public function validateShipmentRows(array $rows): array
+    {
+        $custSet = array_flip(TruckingCustomer::pluck('name')->map(fn ($n) => mb_strtolower(trim($n)))->all());
+        $locMap = $this->locationNameMap();
+        $errors = [];
+
+        foreach ($rows as $i => $row) {
+            $reasons = [];
+            $name = trim((string) ($row['customer'] ?? ''));
+            if ($name === '')                                     $reasons[] = 'Thiếu khách hàng';
+            elseif (! isset($custSet[mb_strtolower($name)]))      $reasons[] = "Khách hàng “{$name}” chưa có trong hệ thống";
+
+            $from = trim((string) ($row['from'] ?? ''));
+            if ($from === '')                                     $reasons[] = 'Thiếu nơi lấy';
+            elseif (! isset($locMap[mb_strtolower($from)]))       $reasons[] = "Nơi lấy “{$from}” chưa có trong danh mục địa điểm";
+
+            $to = trim((string) ($row['to'] ?? ''));
+            if ($to === '')                                       $reasons[] = 'Thiếu nơi hạ';
+            elseif (! isset($locMap[mb_strtolower($to)]))         $reasons[] = "Nơi hạ “{$to}” chưa có trong danh mục địa điểm";
+
+            if ($reasons) {
+                $errors[] = ['line' => $i + 1, 'customer' => $name, 'booking' => (string) ($row['booking'] ?? ''), 'reasons' => $reasons];
+            }
+        }
+        return $errors;
+    }
+
+    /** Dry-run: chỉ kiểm tra, không import. */
+    public function validateShipments(array $rows): array
+    {
+        $errors = $this->validateShipmentRows($rows);
+        return ['valid' => empty($errors), 'total' => count($rows), 'errors' => $errors];
+    }
+
+    /**
+     * Import lô hàng — ALL-OR-NOTHING: chỉ cần 1 dòng lỗi là KHÔNG import gì cả.
+     * NƠI LẤY/HẠ được chuẩn hóa về tên địa điểm chuẩn.
+     */
+    public function importShipments(string $sheet, array $rows): array
+    {
+        $errors = $this->validateShipmentRows($rows);
+        if ($errors) {
+            return ['valid' => false, 'created' => 0, 'ships' => [], 'errors' => $errors, 'total' => count($rows)];
+        }
+
+        $vat = (string) TruckingSetting::get($sheet === 'hph' ? 'vat_default_hph' : 'vat_default_icd', '0');
+        $locMap = $this->locationNameMap();
+        $norm = fn ($v) => $locMap[mb_strtolower(trim((string) $v))] ?? $v;
+
+        return DB::transaction(function () use ($sheet, $rows, $vat, $norm) {
+            $ships = [];
+            foreach ($rows as $row) {
+                $ship = $this->saveShipment([
+                    'customer'     => $row['customer'] ?? null,
+                    'booking'      => $row['booking'] ?? null,
+                    'inv'          => $row['inv'] ?? null,
+                    'io'           => $row['io'] ?? null,
+                    'qty'          => $row['qty'] ?? null,
+                    'contType'     => $row['contType'] ?? null,
+                    'cutOff'       => $row['cutOff'] ?? null,
+                    'from'         => $norm($row['from'] ?? null),
+                    'to'           => $norm($row['to'] ?? null),
+                    'kho'          => $row['kho'] ?? null,
+                    'gioDenDuKien' => $row['gioDenDuKien'] ?? null,
+                    'cost'         => ['items' => []],
+                    'rev'          => ['vatRate' => $vat, 'doanhThu' => [], 'choHo' => [], 'payments' => []],
+                ], $sheet);
+                $ships[] = $this->shipmentToArray($ship);
+            }
+            return ['valid' => true, 'created' => count($ships), 'ships' => $ships, 'errors' => [], 'total' => count($rows)];
+        });
+    }
+
     // ===================================================================
     // PRICE ROWS (bảng giá) — serialize, persist, import
     // ===================================================================

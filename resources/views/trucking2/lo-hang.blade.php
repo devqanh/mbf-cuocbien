@@ -14,6 +14,8 @@ window.__TRK = {
   canDelete: {{ $canDelete ? 'true' : 'false' }},
   routes: {
     shipmentStore: '{{ route("trucking2.shipments.store") }}',
+    shipmentCheck: '{{ route("trucking2.shipmentCheck") }}',
+    shipmentImport: '{{ route("trucking2.shipmentImport") }}',
     shipment: '{{ url("trucking-v2/shipments") }}/',
     catalog: '{{ url("trucking-v2/catalog") }}/',
     customers: '{{ route("trucking2.customers.save") }}',
@@ -31,7 +33,7 @@ window.__TRK = {
 <script type="text/babel" data-presets="react">
 (() => {
 const { useState, useMemo, useEffect, useRef } = React;
-const { I, fmtVND, fmtShort, fmtDate, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum } = window.__lib;
+const { I, fmtVND, fmtShort, fmtDate, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn } = window.__lib;
 const { CostPopup, RevenuePopup, RevenuePopupICD, InfoPopup, colorHex } = window.__pop;
 const { SortBtn, CellBtn, Badge, EditCell, TH, TD } = window.__ui;
 
@@ -54,6 +56,14 @@ function ShipmentsApp() {
   const [showExport, setShowExport] = useState(false);
   const [expFrom, setExpFrom] = useState("");
   const [expTo, setExpTo] = useState("");
+  const [showImport, setShowImport] = useState(false);
+  const [impWb, setImpWb] = useState(null);   // {names, wb}
+  const [impSheet, setImpSheet] = useState("");
+  const [impBusy, setImpBusy] = useState(false);
+  const [impMsg, setImpMsg] = useState("");
+  const [impRows, setImpRows] = useState([]);
+  const [impCheck, setImpCheck] = useState(null); // null | { valid, total, errors:[] }
+  const impFileRef = useRef(null);
   const ships = icd;
   const setShips = setIcd;
 
@@ -79,17 +89,28 @@ function ShipmentsApp() {
   };
   const addCfg = (key, v) => setCfgState((c) => { if ((c[key] || []).includes(v)) return c; const n = { ...c, [key]: [...(c[key] || []), v] }; saveCatalogKey(key, n); return n; });
 
-  // persist 1 lô (debounce theo id)
-  const shipTimers = useRef({});
-  const saveShip = (ship, sheetName) => {
-    clearTimeout(shipTimers.current[ship.id]);
-    shipTimers.current[ship.id] = setTimeout(() => api("PUT", ROUTES.shipment + ship.id, { sheet: sheetName, ship }), 600);
-  };
+  // Manual save: patch chỉ cập nhật local state + đánh dấu dirty; thực sự PUT khi user bấm nút Lưu trong popup.
+  const dirtyIds = useRef(new Set());
   const patch = (id, np) => {
-    const cur = ships.find((s) => s.id === id);
-    if (cur) saveShip({ ...cur, ...np }, sheet);
+    dirtyIds.current.add(id);
     setShips((s) => s.map((sh) => (sh.id === id ? { ...sh, ...np } : sh)));
   };
+  // Lưu các lô đã sửa (mặc định: tất cả dirty). Trả về Promise<boolean>.
+  const commitDirty = (ids) => {
+    const list = ids ? ids.filter((id) => dirtyIds.current.has(id)) : [...dirtyIds.current];
+    if (!list.length) return Promise.resolve(true);
+    const cur = ships;
+    const payloads = list.map((id) => cur.find((s) => s.id === id)).filter(Boolean);
+    return Promise.all(payloads.map((ship) => api("PUT", ROUTES.shipment + ship.id, { sheet, ship })))
+      .then((rs) => {
+        const ok = rs.every((r) => r && r.ok);
+        if (ok) { list.forEach((id) => dirtyIds.current.delete(id)); window.trkToast && window.trkToast("Đã lưu"); }
+        else window.trkToast && window.trkToast("Lưu thất bại", "error");
+        return ok;
+      })
+      .catch(() => { window.trkToast && window.trkToast("Lỗi kết nối khi lưu", "error"); return false; });
+  };
+  const isDirty = (id) => dirtyIds.current.has(id);
   const active = modal ? ships.find((s) => s.id === modal.id) : null;
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -175,7 +196,13 @@ function ShipmentsApp() {
       ? { customer: "", booking: "", io: "Xuất", qty: 1, contType: "40HC", contNo: "", from: "", to: "", sailDate: "", cutOff: "", cost: { items: [] }, rev: { vatRate: vat, doanhThu: [], choHo: [], payments: [] } }
       : { customer: "", booking: "", io: "Nhập", contNo: "", contType: "40HC", kho: "", bksVao: "", bksRa: "", from: "ICD Quế Võ", to: "", contDen: "", contRa: "", cost: { items: [] }, rev: { vatRate: vat, doanhThu: [], choHo: [], payments: [] } };
     const res = await api("POST", ROUTES.shipmentStore, { sheet, ship: base });
-    if (res && res.ok) { setShips((x) => [...x, res.ship]); setModal({ id: res.ship.id, type: "info" }); }
+    if (res && res.ok) {
+      setShips((x) => [...x, res.ship]);
+      setModal({ id: res.ship.id, type: "info" });
+      window.trkToast && window.trkToast("Đã thêm lô hàng mới");
+    } else {
+      window.trkToast && window.trkToast("Không thể thêm lô hàng", "error");
+    }
   };
 
   const delShip = async (id) => {
@@ -190,7 +217,13 @@ function ShipmentsApp() {
     });
     if (!ok) return;
     const res = await api("DELETE", ROUTES.shipment + id);
-    if (res && res.ok) { setShips((x) => x.filter((y) => y.id !== id)); setModal(null); }
+    if (res && res.ok) {
+      setShips((x) => x.filter((y) => y.id !== id));
+      setModal(null);
+      window.trkToast && window.trkToast("Đã xoá lô hàng");
+    } else {
+      window.trkToast && window.trkToast("Xoá thất bại", "error");
+    }
   };
 
   // Xuất Excel (client-side) — các cột yêu cầu + MST/email lấy từ khách hàng; lọc theo NGÀY KẾ HOẠCH (Giờ đến kế hoạch)
@@ -221,6 +254,75 @@ function ShipmentsApp() {
     setShowExport(false);
   };
 
+  // ---- Import lô hàng từ Excel ----
+  const IMP_COLS = ["Khách hàng", "SỐ BOOKING/BILL", "NHẬP/XUẤT", "SỐ LƯỢNG", "LOẠI", "CẮT MÁNG", "NƠI LẤY", "NƠI HẠ", "NGÀY", "GIỜ", "KHO", "INVOICE"];
+  const downloadTemplate = () => {
+    if (typeof XLSX === "undefined") { window.alert("Thư viện Excel chưa tải xong."); return; }
+    const ex = { "Khách hàng": "Canon Vietnam", "SỐ BOOKING/BILL": "BL-ICD-0001", "NHẬP/XUẤT": "Nhập", "SỐ LƯỢNG": 1, "LOẠI": "40HC", "CẮT MÁNG": "14/05/2026 10:00", "NƠI LẤY": "ICD Quế Võ", "NƠI HẠ": "KCN Tiên Sơn", "NGÀY": "14/05/2026", "GIỜ": "08:00", "KHO": "Kho A2", "INVOICE": "INV-001" };
+    const ws = XLSX.utils.json_to_sheet([ex], { header: IMP_COLS });
+    ws["!cols"] = IMP_COLS.map((c) => ({ wch: Math.max(12, c.length + 2) }));
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Lô hàng");
+    XLSX.writeFile(wb, "mau-import-lo-hang.xlsx");
+  };
+  const onImpFile = (e) => {
+    const f = e.target.files && e.target.files[0]; e.target.value = "";
+    if (!f) return;
+    if (typeof XLSX === "undefined") { setImpMsg("Thư viện Excel chưa tải xong."); return; }
+    setImpMsg(""); setImpCheck(null); setImpRows([]);
+    const rd = new FileReader();
+    rd.onload = () => { const wb = XLSX.read(rd.result, { type: "array" }); setImpWb({ names: wb.SheetNames, wb }); setImpSheet(wb.SheetNames[0] || ""); };
+    rd.readAsArrayBuffer(f);
+  };
+  const normH = (s) => String(s == null ? "" : s).trim().toLowerCase().replace(/\s+/g, " ");
+  const toIsoDate = (s) => { const m = /(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/.exec(String(s || "")); if (!m) return ""; let [, d, mo, y] = m; if (y.length === 2) y = "20" + y; return `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`; };
+  const toHm = (s) => { const m = /(\d{1,2}):(\d{2})/.exec(String(s || "")); return m ? `${m[1].padStart(2, "0")}:${m[2]}` : ""; };
+  const parseRows = () => {
+    const aoa = XLSX.utils.sheet_to_json(impWb.wb.Sheets[impSheet], { header: 1, raw: false, defval: "" });
+    let hi = aoa.findIndex((r) => (r || []).some((c) => { const h = normH(c); return h.includes("khách") || h.includes("nhà máy"); }));
+    if (hi < 0) hi = 0;
+    const header = (aoa[hi] || []).map(normH);
+    const col = (...kws) => header.findIndex((h) => kws.some((k) => h.includes(k)));
+    const C = { customer: col("khách", "nhà máy"), booking: col("booking", "bill"), io: col("nhập", "xuất"), qty: col("lượng"), contType: col("loại"), cutOff: col("máng"), from: col("lấy"), to: col("hạ"), ngay: col("ngày"), gio: col("giờ"), kho: col("kho"), inv: col("invoice", "inv") };
+    const out = [];
+    for (let r = hi + 1; r < aoa.length; r++) {
+      const row = aoa[r] || []; const g = (i) => (i >= 0 ? String(row[i] == null ? "" : row[i]).trim() : "");
+      if (!g(C.customer) && !g(C.booking) && !g(C.from) && !g(C.to)) continue;
+      const ngayIso = toIsoDate(g(C.ngay)); const hm = toHm(g(C.gio));
+      const gioDenDuKien = ngayIso ? `${ngayIso}T${hm || "00:00"}` : "";
+      const cmRaw = g(C.cutOff); const cmDate = toIsoDate(cmRaw); const cmHm = toHm(cmRaw);
+      const cutOff = cmDate ? `${cmDate}T${cmHm || "00:00"}` : cmRaw;
+      out.push({ customer: g(C.customer), booking: g(C.booking), io: g(C.io), qty: g(C.qty).replace(/[^\d]/g, ""), contType: g(C.contType), cutOff, from: g(C.from), to: g(C.to), kho: g(C.kho), inv: g(C.inv), gioDenDuKien });
+    }
+    return out;
+  };
+  const doCheck = async () => {
+    if (!impWb || !impSheet) return;
+    setImpBusy(true); setImpMsg(""); setImpCheck(null);
+    const out = parseRows(); setImpRows(out);
+    if (!out.length) { setImpBusy(false); setImpCheck({ valid: false, total: 0, errors: [{ line: 0, customer: "", booking: "", reasons: ["Sheet không có dòng dữ liệu hợp lệ"] }] }); return; }
+    try {
+      const res = await api("POST", ROUTES.shipmentCheck, { rows: out });
+      setImpBusy(false);
+      if (res && res.ok) setImpCheck({ valid: res.valid, total: res.total, errors: res.errors || [] });
+      else setImpCheck({ valid: false, total: out.length, errors: [{ line: 0, reasons: [(res && res.message) || "Lỗi kiểm tra"] }] });
+    } catch (err) { setImpBusy(false); setImpMsg("Lỗi kết nối khi kiểm tra."); }
+  };
+  const doImport = async () => {
+    if (!impCheck || !impCheck.valid || !impRows.length) return;
+    setImpBusy(true); setImpMsg("");
+    try {
+      const res = await api("POST", ROUTES.shipmentImport, { sheet, rows: impRows });
+      setImpBusy(false);
+      if (res && res.ok && res.valid) {
+        if (res.ships && res.ships.length) setShips((x) => [...x, ...res.ships]);
+        setImpMsg(`Đã nhập ${res.created} lô.`); setImpWb(null); setImpCheck(null); setImpRows([]);
+      } else if (res && res.errors) {
+        setImpCheck({ valid: false, total: impRows.length, errors: res.errors });
+        setImpMsg("Dữ liệu có lỗi — chưa import gì.");
+      } else setImpMsg("Import lỗi: " + ((res && res.message) || "không rõ"));
+    } catch (err) { setImpBusy(false); setImpMsg("Import lỗi kết nối."); }
+  };
+
   const toggleSort = (key) => setSort((s) => s.key === key ? { key, dir: -s.dir } : { key, dir: 1 });
   const minW = 880;
 
@@ -239,6 +341,12 @@ function ShipmentsApp() {
               onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.background = "#fff"; }}
               onBlur={(e) => { e.target.style.borderColor = "var(--line)"; e.target.style.background = "#fafbfc"; }} />
           </div>
+          <button type="button" onClick={() => setShowImport(true)} title="Import lô hàng từ Excel"
+            style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "var(--ink-2)", background: "#fff", border: "1px solid var(--line)", borderRadius: 10 }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
+            <i className="bi bi-upload" style={{ color: "var(--accent)" }} /> Import lô
+          </button>
+          <input ref={impFileRef} type="file" accept=".xlsx,.xls" onChange={onImpFile} style={{ display: "none" }} />
           <div style={{ position: "relative" }}>
             <button type="button" onClick={() => setShowExport((v) => !v)} title="Xuất danh sách lô hàng ra Excel"
               style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer", color: "#fff", background: "var(--good)", border: "none", borderRadius: 10, boxShadow: "0 1px 2px rgba(31,138,91,.45)", transition: "background .12s" }}
@@ -479,11 +587,94 @@ function ShipmentsApp() {
         </div>
       </div>
 
-      {active && modal.type === "cost" && <CostPopup ship={active} patch={(np) => patch(active.id, np)} onClose={() => setModal(null)} cfg={cfg} addCfg={addCfg} />}
+      {active && modal.type === "cost" && <CostPopup ship={active} patch={(np) => patch(active.id, np)} onSave={() => commitDirty()} isDirty={isDirty} onClose={() => setModal(null)} cfg={cfg} addCfg={addCfg} />}
       {active && modal.type === "rev" && (isHph
-        ? <RevenuePopup ship={active} patch={(np) => patch(active.id, np)} onClose={() => setModal(null)} cfg={cfg} addCfg={addCfg} />
-        : <RevenuePopupICD ship={active} patch={(np) => patch(active.id, np)} onClose={() => setModal(null)} cfg={cfg} addCfg={addCfg} />)}
-      {active && modal.type === "info" && <InfoPopup ship={active} isHph={isHph} patch={(np) => patch(active.id, np)} patchOther={(id, np) => patch(id, np)} siblings={ships.filter((x) => x.id !== active.id)} onClose={() => setModal(null)} onDelete={() => delShip(active.id)} canDelete={T.canDelete} cfg={cfg} addCfg={addCfg} />}
+        ? <RevenuePopup ship={active} patch={(np) => patch(active.id, np)} onSave={() => commitDirty()} isDirty={isDirty} onClose={() => setModal(null)} cfg={cfg} addCfg={addCfg} />
+        : <RevenuePopupICD ship={active} patch={(np) => patch(active.id, np)} onSave={() => commitDirty()} isDirty={isDirty} onClose={() => setModal(null)} cfg={cfg} addCfg={addCfg} />)}
+      {active && modal.type === "info" && <InfoPopup ship={active} isHph={isHph} patch={(np) => patch(active.id, np)} patchOther={(id, np) => patch(id, np)} onSave={() => commitDirty()} isDirty={isDirty} siblings={ships.filter((x) => x.id !== active.id)} onClose={() => setModal(null)} onDelete={() => delShip(active.id)} canDelete={T.canDelete} cfg={cfg} addCfg={addCfg} />}
+
+      {showImport && (
+        <Modal title="Import lô hàng từ Excel" subtitle="Khách hàng · Nơi lấy · Nơi hạ phải có sẵn — kiểm tra trước, 1 lỗi là không import gì cả" width={720} icon={<I.truck />}
+          onClose={() => setShowImport(false)}
+          footer={
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <div style={{ fontSize: 12.5, color: impCheck ? (impCheck.valid ? "var(--good)" : "var(--danger)") : "var(--ink-3)", fontWeight: impCheck ? 600 : 400 }}>
+                {impCheck ? (impCheck.valid ? `✓ ${impCheck.total} dòng hợp lệ` : `${impCheck.errors.length} dòng lỗi — chưa import gì`) : (impWb ? "Đã chọn file — bấm Kiểm tra" : "Chọn file Excel để bắt đầu")}
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <Btn onClick={() => setShowImport(false)}>Đóng</Btn>
+                {impCheck && impCheck.valid && <Btn variant="primary" onClick={doImport}>{impBusy ? "Đang nhập…" : `Bắt đầu import ${impCheck.total} lô`}</Btn>}
+              </div>
+            </div>
+          }>
+          <div style={{ padding: "12px 0 4px" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
+              <button type="button" onClick={downloadTemplate}
+                style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--ink-2)", cursor: "pointer" }}>
+                <i className="bi bi-download" /> Tải file mẫu
+              </button>
+              <button type="button" onClick={() => impFileRef.current && impFileRef.current.click()}
+                style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13, fontWeight: 600, border: "none", borderRadius: 9, background: "var(--accent)", color: "#fff", cursor: "pointer" }}>
+                <i className="bi bi-file-earmark-arrow-up" /> {impWb ? "Chọn file khác" : "Chọn file Excel"}
+              </button>
+              {impWb && <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Đã đọc file · {impWb.names.length} sheet</span>}
+            </div>
+
+            {impWb && (
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-end", marginBottom: 14 }}>
+                <label style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>Sheet cần import</div>
+                  <div style={{ position: "relative" }}>
+                    <select value={impSheet} onChange={(e) => { setImpSheet(e.target.value); setImpCheck(null); }}
+                      style={{ width: "100%", appearance: "none", WebkitAppearance: "none", padding: "9px 28px 9px 11px", fontSize: 13.5, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 10, background: "#fff", cursor: "pointer" }}>
+                      {impWb.names.map((n) => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                    <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: "var(--ink-3)", pointerEvents: "none" }}><I.chev /></span>
+                  </div>
+                </label>
+                <Btn onClick={doCheck}>{impBusy && !impCheck ? "Đang kiểm tra…" : "Kiểm tra dữ liệu"}</Btn>
+              </div>
+            )}
+
+            {impCheck && impCheck.valid && (
+              <div style={{ padding: "12px 14px", borderRadius: 10, background: "var(--good-weak)", border: "1px solid #bfe4d1", fontSize: 13, color: "var(--good)", fontWeight: 600 }}>
+                <i className="bi bi-check-circle-fill" /> {impCheck.total} dòng hợp lệ — bấm <b>Bắt đầu import</b> ở dưới để nhập.
+              </div>
+            )}
+
+            {impCheck && !impCheck.valid && (
+              <div style={{ border: "1px solid #f3c9c9", borderRadius: 10, overflow: "hidden" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--danger)", padding: "10px 13px", background: "#fef6f6", borderBottom: "1px solid #f3c9c9" }}>
+                  <i className="bi bi-exclamation-triangle-fill" /> {impCheck.errors.length} dòng lỗi — sửa file rồi Kiểm tra lại. Chưa import gì cả.
+                </div>
+                <div style={{ maxHeight: "44vh", overflowY: "auto", overscrollBehavior: "contain" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                    <thead>
+                      <tr style={{ background: "#fafbfc" }}>
+                        {["Dòng", "Booking", "Khách hàng", "Lý do"].map((h, i) => (
+                          <th key={i} style={{ textAlign: "left", padding: "7px 12px", fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "1px solid var(--line)", position: "sticky", top: 0, background: "#fafbfc", whiteSpace: "nowrap" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {impCheck.errors.map((er, i) => (
+                        <tr key={i}>
+                          <td className="tnum" style={{ padding: "7px 12px", borderBottom: "1px solid var(--line-2)", fontWeight: 600, color: "var(--ink-2)", whiteSpace: "nowrap" }}>{er.line}</td>
+                          <td className="tnum" style={{ padding: "7px 12px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{er.booking || "—"}</td>
+                          <td style={{ padding: "7px 12px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{er.customer || "—"}</td>
+                          <td style={{ padding: "7px 12px", borderBottom: "1px solid var(--line-2)", color: "var(--danger)" }}>{(er.reasons || []).join("; ")}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {impMsg && <div style={{ fontSize: 12.5, fontWeight: 600, marginTop: 10, color: impMsg.startsWith("Đã nhập") ? "var(--good)" : "var(--danger)" }}>{impMsg}</div>}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

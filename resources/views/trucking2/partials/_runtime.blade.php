@@ -256,15 +256,15 @@ function Modal({ title, subtitle, onClose, children, footer, width = 860, tabs, 
   );
 }
 
-function Btn({ children, onClick, variant = "ghost" }) {
-  const base = { padding: "10px 20px", fontSize: 14, fontWeight: variant === "primary" ? 600 : 500, cursor: "pointer", borderRadius: 10, transition: "background .12s" };
+function Btn({ children, onClick, variant = "ghost", disabled = false }) {
+  const base = { padding: "10px 20px", fontSize: 14, fontWeight: variant === "primary" ? 600 : 500, cursor: disabled ? "not-allowed" : "pointer", borderRadius: 10, transition: "background .12s", opacity: disabled ? 0.55 : 1 };
   const styles = variant === "primary"
-    ? { ...base, background: "var(--accent)", color: "#fff", border: "1px solid var(--accent)", boxShadow: "0 1px 2px rgba(42,111,219,.4)" }
+    ? { ...base, background: "var(--accent)", color: "#fff", border: "1px solid var(--accent)", boxShadow: disabled ? "none" : "0 1px 2px rgba(42,111,219,.4)" }
     : { ...base, background: "#fff", color: "var(--ink-2)", border: "1px solid var(--line)" };
   return (
-    <button type="button" onClick={onClick} style={styles}
-      onMouseEnter={(e) => (e.currentTarget.style.background = variant === "primary" ? "#235dc0" : "var(--line-2)")}
-      onMouseLeave={(e) => (e.currentTarget.style.background = variant === "primary" ? "var(--accent)" : "#fff")}>
+    <button type="button" onClick={disabled ? undefined : onClick} style={styles} disabled={disabled}
+      onMouseEnter={(e) => { if (!disabled) e.currentTarget.style.background = variant === "primary" ? "#235dc0" : "var(--line-2)"; }}
+      onMouseLeave={(e) => { if (!disabled) e.currentTarget.style.background = variant === "primary" ? "var(--accent)" : "#fff"; }}>
       {children}
     </button>
   );
@@ -342,7 +342,7 @@ const fmtHours = (h) => {
 
 window.__lib = { useState, useRef, useMemo, useEffect, useCallback, onlyDigits, groupVND, toNum, fmtVND, fmtShort, fmtDate, PAYERS, VAT_RATE, I, Money, Payer, Txt, Combo, DateField, Num, Line, Section, Modal, Btn, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours };
 })();
-  
+
 </script>
 <script type="text/babel" data-presets="react">
 
@@ -360,7 +360,7 @@ function DTField({ value, onChange }) {
 }
 
 /* ===================== COST POPUP (centerpiece) ===================== */
-function CostPopup({ ship, patch, onClose, cfg = {}, addCfg }) {
+function CostPopup({ ship, patch, onSave, isDirty, onClose, cfg = {}, addCfg }) {
   const payerOpts = cfg.payers || [];
   const costOpts = cfg.costItems || [];
   const prices = cfg.prices || {};
@@ -372,6 +372,8 @@ function CostPopup({ ship, patch, onClose, cfg = {}, addCfg }) {
   const cc = calcCost(c);
   const items = c.items || [];
   const setItems = (arr) => setC({ items: arr });
+  const dirty = !!(isDirty && isDirty(ship.id));
+  const handleSave = () => { Promise.resolve(onSave && onSave()).then(() => onClose()); };
 
   const footer = (
     <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20 }}>
@@ -393,9 +395,10 @@ function CostPopup({ ship, patch, onClose, cfg = {}, addCfg }) {
           <div className="tnum" style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em" }}>{fmtVND(cc.tongChiPhi)}</div>
         </div>
       </div>
-      <div style={{ display: "flex", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {dirty && <span style={{ fontSize: 12, color: "var(--warn)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--warn)" }} />Có thay đổi chưa lưu</span>}
         <Btn onClick={onClose}>Đóng</Btn>
-        <Btn variant="primary" onClick={onClose}>Lưu chi phí</Btn>
+        <Btn variant="primary" onClick={handleSave} disabled={!dirty}>Lưu chi phí</Btn>
       </div>
     </div>
   );
@@ -554,20 +557,44 @@ const SWATCHES = ["#e0a92e", "#2a6fdb", "#1f8a5b", "#d64545", "#8b5cf6", "#ec489
 // normalize legacy ids -> hex
 const colorHex = (c) => { if (!c) return ""; const f = TRACK_COLORS.find((x) => x.id === c); return f ? f.dot : c; };
 function FlagPicker({ value, missing, onChange }) {
-  const { useState } = React;
+  const { useState, useRef, useLayoutEffect, useEffect } = React;
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const btnRef = useRef(null);
   const hex = colorHex(value);
+  const POP_W = 184, POP_H = 150;
+
+  // Định vị popup ngay sau khi mở — anchor vào nút theo viewport (fixed),
+  // tránh bị cha có overflow:auto/hidden cắt mất.
+  useLayoutEffect(() => {
+    if (!open || !btnRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    const vw = window.innerWidth, vh = window.innerHeight;
+    let left = r.right - POP_W; if (left < 8) left = 8; if (left + POP_W > vw - 8) left = vw - POP_W - 8;
+    let top = r.bottom + 6; if (top + POP_H > vh - 8) top = Math.max(8, r.top - POP_H - 6);
+    setPos({ top, left });
+  }, [open]);
+
+  // Cuộn ngoài hoặc resize → đóng popup để tránh lệch vị trí.
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => { window.removeEventListener("scroll", close, true); window.removeEventListener("resize", close); };
+  }, [open]);
+
   return (
-    <div style={{ position: "relative", display: "flex", justifyContent: "center" }}>
-      <button type="button" onClick={() => setOpen((o) => !o)} title={hex ? "Đang theo dõi" + (missing ? " · chưa điền → hiện ngoài bảng" : " · đã điền") : "Bấm để chọn màu theo dõi"}
+    <div style={{ display: "flex", justifyContent: "center" }}>
+      <button ref={btnRef} type="button" onClick={() => setOpen((o) => !o)} title={hex ? "Đang theo dõi" + (missing ? " · chưa điền → hiện ngoài bảng" : " · đã điền") : "Bấm để chọn màu theo dõi"}
         style={{ display: "inline-flex", alignItems: "center", gap: 5, border: "1px solid var(--line)", borderRadius: 999, padding: "3px 6px", background: "#fff", cursor: "pointer" }}>
         <span style={{ width: 13, height: 13, borderRadius: 999, background: hex || "transparent", border: hex ? "none" : "1.5px dashed var(--ink-4)" }} />
         {missing && <span style={{ fontSize: 9.5, fontWeight: 700, color: "var(--warn)" }}>!</span>}
       </button>
-      {open && (
+      {open && ReactDOM.createPortal(
         <>
-          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
-          <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 41, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 8px 28px -8px rgba(16,19,23,.28)", padding: 12, width: 184 }}>
+          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 9998 }} />
+          <div style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 9999, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 8px 28px -8px rgba(16,19,23,.28)", padding: 12, width: POP_W }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 7, marginBottom: 10 }}>
               {SWATCHES.map((c) => (
                 <button key={c} type="button" onClick={() => { onChange(c); setOpen(false); }}
@@ -588,7 +615,8 @@ function FlagPicker({ value, missing, onChange }) {
               </button>
             )}
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   );
@@ -683,7 +711,7 @@ function PaymentRows({ payments = [], onChange }) {
 }
 
 /* ===================== REVENUE POPUP ===================== */
-function RevenuePopup({ ship, patch, onClose, cfg = {}, addCfg }) {
+function RevenuePopup({ ship, patch, onSave, isDirty, onClose, cfg = {}, addCfg }) {
   const r = ship.rev || {};
   const setR = (np) => patch({ rev: { ...r, ...np } });
   const rc = calcRev(r);
@@ -691,6 +719,8 @@ function RevenuePopup({ ship, patch, onClose, cfg = {}, addCfg }) {
   const choHo = r.choHo || [];
   const choHoOpts = cfg.choHoItems || [];
   const setChoHo = (arr) => setR({ choHo: arr });
+  const dirty = !!(isDirty && isDirty(ship.id));
+  const handleSave = () => { Promise.resolve(onSave && onSave()).then(() => onClose()); };
 
   const footer = (
     <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20 }}>
@@ -704,9 +734,10 @@ function RevenuePopup({ ship, patch, onClose, cfg = {}, addCfg }) {
           <div className="tnum" style={{ fontSize: 16, fontWeight: 700, color: rc.conNo > 0 ? "var(--warn)" : "var(--good)" }}>{fmtVND(Math.max(0, rc.conNo))}</div>
         </div>
       </div>
-      <div style={{ display: "flex", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {dirty && <span style={{ fontSize: 12, color: "var(--warn)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--warn)" }} />Có thay đổi chưa lưu</span>}
         <Btn onClick={onClose}>Đóng</Btn>
-        <Btn variant="primary" onClick={onClose}>Lưu doanh thu</Btn>
+        <Btn variant="primary" onClick={handleSave} disabled={!dirty}>Lưu doanh thu</Btn>
       </div>
     </div>
   );
@@ -748,19 +779,22 @@ function RevenuePopup({ ship, patch, onClose, cfg = {}, addCfg }) {
 }
 
 /* ===================== ICD — CHI PHÍ CHUYẾN XE ===================== */
-function CostPopupICD({ ship, patch, onClose, cfg = {}, addCfg }) {
+function CostPopupICD({ ship, patch, onSave, isDirty, onClose, cfg = {}, addCfg }) {
   const v = ship.veh || {};
   const setV = (np) => patch({ veh: { ...v, ...np } });
   const tong = calcVehICD(v);
+  const dirty = !!(isDirty && isDirty(ship.id));
+  const handleSave = () => { Promise.resolve(onSave && onSave()).then(() => onClose()); };
   const footer = (
     <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20 }}>
       <div>
         <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 2 }}>Tổng chi phí chuyến xe</div>
         <div className="tnum" style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em" }}>{fmtVND(tong)}</div>
       </div>
-      <div style={{ display: "flex", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {dirty && <span style={{ fontSize: 12, color: "var(--warn)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--warn)" }} />Có thay đổi chưa lưu</span>}
         <Btn onClick={onClose}>Đóng</Btn>
-        <Btn variant="primary" onClick={onClose}>Lưu chi phí</Btn>
+        <Btn variant="primary" onClick={handleSave} disabled={!dirty}>Lưu chi phí</Btn>
       </div>
     </div>
   );
@@ -793,7 +827,7 @@ function CostPopupICD({ ship, patch, onClose, cfg = {}, addCfg }) {
 }
 
 /* ===================== ICD — DOANH THU ===================== */
-function RevenuePopupICD({ ship, patch, onClose, cfg = {}, addCfg }) {
+function RevenuePopupICD({ ship, patch, onSave, isDirty, onClose, cfg = {}, addCfg }) {
   const r = ship.rev || {};
   const setR = (np) => patch({ rev: { ...r, ...np } });
   const rc = calcRevICD(r);
@@ -801,6 +835,8 @@ function RevenuePopupICD({ ship, patch, onClose, cfg = {}, addCfg }) {
   const choHo = r.choHo || [];
   const choHoOpts = cfg.choHoItems || [];
   const setChoHo = (arr) => setR({ choHo: arr });
+  const dirty = !!(isDirty && isDirty(ship.id));
+  const handleSave = () => { Promise.resolve(onSave && onSave()).then(() => onClose()); };
   const footer = (
     <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20 }}>
       <div style={{ display: "flex", gap: 26 }}>
@@ -813,9 +849,10 @@ function RevenuePopupICD({ ship, patch, onClose, cfg = {}, addCfg }) {
           <div className="tnum" style={{ fontSize: 16, fontWeight: 700, color: rc.conNo > 0 ? "var(--warn)" : "var(--good)" }}>{fmtVND(Math.max(0, rc.conNo))}</div>
         </div>
       </div>
-      <div style={{ display: "flex", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {dirty && <span style={{ fontSize: 12, color: "var(--warn)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--warn)" }} />Có thay đổi chưa lưu</span>}
         <Btn onClick={onClose}>Đóng</Btn>
-        <Btn variant="primary" onClick={onClose}>Lưu doanh thu</Btn>
+        <Btn variant="primary" onClick={handleSave} disabled={!dirty}>Lưu doanh thu</Btn>
       </div>
     </div>
   );
@@ -863,27 +900,21 @@ function Seg({ value, onChange, options }) {
   );
 }
 
-function InfoPopup({ ship, patch, patchOther, siblings = [], onClose, onDelete, canDelete, isHph, cfg = {}, addCfg }) {
+function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], onClose, onDelete, canDelete, isHph, cfg = {}, addCfg }) {
   const set = (np) => patch(np);
   const add = (k, v) => addCfg && addCfg(k, v);
   const sibOpts = siblings.map((s) => ({ value: s.id, label: (s.contNo || "(chưa có cont)") + " — " + (s.booking || "(chưa có booking)") }));
   const raMode = ship.raMode || "self";
-  const setRa = (val) => {
-    if (raMode === "other" && ship.raOtherId != null && patchOther) {
-      patch({ gioXeRa: val });
-      patchOther(ship.raOtherId, { gioXeRa: val });
-    } else {
-      set({ gioXeRa: val });
-    }
-  };
-  const setRaBks = (val) => {
-    if (raMode === "other" && ship.raOtherId != null && patchOther) {
-      patch({ bksRa: val });
-      patchOther(ship.raOtherId, { bksRa: val });
-    } else {
-      set({ bksRa: val });
-    }
-  };
+  const other = (raMode === "other" && ship.raOtherId != null) ? siblings.find((s) => s.id === ship.raOtherId) : null;
+  // Khi "cont khác ra": input giờ ra/BKS ra chỉ ghi vào cont kia (qua patchOther), KHÔNG động vào cont hiện tại.
+  const setRa = (val) => { if (other && patchOther) patchOther(other.id, { gioXeRa: val }); else set({ gioXeRa: val }); };
+  const setRaBks = (val) => { if (other && patchOther) patchOther(other.id, { bksRa: val }); else set({ bksRa: val }); };
+  const otherGioXeRa = other ? (other.gioXeRa || "") : "";
+  const otherBksRa = other ? (other.bksRa || "") : "";
+
+  const dirty = !!(isDirty && (isDirty(ship.id) || (other && isDirty(other.id))));
+  const handleSave = () => { Promise.resolve(onSave && onSave()).then(() => onClose()); };
+
   const footer = (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
       <div>
@@ -896,9 +927,10 @@ function InfoPopup({ ship, patch, patchOther, siblings = [], onClose, onDelete, 
           </button>
         )}
       </div>
-      <div style={{ display: "flex", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {dirty && <span style={{ fontSize: 12, color: "var(--warn)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--warn)" }} />Có thay đổi chưa lưu</span>}
         <Btn onClick={onClose}>Đóng</Btn>
-        <Btn variant="primary" onClick={onClose}>Lưu thông tin</Btn>
+        <Btn variant="primary" onClick={handleSave} disabled={!dirty}>Lưu thông tin</Btn>
       </div>
     </div>
   );
@@ -964,7 +996,9 @@ function InfoPopup({ ship, patch, patchOther, siblings = [], onClose, onDelete, 
       </Section>
 
       {!isHph && (() => {
-        const ft = calcFreeTime(ship, (cfg.freeTimeHours == null ? "4" : cfg.freeTimeHours));
+        // Khi "cont khác ra": dùng giờ xe ra của cont kia để tính free time của chuyến.
+        const effective = other ? { ...ship, gioXeRa: otherGioXeRa } : ship;
+        const ft = calcFreeTime(effective, (cfg.freeTimeHours == null ? "4" : cfg.freeTimeHours));
         return (
           <Section title="Free time & kết nối">
             <div style={{ fontSize: 11.5, color: "var(--ink-4)", padding: "2px 0 6px" }}>Free time = Giờ xe ra − (Giờ đến kế hoạch hoặc Giờ xe đến, lấy giờ muộn hơn). Ngưỡng <b style={{ color: "var(--ink-3)" }}>{ft ? ft.threshold : (cfg.freeTimeHours || 4)}h</b> chỉnh trong Cấu hình. Có thể để trống nếu chưa có giờ.</div>
@@ -972,7 +1006,7 @@ function InfoPopup({ ship, patch, patchOther, siblings = [], onClose, onDelete, 
               <Field label="Giờ đến kế hoạch"><DTField value={ship.gioDenDuKien} onChange={(x) => set({ gioDenDuKien: x })} /></Field>
               <Field label="Giờ xe đến"><DTField value={ship.gioXeDen} onChange={(x) => set({ gioXeDen: x })} /></Field>
               <Field label="Giờ xe ra">{raMode === "other"
-                ? <div style={{ padding: "9px 11px", fontSize: 13, border: "1px dashed var(--line)", borderRadius: 9, background: "#fafbfc", color: "var(--ink-4)" }}>{ship.gioXeRa ? new Date(ship.gioXeRa).toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "Nhập ở ô bên dưới"}</div>
+                ? <div style={{ padding: "9px 11px", fontSize: 13, border: "1px dashed var(--line)", borderRadius: 9, background: "#fafbfc", color: "var(--ink-4)" }} title="Cont này không tự ra — giờ xe ra ghi vào cont đã chọn ở dưới">{otherGioXeRa ? new Date(otherGioXeRa).toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "Cont này không tự ra"}</div>
                 : <DTField value={ship.gioXeRa} onChange={(x) => setRa(x)} />}</Field>
             </div>
             <div style={{ background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", borderRadius: 10, padding: "10px 12px", margin: "2px 0 12px" }}>
@@ -1004,13 +1038,13 @@ function InfoPopup({ ship, patch, patchOther, siblings = [], onClose, onDelete, 
                   <div style={{ marginTop: 10 }}>
                     <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>Giờ ra & biển số của <b style={{ color: "var(--ink-2)" }}>{(sibOpts.find((o) => o.value === ship.raOtherId) || {}).label}</b></div>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                      <div style={{ width: 220 }}><DTField value={ship.gioXeRa} onChange={(x) => setRa(x)} /></div>
+                      <div style={{ width: 220 }}><DTField value={otherGioXeRa} onChange={(x) => setRa(x)} /></div>
                       <div style={{ width: 190 }}>
-                        <Combo value={ship.bksRa} onChange={(x) => setRaBks(x)} options={cfg.vehicles || []} onCreate={(x) => add("vehicles", x)} placeholder="BKS ra…" small />
+                        <Combo value={otherBksRa} onChange={(x) => setRaBks(x)} options={cfg.vehicles || []} onCreate={(x) => add("vehicles", x)} placeholder="BKS ra…" small />
                       </div>
                     </div>
                     <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 7, lineHeight: 1.5 }}>
-                      Nhập <b style={{ color: "var(--ink-3)" }}>giờ ra</b> và <b style={{ color: "var(--ink-3)" }}>biển số</b> ở đây sẽ cập nhật cho cả cont này và cont được chọn. Vẫn mở từng cont sửa lại được sau.
+                      Nhập <b style={{ color: "var(--ink-3)" }}>giờ ra</b> và <b style={{ color: "var(--ink-3)" }}>biển số</b> ở đây chỉ cập nhật cho cont đã chọn (cont thực sự rời đi). Cont hiện tại giữ <b style={{ color: "var(--ink-3)" }}>trống</b> giờ xe ra. Thay đổi sẽ lưu khi bấm <b style={{ color: "var(--ink-3)" }}>Lưu thông tin</b>.
                     </div>
                   </div>
                 ) : (
@@ -1641,7 +1675,7 @@ function ConfigPopup({ cfg, setCfg, onClose }) {
 
 window.__pop = { CostPopup, RevenuePopup, CostPopupICD, RevenuePopupICD, InfoPopup, ConfigPopup, ConfigBody, CFG_GROUPS, Field, PriceList, TRACK_COLORS, colorHex };
 })();
-  
+
 </script>
 <script type="text/babel" data-presets="react">
 
@@ -1863,7 +1897,7 @@ function StatementForm({ hph, icd, cfg, onCancel, onSaved }) {
   );
 }
 
-function SavedStatementModal({ st, onClose, onDelete, onUpdate }) {
+function SavedStatementModal({ st, onClose, onDelete, onUpdate, onSave, isDirty }) {
   const { useState } = React;
   const [payments, setPayments] = useState(st.payments || []);
   const sync = (arr) => { setPayments(arr); onUpdate && onUpdate({ ...st, payments: arr }); };
@@ -1877,6 +1911,8 @@ function SavedStatementModal({ st, onClose, onDelete, onUpdate }) {
   const conNo = tongThu - daTT;
   const info = st.info || {};
   const th = (txt, align) => <th style={{ textAlign: align || "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>{txt}</th>;
+  const dirty = !!(isDirty && isDirty(st.id));
+  const handleSave = () => { if (onSave) onSave(); };
   const footer = (
     <div className="ke-noprint" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
       <button type="button" onClick={() => { onDelete(st.id); onClose(); }}
@@ -1885,9 +1921,11 @@ function SavedStatementModal({ st, onClose, onDelete, onUpdate }) {
         onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "var(--ink-3)"; }}>
         <I.trash /> Xóa bảng kê
       </button>
-      <div style={{ display: "flex", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {dirty && <span style={{ fontSize: 12, color: "var(--warn)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--warn)" }} />Có thay đổi chưa lưu</span>}
         <Btn onClick={onClose}>Đóng</Btn>
-        <Btn variant="primary" onClick={() => window.print()}>In / Xuất PDF</Btn>
+        <Btn variant="primary" onClick={handleSave} disabled={!dirty}>Lưu</Btn>
+        <Btn onClick={() => window.print()}>In / Xuất PDF</Btn>
       </div>
     </div>
   );
@@ -2128,5 +2166,35 @@ window.confirmAction = function(opts){
     var okb = card.querySelector('[data-a=ok]'); if(okb) okb.focus();
   });
 };
+
+/* Toast feedback nhẹ cho thao tác lưu/thêm/xoá. Auto-close 2.4s, stack ở góc phải.
+   type: 'success' (mặc định) | 'error' | 'info' | 'warn' */
+window.trkToast = function(msg, type){
+  type = type || 'success';
+  var palette = {
+    success: { bg: '#16a34a', icon: 'bi-check-circle-fill' },
+    error:   { bg: '#dc2626', icon: 'bi-exclamation-triangle-fill' },
+    info:    { bg: '#2a6fdb', icon: 'bi-info-circle-fill' },
+    warn:    { bg: '#e0a92e', icon: 'bi-exclamation-circle-fill' },
+  };
+  var p = palette[type] || palette.success;
+  var stack = document.getElementById('trk-toast-stack');
+  if (!stack){
+    stack = document.createElement('div');
+    stack.id = 'trk-toast-stack';
+    stack.style.cssText = 'position:fixed;top:72px;right:16px;z-index:10000;display:flex;flex-direction:column;gap:8px;pointer-events:none;';
+    document.body.appendChild(stack);
+  }
+  var t = document.createElement('div');
+  t.style.cssText = 'pointer-events:auto;background:#fff;color:#101317;border:1px solid var(--line);border-left:4px solid '+p.bg+';box-shadow:0 8px 24px -8px rgba(16,19,23,.22);border-radius:10px;padding:10px 14px;font-size:13.5px;font-weight:500;display:flex;align-items:center;gap:8px;min-width:200px;max-width:360px;transform:translateX(120%);transition:transform .22s ease,opacity .22s ease;opacity:0;';
+  t.innerHTML = '<i class="bi '+p.icon+'" style="color:'+p.bg+';font-size:16px;flex:none;"></i><span style="line-height:1.35;">'+String(msg||'').replace(/</g,'&lt;')+'</span>';
+  stack.appendChild(t);
+  requestAnimationFrame(function(){ requestAnimationFrame(function(){ t.style.transform='translateX(0)'; t.style.opacity='1'; }); });
+  setTimeout(function(){
+    t.style.transform = 'translateX(120%)'; t.style.opacity = '0';
+    setTimeout(function(){ if (t.parentNode) t.parentNode.removeChild(t); }, 260);
+  }, 2400);
+};
+
 </script>
 @endverbatim
