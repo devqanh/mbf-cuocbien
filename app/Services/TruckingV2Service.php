@@ -82,9 +82,14 @@ class TruckingV2Service
             'booking'      => $s->booking ?? '',
             'inv'          => $s->inv ?? '',
             'io'           => $s->io ?? '',
+            'cru'          => (bool) $s->cru,
             'qty'          => $s->qty,
             'contType'     => $s->cont_type ?? '',
             'contNo'       => $s->cont_no ?? '',
+            'declNo'       => $s->declaration_no ?? '',
+            'declNote'     => $s->declaration_note ?? '',
+            'thanhLy'      => $this->outDate($s->thanh_ly_date),
+            'cshtNote'     => $s->csht_note ?? '',
             'kho'          => $s->kho ?? '',
             'from'         => $s->from_loc ?? '',
             'to'           => $s->to_loc ?? '',
@@ -153,9 +158,14 @@ class TruckingV2Service
                 'booking'         => $this->str($data['booking'] ?? null),
                 'inv'             => $this->str($data['inv'] ?? null),
                 'io'              => $this->str($data['io'] ?? null),
+                'cru'             => ! empty($data['cru']),
                 'qty'             => isset($data['qty']) && $data['qty'] !== '' ? (int) $data['qty'] : null,
                 'cont_type'       => $this->str($data['contType'] ?? null),
                 'cont_no'         => $this->str($data['contNo'] ?? null),
+                'declaration_no'  => $this->str($data['declNo'] ?? null),
+                'declaration_note' => $this->str($data['declNote'] ?? null),
+                'thanh_ly_date'   => $this->inDate($data['thanhLy'] ?? null),
+                'csht_note'       => $this->str($data['cshtNote'] ?? null),
                 'kho'             => $this->str($data['kho'] ?? null),
                 'from_loc'        => $this->str($data['from'] ?? null),
                 'to_loc'          => $this->str($data['to'] ?? null),
@@ -592,6 +602,18 @@ class TruckingV2Service
                     $cust->priceRows()->create($attrs);
                     $created++;
                 }
+            }
+
+            // 4 cột TO → tự thêm vào danh mục Kho (warehouses)
+            $whNames = [];
+            foreach ($rows as $p) {
+                foreach (['to1', 'to2', 'to3', 'to4'] as $k) {
+                    $v = trim((string) ($p[$k] ?? ''));
+                    if ($v !== '') $whNames[$v] = true;
+                }
+            }
+            foreach (array_keys($whNames) as $name) {
+                TruckingWarehouse::firstOrCreate(['name' => $name]);
             }
 
             $cust->load('priceRows');

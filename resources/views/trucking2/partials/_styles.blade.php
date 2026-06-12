@@ -12,7 +12,7 @@
     --ink: #16191d;
     --ink-2: #4a5159;
     --ink-3: #868d96;
-    --ink-4: #aab0b8;
+    --ink-4: #8a9199;
     --line: #e4e7eb;
     --line-2: #eef0f3;
     --danger: #d64545;

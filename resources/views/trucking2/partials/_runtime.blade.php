@@ -81,7 +81,7 @@ function Txt({ value, onChange, placeholder }) {
 }
 
 /* Select2-style searchable combo bound to a config list. onCreate(v) adds to config. */
-function Combo({ value, onChange, options = [], onCreate, placeholder = "Chọn…", small }) {
+function Combo({ value, onChange, options = [], onCreate, placeholder = "Chọn…", small, clearable }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const wrapRef = useRef(null);
@@ -97,7 +97,9 @@ function Combo({ value, onChange, options = [], onCreate, placeholder = "Chọn�
   const exact = options.some((o) => o.toLowerCase() === ql);
   const pick = (v) => { onChange(v); setOpen(false); setQ(""); };
   const create = () => { const v = q.trim(); if (!v) return; if (onCreate && !options.includes(v)) onCreate(v); onChange(v); setOpen(false); setQ(""); };
-  const pad = small ? "7px 28px 7px 10px" : "8px 28px 8px 11px";
+  const showClear = clearable && !!value;
+  const padRight = showClear ? 50 : 28;
+  const pad = small ? `7px ${padRight}px 7px 10px` : `8px ${padRight}px 8px 11px`;
 
   return (
     <div ref={wrapRef} style={{ position: "relative", width: "100%" }}>
@@ -107,6 +109,14 @@ function Combo({ value, onChange, options = [], onCreate, placeholder = "Chọn�
           color: value ? "var(--ink)" : "var(--ink-4)", boxShadow: open ? "0 0 0 3px var(--accent-weak)" : "none",
           whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", position: "relative" }}>
         {value || placeholder}
+        {showClear && (
+          <span role="button" title="Xóa lựa chọn"
+            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onChange(""); setOpen(false); setQ(""); }}
+            style={{ position: "absolute", right: 30, top: "50%", transform: "translateY(-50%)", display: "inline-flex", color: "var(--ink-4)", cursor: "pointer", borderRadius: 6, padding: 1 }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--line-2)"; e.currentTarget.style.color = "var(--ink-2)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--ink-4)"; }}><I.x /></span>
+        )}
         <span style={{ position: "absolute", right: 9, top: "50%", transform: `translateY(-50%) rotate(${open ? 180 : 0}deg)`, color: "var(--ink-3)", transition: "transform .12s", pointerEvents: "none" }}><I.chev /></span>
       </button>
       {open && (
@@ -142,6 +152,70 @@ function Combo({ value, onChange, options = [], onCreate, placeholder = "Chọn�
               </button>
             )}
             {!filtered.length && !q && <div style={{ padding: "12px 10px", fontSize: 12.5, color: "var(--ink-4)" }}>Chưa có dữ liệu — gõ để thêm mới.</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+/* Multi-select (chips) — chọn nhiều giá trị từ danh mục, giới hạn max. */
+function MultiCombo({ values = [], onChange, options = [], onCreate, max = 3, placeholder = "Chọn…" }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const wrapRef = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) { setOpen(false); setQ(""); } };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+  const sel = Array.isArray(values) ? values : (values ? [values] : []);
+  const full = sel.length >= max;
+  const ql = q.trim().toLowerCase();
+  const avail = options.filter((o) => !sel.includes(o) && (!ql || o.toLowerCase().includes(ql)));
+  const exact = options.some((o) => o.toLowerCase() === ql) || sel.some((o) => o.toLowerCase() === ql);
+  const addVal = (v) => { if (!v || sel.includes(v) || sel.length >= max) return; onChange([...sel, v]); setQ(""); };
+  const removeVal = (v) => onChange(sel.filter((x) => x !== v));
+  const create = () => { const v = q.trim(); if (!v || sel.length >= max) return; if (onCreate && !options.includes(v)) onCreate(v); addVal(v); };
+  return (
+    <div ref={wrapRef} style={{ position: "relative", width: "100%" }}>
+      <div onClick={() => { if (!full) setOpen((o) => !o); }}
+        style={{ display: "flex", flexWrap: "wrap", gap: 5, alignItems: "center", minHeight: 38, padding: "5px 8px",
+          border: `1px solid ${open ? "var(--accent)" : "var(--line)"}`, borderRadius: 9, background: "#fff", cursor: full ? "default" : "pointer",
+          boxShadow: open ? "0 0 0 3px var(--accent-weak)" : "none" }}>
+        {sel.map((v) => (
+          <span key={v} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "var(--accent-weak)", color: "var(--accent)", fontSize: 12.5, fontWeight: 600, padding: "3px 4px 3px 9px", borderRadius: 7 }}>
+            {v}
+            <button type="button" onClick={(e) => { e.stopPropagation(); removeVal(v); }} title="Bỏ"
+              style={{ border: "none", background: "transparent", color: "var(--accent)", cursor: "pointer", display: "grid", placeItems: "center", padding: 0, width: 16, height: 16 }}><I.x /></button>
+          </span>
+        ))}
+        {!full
+          ? <span style={{ fontSize: 13, color: "var(--ink-4)" }}>{sel.length ? "Thêm…" : placeholder}</span>
+          : <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>Đã đủ tối đa {max}</span>}
+      </div>
+      {open && !full && (
+        <div style={{ position: "absolute", zIndex: 80, top: "calc(100% + 4px)", left: 0, right: 0, background: "#fff", border: "1px solid var(--line)", borderRadius: 11, boxShadow: "0 12px 32px -8px rgba(16,19,23,.24), 0 2px 8px rgba(16,19,23,.08)", overflow: "hidden" }}>
+          <div style={{ padding: 7, borderBottom: "1px solid var(--line-2)", position: "relative" }}>
+            <span style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)" }}><I.search /></span>
+            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm hoặc thêm mới…"
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (avail.length === 1) addVal(avail[0]); else if (!exact && q.trim()) create(); } }}
+              style={{ width: "100%", padding: "7px 10px 7px 30px", fontSize: 13, border: "1px solid var(--line)", borderRadius: 8, outline: "none" }} />
+          </div>
+          <div style={{ maxHeight: 196, overflowY: "auto", padding: 4 }}>
+            {avail.map((o) => (
+              <button key={o} type="button" onClick={() => addVal(o)}
+                style={{ width: "100%", textAlign: "left", padding: "8px 10px", fontSize: 13.5, border: "none", borderRadius: 7, cursor: "pointer", background: "transparent", color: "var(--ink-2)" }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>{o}</button>
+            ))}
+            {ql && !exact && (
+              <button type="button" onClick={create}
+                style={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", fontSize: 13.5, border: "none", borderRadius: 7, cursor: "pointer", background: "transparent", color: "var(--accent)", fontWeight: 600 }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent-weak-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
+                <span style={{ width: 17, height: 17, borderRadius: 5, background: "var(--accent-weak)", display: "grid", placeItems: "center" }}><I.plus /></span>Thêm “{q.trim()}”
+              </button>
+            )}
+            {!avail.length && !ql && <div style={{ padding: "12px 10px", fontSize: 12.5, color: "var(--ink-4)" }}>Hết mục để chọn — gõ để thêm mới.</div>}
           </div>
         </div>
       )}
@@ -340,7 +414,7 @@ const fmtHours = (h) => {
   return (neg ? "-" : "") + (mm ? `${hh}h${String(mm).padStart(2, "0")}` : `${hh}h`);
 };
 
-window.__lib = { useState, useRef, useMemo, useEffect, useCallback, onlyDigits, groupVND, toNum, fmtVND, fmtShort, fmtDate, PAYERS, VAT_RATE, I, Money, Payer, Txt, Combo, DateField, Num, Line, Section, Modal, Btn, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours };
+window.__lib = { useState, useRef, useMemo, useEffect, useCallback, onlyDigits, groupVND, toNum, fmtVND, fmtShort, fmtDate, PAYERS, VAT_RATE, I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours };
 })();
 
 </script>
@@ -348,7 +422,7 @@ window.__lib = { useState, useRef, useMemo, useEffect, useCallback, onlyDigits, 
 
 (() => {
 const { useState, useMemo } = React;
-const { I, Money, Payer, Txt, Combo, DateField, Num, Line, Section, Modal, Btn, fmtVND, fmtShort, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum } = window.__lib;
+const { I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, fmtVND, fmtShort, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum } = window.__lib;
 
 /* datetime-local field */
 function DTField({ value, onChange }) {
@@ -420,10 +494,10 @@ function CostPopup({ ship, patch, onSave, isDirty, onClose, cfg = {}, addCfg }) 
   );
 }
 
-function Field({ label, hint, children }) {
+function Field({ label, hint, req, children }) {
   return (
     <label style={{ display: "block" }}>
-      <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>{label}{hint && <span style={{ color: "var(--ink-4)", fontWeight: 400, marginLeft: 5 }}>· {hint}</span>}</div>
+      <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>{label}{req && <span style={{ color: "var(--danger)", marginLeft: 3, fontWeight: 700 }}>*</span>}{hint && <span style={{ color: "var(--ink-4)", fontWeight: 400, marginLeft: 5 }}>· {hint}</span>}</div>
       {children}
     </label>
   );
@@ -908,6 +982,8 @@ function Seg({ value, onChange, options }) {
 function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], onClose, onDelete, canDelete, isHph, cfg = {}, addCfg }) {
   const set = (np) => patch(np);
   const add = (k, v) => addCfg && addCfg(k, v);
+  const hqFilled = [ship.declNo, ship.declNote, ship.thanhLy, ship.cshtNote].filter((v) => (v || "").toString().trim()).length;
+  const [hqOpen, setHqOpen] = useState(false);
   // Thuê xe ngoài → 1 dòng chi phí "Cước xe ngoài" (src=extTruck) link sang Chi phí lô hàng
   const cost = ship.cost || {};
   const costItems = cost.items || [];
@@ -929,7 +1005,8 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
   const otherBksRa = other ? (other.bksRa || "") : "";
 
   const dirty = !!(isDirty && (isDirty(ship.id) || (other && isDirty(other.id))));
-  const handleSave = () => { Promise.resolve(onSave && onSave()).then(() => onClose()); };
+  const missingReq = !((ship.customer || "").toString().trim()) || !((ship.booking || "").toString().trim());
+  const handleSave = () => { if (missingReq) return; Promise.resolve(onSave && onSave()).then(() => onClose()); };
 
   const footer = (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
@@ -944,9 +1021,11 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
         )}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        {dirty && <span style={{ fontSize: 12, color: "var(--warn)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--warn)" }} />Có thay đổi chưa lưu</span>}
+        {missingReq
+          ? <span style={{ fontSize: 12, color: "var(--danger)", fontWeight: 600 }}>Cần nhập Khách hàng <b>*</b> và Số booking <b>*</b></span>
+          : (dirty && <span style={{ fontSize: 12, color: "var(--warn)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--warn)" }} />Có thay đổi chưa lưu</span>)}
         <Btn onClick={onClose}>Đóng</Btn>
-        <Btn variant="primary" onClick={handleSave} disabled={!dirty}>Lưu thông tin</Btn>
+        <Btn variant="primary" onClick={handleSave} disabled={!dirty || missingReq}>Lưu thông tin</Btn>
       </div>
     </div>
   );
@@ -954,12 +1033,18 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
     <Modal title="Thông tin lô hàng" subtitle="Sửa khách hàng, container, tuyến và lịch trình" onClose={onClose} footer={footer} width={720}>
       <Section title="Thông tin chung">
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: "10px 0" }}>
-          <Field label="Khách hàng" hint="danh mục"><Combo value={ship.customer} onChange={(x) => set({ customer: x })} options={cfg.customers || []} onCreate={(v) => add("customers", v)} placeholder="Chọn khách hàng…" /></Field>
-          <Field label={isHph ? "Số booking" : "Số booking / bill"}><Txt value={ship.booking} onChange={(x) => set({ booking: x })} placeholder="Mã booking" /></Field>
+          <Field label="Khách hàng" hint="danh mục" req><Combo value={ship.customer} onChange={(x) => set({ customer: x })} options={cfg.customers || []} onCreate={(v) => add("customers", v)} placeholder="Chọn khách hàng…" /></Field>
+          <Field label={isHph ? "Số booking" : "Số booking / bill"} req><Txt value={ship.booking} onChange={(x) => set({ booking: x })} placeholder="Mã booking" /></Field>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: "0 0 4px" }}>
           <Field label="Số INV" hint="hóa đơn"><Txt value={ship.inv} onChange={(x) => set({ inv: x })} placeholder="VD: INV-2026-0142" /></Field>
           <Field label="Nhập / Xuất"><div style={{ marginTop: 2 }}><Seg value={ship.io} onChange={(x) => set({ io: x })} options={["Nhập", "Xuất", "Khác"]} /></div></Field>
+        </div>
+        <div style={{ padding: "6px 0 2px" }}>
+          <ChkBox checked={!!ship.cru} onChange={(v) => set({ cru: v })} label="Hàng CRU" />
+          <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 4, paddingLeft: 25, lineHeight: 1.5 }}>
+            Quyết định KIND khi lấy giá: <b style={{ color: "var(--ink-3)" }}>CRU + Xuất</b> → External CRU · <b style={{ color: "var(--ink-3)" }}>CRU + Nhập</b> → Internal CRU · <b style={{ color: "var(--ink-3)" }}>không CRU</b> → Transportation 1 way.
+          </div>
         </div>
       </Section>
 
@@ -975,7 +1060,7 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
             <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr", gap: 12, padding: "10px 0 0" }}>
               <Field label="Số container"><Txt value={ship.contNo} onChange={(x) => set({ contNo: x })} placeholder="TGHU 123 4567" /></Field>
               <Field label="Loại cont" hint="danh mục"><Combo value={ship.contType} onChange={(x) => set({ contType: x })} options={cfg.contTypes || []} onCreate={(v) => add("contTypes", v)} placeholder="40HC…" /></Field>
-              <Field label="Kho" hint="danh mục"><Combo value={ship.kho} onChange={(x) => set({ kho: x })} options={cfg.warehouses || []} onCreate={(v) => add("warehouses", v)} placeholder="Kho A2…" /></Field>
+              <Field label="Kho" hint="tối đa 3"><MultiCombo values={(ship.kho || "").split(/\s*,\s*/).filter(Boolean)} onChange={(arr) => set({ kho: arr.join(", ") })} options={cfg.warehouses || []} onCreate={(v) => add("warehouses", v)} max={3} placeholder="Chọn kho (tối đa 3)…" /></Field>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: "12px 0 0" }}>
               <Field label="BKS vào"><Combo value={ship.bksVao} onChange={(x) => set({ bksVao: x })} options={cfg.vehicles || []} onCreate={(v) => add("vehicles", v)} placeholder="15C-123.45…" /></Field>
@@ -984,6 +1069,38 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
           </>
         )}
       </Section>
+
+      <div style={{ borderTop: "1px solid var(--line)" }}>
+        <button type="button" onClick={() => setHqOpen((o) => !o)}
+          style={{ width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "13px 0", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
+          <span style={{ color: "var(--ink-4)", display: "inline-flex", transform: hqOpen ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform .15s" }}><I.chev /></span>
+          <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink-2)", letterSpacing: ".01em" }}>Hải Quan</span>
+          {hqFilled > 0 && <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--accent)", background: "var(--accent-weak)", padding: "3px 9px", borderRadius: 999 }}>{hqFilled} mục</span>}
+          {!hqOpen && <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>Số tờ khai, ngày thanh lý, cơ sở hạ tầng…</span>}
+        </button>
+        {hqOpen && (
+          <div style={{ padding: "0 0 14px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <Field label="Số tờ khai"><Txt value={ship.declNo} onChange={(x) => set({ declNo: x })} placeholder="VD: 103456789012" /></Field>
+              <Field label="Ngày thanh lý"><DateField value={ship.thanhLy} onChange={(x) => set({ thanhLy: x })} /></Field>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <Field label="Ghi chú tờ khai">
+                <textarea value={ship.declNote || ""} onChange={(e) => set({ declNote: e.target.value })} placeholder="Ghi chú liên quan tờ khai hải quan…" rows={2}
+                  style={{ width: "100%", padding: "8px 11px", fontSize: 13.5, border: "1px solid var(--line)", borderRadius: 9, outline: "none", resize: "vertical", fontFamily: "inherit" }}
+                  onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
+              </Field>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <Field label="Cơ sở hạ tầng (ghi chú)">
+                <textarea value={ship.cshtNote || ""} onChange={(e) => set({ cshtNote: e.target.value })} placeholder="Ghi chú phí/biên lai cơ sở hạ tầng cảng…" rows={2}
+                  style={{ width: "100%", padding: "8px 11px", fontSize: 13.5, border: "1px solid var(--line)", borderRadius: 9, outline: "none", resize: "vertical", fontFamily: "inherit" }}
+                  onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
+              </Field>
+            </div>
+          </div>
+        )}
+      </div>
 
       <Section title="Thuê xe ngoài">
         <div style={{ padding: "8px 0 2px" }}>
@@ -1005,9 +1122,9 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
       <Section title="Tuyến" >
         <div style={{ fontSize: 11.5, color: "var(--ink-4)", padding: "6px 0 0" }}>Địa điểm lấy từ <b style={{ color: "var(--ink-3)" }}>danh mục Địa điểm</b> — gõ để tìm hoặc thêm mới.</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 36px 1fr", gap: 10, alignItems: "end", padding: "8px 0 10px" }}>
-          <Field label="Nơi lấy"><Combo value={ship.from} onChange={(x) => set({ from: x })} options={cfg.locations || []} onCreate={(v) => add("locations", v)} placeholder="Điểm lấy cont…" /></Field>
+          <Field label="Nơi lấy"><Combo value={ship.from} onChange={(x) => set({ from: x })} options={cfg.locations || []} onCreate={(v) => add("locations", v)} placeholder="Điểm lấy cont…" clearable /></Field>
           <div style={{ display: "grid", placeItems: "center", color: "var(--accent)", paddingBottom: 9 }}><I.arrow /></div>
-          <Field label="Nơi hạ"><Combo value={ship.to} onChange={(x) => set({ to: x })} options={cfg.locations || []} onCreate={(v) => add("locations", v)} placeholder="Điểm hạ cont…" /></Field>
+          <Field label="Nơi hạ"><Combo value={ship.to} onChange={(x) => set({ to: x })} options={cfg.locations || []} onCreate={(v) => add("locations", v)} placeholder="Điểm hạ cont…" clearable /></Field>
         </div>
       </Section>
 
@@ -1112,7 +1229,7 @@ const CFG_GROUPS = [
   { key: "locations", label: "Địa điểm", hint: "depot, cảng, ICD, KCN — dùng cho Tuyến · thêm ký hiệu viết tắt", ph: "VD: Cảng Tân Vũ", coded: true },
   { key: "customers", label: "Khách hàng", hint: "quản lý khách hàng — MST, liên hệ, hạn thanh toán, ghi chú…", ph: "VD: Canon Vietnam" },
   { key: "contTypes", label: "Loại container", hint: "dùng cho cột Cont", ph: "VD: 40HC" },
-  { key: "warehouses", label: "Kho (ICD)", hint: "dùng cho sheet ICD", ph: "VD: Kho A2" },
+  { key: "warehouses", label: "Kho", hint: "kho hàng — dùng cho lô (chọn tối đa 3); tự thêm khi import bảng giá (cột TO)", ph: "VD: Kho A2" },
   { key: "payers", label: "Bên thanh toán", hint: "dùng cho mọi dòng chi phí", ph: "VD: Tài xế" },
   { key: "costItems", label: "Khoản chi phí", hint: "gắn màu “theo dõi” cho khoản cần nhắc khi chưa điền số tiền — dùng chung cho mọi lô", ph: "VD: Phí cân xe", colored: true },
   { key: "choHoItems", label: "Khoản thu/chi hộ", hint: "dùng cho mục Thu chi hộ ở cả Chi phí & Doanh thu · có đơn giá mặc định", ph: "VD: Nâng", priced: true },
@@ -1785,6 +1902,7 @@ function Badge({ children, tone }) {
   const map = {
     good: ["var(--good)", "var(--good-weak)"], warn: ["var(--warn)", "var(--warn-weak)"],
     blue: ["var(--accent)", "var(--accent-weak)"], gray: ["var(--ink-3)", "#eef0f3"],
+    amber: ["#b45309", "#fef3c7"],
   };
   const [fg, bg] = map[tone] || map.gray;
   return <span style={{ fontSize: 11.5, fontWeight: 600, color: fg, background: bg, padding: "3px 9px", borderRadius: 999, whiteSpace: "nowrap" }}>{children}</span>;
@@ -1823,17 +1941,42 @@ function StatementForm({ hph, icd, cfg, onCancel, onSaved }) {
   const info = (cfg.customerInfo || {})[cust] || {};
   const today = new Date().toISOString().slice(0, 10);
 
+  // ----- Định giá lô theo BẢNG GIÁ của khách -----
+  const locationCode = cfg.locationCode || {};
+  const codeOf = (name) => { const v = (name || "").toString().trim(); return locationCode[v] || v; };
+  const cont20 = (s) => /20/.test(s.contType || "");                       // loại cont → 20FT/40FT
+  const connOf = (s) => { const ft = calcFreeTime(s, cfg.freeTimeHours); return ft ? (ft.connect ? "Connect" : "Disconnect") : null; };
+  // KIND mục tiêu theo cờ CRU + Nhập/Xuất
+  const isExport = (s) => (s.io || "").toString().toLowerCase().includes("xu"); // "Xuất"
+  const kindOf = (s) => s.cru ? (isExport(s) ? "External CRU transportation" : "Internal CRU transportation") : "Transportation 1 way of Import/Export";
+  const nk = (v) => (v || "").toString().trim().toLowerCase();
+  const priceFor = (s) => {
+    const list = ((cfg.customerInfo || {})[s.customer] || {}).priceList || [];
+    const fromC = codeOf(s.from), dropC = codeOf(s.to), conn = connOf(s), kind = kindOf(s);
+    const fromMatch = (p) => codeOf(p.from) === fromC || (p.from || "").trim() === (s.from || "").trim();
+    // Điểm hạ = cột "Điểm Hạ" (loc) của bảng giá, khớp với Nơi hạ của lô (theo mã hoặc tên)
+    const dropMatch = (p) => { const c = [codeOf(p.loc), (p.loc || "").trim()]; return c.includes(dropC) || c.includes((s.to || "").trim()); };
+    const kindMatch = (p) => nk(p.kind) === nk(kind);
+    let p = list.find((p) => fromMatch(p) && dropMatch(p) && kindMatch(p) && (!conn || (p.conn || "Connect") === conn));
+    if (!p) p = list.find((p) => fromMatch(p) && dropMatch(p) && kindMatch(p)); // nới: bỏ qua Connect nếu không có giờ
+    const is20 = cont20(s);
+    const cuoc = p ? toNum(is20 ? p.transFee20 : p.transFee40) : 0;
+    const dau = p ? toNum(is20 ? p.fuelFee20 : p.fuelFee40) : 0;
+    const chiHo = ((s.rev && s.rev.choHo) || []).reduce((a, e) => a + toNum(e.amount), 0);
+    return { matched: !!p, conn, kind, is20, cuoc, dau, chiHo, phaiThu: cuoc + dau + chiHo };
+  };
   const all = useMemo(() => {
+    const mk = (s, sheet, date) => ({ s, sheet, date, pr: priceFor(s) });
     const rows = [];
-    hph.forEach((s) => { const r = calcRev(s.rev); rows.push({ s, sheet: "HPH", r, date: s.contRa || s.sailDate || s.rev?.hanTT || "" }); });
-    icd.forEach((s) => { const r = calcRevICD(s.rev); rows.push({ s, sheet: "ICD", r, date: s.contRa || s.contDen || s.rev?.hanTT || "" }); });
-    return rows.filter((x) => x.s.customer === cust && x.r.phaiThu > 0)
+    hph.forEach((s) => rows.push(mk(s, "HPH", s.contRa || s.sailDate || s.rev?.hanTT || "")));
+    icd.forEach((s) => rows.push(mk(s, "ICD", s.contRa || s.contDen || s.rev?.hanTT || "")));
+    return rows.filter((x) => x.s.customer === cust)
       .filter((x) => (!from || !x.date || x.date >= from) && (!to || !x.date || x.date <= to));
-  }, [hph, icd, cust, from, to]);
+  }, [hph, icd, cust, from, to, cfg]);
 
   const [amtOv, setAmtOv] = useState({}); // per-ship override of phải thu
   const sel = all.filter((x) => picked[x.s.id] !== false); // default all selected
-  const lineAmt = (x) => (amtOv[x.s.id] != null ? amtOv[x.s.id] : x.r.phaiThu);
+  const lineAmt = (x) => (amtOv[x.s.id] != null ? amtOv[x.s.id] : x.pr.phaiThu);
   const tongThu = sel.reduce((a, x) => a + lineAmt(x), 0);
   const keNo = "BK-" + today.replace(/-/g, "").slice(2) + "-" + (cust ? cust.slice(0, 3).toUpperCase() : "XXX");
 
@@ -1932,6 +2075,11 @@ function StatementForm({ hph, icd, cfg, onCancel, onSaved }) {
                   </td>
                   <td style={{ padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>
                     {x.s.from} → {x.s.to}<div style={{ fontSize: 11, color: "var(--ink-4)" }} className="tnum">{x.sheet === "HPH" ? (x.s.qty + " × " + x.s.contType) : ((x.s.contNo || x.s.contType) + (x.s.contNo ? " · " + x.s.contType : ""))}</div>
+                    <div className="ke-noprint" style={{ fontSize: 10.5, marginTop: 3 }}>
+                      {x.pr.matched
+                        ? <span style={{ color: "var(--good)" }}>✓ Bảng giá · {x.s.cru ? (/xu/i.test(x.s.io || "") ? "CRU ngoại" : "CRU nội") : "1 chiều"} · {x.pr.conn || "—"} · {x.pr.is20 ? "20FT" : "40FT"} — Cước {fmtShort(x.pr.cuoc)} + Dầu {fmtShort(x.pr.dau)}{x.pr.chiHo ? " + Chi hộ " + fmtShort(x.pr.chiHo) : ""}</span>
+                        : <span style={{ color: "var(--warn)" }}>⚠ Chưa khớp bảng giá{x.pr.chiHo ? " · mới có Chi hộ " + fmtShort(x.pr.chiHo) : " · phải thu 0"}</span>}
+                    </div>
                   </td>
                   <td className="tnum" style={{ padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{fmtDate(x.date) || "—"}</td>
                   <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: "1px solid var(--line-2)", fontWeight: 600 }}>

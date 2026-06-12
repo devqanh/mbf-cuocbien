@@ -95,20 +95,29 @@ function ShipmentsApp() {
     dirtyIds.current.add(id);
     setShips((s) => s.map((sh) => (sh.id === id ? { ...sh, ...np } : sh)));
   };
-  // Lưu các lô đã sửa (mặc định: tất cả dirty). Trả về Promise<boolean>.
-  const commitDirty = (ids) => {
+  // Lưu các lô đã sửa: lô nháp (_new) → POST tạo mới; lô có sẵn → PUT. Trả về Promise<boolean>.
+  const commitDirty = async (ids) => {
     const list = ids ? ids.filter((id) => dirtyIds.current.has(id)) : [...dirtyIds.current];
-    if (!list.length) return Promise.resolve(true);
+    if (!list.length) return true;
     const cur = ships;
-    const payloads = list.map((id) => cur.find((s) => s.id === id)).filter(Boolean);
-    return Promise.all(payloads.map((ship) => api("PUT", ROUTES.shipment + ship.id, { sheet, ship })))
-      .then((rs) => {
-        const ok = rs.every((r) => r && r.ok);
-        if (ok) { list.forEach((id) => dirtyIds.current.delete(id)); window.trkToast && window.trkToast("Đã lưu"); }
-        else window.trkToast && window.trkToast("Lưu thất bại", "error");
-        return ok;
-      })
-      .catch(() => { window.trkToast && window.trkToast("Lỗi kết nối khi lưu", "error"); return false; });
+    let ok = true;
+    for (const id of list) {
+      const ship = cur.find((s) => s.id === id);
+      if (!ship) continue;
+      // Bắt buộc Khách hàng + Số booking trước khi tạo/lưu
+      if (!((ship.customer || "").toString().trim()) || !((ship.booking || "").toString().trim())) { ok = false; continue; }
+      if (ship._new) {
+        const res = await api("POST", ROUTES.shipmentStore, { sheet, ship });
+        if (res && res.ok) { dirtyIds.current.delete(id); setShips((x) => x.map((s) => (s.id === id ? res.ship : s))); }
+        else ok = false;
+      } else {
+        const res = await api("PUT", ROUTES.shipment + id, { sheet, ship });
+        if (res && res.ok) dirtyIds.current.delete(id);
+        else ok = false;
+      }
+    }
+    window.trkToast && window.trkToast(ok ? "Đã lưu" : "Chưa lưu được (kiểm tra Khách hàng / Số booking)", ok ? undefined : "error");
+    return ok;
   };
   const isDirty = (id) => dirtyIds.current.has(id);
   const active = modal ? ships.find((s) => s.id === modal.id) : null;
@@ -190,19 +199,20 @@ function ShipmentsApp() {
     return a;
   }, { cost: 0, rev: 0, thu: 0, no: 0, profit: 0, overdue: 0 }), [ships, sheet]);
 
-  const addRow = async () => {
+  // Thêm lô = tạo bản NHÁP cục bộ (chưa ghi server). Chỉ tạo thật khi bấm "Lưu thông tin" (đủ Khách hàng + Số booking).
+  const addRow = () => {
     const vat = (cfg.vatDefault || {})[sheet] || (isHph ? "8" : "0");
-    const base = isHph
-      ? { customer: "", booking: "", io: "Xuất", qty: 1, contType: "40HC", contNo: "", from: "", to: "", sailDate: "", cutOff: "", cost: { items: [] }, rev: { vatRate: vat, doanhThu: [], choHo: [], payments: [] } }
-      : { customer: "", booking: "", io: "Nhập", contNo: "", contType: "40HC", kho: "", bksVao: "", bksRa: "", from: "ICD Quế Võ", to: "", contDen: "", contRa: "", cost: { items: [] }, rev: { vatRate: vat, doanhThu: [], choHo: [], payments: [] } };
-    const res = await api("POST", ROUTES.shipmentStore, { sheet, ship: base });
-    if (res && res.ok) {
-      setShips((x) => [...x, res.ship]);
-      setModal({ id: res.ship.id, type: "info" });
-      window.trkToast && window.trkToast("Đã thêm lô hàng mới");
-    } else {
-      window.trkToast && window.trkToast("Không thể thêm lô hàng", "error");
-    }
+    const tmpId = "tmp_" + Date.now() + "_" + Math.floor(Math.random() * 1000);
+    const base = { id: tmpId, _new: true, customer: "", booking: "", io: "Nhập", contNo: "", contType: "40HC", kho: "", bksVao: "", bksRa: "", from: "ICD Quế Võ", to: "", contDen: "", contRa: "", cutOff: "", gioDenDuKien: "", gioXeRa: "", cost: { items: [] }, rev: { vatRate: vat, doanhThu: [], choHo: [], payments: [] } };
+    dirtyIds.current.add(tmpId);
+    setShips((x) => [...x, base]);
+    setModal({ id: tmpId, type: "info" });
+  };
+  // Đóng popup thông tin: nếu là lô nháp chưa lưu → bỏ khỏi danh sách
+  const closeInfo = () => {
+    const cur = modal ? ships.find((s) => s.id === modal.id) : null;
+    if (cur && cur._new) { dirtyIds.current.delete(cur.id); setShips((x) => x.filter((s) => s.id !== cur.id)); }
+    setModal(null);
   };
 
   const delShip = async (id) => {
@@ -495,6 +505,7 @@ function ShipmentsApp() {
                         <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 3 }}>
                           <span style={{ fontSize: 12, color: "var(--ink-3)" }} className="tnum">{s.booking || "—"}</span>
                           <Badge tone={s.io === "Nhập" ? "blue" : "gray"}>{s.io}</Badge>
+                          {s.cru ? <Badge tone="amber">CRU</Badge> : null}
                         </div>
                       </EditCell>
                     </TD>
@@ -592,7 +603,7 @@ function ShipmentsApp() {
       {active && modal.type === "rev" && (isHph
         ? <RevenuePopup ship={active} patch={(np) => patch(active.id, np)} onSave={() => commitDirty()} isDirty={isDirty} onClose={() => setModal(null)} cfg={cfg} addCfg={addCfg} />
         : <RevenuePopupICD ship={active} patch={(np) => patch(active.id, np)} onSave={() => commitDirty()} isDirty={isDirty} onClose={() => setModal(null)} cfg={cfg} addCfg={addCfg} />)}
-      {active && modal.type === "info" && <InfoPopup ship={active} isHph={isHph} patch={(np) => patch(active.id, np)} patchOther={(id, np) => patch(id, np)} onSave={() => commitDirty()} isDirty={isDirty} siblings={ships.filter((x) => x.id !== active.id)} onClose={() => setModal(null)} onDelete={() => delShip(active.id)} canDelete={T.canDelete} cfg={cfg} addCfg={addCfg} />}
+      {active && modal.type === "info" && <InfoPopup ship={active} isHph={isHph} patch={(np) => patch(active.id, np)} patchOther={(id, np) => patch(id, np)} onSave={() => commitDirty()} isDirty={isDirty} siblings={ships.filter((x) => x.id !== active.id)} onClose={closeInfo} onDelete={active._new ? null : () => delShip(active.id)} canDelete={T.canDelete} cfg={cfg} addCfg={addCfg} />}
 
       {showImport && (
         <Modal title="Import lô hàng từ Excel" subtitle="Khách hàng · Nơi lấy · Nơi hạ phải có sẵn — kiểm tra trước, 1 lỗi là không import gì cả" width={720} icon={<I.truck />}
