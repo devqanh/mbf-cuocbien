@@ -9,12 +9,13 @@ use App\Http\Controllers\ShipmentController;
 use App\Http\Controllers\TaskCommentController;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\TruckingController;
+use App\Http\Controllers\TruckingV2Controller;
 use App\Http\Controllers\UserController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
-    return redirect()->route(auth()->check() ? 'trucking.index' : 'login');
+    return redirect()->route(auth()->check() ? 'trucking2.shipments' : 'login');
 });
 
 // ===== Tài liệu Trucking — CÔNG KHAI (không cần đăng nhập) để gửi kế toán =====
@@ -35,6 +36,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/profile',           [ProfileController::class, 'show'])->name('profile.show');
     Route::put('/profile/info',      [ProfileController::class, 'updateInfo'])->name('profile.info');
     Route::put('/profile/password',  [ProfileController::class, 'updatePassword'])->name('profile.password');
+    // Quản lý thiết bị / phiên đăng nhập
+    Route::post  ('/profile/sessions/logout-others', [ProfileController::class, 'revokeOtherSessions'])->name('profile.sessions.logoutOthers');
+    Route::delete('/profile/sessions/{sessionId}',   [ProfileController::class, 'revokeSession'])->name('profile.sessions.revoke');
 
     // ===== Follow Up Shipment ===== (TẠM TẮT qua config features.shipments)
     if (config('features.shipments')) {
@@ -82,15 +86,37 @@ Route::middleware('auth')->group(function () {
     });
     } // end if features.shipments
 
-    // ===== Trucking (2 sheet HẠ HPH + HẠ ICD) — tái dùng quyền shipments.* =====
-    Route::middleware('permission:shipments.view')->group(function () {
-        Route::get('/trucking',      [TruckingController::class, 'index'])->name('trucking.index');
-        Route::get('/trucking/data', [TruckingController::class, 'data'])->name('trucking.data');
-        Route::put('/me/trucking-column-prefs', [TruckingController::class, 'updateColumnPrefs'])->name('trucking.columnPrefs');
-    });
-    Route::middleware('permission:shipments.update')->group(function () {
-        Route::post('/trucking/bulk',           [TruckingController::class, 'bulk'])->name('trucking.bulk');
-        Route::post('/trucking/reset-snapshot', [TruckingController::class, 'resetSnapshot'])->name('trucking.resetSnapshot');
+    // ===== Trucking cũ (Luckysheet) ĐÃ GỠ — giữ tên 'trucking.index' làm alias chuyển sang v2
+    //        (nhiều nơi vẫn link 'Trang chủ' tới route này) =====
+    Route::get('/trucking', fn () => redirect()->route('trucking2.shipments'))->name('trucking.index');
+
+    // ===== Trucking v2 (record + popup) — chạy song song, tái dùng quyền shipments.* =====
+    Route::prefix('trucking-v2')->name('trucking2.')->group(function () {
+        Route::middleware('permission:shipments.view')->group(function () {
+            Route::get('/', fn () => redirect()->route('trucking2.shipments'));
+            Route::get('/lo-hang',   [TruckingV2Controller::class, 'shipments'])->name('shipments');
+            Route::get('/bang-gia',  [TruckingV2Controller::class, 'prices'])->name('prices');
+            Route::get('/bang-ke',     [TruckingV2Controller::class, 'statements'])->name('statements');
+            Route::get('/bang-ke/tao', [TruckingV2Controller::class, 'createStatement'])->name('statements.create');
+            Route::get('/cai-dat',   [TruckingV2Controller::class, 'settings'])->name('settings');
+            Route::get('/bootstrap', [TruckingV2Controller::class, 'bootstrap'])->name('bootstrap');
+        });
+        Route::middleware('permission:shipments.update')->group(function () {
+            Route::post('/shipments',             [TruckingV2Controller::class, 'storeShipment'])->name('shipments.store');
+            Route::put ('/shipments/{shipment}',  [TruckingV2Controller::class, 'updateShipment'])->name('shipments.update');
+            // Mỗi danh mục Cài đặt = 1 endpoint riêng (1 bảng)
+            Route::put ('/catalog/{type}',         [TruckingV2Controller::class, 'saveCatalog'])->name('catalog.save');
+            Route::put ('/customers',              [TruckingV2Controller::class, 'saveCustomers'])->name('customers.save');
+            Route::put ('/vehicles',               [TruckingV2Controller::class, 'saveVehicles'])->name('vehicles.save');
+            Route::put ('/settings',               [TruckingV2Controller::class, 'saveSettings'])->name('settings.save');
+            Route::post('/price-import',           [TruckingV2Controller::class, 'importPrices'])->name('priceImport');
+            Route::post('/statements',            [TruckingV2Controller::class, 'storeStatement'])->name('statements.store');
+            Route::put ('/statements/{statement}', [TruckingV2Controller::class, 'updateStatement'])->name('statements.update');
+        });
+        Route::middleware('permission:shipments.delete')->group(function () {
+            Route::delete('/shipments/{shipment}',   [TruckingV2Controller::class, 'destroyShipment'])->name('shipments.destroy');
+            Route::delete('/statements/{statement}', [TruckingV2Controller::class, 'destroyStatement'])->name('statements.destroy');
+        });
     });
 
     // ===== Reports - Payable =====

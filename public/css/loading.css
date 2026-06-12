@@ -1,0 +1,80 @@
+/* ====================================================================
+ * Global AJAX loading — top progress bar + delayed center overlay.
+ * Bar = light feedback (mọi request).
+ * Overlay = chỉ hiện khi request quá lâu (>600ms) để khỏi flash.
+ * ==================================================================== */
+
+.app-loading-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 3px;
+    width: 0;
+    z-index: 99999;
+    background: linear-gradient(90deg, var(--azia-primary, #3b82f6), #60a5fa);
+    box-shadow: 0 0 10px rgba(59, 130, 246, .55), 0 0 4px rgba(59, 130, 246, .45);
+    border-radius: 0 4px 4px 0;
+    opacity: 0;
+    transition: width .25s cubic-bezier(.4, 0, .2, 1), opacity .35s ease;
+    pointer-events: none;
+}
+.app-loading-bar.is-active { opacity: 1; }
+.app-loading-bar.is-done   { opacity: 0; }
+
+.app-loading-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 99998;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(15, 23, 42, .28);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    animation: app-loading-fade .2s ease;
+}
+.app-loading-overlay.is-active { display: flex; }
+
+.app-loading-card {
+    background: #fff;
+    border-radius: 14px;
+    padding: 18px 26px;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, .18), 0 2px 8px rgba(0, 0, 0, .08);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 180px;
+}
+
+.app-loading-spinner {
+    width: 28px;
+    height: 28px;
+    border: 3px solid #e5e7eb;
+    border-top-color: var(--azia-primary, #3b82f6);
+    border-radius: 50%;
+    animation: app-loading-spin .8s linear infinite;
+    flex-shrink: 0;
+}
+
+.app-loading-text {
+    font-size: 14px;
+    color: #334155;
+    font-weight: 500;
+    letter-spacing: .2px;
+    white-space: nowrap;
+}
+
+@keyframes app-loading-spin {
+    to { transform: rotate(360deg); }
+}
+@keyframes app-loading-fade {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+/* Dark backdrop nhẹ hơn trên màn hình tối (Bootstrap dark mode nếu có) */
+@media (prefers-color-scheme: dark) {
+    .app-loading-card { background: #1f2937; }
+    .app-loading-text { color: #e5e7eb; }
+    .app-loading-spinner { border-color: #374151; }
+}

@@ -60,6 +60,47 @@
         line-height: 1.5;
         margin-bottom: 16px;
     }
+
+    /* ===== Quản lý thiết bị ===== */
+    .device-list { display: flex; flex-direction: column; gap: 10px; }
+    .device-row {
+        display: flex; align-items: center; gap: 14px;
+        padding: 14px 16px;
+        border: 1px solid var(--azia-border);
+        border-radius: 12px;
+        background: #fff;
+        transition: border-color .15s, box-shadow .15s;
+    }
+    .device-row:hover { border-color: var(--azia-primary); box-shadow: 0 2px 10px rgba(1,83,169,.06); }
+    .device-row.is-current { border-color: var(--azia-primary); background: var(--azia-primary-soft); }
+    .device-ico {
+        flex: 0 0 auto;
+        width: 44px; height: 44px;
+        border-radius: 12px;
+        background: var(--azia-primary-soft);
+        color: var(--azia-primary);
+        display: inline-flex; align-items: center; justify-content: center;
+        font-size: 22px;
+    }
+    .device-row.is-current .device-ico { background: var(--azia-primary); color: #fff; }
+    .device-meta { flex: 1; min-width: 0; }
+    .device-meta .title {
+        font-weight: 600; font-size: 14px; color: var(--azia-text);
+        display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    }
+    .device-meta .sub {
+        font-size: 12.5px; color: var(--azia-muted);
+        margin-top: 3px;
+        display: flex; flex-wrap: wrap; gap: 6px 14px;
+    }
+    .device-meta .sub i { color: var(--azia-primary); margin-right: 3px; }
+    .device-actions { flex: 0 0 auto; }
+    .device-current-badge {
+        display: inline-flex; align-items: center; gap: 4px;
+        background: var(--azia-primary); color: #fff;
+        padding: 2px 10px; border-radius: 999px;
+        font-size: 11px; font-weight: 600;
+    }
 </style>
 @endpush
 
@@ -141,7 +182,7 @@
                         <i class="bi bi-info-circle me-1"></i>
                         Mật khẩu nên có tối thiểu 6 ký tự. Sau khi đổi, các thiết bị khác đã đăng nhập vẫn giữ phiên cho đến khi hết hạn.
                     </div>
-                    <form method="POST" action="{{ route('profile.password') }}" autocomplete="off">
+                    <form id="passwordForm" method="POST" action="{{ route('profile.password') }}" autocomplete="off">
                         @csrf @method('PUT')
                         <div class="mb-3">
                             <label class="form-label fw-semibold">Mật khẩu hiện tại <span class="text-danger">*</span></label>
@@ -163,6 +204,60 @@
                             </button>
                         </div>
                     </form>
+                </div>
+            </div>
+
+            {{-- Quản lý thiết bị đăng nhập --}}
+            <div class="card mt-3">
+                <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+                    <div>
+                        <i class="bi bi-laptop me-1" style="color: var(--azia-primary)"></i>
+                        Quản lý thiết bị đăng nhập
+                        <span class="badge badge-soft-primary ms-1">{{ count($sessions) }}</span>
+                    </div>
+                    @if(count($sessions) > 1)
+                        <button type="button" class="btn btn-sm btn-outline-danger" id="btnLogoutOthers">
+                            <i class="bi bi-box-arrow-right me-1"></i> Đăng xuất các thiết bị khác
+                        </button>
+                    @endif
+                </div>
+                <div class="card-body">
+                    @if(empty($sessions))
+                        <div class="text-muted small">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Không có phiên đăng nhập nào được ghi nhận.
+                        </div>
+                    @else
+                        <div class="device-list" id="deviceList">
+                            @foreach($sessions as $s)
+                                <div class="device-row {{ $s['is_current'] ? 'is-current' : '' }}" data-session-id="{{ $s['id'] }}">
+                                    <div class="device-ico"><i class="bi bi-{{ $s['icon'] }}"></i></div>
+                                    <div class="device-meta">
+                                        <div class="title">
+                                            <span>{{ $s['browser'] }} · {{ $s['os'] }}</span>
+                                            @if($s['is_current'])
+                                                <span class="device-current-badge"><i class="bi bi-check-circle-fill"></i> Phiên hiện tại</span>
+                                            @endif
+                                        </div>
+                                        <div class="sub">
+                                            <span><i class="bi bi-geo-alt"></i>{{ $s['location'] ?? 'Không xác định vị trí' }}</span>
+                                            <span><i class="bi bi-hdd-network"></i>{{ $s['ip'] ?? '—' }}</span>
+                                            <span><i class="bi bi-clock-history"></i>Hoạt động {{ $s['last_activity']->diffForHumans() }}</span>
+                                        </div>
+                                    </div>
+                                    <div class="device-actions">
+                                        @if(! $s['is_current'])
+                                            <button type="button" class="btn btn-sm btn-outline-danger js-revoke"
+                                                    data-session-id="{{ $s['id'] }}"
+                                                    data-device="{{ $s['browser'] }} · {{ $s['os'] }}">
+                                                <i class="bi bi-box-arrow-right me-1"></i> Thoát
+                                            </button>
+                                        @endif
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    @endif
                 </div>
             </div>
         </div>
@@ -209,3 +304,89 @@
         </div>
     </div>
 @endsection
+
+@push('scripts')
+<script>
+    // Confirm trước khi đổi mật khẩu — security-sensitive
+    (function () {
+        const $form = document.getElementById('passwordForm');
+        if (! $form) return;
+        $form.addEventListener('submit', async (e) => {
+            if ($form.dataset.confirmed === '1') return;
+            e.preventDefault();
+            const ok = await window.confirmAction({
+                title: 'Xác nhận đổi mật khẩu?',
+                text: 'Hãy ghi nhớ mật khẩu mới của bạn. Các thiết bị đã đăng nhập sẽ vẫn giữ phiên cho đến khi hết hạn.',
+                confirmText: '<i class="bi bi-shield-lock me-1"></i> Đổi mật khẩu',
+                danger: true,
+            });
+            if (! ok) return;
+            $form.dataset.confirmed = '1';
+            $form.submit();
+        });
+    })();
+
+    // ===== Quản lý thiết bị =====
+    (function () {
+        const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+        const esc  = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+        async function call(url, method) {
+            const res = await fetch(url, {
+                method,
+                headers: { 'X-CSRF-TOKEN': csrf, 'Accept': 'application/json' },
+                credentials: 'same-origin',
+            });
+            const data = await res.json().catch(() => ({}));
+            return { ok: res.ok && data.ok !== false, data };
+        }
+
+        // Thoát 1 thiết bị
+        document.querySelectorAll('.js-revoke').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                const id     = btn.dataset.sessionId;
+                const device = btn.dataset.device || 'Thiết bị này';
+                const ok = await window.confirmAction({
+                    title: 'Thoát thiết bị này?',
+                    text: `Phiên đăng nhập trên <b>${esc(device)}</b> sẽ bị huỷ. Lần truy cập tiếp theo, thiết bị đó sẽ phải đăng nhập lại.`,
+                    confirmText: '<i class="bi bi-box-arrow-right me-1"></i> Thoát thiết bị',
+                    danger: true,
+                });
+                if (! ok) return;
+
+                const { ok: success, data } = await call(`{{ url('/profile/sessions') }}/${encodeURIComponent(id)}`, 'DELETE');
+                if (success) {
+                    btn.closest('.device-row')?.remove();
+                    Swal.fire({ ...APP_SWAL, icon: 'success', title: 'Đã thoát thiết bị', timer: 1600, showConfirmButton: false });
+                } else {
+                    Swal.fire({ ...APP_SWAL, icon: 'error', title: 'Không thể thoát thiết bị', text: data.message || 'Vui lòng thử lại.' });
+                }
+            });
+        });
+
+        // Đăng xuất tất cả thiết bị khác
+        const $btnAll = document.getElementById('btnLogoutOthers');
+        if ($btnAll) {
+            $btnAll.addEventListener('click', async () => {
+                const ok = await window.confirmAction({
+                    title: 'Đăng xuất các thiết bị khác?',
+                    text: 'Tất cả phiên đăng nhập trên các thiết bị khác (không phải thiết bị hiện tại) sẽ bị huỷ.',
+                    confirmText: '<i class="bi bi-box-arrow-right me-1"></i> Đăng xuất tất cả',
+                    danger: true,
+                });
+                if (! ok) return;
+
+                const { ok: success, data } = await call('{{ route('profile.sessions.logoutOthers') }}', 'POST');
+                if (success) {
+                    // Xoá tất cả row không phải current khỏi DOM
+                    document.querySelectorAll('#deviceList .device-row:not(.is-current)').forEach((el) => el.remove());
+                    $btnAll.remove();
+                    Swal.fire({ ...APP_SWAL, icon: 'success', title: data.message || 'Đã đăng xuất các thiết bị khác', timer: 1800, showConfirmButton: false });
+                } else {
+                    Swal.fire({ ...APP_SWAL, icon: 'error', title: 'Không thể thực hiện', text: data.message || 'Vui lòng thử lại.' });
+                }
+            });
+        }
+    })();
+</script>
+@endpush

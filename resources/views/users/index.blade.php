@@ -474,5 +474,52 @@
             document.getElementById('u_pw_hint').textContent = '(bắt buộc)';
         }
     }
+
+    // ===== Confirm trước khi lưu (3 form: user, column perms, trucking column perms) =====
+    (function () {
+        const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+        // Form thêm/sửa user — gán role = trao quyền truy cập
+        const $userForm = document.getElementById('userForm');
+        $userForm.addEventListener('submit', async (e) => {
+            if ($userForm.dataset.confirmed === '1') return;
+            e.preventDefault();
+            const isUpdate = document.getElementById('u_method').value === 'PUT';
+            const name  = document.getElementById('u_name').value.trim() || '(chưa đặt tên)';
+            const email = document.getElementById('u_email').value.trim() || '(chưa có email)';
+            const roles = Array.from(document.querySelectorAll('#userForm .role-check:checked')).map(c => c.value);
+            const rolesHtml = roles.length ? esc(roles.join(', ')) : '<i class="text-muted">chưa gán vai trò</i>';
+            const ok = await window.confirmAction({
+                title: isUpdate ? 'Cập nhật thành viên?' : 'Tạo thành viên mới?',
+                text: `<div class="text-start"><b>${esc(name)}</b> · ${esc(email)}<br><span class="text-muted small">Vai trò:</span> ${rolesHtml}</div>`,
+                confirmText: '<i class="bi bi-save me-1"></i> ' + (isUpdate ? 'Cập nhật' : 'Tạo'),
+            });
+            if (! ok) return;
+            $userForm.dataset.confirmed = '1';
+            $userForm.submit();
+        });
+
+        // 2 form quyền cột — áp dụng ngay cho user, ảnh hưởng dữ liệu user thấy được
+        [
+            { id: 'columnPermsForm',         nameEl: 'cp_user_name',  scope: 'Shipment' },
+            { id: 'truckingColumnPermsForm', nameEl: 'tcp_user_name', scope: 'Trucking' },
+        ].forEach(({ id, nameEl, scope }) => {
+            const $form = document.getElementById(id);
+            if (! $form) return;
+            $form.addEventListener('submit', async (e) => {
+                if ($form.dataset.confirmed === '1') return;
+                e.preventDefault();
+                const userName = (document.getElementById(nameEl)?.textContent || '').trim();
+                const ok = await window.confirmAction({
+                    title: 'Lưu quyền cột?',
+                    text: `Quyền cột <b>${esc(scope)}</b> của <b>${esc(userName)}</b> sẽ được áp dụng ngay khi user F5 trang.`,
+                    confirmText: '<i class="bi bi-save me-1"></i> Lưu quyền',
+                });
+                if (! ok) return;
+                $form.dataset.confirmed = '1';
+                $form.submit();
+            });
+        });
+    })();
 </script>
 @endpush

@@ -16,6 +16,10 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css">
 
     <link rel="stylesheet" href="@assetVer('css/app.css')">
+    <link rel="stylesheet" href="@assetVer('css/loading.css')">
+
+    {{-- Global AJAX loading: patch window.fetch sớm (trước mọi script khác) --}}
+    <script src="@assetVer('js/loading.js')"></script>
     @stack('styles')
 </head>
 <body>
@@ -33,12 +37,30 @@
 
             <div class="collapse navbar-collapse app-nav" id="mainNav">
                 <ul class="navbar-nav me-auto">
-                    {{-- Trucking (HẠ HPH + HẠ ICD) --}}
+                    {{-- Trucking (record + popup) — 4 trang riêng --}}
                     @can('shipments.view')
                     <li class="nav-item">
-                        <a class="nav-link {{ request()->routeIs('trucking.*') ? 'active' : '' }}"
-                           href="{{ route('trucking.index') }}">
-                            <i class="bi bi-truck-front"></i> Trucking
+                        <a class="nav-link {{ request()->routeIs('trucking2.shipments') ? 'active' : '' }}"
+                           href="{{ route('trucking2.shipments') }}">
+                            <i class="bi bi-box-seam"></i> Lô hàng
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {{ request()->routeIs('trucking2.prices') ? 'active' : '' }}"
+                           href="{{ route('trucking2.prices') }}">
+                            <i class="bi bi-tags"></i> Bảng giá
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {{ request()->routeIs('trucking2.statements') ? 'active' : '' }}"
+                           href="{{ route('trucking2.statements') }}">
+                            <i class="bi bi-receipt"></i> Bảng kê
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {{ request()->routeIs('trucking2.settings') ? 'active' : '' }}"
+                           href="{{ route('trucking2.settings') }}">
+                            <i class="bi bi-sliders"></i> Cài đặt trucking
                         </a>
                     </li>
                     @endcan

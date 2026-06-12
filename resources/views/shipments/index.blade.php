@@ -2139,6 +2139,14 @@
             document.getElementById('btnReload').addEventListener('click', loadData);
 
             document.getElementById('btnSaveAll').addEventListener('click', async () => {
+                // Confirm trước khi bulk save — đè snapshot + broadcast realtime cho mọi user
+                const ok = await window.confirmAction({
+                    title: 'Lưu toàn bộ thay đổi?',
+                    text: 'Các chỉnh sửa hiện tại sẽ được ghi vào cơ sở dữ liệu và đồng bộ realtime cho mọi người đang xem.',
+                    confirmText: '<i class="bi bi-save me-1"></i> Lưu ngay',
+                });
+                if (! ok) return;
+
                 // Auto-clear filter trước save để không lưu row heights=0 vào snapshot
                 if (dateFilterState.active) {
                     clearDateFilter(false);

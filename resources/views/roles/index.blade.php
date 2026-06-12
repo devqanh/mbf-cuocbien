@@ -527,5 +527,28 @@
         const anyUnchecked = Array.from(items).some(i => !i.checked);
         items.forEach(i => i.checked = anyUnchecked);
     }
+
+    // Confirm trước khi submit — đổi role = ảnh hưởng mọi user thuộc role này
+    (function () {
+        const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        const $form = document.getElementById('roleForm');
+        $form.addEventListener('submit', async (e) => {
+            if ($form.dataset.confirmed === '1') return;
+            e.preventDefault();
+            const isUpdate = document.getElementById('r_method').value === 'PUT';
+            const name = document.getElementById('r_display_name').value.trim() || '(chưa đặt tên)';
+            const permCount = document.querySelectorAll('#roleForm .perm-check:checked').length;
+            const ok = await window.confirmAction({
+                title: isUpdate ? 'Cập nhật vai trò?' : 'Tạo vai trò mới?',
+                text: isUpdate
+                    ? `Vai trò <b>${esc(name)}</b> sẽ áp dụng <b>${permCount}</b> quyền cho mọi user thuộc role này.`
+                    : `Sắp tạo vai trò <b>${esc(name)}</b> với <b>${permCount}</b> quyền.`,
+                confirmText: '<i class="bi bi-save me-1"></i> ' + (isUpdate ? 'Cập nhật' : 'Tạo'),
+            });
+            if (! ok) return;
+            $form.dataset.confirmed = '1';
+            $form.submit();
+        });
+    })();
 </script>
 @endpush
