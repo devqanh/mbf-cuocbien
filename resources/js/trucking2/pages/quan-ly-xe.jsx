@@ -267,8 +267,14 @@ function CostTab({ rows, onChange, costTypes, saving, onUploadPhotos, highlightI
     let prev = null;
     arr.forEach((x) => { if (x.km > 0) { if (prev != null && x.km > prev) kmDelta[x.i] = x.km - prev; prev = x.km; } });
   });
-  // Thứ tự hiển thị: MỚI NHẤT → cũ nhất (theo ngày chi), giữ index gốc để sửa/xóa đúng dòng.
-  const order = all.map((_, i) => i).filter((i) => match(all[i])).sort((a, b) => (all[b].spendDate || "").localeCompare(all[a].spendDate || ""));
+  // Thứ tự hiển thị: ưu tiên theo trạng thái rồi MỚI NHẤT → cũ nhất (theo ngày chi). Giữ index gốc để sửa/xóa đúng dòng.
+  // Nhóm: 0 = chưa duyệt & chưa TT (ưu tiên cao nhất) → 1 = đã duyệt, chờ TT → 2 = đã thanh toán (xuống cuối).
+  const stRank = (r) => (r.paid ? 2 : r.approved ? 1 : 0);
+  const order = all.map((_, i) => i).filter((i) => match(all[i])).sort((a, b) => {
+    const dr = stRank(all[a]) - stRank(all[b]);
+    if (dr !== 0) return dr;
+    return (all[b].spendDate || "").localeCompare(all[a].spendDate || "");
+  });
 
   const openAdd = () => setEdit({ i: -1, d: blankCost() });
   const openEdit = (i) => setEdit({ i, d: { ...all[i] } });
