@@ -15,6 +15,7 @@ const CFG_GROUPS = [
   { key: "vehicles", label: "Biển số xe", hint: "đội xe — mỗi biển số chọn Xe MBF hay Xe ngoài", ph: "VD: 15C-123.45", fleet: true },
   { key: "drivers", label: "Lái xe", hint: "hồ sơ tài xế — SĐT (nhiều số), ngày sinh, ngày vào công ty (tự tính thâm niên), tài khoản ngân hàng, tài liệu CCCD/bằng lái", ph: "VD: A.Tuấn", drivers: true },
   { key: "salaryItems", label: "Khoản lương (lái xe)", hint: "các khoản lương thêm (thưởng, phụ cấp…) — chọn ở Phí xe nội bộ thay vì nhập tay để sau tổng hợp lương dễ", ph: "VD: Thưởng chuyên cần" },
+  { key: "vehicleCostTypes", label: "Loại chi phí xe", hint: "loại chi phí bảo dưỡng/sửa chữa xe — chọn ở Quản lý xe (tab Chi phí) để nhóm báo cáo theo loại", ph: "VD: Bảo dưỡng định kỳ" },
   { key: "routeFees", label: "Phí tuyến đường", hint: "định mức phí & dầu cho từng tuyến (tập kho) — vé trạm, tiền đường, trợ cấp, phí khác, lương CRU, km, dầu 2 cầu/1 cầu", ph: "", routefees: true },
   { key: "fuelPrices", label: "Bảng giá dầu", hint: "đơn giá dầu (đồng/lít) theo khoảng ngày — link tính tiền dầu cho tuyến theo ngày của lô", ph: "", fuelprices: true },
   { key: "__general", label: "Cấu hình chung", hint: "cấu hình dùng chung cho hệ thống — VAT mặc định, ngưỡng Free time… (mở rộng thêm sau)", general: true },
@@ -302,7 +303,7 @@ function DriversManager({ cfg, setCfg }) {
     const fd = new FormData(); files.forEach((f) => fd.append("files[]", f)); fd.append("type", docType);
     setBusy(true);
     try {
-      const res = await fetch(ROUTES.driversBase + cur.id + "/docs", { method: "POST", headers: { "Accept": "application/json", "X-CSRF-TOKEN": T.csrf }, body: fd }).then((r) => r.json());
+      const res = await window.trkUpload("POST", ROUTES.driversBase + cur.id + "/docs", fd);
       if (res && res.ok) { setDriver({ docs: res.docs }); window.trkToast && window.trkToast(`Đã tải ${files.length} tài liệu`); }
       else window.trkToast && window.trkToast((res && res.message) || "Tải lên thất bại", "error");
     } catch (err) { window.trkToast && window.trkToast("Lỗi kết nối khi tải lên", "error"); }
@@ -414,7 +415,7 @@ function DriversManager({ cfg, setCfg }) {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10 }}>
               {(cur.docs || []).map((doc, di) => (
                 <div key={di} style={{ border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden", background: "#fafbfc" }}>
-                  <a href={doc.url} target="_blank" rel="noreferrer" style={{ display: "block", height: 96, background: "#fff", display: "grid", placeItems: "center", overflow: "hidden" }}>
+                  <a href={doc.url} target="_blank" rel="noreferrer" style={{ height: 96, background: "#fff", display: "grid", placeItems: "center", overflow: "hidden" }}>
                     {doc.isImage
                       ? <img src={doc.url} alt={doc.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                       : <span style={{ fontSize: 30, color: "var(--ink-4)" }}><i className="bi bi-file-earmark-text" /></span>}

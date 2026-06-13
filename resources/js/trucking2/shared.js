@@ -66,3 +66,95 @@ window.trkToast = function(msg, type){
   }, 2400);
 };
 
+/* Hộp LỖI HỆ THỐNG — hiện rõ (không tự tắt) để khách chụp màn hình gửi hỗ trợ.
+   info: { status, message, url } */
+window.trkError = function(info){
+  info = info || {};
+  var status = info.status || 0;
+  var title = status >= 500 ? ('Lỗi máy chủ (mã ' + status + ')')
+            : status === 0 ? 'Mất kết nối'
+            : status ? ('Yêu cầu lỗi (mã ' + status + ')') : 'Đã xảy ra lỗi';
+  var msg = info.message || 'Không xác định';
+  var url = info.url || '';
+  var when = new Date().toLocaleString('vi-VN');
+  var esc = function(s){ return String(s==null?'':s).replace(/[&<>]/g, function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];}); };
+  var old = document.getElementById('trk-error-ov'); if (old && old.parentNode) old.parentNode.removeChild(old);
+  var ov = document.createElement('div'); ov.id = 'trk-error-ov';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:4000;background:rgba(16,19,23,.45);backdrop-filter:blur(2px);display:grid;place-items:center;padding:24px;';
+  var card = document.createElement('div');
+  card.style.cssText = 'width:min(520px,100%);background:#fff;border-radius:14px;box-shadow:0 24px 50px -16px rgba(16,19,23,.5);overflow:hidden;font-family:inherit;';
+  card.innerHTML =
+    '<div style="padding:20px 22px 4px;display:flex;align-items:flex-start;gap:13px;">'
+    + '<div style="width:38px;height:38px;border-radius:10px;flex-shrink:0;display:grid;place-items:center;background:#fce8e8;color:#dc2626;font-size:18px;"><i class="bi bi-exclamation-octagon-fill"></i></div>'
+    + '<div style="flex:1;min-width:0;padding-top:1px;">'
+    + '<div style="font-size:16px;font-weight:700;color:var(--ink);">'+title+'</div>'
+    + '<div style="font-size:13px;color:var(--ink-2);margin-top:6px;line-height:1.5;background:#f8f9fb;border:1px solid var(--line);border-radius:8px;padding:9px 11px;word-break:break-word;max-height:180px;overflow:auto;">'+esc(msg)+'</div>'
+    + '<div style="font-size:11.5px;color:var(--ink-4);margin-top:8px;line-height:1.6;">'
+      + (url?('<div><b>Đường dẫn:</b> '+esc(url)+'</div>'):'')
+      + '<div><b>Thời gian:</b> '+esc(when)+'</div>'
+      + '<div style="margin-top:6px;color:var(--ink-3);"><i class="bi bi-camera"></i> Vui lòng <b>chụp màn hình này</b> gửi bộ phận kỹ thuật để được hỗ trợ.</div>'
+    + '</div></div></div>'
+    + '<div style="display:flex;justify-content:flex-end;gap:10px;padding:14px 22px 18px;">'
+    + '<button data-a="copy" style="padding:8px 14px;font-size:13px;font-weight:500;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink-2);cursor:pointer;">Sao chép lỗi</button>'
+    + '<button data-a="ok" style="padding:8px 16px;font-size:13px;font-weight:600;border:none;border-radius:9px;background:var(--accent);color:#fff;cursor:pointer;">Đóng</button>'
+    + '</div>';
+  ov.appendChild(card); document.body.appendChild(ov);
+  function close(){ if (ov.parentNode) ov.parentNode.removeChild(ov); }
+  ov.addEventListener('mousedown', function(e){ if (e.target===ov) close(); });
+  card.querySelector('[data-a=ok]').onclick = close;
+  card.querySelector('[data-a=copy]').onclick = function(){
+    var txt = title + '\n' + msg + '\n' + (url?('Đường dẫn: '+url+'\n'):'') + 'Thời gian: ' + when;
+    try { navigator.clipboard.writeText(txt); window.trkToast('Đã sao chép nội dung lỗi', 'info'); } catch(e){}
+  };
+};
+
+/* Gọi API JSON CÓ XỬ LÝ LỖI: 4xx/5xx/mất mạng → hiện hộp lỗi rõ ràng + ném lỗi cho caller.
+   Trả Promise<data> khi thành công. Dùng thay cho fetch(...).then(r=>r.json()) trong các trang. */
+window.trkApi = function(method, url, body){
+  var csrf = (window.__TRK||{}).csrf;
+  return fetch(url, {
+    method: method,
+    headers: { 'Content-Type':'application/json', 'Accept':'application/json', 'X-CSRF-TOKEN': csrf },
+    body: body ? JSON.stringify(body) : undefined,
+  }).then(function(res){
+    return res.text().then(function(text){
+      var data = null; try { data = text ? JSON.parse(text) : null; } catch(e){ data = null; }
+      if (!res.ok){
+        var msg = (data && (data.message || data.error))
+          || (res.status===419 ? 'Phiên làm việc đã hết hạn — vui lòng tải lại trang rồi thử lại.'
+          :  res.status===403 ? 'Bạn không có quyền thực hiện thao tác này.'
+          :  res.status===404 ? 'Không tìm thấy dữ liệu/đường dẫn.'
+          :  ('Máy chủ trả về lỗi ' + res.status + '.'));
+        window.trkError({ status: res.status, message: msg, url: url });
+        var err = new Error(msg); err.status = res.status; err.data = data; throw err;
+      }
+      return data;
+    });
+  }, function(netErr){
+    window.trkError({ status: 0, message: 'Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.', url: url });
+    throw netErr;
+  });
+};
+
+/* Upload FormData (file/ảnh) CÓ XỬ LÝ LỖI: 4xx/5xx/mạng → hộp lỗi rõ ràng + ném lỗi. */
+window.trkUpload = function(method, url, formData){
+  var csrf = (window.__TRK||{}).csrf;
+  return fetch(url, { method: method, headers: { 'Accept':'application/json', 'X-CSRF-TOKEN': csrf }, body: formData }).then(function(res){
+    return res.text().then(function(text){
+      var data = null; try { data = text ? JSON.parse(text) : null; } catch(e){ data = null; }
+      if (!res.ok){
+        var msg = (data && (data.message || data.error))
+          || (res.status===413 ? 'File quá lớn — vượt giới hạn cho phép.'
+          :  res.status===422 ? 'File không hợp lệ (sai định dạng hoặc quá lớn).'
+          :  ('Tải lên lỗi ' + res.status + '.'));
+        window.trkError({ status: res.status, message: msg, url: url });
+        var err = new Error(msg); err.status = res.status; err.data = data; throw err;
+      }
+      return data;
+    });
+  }, function(netErr){
+    window.trkError({ status: 0, message: 'Không kết nối được máy chủ khi tải lên.', url: url });
+    throw netErr;
+  });
+};
+

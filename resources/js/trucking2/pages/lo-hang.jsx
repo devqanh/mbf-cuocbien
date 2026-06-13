@@ -10,7 +10,7 @@ import { SortBtn, CellBtn, Badge, EditCell, TH, TD } from "@trk/ui.jsx";
 function ShipmentsApp() {
   const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
   const DEFAULT_CFG = { locations: [], locationCode: {}, customers: [], customerInfo: {}, contTypes: [], warehouses: [], payers: [], costItems: [], choHoItems: [], revItems: [], vehicles: [], vehicleType: {}, drivers: [], prices: {}, costColors: {}, vatDefault: { hph: "8", icd: "0" }, freeTimeHours: "4" };
-  const api = (method, url, body) => fetch(url, { method, headers: { "Content-Type": "application/json", "Accept": "application/json", "X-CSRF-TOKEN": T.csrf }, body: body ? JSON.stringify(body) : undefined }).then((r) => r.json());
+  const api = (method, url, body) => window.trkApi(method, url, body);
 
   // Dùng chung 1 mẫu (ICD) — không còn tách HPH/ICD
   const sheet = "icd";
@@ -64,7 +64,7 @@ function ShipmentsApp() {
     const pg = over && over.page != null ? over.page : page;
     setLoading(true);
     try {
-      const r = await fetch(ROUTES.shipmentsPage + "?" + buildParams(over).toString(), { headers: { "Accept": "application/json" } }).then((x) => x.json());
+      const r = await window.trkApi("GET", ROUTES.shipmentsPage + "?" + buildParams(over).toString());
       if (myId !== reqId.current) return;
       if (r && r.ok) {
         setData(r.data || []);
@@ -96,7 +96,7 @@ function ShipmentsApp() {
     if (cfgLoaded.current) return cfgRef.current;
     cfgLoaded.current = true;
     try {
-      const r = await fetch(ROUTES.config, { headers: { "Accept": "application/json" } }).then((x) => x.json());
+      const r = await window.trkApi("GET", ROUTES.config);
       if (r && r.ok) { const merged = { ...cfgRef.current, ...r.cfg }; cfgRef.current = merged; setCfgState(merged); return merged; }
       cfgLoaded.current = false;
     } catch (e) { cfgLoaded.current = false; }
@@ -245,7 +245,7 @@ function ShipmentsApp() {
     // Xuất TẤT CẢ lô (không chỉ trang hiện tại) — lấy qua endpoint với all=1, rồi lọc theo ngày.
     let allShips = [];
     try {
-      const r = await fetch(ROUTES.shipmentsPage + "?all=1", { headers: { "Accept": "application/json" } }).then((x) => x.json());
+      const r = await window.trkApi("GET", ROUTES.shipmentsPage + "?all=1");
       if (r && r.ok) allShips = r.data || [];
     } catch (e) { window.trkToast && window.trkToast("Lỗi tải dữ liệu xuất Excel", "error"); return; }
     const list = allShips.filter((s) => {

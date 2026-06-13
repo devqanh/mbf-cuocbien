@@ -10,7 +10,7 @@ const lbl = (t) => <div style={{ fontSize: 11, color: "var(--ink-3)", marginBott
 
 function CreateTripApp() {
   const T = window.__TRK || {}; const ROUTES = T.routes || {};
-  const api = (method, url, body) => fetch(url, { method, headers: { "Content-Type": "application/json", "Accept": "application/json", "X-CSRF-TOKEN": T.csrf }, body: body ? JSON.stringify(body) : undefined }).then((r) => r.json());
+  const api = (method, url, body) => window.trkApi(method, url, body);
   const back = () => { window.location.href = ROUTES.list; };
 
   const [no, setNo] = useState("");

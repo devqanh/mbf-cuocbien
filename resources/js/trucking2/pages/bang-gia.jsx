@@ -9,7 +9,7 @@ import { BangGiaPage } from "@trk/ui.jsx";
 function PricesApp() {
   const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
   const DEFAULT_CFG = { locations: [], locationCode: {}, customers: [], customerInfo: {}, prices: {} };
-  const api = (method, url, body) => fetch(url, { method, headers: { "Content-Type": "application/json", "Accept": "application/json", "X-CSRF-TOKEN": T.csrf }, body: body ? JSON.stringify(body) : undefined }).then((r) => r.json());
+  const api = (method, url, body) => window.trkApi(method, url, body);
   const [cfg, setCfgState] = useState(() => ({ ...DEFAULT_CFG, ...(B.cfg || {}) }));
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -22,7 +22,7 @@ function PricesApp() {
   const loadPrices = async (cust) => {
     if (!cust) return;
     try {
-      const r = await fetch(ROUTES.customerPrices + "?customer=" + encodeURIComponent(cust), { headers: { "Accept": "application/json" } }).then((x) => x.json());
+      const r = await window.trkApi("GET", ROUTES.customerPrices + "?customer=" + encodeURIComponent(cust));
       if (r && r.ok) onImported(cust, r.priceList || []);
     } catch (e) { /* giữ nguyên, người dùng có thể chọn lại */ }
   };

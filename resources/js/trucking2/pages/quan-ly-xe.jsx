@@ -154,7 +154,7 @@ function PayModal({ row, onConfirm, onClose }) {
 }
 
 /* Modal điền 1 phiếu chi */
-function CostModal({ data, isNew, onChange, onSave, onClose, costItems = [], addCostItem, onUploadPhotos }) {
+function CostModal({ data, isNew, onChange, onSave, onClose, costTypes = [], onUploadPhotos }) {
   const { useState, useRef } = React;
   const d = data; const set = (np) => onChange({ ...d, ...np });
   const rec = normKind(d.kind) === "recurring";
@@ -183,7 +183,7 @@ function CostModal({ data, isNew, onChange, onSave, onClose, costItems = [], add
       footer={<div style={{ display: "flex", justifyContent: "flex-end", gap: 10, width: "100%" }}><Btn onClick={onClose}>Hủy</Btn><Btn variant="primary" onClick={trySave}>Lưu phiếu</Btn></div>}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: "6px 0 2px" }}>
         {err && <div style={{ gridColumn: "1 / -1", display: "flex", gap: 7, alignItems: "center", fontSize: 12.5, color: "#b42318", background: "#fdecec", border: "1px solid #f3c9c9", borderRadius: 9, padding: "8px 12px" }}><i className="bi bi-exclamation-triangle-fill" /> {err}</div>}
-        {f(reqLbl("Tên chi phí (chọn danh mục — chưa có thì gõ tạo mới)"), <Combo value={d.name} onChange={(x) => set({ name: x })} options={costItems} onCreate={(v) => { set({ name: v }); addCostItem && addCostItem(v); }} placeholder="Chọn hoặc gõ tên mới…" />, true)}
+        {f(reqLbl("Loại chi phí (chọn danh mục để nhóm báo cáo — hoặc gõ riêng)"), <Combo value={d.name} onChange={(x) => set({ name: x })} options={costTypes} placeholder="Chọn loại chi phí xe…" />, true)}
         {f("Loại", (
           <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 8, padding: 2 }}>
             {COST_KINDS.map(([k, t]) => { const on = normKind(d.kind) === k; return <button key={k} type="button" onClick={() => set({ kind: k })} style={{ border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, padding: "6px 14px", borderRadius: 6, background: on ? "#fff" : "transparent", color: on ? "var(--accent)" : "var(--ink-4)", boxShadow: on ? "0 1px 2px rgba(16,19,23,.14)" : "none" }}>{t}</button>; })}
@@ -243,7 +243,7 @@ function CostModal({ data, isNew, onChange, onSave, onClose, costItems = [], add
   );
 }
 
-function CostTab({ rows, onChange, costItems, addCostItem, saving, onUploadPhotos }) {
+function CostTab({ rows, onChange, costTypes, saving, onUploadPhotos }) {
   const { useState } = React;
   const [filter, setFilter] = useState("all");   // all | fixed | recurring | due
   const [edit, setEdit] = useState(null);         // { i, d }  (i < 0 = thêm mới)
@@ -382,7 +382,7 @@ function CostTab({ rows, onChange, costItems, addCostItem, saving, onUploadPhoto
 
       <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}><i className="bi bi-check2-circle" style={{ color: "var(--good)" }} /> Mọi thao tác ở mục Chi phí (thêm/sửa/duyệt/thanh toán/xóa) được <b>lưu ngay</b> — không cần bấm Lưu. Khoản <b>định kỳ</b> (bảo hiểm, đăng kiểm…): đến hạn bấm <i className="bi bi-arrow-repeat" /> để <b>tạo phiếu mới</b> → điền tiền + ngày hết hạn mới; phiếu cũ tự chuyển <b>“đã gia hạn ở HĐ #…”</b>. <b># hóa đơn tự sinh</b>.</span>
 
-      {edit && <CostModal data={edit.d} isNew={edit.i < 0} costItems={costItems} addCostItem={addCostItem} onUploadPhotos={onUploadPhotos} onChange={(d) => setEdit((e) => ({ ...e, d }))} onSave={saveModal} onClose={() => setEdit(null)} />}
+      {edit && <CostModal data={edit.d} isNew={edit.i < 0} costTypes={costTypes} onUploadPhotos={onUploadPhotos} onChange={(d) => setEdit((e) => ({ ...e, d }))} onSave={saveModal} onClose={() => setEdit(null)} />}
       {payIdx != null && all[payIdx] && <PayModal row={all[payIdx]} onConfirm={confirmPay} onClose={() => setPayIdx(null)} />}
     </div>
   );
@@ -483,7 +483,7 @@ function AllowanceTab({ rows, onChange, costItems, addCostItem }) {
 
 function FleetApp() {
   const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
-  const api = (method, url, body) => fetch(url, { method, headers: { "Content-Type": "application/json", "Accept": "application/json", "X-CSRF-TOKEN": T.csrf }, body: body ? JSON.stringify(body) : undefined }).then((r) => r.json());
+  const api = (method, url, body) => window.trkApi(method, url, body);
   const canEdit = !!T.canEdit;
   const publicUrl = ROUTES.spendRequest || "/yeu-cau-chi";
   const copyPublic = () => { try { navigator.clipboard && navigator.clipboard.writeText(publicUrl); window.trkToast && window.trkToast("Đã sao chép link"); } catch (e) {} };
@@ -561,7 +561,7 @@ function FleetApp() {
     if (!selId || !files || !files.length) return [];
     const fd = new FormData(); Array.from(files).forEach((f) => fd.append("files[]", f));
     try {
-      const res = await fetch(ROUTES.fleet + selId + "/cost-photo", { method: "POST", headers: { "Accept": "application/json", "X-CSRF-TOKEN": T.csrf }, body: fd }).then((r) => r.json());
+      const res = await window.trkUpload("POST", ROUTES.fleet + selId + "/cost-photo", fd);
       if (res && res.ok) return res.photos || [];
       window.trkToast && window.trkToast((res && res.message) || "Tải ảnh thất bại", "error");
     } catch (e) { window.trkToast && window.trkToast("Lỗi kết nối khi tải ảnh", "error"); }
@@ -584,7 +584,7 @@ function FleetApp() {
     const fd = new FormData(); files.forEach((f) => fd.append("files[]", f)); fd.append("type", docType);
     setDocBusy(true);
     try {
-      const res = await fetch(ROUTES.fleet + selId + "/docs", { method: "POST", headers: { "Accept": "application/json", "X-CSRF-TOKEN": T.csrf }, body: fd }).then((r) => r.json());
+      const res = await window.trkUpload("POST", ROUTES.fleet + selId + "/docs", fd);
       if (res && res.ok) { setDetail((d) => ({ ...d, docs: res.docs })); window.trkToast && window.trkToast(`Đã tải ${files.length} tài liệu`); }
       else window.trkToast && window.trkToast((res && res.message) || "Tải lên thất bại", "error");
     } catch (err) { window.trkToast && window.trkToast("Lỗi kết nối khi tải lên", "error"); }
@@ -847,7 +847,7 @@ function FleetApp() {
             : tab === "allowance" ? <AllowanceTab rows={detail.allowances || []} onChange={(rows) => upd({ allowances: rows })} costItems={costItems} addCostItem={addCostItem} />
             : tab === "deprec" ? <DeprecTab rows={detail.depreciations || []} onChange={(rows) => upd({ depreciations: rows })} />
             : tab === "usage" ? <UsageTab rows={detail.usages || []} onChange={(rows) => upd({ usages: rows })} drivers={detail.drivers || []} />
-            : <CostTab rows={detail.costs || []} onChange={saveCosts} saving={costSaving} costItems={costItems} addCostItem={addCostItem} onUploadPhotos={uploadCostPhotos} />}
+            : <CostTab rows={detail.costs || []} onChange={saveCosts} saving={costSaving} costTypes={detail.costTypes || []} onUploadPhotos={uploadCostPhotos} />}
         </div>
       </div>
     </div>

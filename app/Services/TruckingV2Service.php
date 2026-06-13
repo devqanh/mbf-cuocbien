@@ -23,6 +23,7 @@ use App\Models\TruckingVehicleUsage;
 use App\Models\TruckingSetting;
 use App\Models\TruckingShipment;
 use App\Models\TruckingShipmentWarehouse;
+use App\Models\TruckingVehicleCostType;
 use App\Models\TruckingStatement;
 use App\Models\TruckingVehicle;
 use App\Models\TruckingWarehouse;
@@ -55,6 +56,7 @@ class TruckingV2Service
             'choHoItems' => [TruckingChohoItem::class,   true,  false,           false],
             'revItems'   => [TruckingRevenueItem::class, true,  false,           false],
             'salaryItems' => [TruckingSalaryItem::class, false, false,           false],
+            'vehicleCostTypes' => [TruckingVehicleCostType::class, false, false,  false],
         ];
     }
 
@@ -874,7 +876,7 @@ class TruckingV2Service
     private function usagesOut(TruckingVehicle $v): array
     {
         return $v->vehicleUsages()->orderBy('sort')->get()->map(fn ($u) => [
-            'id' => $u->id, 'driver' => $u->driver ?? '',
+            'id' => $u->id, 'driver' => $u->driver ?? '', 'driverId' => $u->driver_id,
             'from' => $this->outDate($u->from_date), 'to' => $this->outDate($u->to_date), 'note' => $u->note ?? '',
         ])->all();
     }
@@ -882,7 +884,7 @@ class TruckingV2Service
     private function costsOut(TruckingVehicle $v): array
     {
         return $v->vehicleCosts()->orderBy('sort')->get()->map(fn ($c) => [
-            'id' => $c->id, 'name' => $c->name ?? '', 'invoiceNo' => $c->invoice_no ?? '', 'kind' => ($c->kind === 'fixed' ? 'fixed' : 'recurring'),
+            'id' => $c->id, 'name' => $c->name ?? '', 'costTypeId' => $c->cost_type_id, 'invoiceNo' => $c->invoice_no ?? '', 'kind' => ($c->kind === 'fixed' ? 'fixed' : 'recurring'),
             'spendDate' => $this->outDate($c->spend_date), 'dueDate' => $this->outDate($c->due_date), 'amount' => $this->outMoney($c->amount),
             'currentKm' => $this->outNum($c->current_km), 'supplier' => $c->supplier ?? '', 'note' => $c->note ?? '',
             'paid' => (bool) $c->paid, 'approved' => (bool) $c->approved,
@@ -955,6 +957,7 @@ class TruckingV2Service
         return $v->vehicleDepreciations()->orderBy('sort')->get()->map(fn ($d) => [
             'id' => $d->id, 'name' => $d->name ?? '', 'origPrice' => $this->outMoney($d->orig_price),
             'startDate' => $this->outDate($d->start_date), 'months' => $d->months ?? 0,
+            'monthly' => $this->outMoney($d->monthly_amount), 'daily' => $this->outNum($d->daily_amount),
         ])->all();
     }
 
@@ -962,11 +965,16 @@ class TruckingV2Service
     public function vehicleSection(TruckingVehicle $v, string $section): array
     {
         return match ($section) {
-            'usages'        => ['usages' => $this->usagesOut($v)],
-            'costs'         => ['costs' => $this->costsOut($v)],
+            'usages'        => ['usages' => $this->usagesOut($v), 'drivers' => $this->driverOptions()],
+            'costs'         => ['costs' => $this->costsOut($v), 'costTypes' => $this->vehicleCostTypesOut()],
             'depreciations' => ['depreciations' => $this->deprOut($v)],
             default         => [],
         };
+    }
+
+    private function vehicleCostTypesOut(): array
+    {
+        return TruckingVehicleCostType::orderBy('sort')->orderBy('name')->pluck('name')->all();
     }
 
     /** Chi tiết đầy đủ (base + 3 nhóm) — khi cần tất cả. */
@@ -975,6 +983,7 @@ class TruckingV2Service
         return $this->vehicleBase($v) + [
             'usages'        => $this->usagesOut($v),
             'costs'         => $this->costsOut($v),
+            'costTypes'     => $this->vehicleCostTypesOut(),
             'depreciations' => $this->deprOut($v),
         ];
     }
@@ -1000,10 +1009,13 @@ class TruckingV2Service
                 $v->save();
             }
             if (array_key_exists('usages', $data)) {
+                $driverId = TruckingDriver::pluck('id', 'name');
                 $v->vehicleUsages()->delete();
                 foreach (array_values($data['usages'] ?? []) as $i => $u) {
+                    $dn = $this->str($u['driver'] ?? null);
                     $v->vehicleUsages()->create([
-                        'driver' => $this->str($u['driver'] ?? null),
+                        'driver' => $dn,
+                        'driver_id' => $dn !== null ? ($driverId[$dn] ?? null) : null,
                         'from_date' => $this->inDate($u['from'] ?? null),
                         'to_date' => $this->inDate($u['to'] ?? null),
                         'note' => $this->str($u['note'] ?? null),
@@ -1020,12 +1032,15 @@ class TruckingV2Service
                 foreach (TruckingVehicleCost::where('vehicle_id', '!=', $v->id)->where('invoice_no', 'like', 'PC-%')->pluck('invoice_no') as $no) $scan($no);
                 $nextN = $usedN ? max($usedN) : 0;
 
+                $typeId = TruckingVehicleCostType::pluck('id', 'name');
                 $v->vehicleCosts()->delete();
                 foreach ($costRows as $i => $c) {
                     $inv = trim((string) ($c['invoiceNo'] ?? ''));
                     if ($inv === '') { $nextN++; $inv = 'PC-' . str_pad((string) $nextN, 4, '0', STR_PAD_LEFT); }
+                    $cn = $this->str($c['name'] ?? null);
                     $v->vehicleCosts()->create([
-                        'name' => $this->str($c['name'] ?? null),
+                        'name' => $cn,
+                        'cost_type_id' => $cn !== null ? ($typeId[$cn] ?? null) : null,
                         'invoice_no' => $inv,
                         'kind' => (($c['kind'] ?? '') === 'recurring') ? 'recurring' : 'fixed',
                         'spend_date' => $this->inDate($c['spendDate'] ?? null),
@@ -1048,11 +1063,15 @@ class TruckingV2Service
             if (array_key_exists('depreciations', $data)) {
                 $v->vehicleDepreciations()->delete();
                 foreach (array_values($data['depreciations'] ?? []) as $i => $d) {
+                    $orig = $this->inMoney($d['origPrice'] ?? null) ?? 0;
+                    $months = (int) ($d['months'] ?? 0);
                     $v->vehicleDepreciations()->create([
                         'name' => $this->str($d['name'] ?? null),
-                        'orig_price' => $this->inMoney($d['origPrice'] ?? null) ?? 0,
+                        'orig_price' => $orig,
                         'start_date' => $this->inDate($d['startDate'] ?? null),
-                        'months' => (int) ($d['months'] ?? 0),
+                        'months' => $months,
+                        'monthly_amount' => $months > 0 ? round($orig / $months, 2) : 0,
+                        'daily_amount'   => $months > 0 ? round($orig / (30 * $months), 4) : 0,
                         'sort' => $i,
                     ]);
                 }

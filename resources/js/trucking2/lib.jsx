@@ -235,10 +235,12 @@ function DateField({ value, onChange }) {
   );
 }
 function Num({ value, onChange, suffix, placeholder = "0" }) {
+  // Chừa lề phải theo ĐỘ DÀI hậu tố để số không bị đè lên (vd "tháng", "ngày" dài hơn "km"/"₫")
+  const padRight = suffix ? Math.max(30, String(suffix).length * 7.5 + 18) : 11;
   return (
     <div style={{ position: "relative", width: "100%" }}>
       <input inputMode="numeric" value={value || ""} onChange={(e) => onChange(onlyDigits(e.target.value))} placeholder={placeholder} className="tnum"
-        style={{ width: "100%", padding: `8px ${suffix ? 34 : 11}px 8px 11px`, fontSize: 13.5, textAlign: "right", background: "#fff", border: "1px solid var(--line)", borderRadius: 9, outline: "none" }}
+        style={{ width: "100%", padding: `8px ${padRight}px 8px 11px`, fontSize: 13.5, textAlign: "right", background: "#fff", border: "1px solid var(--line)", borderRadius: 9, outline: "none" }}
         onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.boxShadow = "0 0 0 3px var(--accent-weak)"; }}
         onBlur={(e) => { e.target.style.borderColor = "var(--line)"; e.target.style.boxShadow = "none"; }} />
       {suffix && <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)", fontSize: 12, pointerEvents: "none" }}>{suffix}</span>}

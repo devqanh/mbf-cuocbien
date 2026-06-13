@@ -7,7 +7,7 @@ import { I, Btn, fmtVND } from "@trk/lib.jsx";
 
 function TripBatchesApp() {
   const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
-  const api = (method, url) => fetch(url, { method, headers: { "Accept": "application/json", "X-CSRF-TOKEN": T.csrf } }).then((r) => r.json());
+  const api = (method, url, body) => window.trkApi(method, url, body);
   const [batches, setBatches] = useState(B.batches || []);
 
   const del = async (b, e) => {

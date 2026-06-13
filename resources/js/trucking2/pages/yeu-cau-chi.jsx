@@ -97,7 +97,7 @@ function App() {
       fd.append("amount", amt);
       fd.append("km", km.replace(/[^\d]/g, ""));
       photos.forEach((p) => fd.append("photos[]", p.file));
-      const r = await fetch(T.routes.submit, { method: "POST", headers: { "Accept": "application/json", "X-CSRF-TOKEN": T.csrf }, body: fd }).then((x) => x.json());
+      const r = await window.trkUpload("POST", T.routes.submit, fd);
       setResult(r);
       if (r && r.ok) { setAmount(""); setKm(""); setCostItem(""); photos.forEach((p) => { try { URL.revokeObjectURL(p.url); } catch (e) {} }); setPhotos([]); }
     } catch (e) { setResult({ ok: false, message: "Lỗi kết nối — vui lòng thử lại." }); }

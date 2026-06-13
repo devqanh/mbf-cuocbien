@@ -99,10 +99,6 @@
                 <button type="submit" class="btn btn-primary w-100 mb-3">
                     <i class="bi bi-box-arrow-in-right me-1"></i> Đăng nhập
                 </button>
-
-                <div class="text-center text-muted small">
-                    Tài khoản demo: <strong>devqanh@gmail.com</strong> / <strong>Quyenanh_2016</strong>
-                </div>
             </form>
         </div>
     </section>

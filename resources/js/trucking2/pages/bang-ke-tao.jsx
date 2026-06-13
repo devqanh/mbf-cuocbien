@@ -7,7 +7,7 @@ import { StatementForm } from "@trk/ui.jsx";
 
 function CreateStatementApp() {
   const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
-  const api = (method, url, body) => fetch(url, { method, headers: { "Content-Type": "application/json", "Accept": "application/json", "X-CSRF-TOKEN": T.csrf }, body: body ? JSON.stringify(body) : undefined }).then((r) => r.json());
+  const api = (method, url, body) => window.trkApi(method, url, body);
   const hph = B.hph || []; const icd = B.icd || []; const cfg = B.cfg || {};
   const back = () => { window.location.href = ROUTES.statements; };
 

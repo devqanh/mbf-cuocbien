@@ -7,7 +7,7 @@ import { SavedStatementPage, makePricer } from "@trk/ui.jsx";
 
 function ViewStatementApp() {
   const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
-  const api = (method, url, body) => fetch(url, { method, headers: { "Content-Type": "application/json", "Accept": "application/json", "X-CSRF-TOKEN": T.csrf }, body: body ? JSON.stringify(body) : undefined }).then((r) => r.json());
+  const api = (method, url, body) => window.trkApi(method, url, body);
 
   const [st, setSt] = useState(B.st || null);
   const [liveDetail, setLiveDetail] = useState(null);   // chỉ set sau khi bấm "Tính lại" (query realtime)
