@@ -1,5 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
+import "@trk/shared.js";   // cung cấp window.trkUpload / trkToast / trkError (trang public không có layout nạp sẵn)
 
 const T = window.__TRK || {};
 const B = T.boot || {};
