@@ -3,6 +3,11 @@
 
 @push('styles')
 @include('trucking2.partials._styles')
+<style>
+  /* Highlight phiếu chi khi deep-link từ thông báo (#<id>/cost/<costId>) */
+  @keyframes trkHlPulse { 0% { background: rgba(255,184,34,.5); } 100% { background: transparent; } }
+  .trk-row-hl > td { animation: trkHlPulse 2.6s ease-out; }
+</style>
 @endpush
 
 @section('content')

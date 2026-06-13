@@ -243,7 +243,7 @@ function CostModal({ data, isNew, onChange, onSave, onClose, costTypes = [], onU
   );
 }
 
-function CostTab({ rows, onChange, costTypes, saving, onUploadPhotos }) {
+function CostTab({ rows, onChange, costTypes, saving, onUploadPhotos, highlightId }) {
   const { useState } = React;
   const [filter, setFilter] = useState("all");   // all | fixed | recurring | due
   const [edit, setEdit] = useState(null);         // { i, d }  (i < 0 = thêm mới)
@@ -329,8 +329,9 @@ function CostTab({ rows, onChange, costTypes, saving, onUploadPhotos }) {
               {order.map((i) => {
                 const r = all[i];
                 const rec = isRec(r); const sl = supLatest(r); const sup = !!sl; const ds = rec && r.dueDate && !sup ? dueStatus(r.dueDate) : null;
+                const isHl = highlightId != null && String(r.id) === String(highlightId);
                 return (
-                  <tr key={r.id || i} onClick={() => openEdit(i)} style={{ borderBottom: "1px solid var(--line-2)", cursor: "pointer", background: sup ? "#fafbfc" : "transparent", opacity: sup ? 0.66 : 1 }}
+                  <tr key={r.id || i} id={"trk-cost-" + (r.id || i)} className={isHl ? "trk-row-hl" : undefined} onClick={() => openEdit(i)} style={{ borderBottom: "1px solid var(--line-2)", cursor: "pointer", background: sup ? "#fafbfc" : "transparent", opacity: sup ? 0.66 : 1 }}
                     onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent-weak-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = sup ? "#fafbfc" : "transparent")}>
                     <td style={{ ...cell }} className="tnum"><span style={{ fontWeight: 600, color: r.invoiceNo ? "var(--accent)" : "var(--ink-4)" }}>{r.invoiceNo || "(mới)"}</span></td>
                     <td style={cell}>
@@ -511,6 +512,8 @@ function FleetApp() {
   const [docBusy, setDocBusy] = useState(false);
   const [secLoading, setSecLoading] = useState(false);
   const loadedSecs = useRef(new Set());   // nhóm đã lazy-load (usages/costs/depreciations)
+  const pendingCost = useRef(null);       // costId cần cuộn tới sau khi tab Chi phí load (deep-link từ thông báo)
+  const [hlCost, setHlCost] = useState(null);   // id phiếu chi đang được highlight
 
   const setHash = (id, t) => { try { window.history.replaceState(null, "", "#" + id + "/" + t); } catch (e) {} };
   // Lazy-load nhóm con khi mở tab (truyền id để tránh stale selId lúc vừa mở xe)
@@ -604,13 +607,26 @@ function FleetApp() {
     window.addEventListener("beforeunload", h);
     return () => window.removeEventListener("beforeunload", h);
   }, [dirty]);
-  // mở theo hash khi load trang: #<id> hoặc #<id>/<tab>
+  // mở theo hash khi load trang: #<id> | #<id>/<tab> | #<id>/cost/<costId> (deep-link từ thông báo)
   useEffect(() => {
     const h = (window.location.hash || "").replace(/^#/, "");
-    const [idStr, tabStr] = h.split("/");
+    const [idStr, tabStr, costStr] = h.split("/");
     const v = vehicles.find((x) => String(x.id) === idStr);
-    if (v) open(v, tabStr);
+    if (!v) return;
+    if (costStr) pendingCost.current = costStr;   // nhớ phiếu cần cuộn tới
+    open(v, tabStr);
   }, []);
+  // Khi tab Chi phí đã load xong → cuộn tới + highlight đúng phiếu chi (deep-link)
+  useEffect(() => {
+    const cid = pendingCost.current;
+    if (!cid || tab !== "cost" || !detail || !Array.isArray(detail.costs)) return;
+    if (!detail.costs.some((c) => String(c.id) === String(cid))) return;   // phiếu không thuộc xe này
+    pendingCost.current = null;
+    setHlCost(String(cid));
+    setTimeout(() => { const el = document.getElementById("trk-cost-" + cid); if (el) el.scrollIntoView({ behavior: "smooth", block: "center" }); }, 140);
+    const t = setTimeout(() => setHlCost(null), 2800);
+    return () => clearTimeout(t);
+  }, [detail, tab]);
 
   // ---------- DANH SÁCH XE ----------
   if (!selId) {
@@ -847,7 +863,7 @@ function FleetApp() {
             : tab === "allowance" ? <AllowanceTab rows={detail.allowances || []} onChange={(rows) => upd({ allowances: rows })} costItems={costItems} addCostItem={addCostItem} />
             : tab === "deprec" ? <DeprecTab rows={detail.depreciations || []} onChange={(rows) => upd({ depreciations: rows })} />
             : tab === "usage" ? <UsageTab rows={detail.usages || []} onChange={(rows) => upd({ usages: rows })} drivers={detail.drivers || []} />
-            : <CostTab rows={detail.costs || []} onChange={saveCosts} saving={costSaving} costTypes={detail.costTypes || []} onUploadPhotos={uploadCostPhotos} />}
+            : <CostTab rows={detail.costs || []} onChange={saveCosts} saving={costSaving} costTypes={detail.costTypes || []} onUploadPhotos={uploadCostPhotos} highlightId={hlCost} />}
         </div>
       </div>
     </div>
