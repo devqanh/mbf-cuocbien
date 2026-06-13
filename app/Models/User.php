@@ -12,20 +12,13 @@ class User extends Authenticatable
 {
     use HasFactory, Notifiable, HasRoles;
 
-    public const PERM_HIDDEN = 'hidden';
-    public const PERM_VIEW   = 'view';
-    public const PERM_EDIT   = 'edit';
-
     protected $fillable = [
         'name',
         'email',
         'password',
         'role',
         'avatar',
-        'column_permissions',
         'shipment_column_prefs',
-        'trucking_column_permissions',
-        'trucking_column_prefs',
     ];
 
     protected $hidden = [
@@ -36,12 +29,9 @@ class User extends Authenticatable
     protected function casts(): array
     {
         return [
-            'email_verified_at'      => 'datetime',
-            'password'               => 'hashed',
-            'column_permissions'         => 'array',
-            'shipment_column_prefs'      => 'array',
-            'trucking_column_permissions'=> 'array',
-            'trucking_column_prefs'      => 'array',
+            'email_verified_at'     => 'datetime',
+            'password'              => 'hashed',
+            'shipment_column_prefs' => 'array',
         ];
     }
 
@@ -70,45 +60,19 @@ class User extends Authenticatable
             : '—';
     }
 
-    /**
-     * Trả về permission cho 1 cột.
-     * Super admin luôn 'edit'. Nếu user không có config → 'edit' (mặc định mở).
-     */
-    public function columnPermission(string $columnKey): string
-    {
-        if ($this->isSuperAdmin()) return self::PERM_EDIT;
+    // ===================================================================
+    // Phân quyền cột (Luckysheet) ĐÃ BỎ — hệ thống dùng phân quyền theo vai trò (/roles).
+    // Giữ các shim dưới đây để code Follow-Up/Trucking cũ (đang tắt qua feature flag)
+    // không vỡ nếu được bật lại: mọi cột mặc định XEM & SỬA được, không còn giới hạn.
+    // ===================================================================
+    public const PERM_HIDDEN = 'hidden';
+    public const PERM_VIEW   = 'view';
+    public const PERM_EDIT   = 'edit';
 
-        $perms = $this->column_permissions ?? [];
-        return $perms[$columnKey] ?? self::PERM_EDIT;
-    }
-
-    public function canViewColumn(string $key): bool
-    {
-        return $this->columnPermission($key) !== self::PERM_HIDDEN;
-    }
-
-    public function canEditColumn(string $key): bool
-    {
-        return $this->columnPermission($key) === self::PERM_EDIT;
-    }
-
-    // ===== Trucking — phân quyền cột riêng (bộ cột khác shipments) =====
-
-    public function truckingColumnPermission(string $columnKey): string
-    {
-        if ($this->isSuperAdmin()) return self::PERM_EDIT;
-
-        $perms = $this->trucking_column_permissions ?? [];
-        return $perms[$columnKey] ?? self::PERM_EDIT;
-    }
-
-    public function canViewTruckingColumn(string $key): bool
-    {
-        return $this->truckingColumnPermission($key) !== self::PERM_HIDDEN;
-    }
-
-    public function canEditTruckingColumn(string $key): bool
-    {
-        return $this->truckingColumnPermission($key) === self::PERM_EDIT;
-    }
+    public function columnPermission(string $key): string { return self::PERM_EDIT; }
+    public function canViewColumn(string $key): bool { return true; }
+    public function canEditColumn(string $key): bool { return true; }
+    public function truckingColumnPermission(string $key): string { return self::PERM_EDIT; }
+    public function canViewTruckingColumn(string $key): bool { return true; }
+    public function canEditTruckingColumn(string $key): bool { return true; }
 }

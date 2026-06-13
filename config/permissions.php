@@ -31,16 +31,28 @@ return [
             'description' => 'Cấu hình ai được phép làm gì',
         ],
         'shipments' => [
-            'label'       => 'Follow Up Shipment',
-            'icon'        => 'truck',
+            'label'       => 'Lô hàng',
+            'icon'        => 'box-seam',
             'color'       => '#ffb822',
-            'description' => 'Theo dõi lô hàng xuất/nhập, B/L, ETD/ETA',
+            'description' => 'Trang Lô hàng Trucking — thêm/sửa/xóa lô, import, xuất Excel',
         ],
-        'reports' => [
-            'label'       => 'Báo cáo tài chính',
-            'icon'        => 'clipboard-data',
+        'prices' => [
+            'label'       => 'Bảng giá',
+            'icon'        => 'tags',
             'color'       => '#00b8d4',
-            'description' => 'Báo cáo phải trả, công nợ NCC',
+            'description' => 'Bảng giá đã gửi theo từng khách — xem, sửa, import',
+        ],
+        'statements' => [
+            'label'       => 'Bảng kê',
+            'icon'        => 'receipt',
+            'color'       => '#3aa0ff',
+            'description' => 'Bảng kê cần thu — tạo/sửa/xóa, xuất Excel theo mẫu',
+        ],
+        'settings' => [
+            'label'       => 'Cài đặt Trucking',
+            'icon'        => 'sliders',
+            'color'       => '#8b5cf6',
+            'description' => 'Danh mục (địa điểm, kho, loại cont…), khách hàng, đội xe, VAT/free-time',
         ],
         'tasks' => [
             'label'       => 'Ghi chú & công việc',
@@ -64,14 +76,21 @@ return [
         'roles.update'   => ['label' => 'Sửa vai trò',               'desc' => 'Thêm hoặc bớt quyền của một vai trò'],
         'roles.delete'   => ['label' => 'Xoá vai trò',               'desc' => 'Xoá vai trò (không xoá được nếu đang có người dùng)'],
 
-        'shipments.view'   => ['label' => 'Xem danh sách lô hàng', 'desc' => 'Đọc bảng theo dõi shipment'],
-        'shipments.create' => ['label' => 'Thêm lô hàng',          'desc' => 'Tạo mới một lô hàng (Client, B/L, POL/POD…)'],
-        'shipments.update' => ['label' => 'Sửa lô hàng',           'desc' => 'Cập nhật thông tin lô hàng đã có'],
-        'shipments.delete' => ['label' => 'Xoá lô hàng',           'desc' => 'Xoá lô hàng khỏi hệ thống'],
+        'shipments.view'   => ['label' => 'Xem lô hàng',  'desc' => 'Xem danh sách lô hàng (trang Lô hàng), tìm/lọc/xuất Excel'],
+        'shipments.create' => ['label' => 'Thêm lô hàng', 'desc' => 'Thêm lô hàng mới và import lô từ Excel'],
+        'shipments.update' => ['label' => 'Sửa lô hàng',  'desc' => 'Cập nhật thông tin lô hàng đã có'],
+        'shipments.delete' => ['label' => 'Xoá lô hàng',  'desc' => 'Xoá lô hàng khỏi hệ thống'],
 
-        'reports.view'   => ['label' => 'Xem báo cáo',     'desc' => 'Xem danh sách báo cáo tài chính'],
-        'reports.create' => ['label' => 'Tạo báo cáo',     'desc' => 'Tạo báo cáo phải trả, cấu hình đầu kỳ NCC'],
-        'reports.delete' => ['label' => 'Xoá báo cáo',     'desc' => 'Xoá báo cáo đã tạo'],
+        'prices.view'   => ['label' => 'Xem bảng giá',         'desc' => 'Xem bảng giá đã gửi theo từng khách'],
+        'prices.update' => ['label' => 'Sửa & import bảng giá', 'desc' => 'Chỉnh sửa bảng giá và import bảng giá từ Excel'],
+
+        'statements.view'   => ['label' => 'Xem bảng kê',  'desc' => 'Xem danh sách & chi tiết bảng kê, xuất Excel'],
+        'statements.create' => ['label' => 'Tạo bảng kê',  'desc' => 'Tạo bảng kê mới từ các lô hàng'],
+        'statements.update' => ['label' => 'Sửa bảng kê',  'desc' => 'Cập nhật / tính lại bảng kê đã lưu'],
+        'statements.delete' => ['label' => 'Xoá bảng kê',  'desc' => 'Xoá bảng kê khỏi hệ thống'],
+
+        'settings.view'   => ['label' => 'Xem cài đặt Trucking', 'desc' => 'Xem danh mục, khách hàng, đội xe, cấu hình VAT/free-time'],
+        'settings.update' => ['label' => 'Sửa cài đặt Trucking', 'desc' => 'Sửa danh mục, khách hàng, đội xe, VAT/free-time'],
 
         'tasks.view'           => ['label' => 'Xem ghi chú & công việc',  'desc' => 'Xem danh sách ghi chú và task được giao'],
         'tasks.create'         => ['label' => 'Tạo ghi chú & công việc',  'desc' => 'Tạo task / ghi chú mới, đặt hạn nhắc'],

@@ -22,11 +22,13 @@ class DatabaseSeeder extends Seeder
         // --- Permissions cơ bản ---
         $permissions = [
             'dashboard.view',
-            'users.view',     'users.create',     'users.update',     'users.delete',
-            'roles.view',     'roles.create',     'roles.update',     'roles.delete',
-            'shipments.view', 'shipments.create', 'shipments.update', 'shipments.delete',
-            'reports.view',   'reports.create',   'reports.delete',
-            'tasks.view',     'tasks.create',     'tasks.assign_others', 'tasks.manage_all',
+            'users.view',      'users.create',      'users.update',      'users.delete',
+            'roles.view',      'roles.create',      'roles.update',      'roles.delete',
+            'shipments.view',  'shipments.create',  'shipments.update',  'shipments.delete',
+            'prices.view',     'prices.update',
+            'statements.view', 'statements.create', 'statements.update', 'statements.delete',
+            'settings.view',   'settings.update',
+            'tasks.view',      'tasks.create',      'tasks.assign_others', 'tasks.manage_all',
         ];
         foreach ($permissions as $p) {
             Permission::firstOrCreate(['name' => $p, 'guard_name' => 'web']);
@@ -44,16 +46,22 @@ class DatabaseSeeder extends Seeder
             'users.view', 'users.create', 'users.update',
             'roles.view',
             'shipments.view', 'shipments.create', 'shipments.update', 'shipments.delete',
-            'reports.view', 'reports.create', 'reports.delete',
+            'prices.view', 'prices.update',
+            'statements.view', 'statements.create', 'statements.update', 'statements.delete',
+            'settings.view', 'settings.update',
             'tasks.view', 'tasks.create', 'tasks.assign_others', 'tasks.manage_all',
         ]);
         $editor->syncPermissions([
-            'dashboard.view', 'shipments.view', 'shipments.create', 'shipments.update',
-            'reports.view', 'reports.create',
+            'dashboard.view',
+            'shipments.view', 'shipments.create', 'shipments.update',
+            'prices.view',
+            'statements.view', 'statements.create', 'statements.update',
+            'settings.view',
             'tasks.view', 'tasks.create', 'tasks.assign_others',
         ]);
         $user->syncPermissions([
-            'dashboard.view', 'shipments.view', 'reports.view',
+            'dashboard.view',
+            'shipments.view', 'prices.view', 'statements.view', 'settings.view',
             'tasks.view', 'tasks.create',
         ]);
 
@@ -86,24 +94,6 @@ class DatabaseSeeder extends Seeder
                 ]
             );
             $u->syncRoles([$s['role']]);
-        }
-
-        // --- Initial balances cho 3 NCC test (để báo cáo đầu tiên có đầu kỳ) ---
-        $initialBalances = [
-            'MSC Việt Nam'    => 100_000_000,
-            'COSCO Shipping'  =>  50_000_000,
-            'EVERGREEN Line'  => 200_000_000,
-        ];
-        foreach ($initialBalances as $ncc => $amount) {
-            \App\Models\PayableInitialBalance::updateOrCreate(
-                ['supplier' => $ncc],
-                [
-                    'opening_amount' => $amount,
-                    'as_of_date'     => '2026-05-01',
-                    'note'           => 'Đầu kỳ tháng 5/2026',
-                    'updated_by'     => $sa->id,
-                ]
-            );
         }
 
         // --- Shipments mẫu (chỉ nếu chưa có) ---

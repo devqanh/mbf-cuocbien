@@ -43,7 +43,7 @@ class TruckingV2Controller extends Controller
     public function prices()
     {
         // Bảng giá chỉ cần khách + địa điểm; bảng giá từng khách lazy-load, danh mục khác bỏ.
-        return view('trucking2.bang-gia', $this->pageData(['cfg' => $this->svc->priceBookConfig()]));
+        return view('trucking2.bang-gia', $this->pageData(['cfg' => $this->svc->priceBookConfig()], 'prices.update', 'prices.update'));
     }
 
     /** Trang Bảng kê — gom lô theo khách + kỳ, theo dõi công nợ. */
@@ -52,7 +52,7 @@ class TruckingV2Controller extends Controller
         // KePage chỉ cần danh sách bảng kê (tóm tắt) → không nạp shipments/cfg/lines.
         return view('trucking2.bang-ke', $this->pageData([
             'ke' => $this->svc->statementsForList(),
-        ]));
+        ], 'statements.update', 'statements.delete'));
     }
 
     /** Trang Tạo bảng kê mới (tách riêng khỏi danh sách để dễ maintain). */
@@ -62,7 +62,7 @@ class TruckingV2Controller extends Controller
             'hph' => $this->svc->shipments('hph'),
             'icd' => $this->svc->shipments('icd'),
             'cfg' => $this->svc->config(),
-        ]));
+        ], 'statements.create', 'statements.delete'));
     }
 
     /** Trang Xem bảng kê đã lưu — chỉ nạp bảng kê (nhẹ). Đối soát/bảng giá tải lazy. */
@@ -70,7 +70,7 @@ class TruckingV2Controller extends Controller
     {
         return view('trucking2.bang-ke-xem', $this->pageData([
             'st' => $this->svc->statementToArray($statement),
-        ]));
+        ], 'statements.update', 'statements.delete'));
     }
 
     /**
@@ -231,7 +231,7 @@ class TruckingV2Controller extends Controller
     /** Trang Cài đặt — chỉ nạp ĐẾM cho sidebar; mỗi tab lazy-load khi click (catalogData). */
     public function settings()
     {
-        return view('trucking2.cai-dat', $this->pageData(['counts' => $this->svc->catalogCounts()]));
+        return view('trucking2.cai-dat', $this->pageData(['counts' => $this->svc->catalogCounts()], 'settings.update', 'settings.update'));
     }
 
     /** Dữ liệu TƯƠI của 1 tab Cài đặt (lazy-load khi click tab). */
@@ -240,12 +240,16 @@ class TruckingV2Controller extends Controller
         return response()->json(['ok' => true, 'cfg' => $this->svc->catalogData($type)]);
     }
 
-    /** Dữ liệu chung cho mọi trang: quyền + boot (inline, không cần fetch). */
-    private function pageData(array $boot): array
+    /**
+     * Dữ liệu chung cho mọi trang: quyền (canEdit/canDelete theo ĐÚNG tính năng của trang)
+     * + boot (inline, không cần fetch). Mỗi trang truyền quyền sửa/xóa tương ứng.
+     */
+    private function pageData(array $boot, string $editPerm = 'shipments.update', string $deletePerm = 'shipments.delete'): array
     {
+        $u = $this->user();
         return [
-            'canEdit'   => $this->user()->can('shipments.update'),
-            'canDelete' => $this->user()->can('shipments.delete'),
+            'canEdit'   => $u->can($editPerm),
+            'canDelete' => $u->can($deletePerm),
             'boot'      => $boot,
         ];
     }

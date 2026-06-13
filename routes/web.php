@@ -2,7 +2,6 @@
 
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\NotificationController;
-use App\Http\Controllers\PayableReportController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\ShipmentController;
@@ -90,59 +89,66 @@ Route::middleware('auth')->group(function () {
     //        (nhiều nơi vẫn link 'Trang chủ' tới route này) =====
     Route::get('/trucking', fn () => redirect()->route('trucking2.shipments'))->name('trucking.index');
 
-    // ===== Trucking v2 (record + popup) — chạy song song, tái dùng quyền shipments.* =====
+    // ===== Trucking v2 (record + popup) — phân quyền TÁCH theo 4 tính năng =====
     Route::prefix('trucking-v2')->name('trucking2.')->group(function () {
+        // --- Lô hàng ---
         Route::middleware('permission:shipments.view')->group(function () {
             Route::get('/', fn () => redirect()->route('trucking2.shipments'));
-            Route::get('/lo-hang',   [TruckingV2Controller::class, 'shipments'])->name('shipments');
+            Route::get('/lo-hang',        [TruckingV2Controller::class, 'shipments'])->name('shipments');
             Route::get('/shipments-page', [TruckingV2Controller::class, 'shipmentsPage'])->name('shipmentsPage');
-            Route::get('/config', [TruckingV2Controller::class, 'configData'])->name('configData');
-            Route::get('/bang-gia',  [TruckingV2Controller::class, 'prices'])->name('prices');
-            Route::get('/customer-prices', [TruckingV2Controller::class, 'customerPrices'])->name('customerPrices');
-            Route::get('/bang-ke',     [TruckingV2Controller::class, 'statements'])->name('statements');
-            Route::get('/bang-ke/tao', [TruckingV2Controller::class, 'createStatement'])->name('statements.create');
-            Route::get('/bang-ke/{statement}', [TruckingV2Controller::class, 'viewStatement'])->name('statements.view')->whereNumber('statement');
-            Route::get('/bang-ke/{statement}/context', [TruckingV2Controller::class, 'statementContext'])->name('statements.context')->whereNumber('statement');
-            Route::get('/bang-ke/{statement}/excel', [TruckingV2Controller::class, 'exportStatement'])->name('statements.excel')->whereNumber('statement');
-            Route::get('/cai-dat',   [TruckingV2Controller::class, 'settings'])->name('settings');
-            Route::get('/catalog/{type}', [TruckingV2Controller::class, 'catalogData'])->name('catalogData');   // lazy-load 1 tab
-            Route::get('/bootstrap', [TruckingV2Controller::class, 'bootstrap'])->name('bootstrap');
+            Route::get('/config',         [TruckingV2Controller::class, 'configData'])->name('configData');
+            Route::get('/bootstrap',      [TruckingV2Controller::class, 'bootstrap'])->name('bootstrap');
+        });
+        Route::middleware('permission:shipments.create')->group(function () {
+            Route::post('/shipments',             [TruckingV2Controller::class, 'storeShipment'])->name('shipments.store');
+            Route::post('/shipment-import/check', [TruckingV2Controller::class, 'checkShipments'])->name('shipmentCheck');
+            Route::post('/shipment-import',       [TruckingV2Controller::class, 'importShipments'])->name('shipmentImport');
         });
         Route::middleware('permission:shipments.update')->group(function () {
-            Route::post('/shipments',             [TruckingV2Controller::class, 'storeShipment'])->name('shipments.store');
-            Route::post('/shipment-import/check',  [TruckingV2Controller::class, 'checkShipments'])->name('shipmentCheck');
-            Route::post('/shipment-import',        [TruckingV2Controller::class, 'importShipments'])->name('shipmentImport');
-            Route::put ('/shipments/{shipment}',  [TruckingV2Controller::class, 'updateShipment'])->name('shipments.update');
-            // Mỗi danh mục Cài đặt = 1 endpoint riêng (1 bảng)
-            Route::put ('/catalog/{type}',         [TruckingV2Controller::class, 'saveCatalog'])->name('catalog.save');
-            Route::put ('/customers',              [TruckingV2Controller::class, 'saveCustomers'])->name('customers.save');
-            Route::put ('/customer-rename',        [TruckingV2Controller::class, 'renameCustomer'])->name('customerRename');
-            Route::put ('/vehicles',               [TruckingV2Controller::class, 'saveVehicles'])->name('vehicles.save');
-            Route::put ('/settings',               [TruckingV2Controller::class, 'saveSettings'])->name('settings.save');
-            Route::post('/price-import',           [TruckingV2Controller::class, 'importPrices'])->name('priceImport');
-            Route::post('/statements',            [TruckingV2Controller::class, 'storeStatement'])->name('statements.store');
-            Route::put ('/statements/{statement}', [TruckingV2Controller::class, 'updateStatement'])->name('statements.update');
+            Route::put('/shipments/{shipment}', [TruckingV2Controller::class, 'updateShipment'])->name('shipments.update');
         });
         Route::middleware('permission:shipments.delete')->group(function () {
-            Route::delete('/shipments/{shipment}',   [TruckingV2Controller::class, 'destroyShipment'])->name('shipments.destroy');
+            Route::delete('/shipments/{shipment}', [TruckingV2Controller::class, 'destroyShipment'])->name('shipments.destroy');
+        });
+
+        // --- Bảng giá ---
+        Route::middleware('permission:prices.view')->group(function () {
+            Route::get('/bang-gia',        [TruckingV2Controller::class, 'prices'])->name('prices');
+            Route::get('/customer-prices', [TruckingV2Controller::class, 'customerPrices'])->name('customerPrices');
+        });
+        Route::middleware('permission:prices.update')->group(function () {
+            Route::post('/price-import', [TruckingV2Controller::class, 'importPrices'])->name('priceImport');
+        });
+
+        // --- Bảng kê ---
+        Route::middleware('permission:statements.view')->group(function () {
+            Route::get('/bang-ke',                     [TruckingV2Controller::class, 'statements'])->name('statements');
+            Route::get('/bang-ke/tao',                 [TruckingV2Controller::class, 'createStatement'])->name('statements.create');
+            Route::get('/bang-ke/{statement}',         [TruckingV2Controller::class, 'viewStatement'])->name('statements.view')->whereNumber('statement');
+            Route::get('/bang-ke/{statement}/context', [TruckingV2Controller::class, 'statementContext'])->name('statements.context')->whereNumber('statement');
+            Route::get('/bang-ke/{statement}/excel',   [TruckingV2Controller::class, 'exportStatement'])->name('statements.excel')->whereNumber('statement');
+        });
+        Route::middleware('permission:statements.create')->group(function () {
+            Route::post('/statements', [TruckingV2Controller::class, 'storeStatement'])->name('statements.store');
+        });
+        Route::middleware('permission:statements.update')->group(function () {
+            Route::put('/statements/{statement}', [TruckingV2Controller::class, 'updateStatement'])->name('statements.update');
+        });
+        Route::middleware('permission:statements.delete')->group(function () {
             Route::delete('/statements/{statement}', [TruckingV2Controller::class, 'destroyStatement'])->name('statements.destroy');
         });
-    });
 
-    // ===== Reports - Payable =====
-    Route::prefix('reports/payable')->name('reports.payable.')->group(function () {
-        Route::middleware('permission:reports.view')->group(function () {
-            Route::get('/',                  [PayableReportController::class, 'index'])->name('index');
-            Route::get('/initial',           [PayableReportController::class, 'initialIndex'])->name('initial.index');
-            Route::get('/{report}',          [PayableReportController::class, 'show'])->name('show');
+        // --- Cài đặt Trucking (danh mục, khách hàng, đội xe, cấu hình) ---
+        Route::middleware('permission:settings.view')->group(function () {
+            Route::get('/cai-dat',        [TruckingV2Controller::class, 'settings'])->name('settings');
+            Route::get('/catalog/{type}', [TruckingV2Controller::class, 'catalogData'])->name('catalogData');   // lazy-load 1 tab
         });
-        Route::middleware('permission:reports.create')->group(function () {
-            Route::post('/',         [PayableReportController::class, 'store'])->name('store');
-            Route::post('/initial',  [PayableReportController::class, 'initialStore'])->name('initial.store');
-        });
-        Route::middleware('permission:reports.delete')->group(function () {
-            Route::delete('/{report}',          [PayableReportController::class, 'destroy'])->name('destroy');
-            Route::delete('/initial/{balance}', [PayableReportController::class, 'initialDestroy'])->name('initial.destroy');
+        Route::middleware('permission:settings.update')->group(function () {
+            Route::put('/catalog/{type}',    [TruckingV2Controller::class, 'saveCatalog'])->name('catalog.save');
+            Route::put('/customers',         [TruckingV2Controller::class, 'saveCustomers'])->name('customers.save');
+            Route::put('/customer-rename',   [TruckingV2Controller::class, 'renameCustomer'])->name('customerRename');
+            Route::put('/vehicles',          [TruckingV2Controller::class, 'saveVehicles'])->name('vehicles.save');
+            Route::put('/settings',          [TruckingV2Controller::class, 'saveSettings'])->name('settings.save');
         });
     });
 
@@ -157,8 +163,6 @@ Route::middleware('auth')->group(function () {
     });
     Route::middleware('permission:users.update')->group(function () {
         Route::put('/users/{user}', [UserController::class, 'update'])->name('users.update');
-        Route::put('/users/{user}/column-permissions', [UserController::class, 'updateColumnPermissions'])->name('users.columnPermissions');
-        Route::put('/users/{user}/trucking-column-permissions', [UserController::class, 'updateTruckingColumnPermissions'])->name('users.truckingColumnPermissions');
     });
     Route::middleware('permission:users.delete')->group(function () {
         Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');

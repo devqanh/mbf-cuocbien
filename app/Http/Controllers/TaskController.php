@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\PayableReport;
 use App\Models\Shipment;
 use App\Models\Task;
 use App\Models\User;
@@ -24,7 +23,7 @@ class TaskController extends Controller
      */
     private const LINKABLE_MAP = [
         'shipment' => Shipment::class,
-        'report'   => PayableReport::class,
+        // 'report' đã bỏ cùng tính năng Báo cáo — task cũ đã gắn báo cáo vẫn hiển thị (model giữ lại).
     ];
 
     public function index(Request $request)
@@ -264,7 +263,7 @@ class TaskController extends Controller
         ]) + $this->resolveLinkable($request);
     }
 
-    /** Convert alias 'shipment'/'report' về class polymorphic + verify entity tồn tại. */
+    /** Convert alias 'shipment' về class polymorphic + verify entity tồn tại. */
     private function resolveLinkable(Request $request): array
     {
         $alias = $request->input('linkable_type');

@@ -47,11 +47,11 @@
                 </a>
             </li>
             <li>
-                <a href="{{ url('/reports/payable') }}">
-                    <span class="sug-icon c-cyan"><i class="bi bi-clipboard-data"></i></span>
+                <a href="{{ url('/trucking-v2/bang-ke') }}">
+                    <span class="sug-icon c-cyan"><i class="bi bi-receipt"></i></span>
                     <span class="sug-text">
-                        <strong>Báo cáo phải trả</strong>
-                        <small>Công nợ NCC</small>
+                        <strong>Bảng kê</strong>
+                        <small>Bảng kê cần thu</small>
                     </span>
                 </a>
             </li>

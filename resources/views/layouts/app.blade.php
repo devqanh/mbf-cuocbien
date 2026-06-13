@@ -37,7 +37,7 @@
 
             <div class="collapse navbar-collapse app-nav" id="mainNav">
                 <ul class="navbar-nav me-auto">
-                    {{-- Trucking (record + popup) — 4 trang riêng --}}
+                    {{-- Trucking (record + popup) — 4 trang riêng, gating theo quyền từng tính năng --}}
                     @can('shipments.view')
                     <li class="nav-item">
                         <a class="nav-link {{ request()->routeIs('trucking2.shipments') ? 'active' : '' }}"
@@ -45,18 +45,24 @@
                             <i class="bi bi-box-seam"></i> Lô hàng
                         </a>
                     </li>
+                    @endcan
+                    @can('prices.view')
                     <li class="nav-item">
                         <a class="nav-link {{ request()->routeIs('trucking2.prices') ? 'active' : '' }}"
                            href="{{ route('trucking2.prices') }}">
                             <i class="bi bi-tags"></i> Bảng giá
                         </a>
                     </li>
+                    @endcan
+                    @can('statements.view')
                     <li class="nav-item">
                         <a class="nav-link {{ request()->routeIs('trucking2.statements') ? 'active' : '' }}"
                            href="{{ route('trucking2.statements') }}">
                             <i class="bi bi-receipt"></i> Bảng kê
                         </a>
                     </li>
+                    @endcan
+                    @can('settings.view')
                     <li class="nav-item">
                         <a class="nav-link {{ request()->routeIs('trucking2.settings') ? 'active' : '' }}"
                            href="{{ route('trucking2.settings') }}">
@@ -94,24 +100,6 @@
                                 {{ $myPendingTasksCount > 99 ? '99+' : $myPendingTasksCount }}
                             </span>
                         </a>
-                    </li>
-                    @endcan
-
-                    {{-- Báo cáo --}}
-                    @can('reports.view')
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle {{ request()->routeIs('reports.*') ? 'active' : '' }}"
-                           href="#" data-bs-toggle="dropdown" role="button">
-                            <i class="bi bi-clipboard-data"></i> Báo cáo
-                        </a>
-                        <ul class="dropdown-menu">
-                            <li><a class="dropdown-item {{ request()->routeIs('reports.payable.index','reports.payable.show','reports.payable.store','reports.payable.destroy') ? 'active' : '' }}"
-                                   href="{{ route('reports.payable.index') }}">
-                                <i class="bi bi-cash-stack"></i> Báo cáo phải trả</a></li>
-                            <li><a class="dropdown-item {{ request()->routeIs('reports.payable.initial.*') ? 'active' : '' }}"
-                                   href="{{ route('reports.payable.initial.index') }}">
-                                <i class="bi bi-pencil-square"></i> Cấu hình đầu kỳ NCC</a></li>
-                        </ul>
                     </li>
                     @endcan
 
