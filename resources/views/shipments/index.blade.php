@@ -2326,9 +2326,17 @@
                 // X-Socket-ID — Reverb's toOthers() dùng header này để loại tab của sender
                 // khỏi broadcast. Không có nó → tab gửi cũng nhận event của chính nó.
                 const socketId = (() => {
-                    try { return window.Echo?.socketId?.() ?? ''; }
-                    catch (e) { return ''; }
+                    try {
+                        const id = window.Echo?.socketId?.();
+                        // Chỉ nhận socket id đúng định dạng số.số (Pusher/Reverb).
+                        // Echo chưa nối → undefined → trả '' để KHÔNG gắn header.
+                        return /^\d+\.\d+$/.test(id) ? id : '';
+                    } catch (e) { return ''; }
                 })();
+
+                // Chỉ gắn X-Socket-ID khi hợp lệ — header rỗng làm toOthers() gửi
+                // socket_id='' → Pusher ném "Invalid socket ID" chết job broadcast.
+                const socketHeader = socketId ? { 'X-Socket-ID': socketId } : {};
 
                 // Snapshot payload: formatting overlay + column widths.
                 // Anchored theo col KEY → portable giữa users với COLS khác nhau.
@@ -2345,7 +2353,7 @@
                     headers: {
                         'Content-Type': 'application/json',
                         'X-CSRF-TOKEN':  CSRF,
-                        'X-Socket-ID':   socketId,
+                        ...socketHeader,
                         'Accept':        'application/json',
                     },
                     body: JSON.stringify({
@@ -2451,7 +2459,7 @@
                                 headers: {
                                     'Content-Type': 'application/json',
                                     'X-CSRF-TOKEN':  CSRF,
-                                    'X-Socket-ID':   socketId,
+                                    ...socketHeader,
                                     'Accept':        'application/json',
                                 },
                                 body: JSON.stringify({

@@ -34,6 +34,13 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             \App\Http\Middleware\NoCacheHeaders::class,
         ]);
+
+        // Gỡ header X-Socket-ID rỗng/sai định dạng trước khi toOthers() đọc nó,
+        // tránh Pusher "Invalid socket ID" làm chết job broadcast. Prepend để chạy
+        // trước controller (socket được capture lúc dispatch event trong request).
+        $middleware->web(prepend: [
+            \App\Http\Middleware\NormalizeSocketId::class,
+        ]);
     })
     ->withSchedule(function (Schedule $schedule): void {
         // Prune snapshot history cũ hơn 30 ngày, giữ tối thiểu 10 version gần nhất per key.
