@@ -18,6 +18,11 @@ window.__TRK = {
     customerRename: '{{ route("trucking2.customerRename") }}',
     vehicles: '{{ route("trucking2.vehicles.save") }}',
     settings: '{{ route("trucking2.settings.save") }}',
+    routeFees: '{{ route("trucking2.routeFees.save") }}',
+    fuelPrices: '{{ route("trucking2.fuelPrices.save") }}',
+    drivers: '{{ route("trucking2.drivers.save") }}',
+    driversBase: '{{ url("trucking-v2/drivers") }}/',
+    prices: '@can('prices.view'){{ route("trucking2.prices") }}@endcan',
   },
   boot: @json($boot),
 };

@@ -33,7 +33,6 @@ class TruckingSeedDemo extends Command
             'costItems'     => ['Cước xe ngoài', 'Nâng', 'Hạ', 'CSHT', 'Hải quan'],
             'choHoItems'    => ['Nâng', 'Hạ', 'CSHT'],
             'revItems'      => ['Doanh thu cước xe'],
-            'vehItems'      => ['Vé trạm', 'Lương'],
             'prices'        => ['Nâng' => '500000', 'Hạ' => '450000', 'CSHT' => '150000'],
             'vehicles'      => ['15C-123.45', '15C-678.90'],
             'vehicleType'   => ['15C-123.45' => 'MBF', '15C-678.90' => 'Ngoài'],

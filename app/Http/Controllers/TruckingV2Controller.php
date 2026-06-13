@@ -2,9 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\TruckingDriver;
 use App\Models\TruckingLocation;
 use App\Models\TruckingShipment;
 use App\Models\TruckingStatement;
+use App\Models\TruckingTripCostBatch;
+use App\Models\TruckingVehicle;
 use App\Models\TruckingWarehouse;
 use App\Services\TruckingV2Service;
 use Illuminate\Http\JsonResponse;
@@ -120,14 +123,10 @@ class TruckingV2Controller extends Controller
         $tplRows  = 46;                         // mẫu có 46 dòng (22..67)
         $delta    = $M - $tplRows;
 
-        // Backfill từ lô hàng còn sống (cho bảng kê cũ chưa có snapshot đầy đủ)
-        $ids   = array_values(array_filter(array_map(fn ($l) => $l['id'] ?? null, $lines), 'is_numeric'));
-        $ships = $ids
-            ? TruckingShipment::with('costLines')->whereIn('id', $ids)->get()->keyBy('id')
-            : collect();
-        $val = fn ($a, $b) => trim((string) ($a ?? '')) !== '' ? $a : $b;   // ưu tiên snapshot, rỗng thì lấy lô
+        // XUẤT THEO SNAPSHOT ĐÃ LƯU — KHÔNG đọc lô realtime: bảng kê là bản đã chốt,
+        // không được đổi theo dữ liệu lô sửa/xóa sau khi lập.
 
-        // Map mã/tên → TÊN địa điểm & kho (tuyến hiển thị tên tường minh, không dùng ký hiệu)
+        // Map mã/tên → TÊN địa điểm & kho (chỉ là từ điển hiển thị tên, không phải dữ liệu lô)
         $locMap = [];
         foreach (TruckingLocation::get(['name', 'code']) as $x) {
             if ($x->name) $locMap[$x->name] = $x->name;
@@ -155,18 +154,17 @@ class TruckingV2Controller extends Controller
         $sumCuoc = 0; $sumThanhLy = 0; $sumTong = 0;
         foreach ($lines as $i => $l) {
             $r = $start + $i;
-            $s = $ships[$l['id'] ?? null] ?? null;
 
-            $declNo   = $val($l['declNo']   ?? '', $s?->declaration_no);
-            $contType = $val($l['contType'] ?? '', $s?->cont_type);
-            $inv      = $val($l['inv']      ?? '', $s?->inv);
-            $contNo   = $val($l['contNo']   ?? '', $s?->cont_no);
-            $bks      = $val($l['bks']      ?? '', $s?->bks_vao ?: $s?->bks_ra);
-            $note     = $val($l['note']     ?? '', $s?->ghi_chu);
+            // Tất cả lấy từ SNAPSHOT của dòng bảng kê (không đọc lô realtime)
+            $declNo   = $l['declNo']   ?? '';
+            $contType = $l['contType'] ?? '';
+            $inv      = $l['inv']      ?? '';
+            $contNo   = $l['contNo']   ?? '';
+            $bks      = $l['bks']      ?? '';
+            $note     = $l['note']     ?? '';
 
-            // Tuyến vận chuyển — ưu tiên tuyến ĐÃ HIỂN THỊ (detail.route: "Nơi lấy → Nơi hạ"),
-            // đổi mỗi điểm sang TÊN tường minh (địa điểm → kho → giữ nguyên nếu không khớp).
-            // Bảng kê cũ chưa có snapshot route → dựng từ Nơi lấy + Kho + Nơi hạ của lô.
+            // Tuyến vận chuyển — lấy từ snapshot (detail.route đã chốt khi lưu),
+            // đổi mỗi điểm sang TÊN tường minh; bảng kê cũ thiếu route → dựng từ Nơi lấy/Nơi hạ đã lưu.
             $segName = function ($v) use ($locMap, $whMap) {
                 $v = trim((string) $v);
                 if ($v === '' || $v === '?') return '';
@@ -177,23 +175,15 @@ class TruckingV2Controller extends Controller
                 $segs  = array_filter(array_map($segName, preg_split('/\s*→\s*/u', $snapRoute)), fn ($p) => $p !== '');
                 $route = implode(' → ', $segs);
             } else {
-                $fromLoc = $s ? $s->from_loc : ($l['from'] ?? '');
-                $toLoc   = $s ? $s->to_loc   : ($l['to'] ?? '');
-                $khoStr  = $s ? (string) $s->kho : '';
-                $parts   = [];
-                if (trim((string) $fromLoc) !== '') $parts[] = $locN($fromLoc);
-                foreach (preg_split('/\s*,\s*/', $khoStr, -1, PREG_SPLIT_NO_EMPTY) as $k) $parts[] = $whN($k);
-                if (trim((string) $toLoc) !== '') $parts[] = $locN($toLoc);
+                $parts = [];
+                if (trim((string) ($l['from'] ?? '')) !== '') $parts[] = $locN($l['from']);
+                if (trim((string) ($l['to'] ?? '')) !== '')   $parts[] = $locN($l['to']);
                 $route = implode(' → ', array_filter($parts, fn ($p) => trim((string) $p) !== ''));
             }
 
-            // Phí thanh lý: snapshot, rỗng thì lấy dòng chi phí src=thanhLyFee của lô
+            // Phí thanh lý & cước (chưa VAT) — lấy thẳng từ snapshot đã lưu
             $thanhLy = (int) ($l['thanhLy'] ?? 0);
-            if ($thanhLy === 0 && $s) {
-                $thanhLy = (int) round((float) $s->costLines->where('src', 'thanhLyFee')->sum('amount'));
-            }
-            // Cước (chưa VAT): snapshot cuoc, rỗng thì lấy phải thu đã lưu
-            $cuoc = (int) (($l['cuoc'] ?? 0) ?: ($l['phaiThu'] ?? 0));
+            $cuoc    = (int) (($l['cuoc'] ?? 0) ?: ($l['phaiThu'] ?? 0));
             $tong = $cuoc + $thanhLy;
             $sumCuoc += $cuoc; $sumThanhLy += $thanhLy; $sumTong += $tong;
 
@@ -376,6 +366,237 @@ class TruckingV2Controller extends Controller
         $this->svc->saveSettings($cfg);
 
         return response()->json(['ok' => true]);
+    }
+
+    /** Lưu cấu hình Phí tuyến đường (repeater). */
+    public function saveRouteFees(Request $request): JsonResponse
+    {
+        $rows = $request->input('cfg.routeFees', $request->input('rows', []));
+        $this->svc->saveRouteFees(is_array($rows) ? $rows : []);
+
+        return response()->json(['ok' => true]);
+    }
+
+    /** Lưu Bảng giá dầu (repeater theo khoảng ngày). */
+    public function saveFuelPrices(Request $request): JsonResponse
+    {
+        $rows = $request->input('cfg.fuelPrices', $request->input('rows', []));
+        $this->svc->saveFuelPrices(is_array($rows) ? $rows : []);
+
+        return response()->json(['ok' => true]);
+    }
+
+    // ===================== Hồ sơ lái xe =====================
+    /** Lưu hồ sơ lái xe (tên/SĐT/ngày/tài khoản) — tài liệu quản lý qua upload riêng. */
+    public function saveDrivers(Request $request): JsonResponse
+    {
+        $rows = $request->input('cfg.drivers', $request->input('rows', []));
+        $this->svc->saveDrivers(is_array($rows) ? $rows : []);
+
+        return response()->json(['ok' => true, 'drivers' => $this->svc->catalogData('drivers')['drivers']]);
+    }
+
+    /** Tải tài liệu (CCCD/bằng lái — file hoặc ảnh, nhiều file 1 lần). */
+    public function uploadDriverDocs(Request $request, TruckingDriver $driver): JsonResponse
+    {
+        $request->validate([
+            'files'   => ['required', 'array', 'max:20'],
+            'files.*' => ['file', 'max:20480', 'mimes:jpg,jpeg,png,gif,webp,heic,pdf,doc,docx,xls,xlsx,csv'],
+            'type'    => ['nullable', 'string', 'max:60'],
+        ]);
+        $docs = $this->svc->uploadDriverDocs($driver, $request->file('files', []), (string) $request->input('type', ''));
+
+        return response()->json(['ok' => true, 'docs' => $docs]);
+    }
+
+    public function deleteDriverDoc(TruckingDriver $driver, int $idx): JsonResponse
+    {
+        $docs = $this->svc->deleteDriverDoc($driver, $idx);
+        return response()->json(['ok' => true, 'docs' => $docs]);
+    }
+
+    /** Stream 1 tài liệu (kiểm soát quyền — không phụ thuộc symlink public). */
+    public function showDriverDoc(TruckingDriver $driver, int $idx)
+    {
+        $doc = $this->svc->driverDocAt($driver, $idx);
+        abort_unless($doc, 404);
+        $path = \Illuminate\Support\Facades\Storage::disk('local')->path($doc['path']);
+        abort_unless(is_file($path), 404);
+
+        return response()->file($path, [
+            'Content-Type'        => $doc['mime'] ?? 'application/octet-stream',
+            'Content-Disposition' => 'inline; filename="' . addslashes($doc['name'] ?? 'tai-lieu') . '"',
+        ]);
+    }
+
+    // ===================== Phí xe nội bộ (trip cost) — mô hình KỲ (snapshot) =====================
+    /** Danh sách kỳ phí xe (trang chủ Phí xe nội bộ). */
+    public function tripCostPage()
+    {
+        return view('trucking2.phi-xe', $this->pageData([
+            'batches' => $this->svc->tripBatchesForList(),
+        ]));
+    }
+
+    /** Trang Tạo kỳ phí xe mới. */
+    public function createTripCost()
+    {
+        return view('trucking2.phi-xe-tao', $this->pageData([], 'shipments.create'));
+    }
+
+    /** Tính (AJAX): gom lô có giờ xe ra trong kỳ + gợi ý phí. */
+    public function tripCostCompute(Request $request): JsonResponse
+    {
+        $from = $request->query('from') ?: null;
+        $to   = $request->query('to') ?: null;
+        return response()->json(['ok' => true] + $this->svc->computeTripCosts($from, $to));
+    }
+
+    /** Trang Xem/Sửa 1 kỳ đã lưu (snapshot, nhẹ). */
+    public function viewTripCost(TruckingTripCostBatch $tripCost)
+    {
+        return view('trucking2.phi-xe-xem', $this->pageData([
+            'batch' => $this->svc->tripBatchToArray($tripCost),
+        ]));
+    }
+
+    /** Ngữ cảnh "Tính lại" cho kỳ đã lưu (tải lazy khi bấm). */
+    public function tripCostContext(TruckingTripCostBatch $tripCost): JsonResponse
+    {
+        return response()->json(['ok' => true] + $this->svc->tripBatchContext($tripCost));
+    }
+
+    public function storeTripCost(Request $request): JsonResponse
+    {
+        $data = $request->validate(['batch' => ['required', 'array']])['batch'];
+        $b = $this->svc->saveTripBatch($data);
+
+        return response()->json(['ok' => true, 'batch' => $this->svc->tripBatchToArray($b)]);
+    }
+
+    public function updateTripCost(Request $request, TruckingTripCostBatch $tripCost): JsonResponse
+    {
+        $data = $request->validate(['batch' => ['required', 'array']])['batch'];
+        $b = $this->svc->saveTripBatch($data, $tripCost);
+
+        return response()->json(['ok' => true, 'batch' => $this->svc->tripBatchToArray($b)]);
+    }
+
+    public function destroyTripCost(TruckingTripCostBatch $tripCost): JsonResponse
+    {
+        $tripCost->delete();
+        return response()->json(['ok' => true]);
+    }
+
+    // ===================== Quản lý xe (MBF) =====================
+    /** Trang Quản lý xe — danh sách xe MBF nội bộ. */
+    public function fleet()
+    {
+        return view('trucking2.quan-ly-xe', $this->pageData([
+            'vehicles'      => $this->svc->mbfVehicles(),
+            'expiringCosts' => $this->svc->expiringVehicleCosts(),
+            'pendingCosts'  => $this->svc->pendingVehicleCosts(),
+            'costItems'     => $this->svc->costItemNames(),
+        ], 'settings.update', 'settings.update'));
+    }
+
+    /** Trang PUBLIC gửi yêu cầu chi (mobile) — không cần đăng nhập. */
+    public function spendRequestPage()
+    {
+        return view('trucking2.yeu-cau-chi', ['boot' => $this->svc->publicRequestData()]);
+    }
+
+    /** Nhận yêu cầu chi từ trang public (check định mức km) — kèm ảnh thực tế. */
+    public function submitSpendRequest(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'vehicleId' => ['required'],
+            'costItem'  => ['required', 'string', 'max:120'],
+            'date'      => ['nullable', 'string', 'max:20'],
+            'amount'    => ['required'],
+            'km'        => ['nullable', 'string', 'max:20'],
+            'photos'    => ['nullable', 'array', 'max:12'],
+            'photos.*'  => ['file', 'image', 'max:20480'],
+        ]);
+        return response()->json($this->svc->createSpendRequest($data, $request->file('photos', [])));
+    }
+
+    /** Internal: upload ảnh thực tế cho phiếu chi (CostModal) → trả metadata để đính vào phiếu. */
+    public function uploadCostPhotos(Request $request, TruckingVehicle $vehicle): JsonResponse
+    {
+        $request->validate([
+            'files'   => ['required', 'array', 'max:12'],
+            'files.*' => ['file', 'image', 'max:20480'],
+        ]);
+        $stored = $this->svc->storeCostPhotos($vehicle, $request->file('files', []));
+        // Trả về kèm URL xem (giống costsOut) để client hiển thị ngay
+        $photos = array_map(fn ($p) => $p + ['url' => route('trucking2.fleet.costPhoto', ['vehicle' => $vehicle->id, 'name' => $p['file']])], $stored);
+        return response()->json(['ok' => true, 'photos' => $photos]);
+    }
+
+    /** Stream 1 ảnh phiếu chi (kiểm soát quyền). */
+    public function showCostPhoto(TruckingVehicle $vehicle, string $name)
+    {
+        $path = $this->svc->costPhotoPath($vehicle, $name);
+        abort_unless($path, 404);
+        return response()->file($path);
+    }
+
+    /** Tạo nhanh khoản chi phí (Combo tên phiếu chi) → trả danh mục mới. */
+    public function addVehicleCostItem(Request $request): JsonResponse
+    {
+        $name = (string) $request->validate(['name' => ['required', 'string', 'max:120']])['name'];
+        return response()->json(['ok' => true, 'costItems' => $this->svc->addCostItem($name)]);
+    }
+
+    /** Mở xe — chỉ nạp THÔNG TIN nền (3 nhóm con lazy-load riêng theo tab). */
+    public function vehicleData(TruckingVehicle $vehicle): JsonResponse
+    {
+        return response()->json(['ok' => true, 'vehicle' => $this->svc->vehicleBase($vehicle)]);
+    }
+
+    /** Lazy-load 1 nhóm con khi bấm tab: usages | costs | depreciations. */
+    public function vehicleSection(TruckingVehicle $vehicle, string $section): JsonResponse
+    {
+        abort_unless(in_array($section, ['usages', 'costs', 'depreciations'], true), 404);
+        return response()->json(['ok' => true] + $this->svc->vehicleSection($vehicle, $section));
+    }
+
+    /** Lưu — chỉ các phần gửi lên; trả về base + các phần vừa lưu (id mới). */
+    public function saveVehicle(Request $request, TruckingVehicle $vehicle): JsonResponse
+    {
+        $data = $request->validate(['data' => ['required', 'array']])['data'];
+
+        return response()->json(['ok' => true, 'vehicle' => $this->svc->saveVehicleManagement($vehicle, $data)]);
+    }
+
+    /** Tải tài liệu xe (nhiều file: ảnh/PDF/Word/Excel) → trả danh sách tài liệu mới. */
+    public function uploadVehicleDocs(Request $request, TruckingVehicle $vehicle): JsonResponse
+    {
+        $request->validate([
+            'files'   => ['required', 'array', 'max:20'],
+            'files.*' => ['file', 'max:20480', 'mimes:jpg,jpeg,png,gif,webp,heic,pdf,doc,docx,xls,xlsx,csv'],
+            'type'    => ['nullable', 'string', 'max:60'],
+        ]);
+        $docs = $this->svc->uploadVehicleDocs($vehicle, $request->file('files', []), (string) $request->input('type', ''));
+
+        return response()->json(['ok' => true, 'docs' => $docs]);
+    }
+
+    public function deleteVehicleDoc(TruckingVehicle $vehicle, int $idx): JsonResponse
+    {
+        return response()->json(['ok' => true, 'docs' => $this->svc->deleteVehicleDoc($vehicle, $idx)]);
+    }
+
+    /** Stream 1 tài liệu xe (kiểm soát quyền — không phụ thuộc symlink public). */
+    public function showVehicleDoc(TruckingVehicle $vehicle, int $idx)
+    {
+        $doc = $this->svc->vehicleDocAt($vehicle, $idx);
+        abort_unless($doc, 404);
+        $path = \Illuminate\Support\Facades\Storage::disk('local')->path($doc['path']);
+        abort_unless(is_file($path), 404);
+
+        return response()->file($path);
     }
 
     /** Import bảng giá 1 khách từ Excel (dòng đã parse phía client). */

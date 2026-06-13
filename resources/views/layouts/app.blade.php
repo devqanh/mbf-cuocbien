@@ -46,14 +46,7 @@
                         </a>
                     </li>
                     @endcan
-                    @can('prices.view')
-                    <li class="nav-item">
-                        <a class="nav-link {{ request()->routeIs('trucking2.prices') ? 'active' : '' }}"
-                           href="{{ route('trucking2.prices') }}">
-                            <i class="bi bi-tags"></i> Bảng giá
-                        </a>
-                    </li>
-                    @endcan
+                    {{-- Bảng giá đã bỏ khỏi menu tổng (ít dùng) — truy cập qua nút trong trang Cài đặt --}}
                     @can('statements.view')
                     <li class="nav-item">
                         <a class="nav-link {{ request()->routeIs('trucking2.statements') ? 'active' : '' }}"
@@ -62,7 +55,21 @@
                         </a>
                     </li>
                     @endcan
+                    @can('shipments.view')
+                    <li class="nav-item">
+                        <a class="nav-link {{ request()->routeIs('trucking2.tripCost') ? 'active' : '' }}"
+                           href="{{ route('trucking2.tripCost') }}">
+                            <i class="bi bi-cash-stack"></i> Phí xe nội bộ
+                        </a>
+                    </li>
+                    @endcan
                     @can('settings.view')
+                    <li class="nav-item">
+                        <a class="nav-link {{ request()->routeIs('trucking2.fleet') ? 'active' : '' }}"
+                           href="{{ route('trucking2.fleet') }}">
+                            <i class="bi bi-truck-front"></i> Quản lý xe
+                        </a>
+                    </li>
                     <li class="nav-item">
                         <a class="nav-link {{ request()->routeIs('trucking2.settings') ? 'active' : '' }}"
                            href="{{ route('trucking2.settings') }}">

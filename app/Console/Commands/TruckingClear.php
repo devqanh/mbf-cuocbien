@@ -20,7 +20,6 @@ use App\Models\TruckingStatement;
 use App\Models\TruckingStatementLine;
 use App\Models\TruckingStatementPayment;
 use App\Models\TruckingVehicle;
-use App\Models\TruckingVehItem;
 use App\Models\TruckingWarehouse;
 use Illuminate\Console\Command;
 
@@ -54,7 +53,6 @@ class TruckingClear extends Command
         TruckingCostItem::class,
         TruckingChohoItem::class,
         TruckingRevenueItem::class,
-        TruckingVehItem::class,
         TruckingSetting::class,
     ];
 

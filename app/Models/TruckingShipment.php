@@ -25,6 +25,10 @@ class TruckingShipment extends Model
         'sail_date', 'cut_off', 'cont_den', 'cont_ra',
         'gio_den_du_kien', 'gio_xe_den', 'gio_xe_ra',
         'vat_rate', 'han_tt', 'ghi_chu',
+        // tham chiếu + số liệu báo cáo (chốt khi lưu)
+        'vehicle_id', 'from_location_id', 'to_location_id',
+        'rev_base', 'vat_amount', 'choho_revenue', 'phai_thu', 'da_thu', 'con_no',
+        'cost_total', 'cost_billable', 'cost_company', 'profit',
     ];
 
     protected $casts = [
@@ -60,6 +64,11 @@ class TruckingShipment extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(TruckingPayment::class, 'shipment_id')->orderBy('sort');
+    }
+
+    public function warehouses(): HasMany
+    {
+        return $this->hasMany(TruckingShipmentWarehouse::class, 'shipment_id')->orderBy('sort');
     }
 
     public function scopeOfSheet(Builder $q, string $sheet): Builder

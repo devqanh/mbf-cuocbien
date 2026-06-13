@@ -11,15 +11,24 @@ use App\Models\TruckingDriver;
 use App\Models\TruckingLocation;
 use App\Models\TruckingPayer;
 use App\Models\TruckingPriceRow;
+use App\Models\TruckingFuelPrice;
 use App\Models\TruckingRevenueItem;
+use App\Models\TruckingRouteFee;
+use App\Models\TruckingSalaryItem;
+use App\Models\TruckingTripCostBatch;
+use App\Models\TruckingTripCostLine;
+use App\Models\TruckingVehicleCost;
+use App\Models\TruckingVehicleDepreciation;
+use App\Models\TruckingVehicleUsage;
 use App\Models\TruckingSetting;
 use App\Models\TruckingShipment;
+use App\Models\TruckingShipmentWarehouse;
 use App\Models\TruckingStatement;
 use App\Models\TruckingVehicle;
-use App\Models\TruckingVehItem;
 use App\Models\TruckingWarehouse;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Trucking v2 — serialize DB ⇄ shape mà prototype (dev/trucking.html) dùng,
@@ -45,7 +54,7 @@ class TruckingV2Service
             'costItems'  => [TruckingCostItem::class,    true,  false,           true],
             'choHoItems' => [TruckingChohoItem::class,   true,  false,           false],
             'revItems'   => [TruckingRevenueItem::class, true,  false,           false],
-            'vehItems'   => [TruckingVehItem::class,     true,  false,           false],
+            'salaryItems' => [TruckingSalaryItem::class, false, false,           false],
         ];
     }
 
@@ -449,8 +458,82 @@ class TruckingV2Service
             }
             }   // end if apply('rev')
 
+            $this->recomputeShipmentDerived($s);
             return $s->fresh(['customer', 'costLines', 'revenueLines', 'payments']);
         });
+    }
+
+    /** Bản đồ tên/ký hiệu kho → id (cho tách kho theo lô). */
+    private function warehouseIdMap(): array
+    {
+        $map = [];
+        foreach (TruckingWarehouse::get(['id', 'name', 'code']) as $w) {
+            if ($w->name) $map[mb_strtolower(trim($w->name))] = $w->id;
+            if ($w->code) $map[mb_strtolower(trim($w->code))] = $w->id;
+        }
+        return $map;
+    }
+
+    /**
+     * Chốt số liệu + tham chiếu BÁO CÁO cho 1 lô (gọi sau khi lưu / để backfill):
+     * - Tier 2: gán cost_item_id/payer_id (cost), item_id (revenue) theo tên hiện tại.
+     * - Tier 1: tổng doanh thu/VAT/chi hộ/phải thu/đã thu/còn nợ/chi phí/lợi nhuận.
+     * - Tier 3: vehicle_id, from/to_location_id + bảng kho theo lô.
+     * Giữ nguyên cột chuỗi (lịch sử); id chỉ là khóa join.
+     */
+    public function recomputeShipmentDerived(TruckingShipment $s): void
+    {
+        $s->load(['costLines', 'revenueLines', 'payments']);   // luôn nạp TƯƠI (tránh quan hệ cũ trong RAM)
+
+        // Tier 2 — gán id khoản theo tên hiện tại
+        $costItemId = TruckingCostItem::pluck('id', 'name');
+        $payerId    = TruckingPayer::pluck('id', 'name');
+        $revItemId  = TruckingRevenueItem::pluck('id', 'name');
+        $chohoId    = TruckingChohoItem::pluck('id', 'name');
+        foreach ($s->costLines as $c) {
+            $ci = $c->item !== null ? ($costItemId[$c->item] ?? null) : null;
+            $pi = $c->payer !== null ? ($payerId[$c->payer] ?? null) : null;
+            if ((int) $c->cost_item_id !== (int) $ci || (int) $c->payer_id !== (int) $pi) {
+                $c->cost_item_id = $ci; $c->payer_id = $pi; $c->save();
+            }
+        }
+        foreach ($s->revenueLines as $r) {
+            $map = $r->kind === 'choHo' ? $chohoId : $revItemId;
+            $ii = $r->item !== null ? ($map[$r->item] ?? null) : null;
+            if ((int) $r->item_id !== (int) $ii) { $r->item_id = $ii; $r->save(); }
+        }
+
+        // Tier 1 — tổng tiền (khớp calcRev/calcCost ở frontend)
+        $revBase  = (float) $s->revenueLines->where('kind', 'doanhThu')->sum('amount');
+        $chohoRev = (float) $s->revenueLines->where('kind', 'choHo')->sum('amount');
+        $rate     = (float) ($s->vat_rate ?? 0);
+        $vat      = round($revBase * $rate / 100);
+        $phaiThu  = $revBase + $vat + $chohoRev;
+        $daThu    = (float) $s->payments->sum('amount');
+        $costTotal    = (float) $s->costLines->sum('amount');
+        $costBillable = (float) $s->costLines->where('billable', true)->sum('amount');
+        $costCompany  = $costTotal - $costBillable;
+
+        // Tier 3 — khóa xe / địa điểm
+        $vehicleId = $s->bks_vao ? TruckingVehicle::where('plate', $s->bks_vao)->value('id') : null;
+
+        $s->forceFill([
+            'rev_base'      => $revBase, 'vat_amount' => $vat, 'choho_revenue' => $chohoRev,
+            'phai_thu'      => $phaiThu, 'da_thu' => $daThu, 'con_no' => $phaiThu - $daThu,
+            'cost_total'    => $costTotal, 'cost_billable' => $costBillable, 'cost_company' => $costCompany,
+            'profit'        => $revBase - $costCompany,
+            'vehicle_id'    => $vehicleId,
+            'from_location_id' => $this->resolveLocationId($s->from_loc),
+            'to_location_id'   => $this->resolveLocationId($s->to_loc),
+        ])->save();
+
+        // Tier 3 — kho theo lô (mỗi kho 1 dòng)
+        $whMap = $this->warehouseIdMap();
+        $s->warehouses()->delete();
+        $parts = array_values(array_filter(array_map('trim', preg_split('/\s*,\s*/', (string) $s->kho)), fn ($x) => $x !== ''));
+        foreach ($parts as $i => $name) {
+            $s->warehouses()->create(['warehouse_id' => $whMap[mb_strtolower($name)] ?? null, 'name' => $name, 'sort' => $i]);
+        }
     }
 
     // ===================================================================
@@ -518,6 +601,7 @@ class TruckingV2Service
         $vehicles = TruckingVehicle::orderBy('plate')->get();
         $cfg['vehicles'] = $vehicles->pluck('plate')->all();
         $cfg['vehicleType'] = $vehicles->mapWithKeys(fn ($v) => [$v->plate => $v->type])->all();
+        $cfg['vehicleAxle'] = $vehicles->filter(fn ($v) => $v->axle)->mapWithKeys(fn ($v) => [$v->plate => $v->axle])->all();
 
         // Settings
         $cfg['vatDefault'] = [
@@ -536,6 +620,8 @@ class TruckingV2Service
         foreach ($this->lookups() as $key => [$cls]) $c[$key] = $cls::count();
         $c['customers'] = TruckingCustomer::count();
         $c['vehicles']  = TruckingVehicle::count();
+        $c['routeFees'] = TruckingRouteFee::count();
+        $c['fuelPrices'] = TruckingFuelPrice::count();
         return $c;
     }
 
@@ -546,6 +632,9 @@ class TruckingV2Service
     public function catalogData(string $key): array
     {
         $lk = $this->lookups();
+        if ($key === 'drivers') {            // hồ sơ lái xe đầy đủ (không chỉ tên)
+            return ['drivers' => $this->driversManaged()];
+        }
         if (isset($lk[$key])) {
             [$cls, $priced, $coded, $colored] = $lk[$key];
             $rows = $cls::orderBy('sort')->orderBy('name')->get();
@@ -581,15 +670,1002 @@ class TruckingV2Service
         }
         if ($key === 'vehicles') {
             $v = TruckingVehicle::orderBy('plate')->get();
-            return ['vehicles' => $v->pluck('plate')->all(), 'vehicleType' => $v->mapWithKeys(fn ($x) => [$x->plate => $x->type])->all()];
+            return [
+                'vehicles'    => $v->pluck('plate')->all(),
+                'vehicleType' => $v->mapWithKeys(fn ($x) => [$x->plate => $x->type])->all(),
+                'vehicleAxle' => $v->filter(fn ($x) => $x->axle)->mapWithKeys(fn ($x) => [$x->plate => $x->axle])->all(),
+            ];
         }
-        if ($key === '__vat') {
-            return ['vatDefault' => ['hph' => TruckingSetting::get('vat_default_hph', '8'), 'icd' => TruckingSetting::get('vat_default_icd', '0')]];
+        if ($key === '__general') {   // cấu hình chung: VAT mặc định + Free time (+ mở rộng sau)
+            return [
+                'vatDefault'    => ['hph' => TruckingSetting::get('vat_default_hph', '8'), 'icd' => TruckingSetting::get('vat_default_icd', '0')],
+                'freeTimeHours' => TruckingSetting::get('free_time_hours', '4'),
+            ];
         }
-        if ($key === '__freetime') {
-            return ['freeTimeHours' => TruckingSetting::get('free_time_hours', '4')];
+        if ($key === 'routeFees') {
+            // kèm danh sách kho để chọn tuyến (MultiCombo)
+            return ['routeFees' => $this->routeFees(), 'warehouses' => TruckingWarehouse::orderBy('sort')->orderBy('name')->pluck('name')->all()];
+        }
+        if ($key === 'fuelPrices') {
+            return ['fuelPrices' => $this->fuelPrices()];
         }
         return [];
+    }
+
+    // ===================================================================
+    // QUẢN LÝ XE (xe MBF nội bộ)
+    // ===================================================================
+
+    /** Danh sách xe MBF + đếm để hiện badge. */
+    public function mbfVehicles(): array
+    {
+        return TruckingVehicle::where('type', 'MBF')
+            ->withCount(['vehicleUsages', 'vehicleCosts', 'vehicleDepreciations'])
+            ->orderBy('plate')->get()->map(function ($v) {
+                $info = is_array($v->info) ? $v->info : [];
+                return [
+                    'id'              => $v->id,
+                    'plate'           => $v->plate,
+                    'axle'            => $v->axle ?? '',
+                    'registrationDue' => $info['registrationDue'] ?? '',   // YYYY-MM-DD (hạn đăng kiểm)
+                    'insuranceDue'    => $info['insuranceDue'] ?? '',       // YYYY-MM-DD (hạn bảo hiểm)
+                    'docCount'        => is_array($v->documents) ? count($v->documents) : 0,
+                    'usageCount'      => (int) $v->vehicle_usages_count,
+                    'costCount'       => (int) $v->vehicle_costs_count,
+                    'depCount'        => (int) $v->vehicle_depreciations_count,
+                ];
+            })->all();
+    }
+
+    /**
+     * Chi phí ĐỊNH KỲ của xe MBF hết hạn / sắp hết (≤30 ngày) — để cảnh báo + popup.
+     * Mỗi khoản (theo xe + TÊN) chỉ xét PHIẾU CHI MỚI NHẤT (due_date lớn nhất): khi tạo
+     * phiếu mới hạn xa hơn, phiếu cũ tự hết nhắc. Sắp xếp hết hạn lâu nhất lên đầu.
+     */
+    public function expiringVehicleCosts(): array
+    {
+        $plates = TruckingVehicle::where('type', 'MBF')->pluck('plate', 'id');   // id => biển số
+        if ($plates->isEmpty()) return [];
+
+        $latest = [];   // "vehId|tên" => phiếu có due_date mới nhất
+        foreach (TruckingVehicleCost::whereIn('vehicle_id', $plates->keys())
+            ->where('kind', 'recurring')->whereNotNull('due_date')->get() as $c) {
+            $key = $c->vehicle_id . '|' . mb_strtolower(trim((string) $c->name));
+            if (! isset($latest[$key]) || $c->due_date->gt($latest[$key]->due_date)) $latest[$key] = $c;
+        }
+
+        $today = Carbon::today();
+        $out = [];
+        foreach ($latest as $c) {
+            $days = (int) round(($c->due_date->copy()->startOfDay()->getTimestamp() - $today->getTimestamp()) / 86400);
+            if ($days > 30) continue;   // còn hạn xa → không nhắc
+            $out[] = [
+                'vehicleId' => $c->vehicle_id,
+                'plate'     => $plates[$c->vehicle_id] ?? '',
+                'name'      => $c->name ?: '(chi phí)',
+                'dueDate'   => $this->outDate($c->due_date),
+                'amount'    => (int) round((float) $c->amount),
+                'status'    => $days < 0 ? 'expired' : 'soon',
+                'days'      => $days,
+            ];
+        }
+        usort($out, fn ($a, $b) => $a['days'] <=> $b['days']);
+        return $out;
+    }
+
+    /** Phiếu chi cần xử lý: chưa duyệt, hoặc đã duyệt nhưng chưa thanh toán (toàn đội xe MBF). */
+    public function pendingVehicleCosts(): array
+    {
+        $plates = TruckingVehicle::where('type', 'MBF')->pluck('plate', 'id');
+        if ($plates->isEmpty()) return [];
+        $out = [];
+        foreach (TruckingVehicleCost::whereIn('vehicle_id', $plates->keys())
+            ->where(fn ($q) => $q->where('approved', false)->orWhere('paid', false))
+            ->orderByDesc('spend_date')->orderByDesc('id')->get() as $c) {
+            $out[] = [
+                'vehicleId' => $c->vehicle_id,
+                'plate'     => $plates[$c->vehicle_id] ?? '',
+                'name'      => $c->name ?: '(phiếu chi)',
+                'invoiceNo' => $c->invoice_no ?? '',
+                'spendDate' => $this->outDate($c->spend_date),
+                'amount'    => (int) round((float) $c->amount),
+                'approved'  => (bool) $c->approved,
+                'paid'      => (bool) $c->paid,
+            ];
+        }
+        return $out;
+    }
+
+    /** Danh mục Khoản chi phí (dùng cho Combo tên phiếu chi xe + báo cáo theo khoản). */
+    public function costItemNames(): array
+    {
+        return TruckingCostItem::orderBy('sort')->orderBy('name')->pluck('name')->all();
+    }
+
+    /** Tạo nhanh 1 khoản chi phí vào danh mục (KHÔNG đụng giá/màu) → trả danh sách mới. */
+    public function addCostItem(string $name): array
+    {
+        $name = trim($name);
+        if ($name !== '') {
+            TruckingCostItem::firstOrCreate(['name' => $name], ['sort' => (int) (TruckingCostItem::max('sort') ?? 0) + 1]);
+        }
+        return $this->costItemNames();
+    }
+
+    /** # hóa đơn kế tiếp (PC-XXXX) toàn hệ thống. */
+    public function nextCostInvoiceNo(): string
+    {
+        $maxN = 0;
+        foreach (TruckingVehicleCost::where('invoice_no', 'like', 'PC-%')->pluck('invoice_no') as $no) {
+            if (preg_match('/^PC-(\d+)$/', trim((string) $no), $m)) $maxN = max($maxN, (int) $m[1]);
+        }
+        return 'PC-' . str_pad((string) ($maxN + 1), 4, '0', STR_PAD_LEFT);
+    }
+
+    /** KM của phiếu ĐÃ DUYỆT gần nhất cùng loại (theo tên) của xe — để check định mức. */
+    public function lastApprovedKm(int $vehicleId, string $costItem): ?float
+    {
+        $name = mb_strtolower(trim($costItem));
+        $row = TruckingVehicleCost::where('vehicle_id', $vehicleId)->where('approved', true)->whereNotNull('current_km')
+            ->get()->filter(fn ($c) => mb_strtolower(trim((string) $c->name)) === $name)
+            ->sortByDesc(fn ($c) => (float) $c->current_km)->first();
+        return $row ? (float) $row->current_km : null;
+    }
+
+    /** Dữ liệu cho trang PUBLIC gửi yêu cầu chi (chỉ xe MBF + danh mục khoản chi). */
+    public function publicRequestData(): array
+    {
+        return [
+            'vehicles'  => TruckingVehicle::where('type', 'MBF')->orderBy('plate')->get(['id', 'plate'])
+                ->map(fn ($v) => ['id' => $v->id, 'plate' => $v->plate])->all(),
+            'costItems' => $this->costItemNames(),
+        ];
+    }
+
+    /** Tạo YÊU CẦU CHI (phiếu chi chờ duyệt) từ trang public — CHECK định mức km. */
+    public function createSpendRequest(array $in, array $files = []): array
+    {
+        $v = TruckingVehicle::where('type', 'MBF')->find((int) ($in['vehicleId'] ?? 0));
+        if (! $v) return ['ok' => false, 'message' => 'Xe không hợp lệ.'];
+        $item = trim((string) ($in['costItem'] ?? ''));
+        if ($item === '' || ! in_array($item, $this->costItemNames(), true)) return ['ok' => false, 'message' => 'Loại chi phí không hợp lệ.'];
+        $amount = $this->inMoney($in['amount'] ?? null) ?? 0;
+        if ($amount <= 0) return ['ok' => false, 'message' => 'Vui lòng nhập số tiền.'];
+        $km = (isset($in['km']) && $in['km'] !== '') ? (float) preg_replace('/[^\d.]/', '', (string) $in['km']) : null;
+
+        // Định mức km của xe cho loại này
+        $allow = 0;
+        foreach ((is_array($v->allowances) ? $v->allowances : []) as $a) {
+            if (mb_strtolower(trim((string) ($a['costItem'] ?? ''))) === mb_strtolower($item)) { $allow = (int) ($a['km'] ?? 0); break; }
+        }
+        if ($allow > 0) {
+            if ($km === null) return ['ok' => false, 'message' => "Khoản “{$item}” có định mức {$allow} km — vui lòng nhập KM hiện tại."];
+            $lastKm = $this->lastApprovedKm($v->id, $item);
+            if ($lastKm !== null && ($km - $lastKm) < $allow) {
+                $g = fn ($n) => number_format((float) $n, 0, '.', '.');
+                return ['ok' => false, 'message' => "Chưa đủ định mức: “{$item}” cần đi thêm ≥ {$g($allow)} km kể từ lần trước (km {$g($lastKm)}). Hiện mới +{$g(max(0, $km - $lastKm))} km."];
+            }
+        }
+
+        $sort = (int) ($v->vehicleCosts()->max('sort') ?? -1) + 1;
+        $cost = $v->vehicleCosts()->create([
+            'name' => $item, 'invoice_no' => $this->nextCostInvoiceNo(), 'kind' => 'fixed',
+            'spend_date' => $this->inDate($in['date'] ?? null) ?? now()->toDateString(),
+            'amount' => $amount, 'current_km' => $km, 'approved' => false, 'paid' => false, 'sort' => $sort,
+        ]);
+        if ($files) { $cost->photos = $this->storeCostPhotos($v, $files); $cost->save(); }
+        return ['ok' => true, 'message' => "Đã gửi yêu cầu chi “{$item}” cho xe {$v->plate}. Kế toán sẽ duyệt sau."];
+    }
+
+    /** Thông tin nền 1 xe (tab Thông tin) — KHÔNG kèm 3 nhóm con (lazy-load riêng từng tab). */
+    public function vehicleBase(TruckingVehicle $v): array
+    {
+        return [
+            'id'      => $v->id,
+            'plate'   => $v->plate,
+            'axle'    => $v->axle ?? '',
+            'info'    => is_array($v->info) ? $v->info : [],
+            'docs'    => $this->vehicleDocsOut($v),
+            'allowances' => array_values(array_filter(is_array($v->allowances) ? $v->allowances : [], 'is_array')),
+            'drivers' => $this->driverOptions(),
+        ];
+    }
+
+    private function usagesOut(TruckingVehicle $v): array
+    {
+        return $v->vehicleUsages()->orderBy('sort')->get()->map(fn ($u) => [
+            'id' => $u->id, 'driver' => $u->driver ?? '',
+            'from' => $this->outDate($u->from_date), 'to' => $this->outDate($u->to_date), 'note' => $u->note ?? '',
+        ])->all();
+    }
+
+    private function costsOut(TruckingVehicle $v): array
+    {
+        return $v->vehicleCosts()->orderBy('sort')->get()->map(fn ($c) => [
+            'id' => $c->id, 'name' => $c->name ?? '', 'invoiceNo' => $c->invoice_no ?? '', 'kind' => ($c->kind === 'fixed' ? 'fixed' : 'recurring'),
+            'spendDate' => $this->outDate($c->spend_date), 'dueDate' => $this->outDate($c->due_date), 'amount' => $this->outMoney($c->amount),
+            'currentKm' => $this->outNum($c->current_km), 'supplier' => $c->supplier ?? '', 'note' => $c->note ?? '',
+            'paid' => (bool) $c->paid, 'approved' => (bool) $c->approved,
+            'paidDate' => $this->outDate($c->paid_date), 'paidMethod' => $c->paid_method ?? '', 'paidRef' => $c->paid_ref ?? '', 'paidNote' => $c->paid_note ?? '',
+            'photos' => $this->costPhotosOut(is_array($c->photos) ? $c->photos : [], $v->id),
+        ])->all();
+    }
+
+    // --- Ảnh thực tế đính kèm phiếu chi (hóa đơn/đồng hồ km/phụ tùng) ---
+    /** Map metadata ảnh → có URL xem (kèm 'file' để client round-trip qua lần lưu sau). */
+    private function costPhotosOut(array $photos, int $vehicleId): array
+    {
+        $out = [];
+        foreach (array_values($photos) as $p) {
+            $file = (string) ($p['file'] ?? '');
+            if ($file === '') continue;
+            $out[] = [
+                'file' => $file,
+                'name' => $p['name'] ?? $file,
+                'mime' => $p['mime'] ?? '',
+                'size' => (int) ($p['size'] ?? 0),
+                'url'  => route('trucking2.fleet.costPhoto', ['vehicle' => $vehicleId, 'name' => $file]),
+            ];
+        }
+        return $out;
+    }
+
+    /** Lưu các ảnh upload (chỉ ảnh) vào ổ đĩa theo xe → trả metadata [{file,name,mime,size}]. */
+    public function storeCostPhotos(TruckingVehicle $v, array $files): array
+    {
+        $out = [];
+        foreach ($files as $file) {
+            if (! $file || ! $file->isValid()) continue;
+            if (! str_starts_with((string) $file->getMimeType(), 'image/')) continue;
+            $name = $file->store("trucking/cost-photos/{$v->id}", 'local');   // .../{uniqid}.ext
+            $out[] = [
+                'file' => basename($name),
+                'name' => $file->getClientOriginalName(),
+                'mime' => $file->getMimeType(),
+                'size' => $file->getSize(),
+            ];
+        }
+        return $out;
+    }
+
+    /** Đường dẫn vật lý của 1 ảnh phiếu chi (chống path traversal). */
+    public function costPhotoPath(TruckingVehicle $v, string $file): ?string
+    {
+        $file = basename($file);
+        if ($file === '' || ! preg_match('/^[A-Za-z0-9._-]+$/', $file)) return null;
+        $path = Storage::disk('local')->path("trucking/cost-photos/{$v->id}/{$file}");
+        return is_file($path) ? $path : null;
+    }
+
+    /** Chỉ giữ field cần lưu của metadata ảnh (bỏ 'url'); round-trip an toàn qua delete+recreate. */
+    private function cleanCostPhotos($photos): array
+    {
+        if (! is_array($photos)) return [];
+        $out = [];
+        foreach ($photos as $p) {
+            $file = is_array($p) ? basename((string) ($p['file'] ?? '')) : '';
+            if ($file === '' || ! preg_match('/^[A-Za-z0-9._-]+$/', $file)) continue;
+            $out[] = ['file' => $file, 'name' => (string) ($p['name'] ?? $file), 'mime' => (string) ($p['mime'] ?? ''), 'size' => (int) ($p['size'] ?? 0)];
+        }
+        return $out;
+    }
+
+    private function deprOut(TruckingVehicle $v): array
+    {
+        return $v->vehicleDepreciations()->orderBy('sort')->get()->map(fn ($d) => [
+            'id' => $d->id, 'name' => $d->name ?? '', 'origPrice' => $this->outMoney($d->orig_price),
+            'startDate' => $this->outDate($d->start_date), 'months' => $d->months ?? 0,
+        ])->all();
+    }
+
+    /** 1 nhóm con (lazy-load theo tab): usages | costs | depreciations. */
+    public function vehicleSection(TruckingVehicle $v, string $section): array
+    {
+        return match ($section) {
+            'usages'        => ['usages' => $this->usagesOut($v)],
+            'costs'         => ['costs' => $this->costsOut($v)],
+            'depreciations' => ['depreciations' => $this->deprOut($v)],
+            default         => [],
+        };
+    }
+
+    /** Chi tiết đầy đủ (base + 3 nhóm) — khi cần tất cả. */
+    public function vehicleDetail(TruckingVehicle $v): array
+    {
+        return $this->vehicleBase($v) + [
+            'usages'        => $this->usagesOut($v),
+            'costs'         => $this->costsOut($v),
+            'depreciations' => $this->deprOut($v),
+        ];
+    }
+
+    /**
+     * Lưu xe — CHỈ ĐỘNG các phần CÓ trong $data (an toàn cho lazy-load: phần chưa tải
+     * không gửi lên → không bị xóa). Mỗi nhóm = delete + recreate; trả về các phần đã lưu.
+     */
+    public function saveVehicleManagement(TruckingVehicle $v, array $data): array
+    {
+        return DB::transaction(function () use ($v, $data) {
+            if (array_key_exists('info', $data) || array_key_exists('allowances', $data)) {
+                if (array_key_exists('info', $data)) {
+                    $v->info = is_array($data['info']) ? array_map(fn ($x) => is_string($x) ? trim($x) : $x, $data['info']) : null;
+                }
+                if (array_key_exists('allowances', $data)) {
+                    // [{costItem, km}] — chỉ giữ dòng có tên khoản
+                    $v->allowances = array_values(array_filter(array_map(fn ($a) => [
+                        'costItem' => trim((string) ($a['costItem'] ?? '')),
+                        'km'       => (int) preg_replace('/[^\d]/', '', (string) ($a['km'] ?? '')),
+                    ], is_array($data['allowances']) ? $data['allowances'] : []), fn ($a) => $a['costItem'] !== ''));
+                }
+                $v->save();
+            }
+            if (array_key_exists('usages', $data)) {
+                $v->vehicleUsages()->delete();
+                foreach (array_values($data['usages'] ?? []) as $i => $u) {
+                    $v->vehicleUsages()->create([
+                        'driver' => $this->str($u['driver'] ?? null),
+                        'from_date' => $this->inDate($u['from'] ?? null),
+                        'to_date' => $this->inDate($u['to'] ?? null),
+                        'note' => $this->str($u['note'] ?? null),
+                        'sort' => $i,
+                    ]);
+                }
+            }
+            if (array_key_exists('costs', $data)) {
+                $costRows = array_values($data['costs'] ?? []);
+                // # hóa đơn TỰ SINH (PC-XXXX): giữ số đã có, cấp số mới cho phiếu chưa có.
+                $usedN = [];
+                $scan = function ($no) use (&$usedN) { if (preg_match('/^PC-(\d+)$/', trim((string) $no), $m)) $usedN[] = (int) $m[1]; };
+                foreach ($costRows as $c) $scan($c['invoiceNo'] ?? '');
+                foreach (TruckingVehicleCost::where('vehicle_id', '!=', $v->id)->where('invoice_no', 'like', 'PC-%')->pluck('invoice_no') as $no) $scan($no);
+                $nextN = $usedN ? max($usedN) : 0;
+
+                $v->vehicleCosts()->delete();
+                foreach ($costRows as $i => $c) {
+                    $inv = trim((string) ($c['invoiceNo'] ?? ''));
+                    if ($inv === '') { $nextN++; $inv = 'PC-' . str_pad((string) $nextN, 4, '0', STR_PAD_LEFT); }
+                    $v->vehicleCosts()->create([
+                        'name' => $this->str($c['name'] ?? null),
+                        'invoice_no' => $inv,
+                        'kind' => (($c['kind'] ?? '') === 'recurring') ? 'recurring' : 'fixed',
+                        'spend_date' => $this->inDate($c['spendDate'] ?? null),
+                        'due_date' => $this->inDate($c['dueDate'] ?? null),
+                        'amount' => $this->inMoney($c['amount'] ?? null) ?? 0,
+                        'current_km' => $this->inNum($c['currentKm'] ?? null),
+                        'supplier' => $this->str($c['supplier'] ?? null),
+                        'note' => $this->str($c['note'] ?? null),
+                        'paid' => ! empty($c['paid']),
+                        'paid_date' => $this->inDate($c['paidDate'] ?? null),
+                        'paid_method' => $this->str($c['paidMethod'] ?? null),
+                        'paid_ref' => $this->str($c['paidRef'] ?? null),
+                        'paid_note' => $this->str($c['paidNote'] ?? null),
+                        'approved' => ! empty($c['approved']),
+                        'photos' => $this->cleanCostPhotos($c['photos'] ?? []),
+                        'sort' => $i,
+                    ]);
+                }
+            }
+            if (array_key_exists('depreciations', $data)) {
+                $v->vehicleDepreciations()->delete();
+                foreach (array_values($data['depreciations'] ?? []) as $i => $d) {
+                    $v->vehicleDepreciations()->create([
+                        'name' => $this->str($d['name'] ?? null),
+                        'orig_price' => $this->inMoney($d['origPrice'] ?? null) ?? 0,
+                        'start_date' => $this->inDate($d['startDate'] ?? null),
+                        'months' => (int) ($d['months'] ?? 0),
+                        'sort' => $i,
+                    ]);
+                }
+            }
+
+            // Trả về base + CHỈ các nhóm vừa lưu (để client refresh đúng phần, lấy id mới)
+            $v->refresh();
+            $echo = $this->vehicleBase($v);
+            if (array_key_exists('usages', $data))        $echo['usages'] = $this->usagesOut($v);
+            if (array_key_exists('costs', $data))         $echo['costs'] = $this->costsOut($v);
+            if (array_key_exists('depreciations', $data)) $echo['depreciations'] = $this->deprOut($v);
+            return $echo;
+        });
+    }
+
+    // --- Tài liệu xe (ảnh/PDF/Word/Excel) — giống hồ sơ tài xế ---
+    private function vehicleDocsOut(TruckingVehicle $v): array
+    {
+        $docs = is_array($v->documents) ? array_values($v->documents) : [];
+        return array_map(fn ($doc, $i) => [
+            'type'    => $doc['type'] ?? '',
+            'name'    => $doc['name'] ?? '',
+            'mime'    => $doc['mime'] ?? '',
+            'size'    => (int) ($doc['size'] ?? 0),
+            'isImage' => str_starts_with((string) ($doc['mime'] ?? ''), 'image/'),
+            'url'     => route('trucking2.fleet.doc', ['vehicle' => $v->id, 'idx' => $i]),
+        ], $docs, array_keys($docs));
+    }
+
+    public function uploadVehicleDocs(TruckingVehicle $v, array $files, string $type): array
+    {
+        $docs = is_array($v->documents) ? array_values($v->documents) : [];
+        foreach ($files as $file) {
+            if (! $file || ! $file->isValid()) continue;
+            $path = $file->store("trucking/vehicles/{$v->id}", 'local');
+            $docs[] = [
+                'type' => $this->str($type) ?? 'Khác',
+                'name' => $file->getClientOriginalName(),
+                'path' => $path,
+                'mime' => $file->getMimeType(),
+                'size' => $file->getSize(),
+            ];
+        }
+        $v->documents = $docs; $v->save();
+        return $this->vehicleDocsOut($v);
+    }
+
+    public function deleteVehicleDoc(TruckingVehicle $v, int $idx): array
+    {
+        $docs = is_array($v->documents) ? array_values($v->documents) : [];
+        if (isset($docs[$idx])) {
+            if (! empty($docs[$idx]['path'])) Storage::disk('local')->delete($docs[$idx]['path']);
+            array_splice($docs, $idx, 1);
+            $v->documents = $docs; $v->save();
+        }
+        return $this->vehicleDocsOut($v);
+    }
+
+    public function vehicleDocAt(TruckingVehicle $v, int $idx): ?array
+    {
+        $docs = is_array($v->documents) ? array_values($v->documents) : [];
+        return (isset($docs[$idx]) && ! empty($docs[$idx]['path'])) ? $docs[$idx] : null;
+    }
+
+    // ===================================================================
+    // PHÍ XE NỘI BỘ (trip cost) — gom phí tuyến + dầu + phí khác theo từng lô
+    // ===================================================================
+
+    /**
+     * Chuẩn hóa 1 tuyến/danh sách kho thành KHÓA tuyến (UPPER, đúng thứ tự, nối "|").
+     * Khoan dung dấu nối: dấu phẩy, " - " (gạch có khoảng trắng), mũi tên → cùng 1 khóa.
+     * Nhờ vậy kho lô "TL, TS, QV" và phí tuyến "TL - TS - QV" khớp nhau dù khác dấu/khoảng trắng/hoa-thường.
+     * Vẫn GIỮ thứ tự (TL→TS→QV ≠ TL→QV→TS) vì chiều tuyến có ý nghĩa.
+     */
+    private function routeKey(string $s): string
+    {
+        $parts = preg_split('/\s*(?:,|→|->|–|—|\s-\s)\s*/u', trim($s)) ?: [];
+        $parts = array_values(array_filter(array_map(function ($x) {
+            return mb_strtoupper(preg_replace('/\s+/u', ' ', trim($x)));
+        }, $parts), fn ($x) => $x !== ''));
+        return implode('|', $parts);
+    }
+
+    /** Giá dầu (đồng/lít) áp dụng cho 1 ngày Y-m-d (dò bảng giá dầu trong RAM). */
+    private function fuelPriceForDate($fuels, ?string $d): float
+    {
+        if (! $d) return 0;
+        foreach ($fuels as $f) {
+            $fd = $f->from_date?->format('Y-m-d');
+            $td = $f->to_date?->format('Y-m-d');
+            if ($fd && $fd <= $d && (! $td || $td >= $d)) return (float) $f->price;
+        }
+        return 0;
+    }
+
+    /** Nạp config nhỏ 1 lần vào RAM (route_fees/xe/giá dầu/lịch dùng xe) → tính từng lô 0 query. */
+    private function tripConfigBundle(): array
+    {
+        // Khóa tuyến TÍNH LẠI từ text (không tin route_key đã lưu — có thể cũ/rỗng nếu chưa lưu lại).
+        $routeByKey = [];
+        foreach (TruckingRouteFee::all() as $rf) { $k = $this->routeKey((string) $rf->route); if ($k !== '') $routeByKey[$k] = $rf; }
+        return [
+            'routeByKey'  => $routeByKey,
+            'vehByPlate'  => TruckingVehicle::get()->keyBy('plate'),
+            'fuels'       => TruckingFuelPrice::orderByDesc('from_date')->orderByDesc('id')->get(),
+            'usagesByVeh' => TruckingVehicleUsage::get()->groupBy('vehicle_id'),
+        ];
+    }
+
+    /** Gợi ý phí cho 1 lô: dò route_fee theo kho, dầu theo cầu xe, giá dầu theo ngày, lái xe theo lịch dùng xe. */
+    private function tripSuggest($s, array $bundle): array
+    {
+        $date = $s->gio_xe_ra?->format('Y-m-d');
+        $rf   = $bundle['routeByKey'][$this->routeKey((string) $s->kho)] ?? null;
+        $veh  = $bundle['vehByPlate'][$s->bks_vao] ?? null;
+        $axle = $veh?->axle;
+        $liters = $rf ? (float) ($axle === '2' ? $rf->dau_2cau : $rf->dau_1cau) : 0;
+        $price  = $this->fuelPriceForDate($bundle['fuels'], $date);
+
+        $driver = '';
+        $hasUsage = isset($bundle['usagesByVeh'][$veh?->id]);
+        foreach (($bundle['usagesByVeh'][$veh?->id] ?? []) as $u) {
+            $uf = $u->from_date?->format('Y-m-d');
+            $ut = $u->to_date?->format('Y-m-d');
+            if ($date && $uf && $uf <= $date && (! $ut || $ut >= $date)) { $driver = $u->driver ?? ''; break; }
+        }
+
+        // Chẩn đoán từng mắt xích để cảnh báo đúng nguyên nhân (kế toán rà soát).
+        $diag = [
+            'hasBks'      => trim((string) $s->bks_vao) !== '',
+            'vehFound'    => (bool) $veh,            // BKS có thuộc xe MBF nội bộ?
+            'hasAxle'     => $veh && $axle !== null && $axle !== '',
+            'routeFound'  => (bool) $rf,
+            'driverFound' => $driver !== '',         // có lịch dùng xe phủ ngày?
+            'hasUsage'    => $hasUsage,              // xe có lịch dùng xe nào chưa?
+            'fuelFound'   => $price > 0,            // có bảng giá dầu phủ ngày?
+        ];
+
+        return [
+            'axle'        => $axle ?? '',
+            'matched'     => (bool) $rf,
+            'diag'        => $diag,
+            'salaryParts' => $rf ? $this->cleanSalaryParts($rf->salary_parts) : ['troCap', 'luong'],
+            'sug'         => [
+                'driver'     => $driver,
+                'veTram'     => $rf ? $this->outMoney($rf->ve_tram) : '0',
+                'tienDuong'  => $rf ? $this->outMoney($rf->tien_duong) : '0',
+                'troCap'     => $rf ? $this->outMoney($rf->tro_cap) : '0',
+                'phiKhac'    => $rf ? $this->outMoney($rf->phi_khac) : '0',
+                'cru'        => (bool) $s->cru,
+                'luong'      => ($s->cru && $rf) ? $this->outMoney($rf->luong) : '0',
+                'fuelLiters' => $this->outNum($liters),
+                'fuelPrice'  => $this->outMoney($price),
+                'extras'     => [],
+                'salaryExtras' => [],
+            ],
+        ];
+    }
+
+    /** Bảng giá tuyến (để chọn/áp tay khi không khớp tự động). */
+    private function routeFeesOut(): array
+    {
+        return TruckingRouteFee::orderBy('sort')->get()->map(fn ($r) => [
+            'route' => $r->route, 'routeKey' => $r->route_key,
+            'veTram' => $this->outMoney($r->ve_tram), 'tienDuong' => $this->outMoney($r->tien_duong),
+            'troCap' => $this->outMoney($r->tro_cap), 'phiKhac' => $this->outMoney($r->phi_khac),
+            'luong' => $this->outMoney($r->luong), 'dau1' => $this->outNum($r->dau_1cau), 'dau2' => $this->outNum($r->dau_2cau),
+            'salaryParts' => $this->cleanSalaryParts($r->salary_parts),
+        ])->all();
+    }
+
+    /** Tùy chọn lái xe cho dropdown: value=tên (giữ tương thích), label="Tên · SĐT" để phân biệt trùng tên. */
+    private function driverOptions(): array
+    {
+        return TruckingDriver::orderBy('sort')->orderBy('name')->get()->map(function ($d) {
+            $phone = (is_array($d->phones) && count($d->phones)) ? $d->phones[0] : null;
+            return ['value' => $d->name, 'label' => $phone ? ($d->name . ' · ' . $phone) : $d->name];
+        })->all();
+    }
+
+    private function driversOut(): array
+    {
+        return $this->driverOptions();
+    }
+
+    /** Danh mục khoản cho Phí xe: chi phí khác (costItems) + khoản lương thêm (salaryItems). */
+    private function tripItemOptions(): array
+    {
+        return [
+            'costItems'   => TruckingCostItem::orderBy('sort')->orderBy('name')->pluck('name')->all(),
+            'salaryItems' => TruckingSalaryItem::orderBy('sort')->orderBy('name')->pluck('name')->all(),
+        ];
+    }
+
+    // ===================================================================
+    // HỒ SƠ LÁI XE (rich: SĐT/ngày/tài khoản/tài liệu)
+    // ===================================================================
+
+    /** Tài liệu của 1 lái xe → kèm URL xem (stream qua route, không cần symlink public). */
+    private function driverDocsOut(TruckingDriver $d): array
+    {
+        $docs = is_array($d->documents) ? array_values($d->documents) : [];
+        return array_map(fn ($doc, $i) => [
+            'type'    => $doc['type'] ?? '',
+            'name'    => $doc['name'] ?? '',
+            'mime'    => $doc['mime'] ?? '',
+            'size'    => (int) ($doc['size'] ?? 0),
+            'isImage' => str_starts_with((string) ($doc['mime'] ?? ''), 'image/'),
+            'url'     => route('trucking2.drivers.doc', ['driver' => $d->id, 'idx' => $i]),
+        ], $docs, array_keys($docs));
+    }
+
+    /** Danh sách lái xe đầy đủ hồ sơ (cho tab Cài đặt). */
+    private function driversManaged(): array
+    {
+        return TruckingDriver::orderBy('sort')->orderBy('name')->get()->map(fn ($d) => [
+            'id'         => $d->id,
+            'name'       => $d->name,
+            'phones'     => is_array($d->phones) ? array_values($d->phones) : [],
+            'birthday'   => $this->outDate($d->birthday),
+            'joinedDate' => $this->outDate($d->joined_date),
+            'banks'      => is_array($d->bank_accounts) ? array_values($d->bank_accounts) : [],
+            'docs'       => $this->driverDocsOut($d),
+        ])->all();
+    }
+
+    private function cleanList($arr): array
+    {
+        if (! is_array($arr)) return [];
+        return array_values(array_filter(array_map(fn ($x) => trim((string) $x), $arr), fn ($x) => $x !== ''));
+    }
+
+    private function cleanBanks($arr): array
+    {
+        if (! is_array($arr)) return [];
+        $out = [];
+        foreach ($arr as $b) {
+            if (! is_array($b)) continue;
+            $bank = $this->str($b['bank'] ?? null); $num = $this->str($b['number'] ?? null); $holder = $this->str($b['holder'] ?? null);
+            if ($bank === null && $num === null && $holder === null) continue;
+            $out[] = ['bank' => $bank ?? '', 'number' => $num ?? '', 'holder' => $holder ?? ''];
+        }
+        return $out;
+    }
+
+    /** Lưu hồ sơ lái xe (reconcile theo id; KHÔNG đụng tài liệu — quản lý qua upload riêng). */
+    public function saveDrivers(array $rows): void
+    {
+        DB::transaction(function () use ($rows) {
+            $keepIds = [];
+            foreach (array_values($rows) as $i => $r) {
+                $id = $r['id'] ?? null;
+                $data = [
+                    'name'          => $this->str($r['name'] ?? null) ?: 'Lái xe',
+                    'sort'          => $i,
+                    'phones'        => $this->cleanList($r['phones'] ?? []),
+                    'birthday'      => $this->inDate($r['birthday'] ?? null),
+                    'joined_date'   => $this->inDate($r['joinedDate'] ?? null),
+                    'bank_accounts' => $this->cleanBanks($r['banks'] ?? []),
+                ];
+                if (is_numeric($id) && ($d = TruckingDriver::find($id))) {
+                    $d->fill($data)->save();
+                } else {
+                    $d = TruckingDriver::create($data + ['documents' => []]);
+                }
+                $keepIds[] = $d->id;
+            }
+            foreach (TruckingDriver::whereNotIn('id', $keepIds ?: [0])->get() as $gone) {
+                $this->deleteDriverFiles($gone);
+                $gone->delete();
+            }
+        });
+    }
+
+    /** Tải tài liệu (nhiều file) cho 1 lái xe → trả danh sách tài liệu mới. */
+    public function uploadDriverDocs(TruckingDriver $d, array $files, string $type): array
+    {
+        $docs = is_array($d->documents) ? array_values($d->documents) : [];
+        foreach ($files as $file) {
+            if (! $file || ! $file->isValid()) continue;
+            $path = $file->store("trucking/drivers/{$d->id}", 'local');
+            $docs[] = [
+                'type' => $this->str($type) ?? 'Khác',
+                'name' => $file->getClientOriginalName(),
+                'path' => $path,
+                'mime' => $file->getMimeType(),
+                'size' => $file->getSize(),
+            ];
+        }
+        $d->documents = $docs; $d->save();
+        return $this->driverDocsOut($d);
+    }
+
+    public function deleteDriverDoc(TruckingDriver $d, int $idx): array
+    {
+        $docs = is_array($d->documents) ? array_values($d->documents) : [];
+        if (isset($docs[$idx])) {
+            if (! empty($docs[$idx]['path'])) Storage::disk('local')->delete($docs[$idx]['path']);
+            array_splice($docs, $idx, 1);
+            $d->documents = $docs; $d->save();
+        }
+        return $this->driverDocsOut($d);
+    }
+
+    /** Thông tin 1 tài liệu để stream (controller trả file). */
+    public function driverDocAt(TruckingDriver $d, int $idx): ?array
+    {
+        $docs = is_array($d->documents) ? array_values($d->documents) : [];
+        return (isset($docs[$idx]) && ! empty($docs[$idx]['path'])) ? $docs[$idx] : null;
+    }
+
+    private function deleteDriverFiles(TruckingDriver $d): void
+    {
+        foreach ((is_array($d->documents) ? $d->documents : []) as $doc) {
+            if (! empty($doc['path'])) Storage::disk('local')->delete($doc['path']);
+        }
+    }
+
+    /**
+     * Trang TẠO kỳ: gom lô có "giờ xe ra" trong [from,to] + gợi ý phí.
+     * Kèm "usedIn" (các kỳ đã chứa lô) để cảnh báo cộng trùng lương/dầu.
+     */
+    public function computeTripCosts(?string $from, ?string $to): array
+    {
+        $q = TruckingShipment::query()->whereNotNull('gio_xe_ra');
+        if ($from) $q->whereDate('gio_xe_ra', '>=', $from);
+        if ($to)   $q->whereDate('gio_xe_ra', '<=', $to);
+        $ships = $q->orderBy('gio_xe_ra')->get();
+
+        $bundle = $this->tripConfigBundle();
+        $inBatch = [];
+        foreach (TruckingTripCostLine::with('batch')->whereIn('shipment_id', $ships->pluck('id'))->get() as $l) {
+            if ($l->shipment_id) $inBatch[$l->shipment_id][] = $l->batch?->no ?? ('#' . $l->batch_id);
+        }
+
+        $rows = [];
+        foreach ($ships as $s) {
+            $sg = $this->tripSuggest($s, $bundle);
+            $rows[] = [
+                'shipmentId' => $s->id,
+                'booking'    => $s->booking ?? '',
+                'route'      => trim(($s->from_loc ?? '') . ' → ' . ($s->to_loc ?? ''), ' →'),
+                'kho'        => $s->kho ?? '',
+                'bks'        => $s->bks_vao ?? '',
+                'axle'       => $sg['axle'],
+                'date'       => $this->outDate($s->gio_xe_ra),
+                'matched'     => $sg['matched'],
+                'diag'        => $sg['diag'],
+                'salaryParts' => $sg['salaryParts'],
+                'usedIn'      => $inBatch[$s->id] ?? [],
+                'cur'        => $sg['sug'],
+                'sug'        => $sg['sug'],
+            ];
+        }
+
+        return ['rows' => $rows, 'routeFees' => $this->routeFeesOut(), 'drivers' => $this->driversOut()] + $this->tripItemOptions();
+    }
+
+    /** Số kỳ kế tiếp (PX-0001…) nếu người dùng không nhập. */
+    private function nextTripNo(): string
+    {
+        return 'PX-' . str_pad((string) (TruckingTripCostBatch::max('id') + 1), 4, '0', STR_PAD_LEFT);
+    }
+
+    /** Danh sách kỳ phí xe (tóm tắt) cho trang chủ. */
+    public function tripBatchesForList(): array
+    {
+        return TruckingTripCostBatch::withCount('lines')->orderByDesc('id')->get()->map(fn ($b) => [
+            'id'    => $b->id,
+            'no'    => $b->no,
+            'name'  => $b->name ?? '',
+            'date'  => $this->outDate($b->date),
+            'from'  => $this->outDate($b->period_from),
+            'to'    => $this->outDate($b->period_to),
+            'count' => $b->lines_count,
+            'total' => (int) round((float) $b->total),
+        ])->all();
+    }
+
+    /** Snapshot 1 kỳ (cho trang Xem/Sửa). */
+    public function tripBatchToArray(TruckingTripCostBatch $b): array
+    {
+        return [
+            'id'    => $b->id,
+            'no'    => $b->no,
+            'name'  => $b->name ?? '',
+            'date'  => $this->outDate($b->date),
+            'from'  => $this->outDate($b->period_from),
+            'to'    => $this->outDate($b->period_to),
+            'note'  => $b->note ?? '',
+            'total' => (int) round((float) $b->total),
+            'rows'  => $b->lines->map(fn ($l) => [
+                'lineId'     => $l->id,
+                'shipmentId' => $l->shipment_id,
+                'booking'    => $l->booking ?? '',
+                'route'      => $l->route ?? '',
+                'kho'        => $l->kho ?? '',
+                'bks'        => $l->bks ?? '',
+                'axle'        => $l->axle ?? '',
+                'date'        => $this->outDate($l->date),
+                'matched'     => true,
+                'salaryParts' => $this->cleanSalaryParts($l->salary_parts),
+                'usedIn'      => [],
+                'cur'        => [
+                    'driver'     => $l->driver ?? '',
+                    'veTram'     => $this->outMoney($l->ve_tram),
+                    'tienDuong'  => $this->outMoney($l->tien_duong),
+                    'troCap'     => $this->outMoney($l->tro_cap),
+                    'phiKhac'    => $this->outMoney($l->phi_khac),
+                    'cru'        => (bool) $l->cru,
+                    'luong'      => $this->outMoney($l->luong),
+                    'fuelLiters' => $this->outNum($l->fuel_liters),
+                    'fuelPrice'  => $this->outMoney($l->fuel_price),
+                    'extras'     => is_array($l->extras) ? $l->extras : [],
+                    'salaryExtras' => is_array($l->salary_extras) ? $l->salary_extras : [],
+                ],
+            ])->all(),
+        ];
+    }
+
+    /**
+     * Ngữ cảnh "Tính lại" cho kỳ đã lưu (tải lazy): gợi ý mới theo cấu hình hiện tại,
+     * keyed theo shipment_id; báo "missing" những lô đã bị xóa khỏi hệ thống.
+     */
+    public function tripBatchContext(TruckingTripCostBatch $b): array
+    {
+        $ids   = $b->lines->pluck('shipment_id')->filter()->values()->all();
+        $ships = TruckingShipment::whereIn('id', $ids)->get()->keyBy('id');
+        $bundle = $this->tripConfigBundle();
+        $sug = [];
+        foreach ($ships as $s) {
+            $sg = $this->tripSuggest($s, $bundle);
+            $sug[$s->id] = $sg['sug'] + ['axle' => $sg['axle'], 'matched' => $sg['matched'], 'diag' => $sg['diag'], 'salaryParts' => $sg['salaryParts']];
+        }
+        return [
+            'sug'       => $sug,
+            'missing'   => array_values(array_diff($ids, $ships->keys()->all())),
+            'routeFees' => $this->routeFeesOut(),
+            'drivers'   => $this->driversOut(),
+        ] + $this->tripItemOptions();
+    }
+
+    /** Lưu kỳ phí xe (snapshot): xóa & tạo lại dòng, tính lại tổng từng dòng + tổng kỳ. */
+    public function saveTripBatch(array $data, ?TruckingTripCostBatch $b = null): TruckingTripCostBatch
+    {
+        return DB::transaction(function () use ($data, $b) {
+            $b ??= new TruckingTripCostBatch();
+            $b->fill([
+                'no'          => $this->str($data['no'] ?? null) ?: ($b->no ?? $this->nextTripNo()),
+                'name'        => $this->str($data['name'] ?? null),
+                'date'        => $this->inDate($data['date'] ?? null),
+                'period_from' => $this->inDate($data['from'] ?? null),
+                'period_to'   => $this->inDate($data['to'] ?? null),
+                'note'        => $this->str($data['note'] ?? null),
+            ]);
+            $b->save();
+
+            $b->lines()->delete();
+            $driverIds = TruckingDriver::pluck('id', 'name');     // map tên→id (best-effort, group báo cáo bền)
+            $vehIds    = TruckingVehicle::pluck('id', 'plate');
+            $total = 0;
+            foreach (($data['rows'] ?? []) as $i => $r) {
+                $c = $r['cur'] ?? $r;
+                $cleanExtra = fn ($arr) => is_array($arr) ? array_values(array_map(fn ($e) => [
+                    'name'   => $this->str($e['name'] ?? null),
+                    'amount' => $this->inMoney($e['amount'] ?? null) ?? 0,
+                    'note'   => $this->str($e['note'] ?? null),
+                ], $arr)) : [];
+                $extras       = $cleanExtra($c['extras'] ?? null);
+                $salaryExtras = $cleanExtra($c['salaryExtras'] ?? null);
+
+                $veTram    = $this->inMoney($c['veTram'] ?? null) ?? 0;
+                $tienDuong = $this->inMoney($c['tienDuong'] ?? null) ?? 0;
+                $troCap    = $this->inMoney($c['troCap'] ?? null) ?? 0;
+                $phiKhac   = $this->inMoney($c['phiKhac'] ?? null) ?? 0;
+                $cru       = ! empty($c['cru']);
+                $luong     = $this->inMoney($c['luong'] ?? null) ?? 0;
+                $liters    = $this->inNum($c['fuelLiters'] ?? null) ?? 0;
+                $price     = $this->inMoney($c['fuelPrice'] ?? null) ?? 0;
+                $fuelAmount = (int) round($liters * $price);
+                $extrasSum  = array_sum(array_map(fn ($e) => $e['amount'], $extras));
+                $salExSum   = array_sum(array_map(fn ($e) => $e['amount'], $salaryExtras));
+
+                // Lương nhân sự dòng = các khoản đánh dấu (luong gated CRU) + khoản lương khác
+                $parts   = $this->cleanSalaryParts($r['salaryParts'] ?? null);
+                $compVal = ['veTram' => $veTram, 'tienDuong' => $tienDuong, 'troCap' => $troCap, 'phiKhac' => $phiKhac, 'luong' => ($cru ? $luong : 0)];
+                $salaryTotal = $salExSum;
+                foreach ($parts as $k) $salaryTotal += $compVal[$k] ?? 0;
+
+                $lineTotal = $veTram + $tienDuong + $troCap + $phiKhac + ($cru ? $luong : 0) + $fuelAmount + $extrasSum + $salExSum;
+                $costTotal = $lineTotal - $salaryTotal;     // chi phí vận hành dòng
+                $total += $lineTotal;
+
+                $b->lines()->create([
+                    'shipment_id' => is_numeric($r['shipmentId'] ?? null) ? $r['shipmentId'] : null,
+                    'booking'     => $this->str($r['booking'] ?? null),
+                    'route'       => $this->str($r['route'] ?? null),
+                    'kho'         => $this->str($r['kho'] ?? null),
+                    'bks'         => $this->str($r['bks'] ?? null),
+                    'vehicle_id'  => $vehIds[$this->str($r['bks'] ?? null)] ?? null,
+                    'axle'        => $this->str($r['axle'] ?? null),
+                    'date'        => $this->inDate($r['date'] ?? null),
+                    'driver'      => $this->str($c['driver'] ?? null),
+                    'driver_id'   => $driverIds[$this->str($c['driver'] ?? null)] ?? null,
+                    've_tram'     => $veTram,
+                    'tien_duong'  => $tienDuong,
+                    'tro_cap'     => $troCap,
+                    'phi_khac'    => $phiKhac,
+                    'cru'         => $cru,
+                    'luong'       => $luong,
+                    'salary_parts' => $parts,
+                    'fuel_liters' => $liters,
+                    'fuel_price'  => $price,
+                    'fuel_amount' => $fuelAmount,
+                    'extras'      => $extras,
+                    'salary_extras' => $salaryExtras,
+                    'line_total'  => $lineTotal,
+                    'salary_total' => $salaryTotal,
+                    'cost_total'  => $costTotal,
+                    'note'        => $this->str($c['note'] ?? null),
+                    'sort'        => $i,
+                ]);
+            }
+            $b->total = $total;
+            $b->save();
+            return $b;
+        });
+    }
+
+    /** Bảng giá dầu — danh sách (mới nhất trước). */
+    public function fuelPrices(): array
+    {
+        return TruckingFuelPrice::orderByDesc('from_date')->orderByDesc('id')->get()->map(fn ($r) => [
+            'id'    => $r->id,
+            'from'  => $this->outDate($r->from_date),
+            'to'    => $this->outDate($r->to_date),
+            'price' => $this->outMoney($r->price),
+            'note'  => $r->note ?? '',
+        ])->all();
+    }
+
+    /** Lưu bảng giá dầu — xóa sạch & tạo lại (bảng nhỏ, không FK). */
+    public function saveFuelPrices(array $rows): void
+    {
+        DB::transaction(function () use ($rows) {
+            TruckingFuelPrice::query()->delete();
+            foreach (array_values($rows) as $i => $r) {
+                $from = $this->inDate($r['from'] ?? null);
+                if (! $from) continue;   // bắt buộc có "từ ngày"
+                TruckingFuelPrice::create([
+                    'from_date' => $from,
+                    'to_date'   => $this->inDate($r['to'] ?? null),
+                    'price'     => $this->inMoney($r['price'] ?? null) ?? 0,
+                    'note'      => $this->str($r['note'] ?? null),
+                    'sort'      => $i,
+                ]);
+            }
+        });
+    }
+
+    /** Phí tuyến đường — danh sách đã serialize. */
+    public function routeFees(): array
+    {
+        return TruckingRouteFee::orderBy('sort')->orderBy('id')->get()->map(fn ($r) => [
+            'id'        => $r->id,
+            'route'     => $r->route ?? '',
+            'veTram'    => $this->outMoney($r->ve_tram),
+            'tienDuong' => $this->outMoney($r->tien_duong),
+            'troCap'    => $this->outMoney($r->tro_cap),
+            'phiKhac'   => $this->outMoney($r->phi_khac),
+            'cru'         => (bool) $r->cru,
+            'luong'       => $this->outMoney($r->luong),
+            'salaryParts' => $this->cleanSalaryParts($r->salary_parts),
+            'km'        => $this->outNum($r->km),
+            'dau2'      => $this->outNum($r->dau_2cau),
+            'dau1'      => $this->outNum($r->dau_1cau),
+        ])->all();
+    }
+
+    /** Các key khoản phí hợp lệ có thể tính vào lương nhân sự. */
+    private const SALARY_KEYS = ['veTram', 'tienDuong', 'troCap', 'phiKhac', 'luong'];
+
+    /** Lọc danh sách khoản lương nhân sự về các key hợp lệ; null → mặc định Trợ cấp + Lương. */
+    private function cleanSalaryParts($parts): array
+    {
+        if ($parts === null) return ['troCap', 'luong'];
+        if (! is_array($parts)) return [];
+        return array_values(array_intersect(self::SALARY_KEYS, array_map('strval', $parts)));
+    }
+
+    /** Lưu phí tuyến đường — xóa sạch & tạo lại (không có FK liên kết). */
+    public function saveRouteFees(array $rows): void
+    {
+        DB::transaction(function () use ($rows) {
+            TruckingRouteFee::query()->delete();
+            foreach (array_values($rows) as $i => $r) {
+                TruckingRouteFee::create([
+                    'route'      => $this->str($r['route'] ?? null),
+                    'route_key'  => $this->routeKey((string) ($r['route'] ?? '')),
+                    've_tram'    => $this->inMoney($r['veTram'] ?? null) ?? 0,
+                    'tien_duong' => $this->inMoney($r['tienDuong'] ?? null) ?? 0,
+                    'tro_cap'    => $this->inMoney($r['troCap'] ?? null) ?? 0,
+                    'phi_khac'   => $this->inMoney($r['phiKhac'] ?? null) ?? 0,
+                    'cru'        => ! empty($r['cru']),
+                    'luong'      => $this->inMoney($r['luong'] ?? null) ?? 0,
+                    'salary_parts' => $this->cleanSalaryParts($r['salaryParts'] ?? null),
+                    'km'         => $this->inNum($r['km'] ?? null) ?? 0,
+                    'dau_2cau'   => $this->inNum($r['dau2'] ?? null) ?? 0,
+                    'dau_1cau'   => $this->inNum($r['dau1'] ?? null) ?? 0,
+                    'sort'       => $i,
+                ]);
+            }
+        });
     }
 
     /**
@@ -774,7 +1850,10 @@ class TruckingV2Service
         $plates = array_values(array_filter(array_map('trim', $cfg['vehicles'] ?? []), fn ($v) => $v !== ''));
         TruckingVehicle::whereNotIn('plate', $plates ?: [''])->delete();
         foreach ($plates as $plate) {
-            TruckingVehicle::updateOrCreate(['plate' => $plate], ['type' => $cfg['vehicleType'][$plate] ?? 'MBF']);
+            $type = $cfg['vehicleType'][$plate] ?? 'MBF';
+            // Số cầu chỉ áp dụng cho xe MBF (xe ngoài không cần)
+            $axle = $type === 'MBF' ? (($cfg['vehicleAxle'][$plate] ?? null) ?: null) : null;
+            TruckingVehicle::updateOrCreate(['plate' => $plate], ['type' => $type, 'axle' => $axle]);
         }
     }
 

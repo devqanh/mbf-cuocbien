@@ -9,7 +9,7 @@ import { SortBtn, CellBtn, Badge, EditCell, TH, TD } from "@trk/ui.jsx";
 
 function ShipmentsApp() {
   const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
-  const DEFAULT_CFG = { locations: [], locationCode: {}, customers: [], customerInfo: {}, contTypes: [], warehouses: [], payers: [], costItems: [], choHoItems: [], revItems: [], vehicles: [], vehicleType: {}, drivers: [], vehItems: [], prices: {}, costColors: {}, vatDefault: { hph: "8", icd: "0" }, freeTimeHours: "4" };
+  const DEFAULT_CFG = { locations: [], locationCode: {}, customers: [], customerInfo: {}, contTypes: [], warehouses: [], payers: [], costItems: [], choHoItems: [], revItems: [], vehicles: [], vehicleType: {}, drivers: [], prices: {}, costColors: {}, vatDefault: { hph: "8", icd: "0" }, freeTimeHours: "4" };
   const api = (method, url, body) => fetch(url, { method, headers: { "Content-Type": "application/json", "Accept": "application/json", "X-CSRF-TOKEN": T.csrf }, body: body ? JSON.stringify(body) : undefined }).then((r) => r.json());
 
   // Dùng chung 1 mẫu (ICD) — không còn tách HPH/ICD
@@ -276,11 +276,32 @@ function ShipmentsApp() {
   const IMP_COLS = ["Khách hàng", "SỐ BOOKING/BILL", "NHẬP/XUẤT", "SỐ LƯỢNG", "LOẠI", "SỐ CONTAINER", "CẮT MÁNG", "NƠI LẤY", "NƠI HẠ", "NGÀY", "GIỜ", "KHO", "INVOICE"];
   const downloadTemplate = () => {
     if (typeof XLSX === "undefined") { window.alert("Thư viện Excel chưa tải xong."); return; }
-    const ex1 = { "Khách hàng": "Canon Vietnam", "SỐ BOOKING/BILL": "BL-ICD-0001", "NHẬP/XUẤT": "Nhập", "SỐ LƯỢNG": 3, "LOẠI": "40HC", "SỐ CONTAINER": "TGHU1234567\nMSKU9981122\nCSNU4567788", "CẮT MÁNG": "14/05/2026 10:00", "NƠI LẤY": "ICD Quế Võ", "NƠI HẠ": "KCN Tiên Sơn", "NGÀY": "14/05/2026", "GIỜ": "08:00", "KHO": "Kho A2", "INVOICE": "INV-001" };
-    const ex2 = { "Khách hàng": "Canon Vietnam", "SỐ BOOKING/BILL": "BL-ICD-0002", "NHẬP/XUẤT": "Xuất", "SỐ LƯỢNG": 2, "LOẠI": "20DC", "SỐ CONTAINER": "", "CẮT MÁNG": "15/05/2026 09:00", "NƠI LẤY": "ICD Quế Võ", "NƠI HẠ": "KCN Tiên Sơn", "NGÀY": "15/05/2026", "GIỜ": "07:30", "KHO": "Kho B1", "INVOICE": "INV-002" };
+    const c = cfgRef.current || {};
+    const locs = c.locations || [];
+    const codeOf = c.locationCode || {};
+    const custs = c.customers || [];
+    // Ví dụ dùng đúng dữ liệu đang có (nếu chưa nạp thì dùng mẫu mặc định)
+    const exFrom = locs[0] || "ICD Quế Võ";
+    const exTo = locs[1] || locs[0] || "KCN Tiên Sơn";
+    const exCust = custs[0] || "Canon Vietnam";
+    const ex1 = { "Khách hàng": exCust, "SỐ BOOKING/BILL": "BL-ICD-0001", "NHẬP/XUẤT": "Nhập", "SỐ LƯỢNG": 3, "LOẠI": "40HC", "SỐ CONTAINER": "TGHU1234567\nMSKU9981122\nCSNU4567788", "CẮT MÁNG": "14/05/2026 10:00", "NƠI LẤY": exFrom, "NƠI HẠ": exTo, "NGÀY": "14/05/2026", "GIỜ": "08:00", "KHO": "Kho A2", "INVOICE": "INV-001" };
+    const ex2 = { "Khách hàng": exCust, "SỐ BOOKING/BILL": "BL-ICD-0002", "NHẬP/XUẤT": "Xuất", "SỐ LƯỢNG": 2, "LOẠI": "20DC", "SỐ CONTAINER": "", "CẮT MÁNG": "15/05/2026 09:00", "NƠI LẤY": codeOf[exFrom] || exFrom, "NƠI HẠ": exTo, "NGÀY": "15/05/2026", "GIỜ": "07:30", "KHO": "Kho B1", "INVOICE": "INV-002" };
     const ws = XLSX.utils.json_to_sheet([ex1, ex2], { header: IMP_COLS });
-    ws["!cols"] = IMP_COLS.map((c) => ({ wch: Math.max(12, c.length + 2) }));
-    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Lô hàng");
+    ws["!cols"] = IMP_COLS.map((col) => ({ wch: Math.max(12, col.length + 2) }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Lô hàng");
+    // Sheet tham chiếu — copy đúng giá trị để tránh lỗi "chưa có trong hệ thống"
+    const locRows = locs.map((n) => ({ "Tên địa điểm": n, "Ký hiệu": codeOf[n] || "" }));
+    if (locRows.length) {
+      const wl = XLSX.utils.json_to_sheet(locRows, { header: ["Tên địa điểm", "Ký hiệu"] });
+      wl["!cols"] = [{ wch: 32 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, wl, "Địa điểm hợp lệ");
+    }
+    if (custs.length) {
+      const wc = XLSX.utils.json_to_sheet(custs.map((n) => ({ "Khách hàng": n })), { header: ["Khách hàng"] });
+      wc["!cols"] = [{ wch: 36 }];
+      XLSX.utils.book_append_sheet(wb, wc, "Khách hàng hợp lệ");
+    }
     XLSX.writeFile(wb, "mau-import-lo-hang.xlsx");
   };
   const onImpFile = (e) => {
@@ -372,7 +393,7 @@ function ShipmentsApp() {
               onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.background = "#fff"; }}
               onBlur={(e) => { e.target.style.borderColor = "var(--line)"; e.target.style.background = "#fafbfc"; }} />
           </div>
-          <button type="button" onClick={() => setShowImport(true)} title="Import lô hàng từ Excel"
+          <button type="button" onClick={() => { ensureCfg(); setShowImport(true); }} title="Import lô hàng từ Excel"
             style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "var(--ink-2)", background: "#fff", border: "1px solid var(--line)", borderRadius: 10 }}
             onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
             <i className="bi bi-upload" style={{ color: "var(--accent)" }} /> Import lô
@@ -660,7 +681,7 @@ function ShipmentsApp() {
       {active && modal.type === "info" && <InfoPopup ship={active} isHph={isHph} patch={(np) => patch(active.id, np)} patchOther={(id, np) => patch(id, np)} onSave={() => commitDirty()} isDirty={isDirty} siblings={sibs.filter((x) => x.id !== active.id)} onClose={closeInfo} onDelete={active._new ? null : () => delShip(active.id)} canDelete={T.canDelete} cfg={cfg} addCfg={addCfg} />}
 
       {showImport && (
-        <Modal title="Import lô hàng từ Excel" subtitle="Khách hàng · Nơi lấy · Nơi hạ phải có sẵn — kiểm tra trước, 1 lỗi là không import gì cả" width={720} icon={<I.truck />}
+        <Modal title="Import lô hàng từ Excel" subtitle="Nơi lấy/hạ nhập theo TÊN hoặc KÝ HIỆU · file mẫu có sẵn danh mục hợp lệ · kiểm tra trước, 1 lỗi là không import gì cả" width={720} icon={<I.truck />}
           onClose={() => setShowImport(false)}
           footer={
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
@@ -702,11 +723,41 @@ function ShipmentsApp() {
               </div>
             )}
 
-            {impCheck && impCheck.valid && (
-              <div style={{ padding: "12px 14px", borderRadius: 10, background: "var(--good-weak)", border: "1px solid #bfe4d1", fontSize: 13, color: "var(--good)", fontWeight: 600 }}>
-                <i className="bi bi-check-circle-fill" /> {impCheck.total} dòng hợp lệ — bấm <b>Bắt đầu import</b> ở dưới để nhập.
-              </div>
-            )}
+            {impCheck && impCheck.valid && (() => {
+              const expand = (r) => { const cs = String(r.contNo || "").split(/[\r\n;,]+/).map((s) => s.trim()).filter(Boolean); if (cs.length) return cs.length; const q = parseInt(String(r.qty || "").replace(/[^\d]/g, ""), 10); return q > 0 ? q : 1; };
+              const totalLo = impRows.reduce((a, r) => a + expand(r), 0);
+              const cellP = { padding: "7px 12px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" };
+              return (
+                <div style={{ border: "1px solid #bfe4d1", borderRadius: 10, overflow: "hidden" }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--good)", padding: "10px 13px", background: "var(--good-weak)", borderBottom: "1px solid #bfe4d1" }}>
+                    <i className="bi bi-check-circle-fill" /> {impCheck.total} dòng hợp lệ → sẽ tạo <b>{totalLo} lô</b>. Xem trước bên dưới rồi bấm <b>Bắt đầu import</b>.
+                  </div>
+                  <div style={{ maxHeight: "40vh", overflowY: "auto", overscrollBehavior: "contain" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                      <thead>
+                        <tr style={{ background: "#fafbfc" }}>
+                          {["#", "Khách hàng", "Tuyến", "Loại", "Số lô", "Ngày"].map((h, i) => (
+                            <th key={i} style={{ textAlign: i >= 4 ? "center" : "left", padding: "7px 12px", fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "1px solid var(--line)", position: "sticky", top: 0, background: "#fafbfc", whiteSpace: "nowrap" }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {impRows.map((r, i) => (
+                          <tr key={i}>
+                            <td className="tnum" style={cellP}>{i + 1}</td>
+                            <td style={cellP}>{r.customer || "—"}</td>
+                            <td style={cellP}>{(r.from || "?")} <span style={{ color: "var(--accent)" }}>→</span> {(r.to || "?")}</td>
+                            <td style={cellP}>{r.contType || "—"}</td>
+                            <td className="tnum" style={{ ...cellP, textAlign: "center", fontWeight: 600 }}>{expand(r)}</td>
+                            <td className="tnum" style={{ ...cellP, whiteSpace: "nowrap" }}>{(r.gioDenDuKien || "").slice(0, 10) || "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
 
             {impCheck && !impCheck.valid && (
               <div style={{ border: "1px solid #f3c9c9", borderRadius: 10, overflow: "hidden" }}>

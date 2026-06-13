@@ -11,7 +11,7 @@ class TruckingRevenueLine extends Model
     public const KIND_REVENUE = 'doanhThu';
     public const KIND_COLLECT = 'choHo';
 
-    protected $fillable = ['shipment_id', 'kind', 'item', 'amount', 'sort'];
+    protected $fillable = ['shipment_id', 'kind', 'item', 'item_id', 'amount', 'sort'];
 
     protected $casts = [
         'amount' => 'decimal:2',

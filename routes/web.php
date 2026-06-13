@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\Auth\TwoFactorChallengeController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RoleController;
@@ -17,6 +18,10 @@ Route::get('/', function () {
     return redirect()->route(auth()->check() ? 'trucking2.shipments' : 'login');
 });
 
+// ===== Yêu cầu chi (PUBLIC, mobile) — tài xế gửi đề nghị chi, kế toán duyệt sau =====
+Route::get ('/yeu-cau-chi', [TruckingV2Controller::class, 'spendRequestPage'])->name('trucking2.spendRequest');
+Route::post('/yeu-cau-chi', [TruckingV2Controller::class, 'submitSpendRequest'])->name('trucking2.spendRequest.submit');
+
 // ===== Tài liệu Trucking — CÔNG KHAI (không cần đăng nhập) để gửi kế toán =====
 Route::get('/tailieu',          [TruckingController::class, 'docs'])->name('trucking.docs');
 Route::get('/tailieu/download', [TruckingController::class, 'docsDownload'])->name('trucking.docsDownload');
@@ -26,6 +31,10 @@ Route::post('/tailieu/notes',   [TruckingController::class, 'saveNotes'])->name(
 Route::middleware('guest')->group(function () {
     Route::get('/login',  [LoginController::class, 'showLogin'])->name('login');
     Route::post('/login', [LoginController::class, 'login'])->name('login.attempt');
+
+    // Bước 2 khi user bật 2FA (chưa đăng nhập — thông tin tạm giữ trong session)
+    Route::get ('/login/2fa', [TwoFactorChallengeController::class, 'show'])->name('login.2fa');
+    Route::post('/login/2fa', [TwoFactorChallengeController::class, 'store'])->name('login.2fa.attempt');
 });
 
 Route::middleware('auth')->group(function () {
@@ -38,6 +47,12 @@ Route::middleware('auth')->group(function () {
     // Quản lý thiết bị / phiên đăng nhập
     Route::post  ('/profile/sessions/logout-others', [ProfileController::class, 'revokeOtherSessions'])->name('profile.sessions.logoutOthers');
     Route::delete('/profile/sessions/{sessionId}',   [ProfileController::class, 'revokeSession'])->name('profile.sessions.revoke');
+
+    // Xác thực 2 lớp (2FA)
+    Route::post  ('/profile/2fa/start',           [ProfileController::class, 'startTwoFactor'])->name('profile.2fa.start');
+    Route::post  ('/profile/2fa/confirm',         [ProfileController::class, 'confirmTwoFactor'])->name('profile.2fa.confirm');
+    Route::post  ('/profile/2fa/recovery-codes',  [ProfileController::class, 'regenerateRecoveryCodes'])->name('profile.2fa.recovery');
+    Route::delete('/profile/2fa',                 [ProfileController::class, 'disableTwoFactor'])->name('profile.2fa.disable');
 
     // ===== Follow Up Shipment ===== (TẠM TẮT qua config features.shipments)
     if (config('features.shipments')) {
@@ -98,6 +113,20 @@ Route::middleware('auth')->group(function () {
             Route::get('/shipments-page', [TruckingV2Controller::class, 'shipmentsPage'])->name('shipmentsPage');
             Route::get('/config',         [TruckingV2Controller::class, 'configData'])->name('configData');
             Route::get('/bootstrap',      [TruckingV2Controller::class, 'bootstrap'])->name('bootstrap');
+            Route::get('/phi-xe',                  [TruckingV2Controller::class, 'tripCostPage'])->name('tripCost');
+            Route::get('/phi-xe/tao',              [TruckingV2Controller::class, 'createTripCost'])->name('tripCost.create');
+            Route::get('/phi-xe/compute',          [TruckingV2Controller::class, 'tripCostCompute'])->name('tripCost.compute');
+            Route::get('/phi-xe/{tripCost}',       [TruckingV2Controller::class, 'viewTripCost'])->name('tripCost.view')->whereNumber('tripCost');
+            Route::get('/phi-xe/{tripCost}/context', [TruckingV2Controller::class, 'tripCostContext'])->name('tripCost.context')->whereNumber('tripCost');
+        });
+        Route::middleware('permission:shipments.create')->group(function () {
+            Route::post('/trip-costs', [TruckingV2Controller::class, 'storeTripCost'])->name('tripCost.store');
+        });
+        Route::middleware('permission:shipments.update')->group(function () {
+            Route::put('/trip-costs/{tripCost}', [TruckingV2Controller::class, 'updateTripCost'])->name('tripCost.update')->whereNumber('tripCost');
+        });
+        Route::middleware('permission:shipments.delete')->group(function () {
+            Route::delete('/trip-costs/{tripCost}', [TruckingV2Controller::class, 'destroyTripCost'])->name('tripCost.destroy')->whereNumber('tripCost');
         });
         Route::middleware('permission:shipments.create')->group(function () {
             Route::post('/shipments',             [TruckingV2Controller::class, 'storeShipment'])->name('shipments.store');
@@ -142,6 +171,13 @@ Route::middleware('auth')->group(function () {
         Route::middleware('permission:settings.view')->group(function () {
             Route::get('/cai-dat',        [TruckingV2Controller::class, 'settings'])->name('settings');
             Route::get('/catalog/{type}', [TruckingV2Controller::class, 'catalogData'])->name('catalogData');   // lazy-load 1 tab
+            // Quản lý xe (xe MBF nội bộ)
+            Route::get('/quan-ly-xe',                 [TruckingV2Controller::class, 'fleet'])->name('fleet');
+            Route::get('/quan-ly-xe/{vehicle}/data',  [TruckingV2Controller::class, 'vehicleData'])->name('fleet.data')->whereNumber('vehicle');
+            Route::get('/quan-ly-xe/{vehicle}/section/{section}', [TruckingV2Controller::class, 'vehicleSection'])->name('fleet.section')->whereNumber('vehicle');
+            Route::get('/quan-ly-xe/{vehicle}/docs/{idx}', [TruckingV2Controller::class, 'showVehicleDoc'])->name('fleet.doc')->whereNumber('vehicle')->whereNumber('idx');
+            Route::get('/quan-ly-xe/{vehicle}/cost-photo/{name}', [TruckingV2Controller::class, 'showCostPhoto'])->name('fleet.costPhoto')->whereNumber('vehicle')->where('name', '[A-Za-z0-9._-]+');
+            Route::get('/drivers/{driver}/docs/{idx}', [TruckingV2Controller::class, 'showDriverDoc'])->name('drivers.doc')->whereNumber('driver')->whereNumber('idx');
         });
         Route::middleware('permission:settings.update')->group(function () {
             Route::put('/catalog/{type}',    [TruckingV2Controller::class, 'saveCatalog'])->name('catalog.save');
@@ -149,6 +185,16 @@ Route::middleware('auth')->group(function () {
             Route::put('/customer-rename',   [TruckingV2Controller::class, 'renameCustomer'])->name('customerRename');
             Route::put('/vehicles',          [TruckingV2Controller::class, 'saveVehicles'])->name('vehicles.save');
             Route::put('/settings',          [TruckingV2Controller::class, 'saveSettings'])->name('settings.save');
+            Route::put('/route-fees',        [TruckingV2Controller::class, 'saveRouteFees'])->name('routeFees.save');
+            Route::put('/fuel-prices',       [TruckingV2Controller::class, 'saveFuelPrices'])->name('fuelPrices.save');
+            Route::put('/drivers',           [TruckingV2Controller::class, 'saveDrivers'])->name('drivers.save');
+            Route::post('/drivers/{driver}/docs', [TruckingV2Controller::class, 'uploadDriverDocs'])->name('drivers.docs.upload')->whereNumber('driver');
+            Route::delete('/drivers/{driver}/docs/{idx}', [TruckingV2Controller::class, 'deleteDriverDoc'])->name('drivers.docs.delete')->whereNumber('driver')->whereNumber('idx');
+            Route::put('/quan-ly-xe/{vehicle}', [TruckingV2Controller::class, 'saveVehicle'])->name('fleet.save')->whereNumber('vehicle');
+            Route::post('/quan-ly-xe-cost-item', [TruckingV2Controller::class, 'addVehicleCostItem'])->name('fleet.costItem');
+            Route::post('/quan-ly-xe/{vehicle}/cost-photo', [TruckingV2Controller::class, 'uploadCostPhotos'])->name('fleet.costPhoto.upload')->whereNumber('vehicle');
+            Route::post('/quan-ly-xe/{vehicle}/docs', [TruckingV2Controller::class, 'uploadVehicleDocs'])->name('fleet.docs.upload')->whereNumber('vehicle');
+            Route::delete('/quan-ly-xe/{vehicle}/docs/{idx}', [TruckingV2Controller::class, 'deleteVehicleDoc'])->name('fleet.docs.delete')->whereNumber('vehicle')->whereNumber('idx');
         });
     });
 
@@ -162,7 +208,8 @@ Route::middleware('auth')->group(function () {
         Route::post('/users', [UserController::class, 'store'])->name('users.store');
     });
     Route::middleware('permission:users.update')->group(function () {
-        Route::put('/users/{user}', [UserController::class, 'update'])->name('users.update');
+        Route::put ('/users/{user}',          [UserController::class, 'update'])->name('users.update');
+        Route::post('/users/{user}/2fa/reset', [UserController::class, 'resetTwoFactor'])->name('users.2fa.reset');
     });
     Route::middleware('permission:users.delete')->group(function () {
         Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');

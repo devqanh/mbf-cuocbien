@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\GeoIp;
+use App\Services\TwoFactorService;
 use App\Support\UserAgentParser;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -13,6 +14,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
+use Illuminate\Validation\ValidationException;
 
 class ProfileController extends Controller
 {
@@ -22,6 +24,102 @@ class ProfileController extends Controller
             'user'     => Auth::user(),
             'sessions' => $this->sessionsForUser($request, $geo),
         ]);
+    }
+
+    // ===================================================================
+    // Xác thực 2 lớp (2FA)
+    // ===================================================================
+
+    /**
+     * Bước 1: bắt đầu bật 2FA — sinh secret (CHƯA xác nhận) và trả về
+     * dữ liệu để client dựng mã QR + nhập key thủ công.
+     */
+    public function startTwoFactor(Request $request, TwoFactorService $totp): JsonResponse
+    {
+        $user = $request->user();
+
+        if ($user->hasTwoFactorEnabled()) {
+            return response()->json(['ok' => false, 'message' => 'Bạn đã bật 2FA rồi.'], 422);
+        }
+
+        // Sinh secret mới mỗi lần bắt đầu (chưa confirmed → coi như tạm).
+        $secret = $totp->generateSecret();
+        $user->forceFill([
+            'two_factor_secret'         => $secret,
+            'two_factor_recovery_codes' => null,
+            'two_factor_confirmed_at'   => null,
+        ])->save();
+
+        return response()->json([
+            'ok'         => true,
+            'secret'     => $secret,
+            'otpauthUrl' => $totp->otpauthUrl($secret, $user->email, config('app.name', 'MBF')),
+        ]);
+    }
+
+    /**
+     * Bước 2: xác nhận bằng mã 6 số đầu tiên từ app authenticator.
+     * Khớp → đánh dấu confirmed + sinh mã khôi phục (trả 1 lần để user lưu).
+     */
+    public function confirmTwoFactor(Request $request, TwoFactorService $totp): JsonResponse
+    {
+        $user = $request->user();
+
+        if (is_null($user->two_factor_secret)) {
+            return response()->json(['ok' => false, 'message' => 'Hãy bấm "Bật 2FA" trước.'], 422);
+        }
+        if ($user->hasTwoFactorEnabled()) {
+            return response()->json(['ok' => false, 'message' => 'Bạn đã bật 2FA rồi.'], 422);
+        }
+
+        $request->validate(['code' => ['required', 'string']], [], ['code' => 'Mã xác thực']);
+
+        if (! $totp->verify($user->two_factor_secret, $request->input('code'))) {
+            throw ValidationException::withMessages(['code' => 'Mã không đúng. Hãy thử lại với mã đang hiển thị.']);
+        }
+
+        $codes = $totp->recoveryCodes();
+        $user->forceFill([
+            'two_factor_recovery_codes' => $codes,
+            'two_factor_confirmed_at'   => now(),
+        ])->save();
+
+        return response()->json([
+            'ok'            => true,
+            'message'       => 'Đã bật xác thực 2 lớp.',
+            'recoveryCodes' => $codes,
+        ]);
+    }
+
+    /** Tạo lại bộ mã khôi phục (yêu cầu đã bật 2FA). */
+    public function regenerateRecoveryCodes(Request $request, TwoFactorService $totp): JsonResponse
+    {
+        $user = $request->user();
+
+        if (! $user->hasTwoFactorEnabled()) {
+            return response()->json(['ok' => false, 'message' => 'Chưa bật 2FA.'], 422);
+        }
+
+        $codes = $totp->recoveryCodes();
+        $user->forceFill(['two_factor_recovery_codes' => $codes])->save();
+
+        return response()->json(['ok' => true, 'recoveryCodes' => $codes]);
+    }
+
+    /** Tắt 2FA — yêu cầu nhập lại mật khẩu hiện tại để xác nhận chủ sở hữu. */
+    public function disableTwoFactor(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $request->validate(
+            ['password' => ['required', 'current_password']],
+            ['password.current_password' => 'Mật khẩu không đúng.'],
+            ['password' => 'Mật khẩu']
+        );
+
+        $user->disableTwoFactor();
+
+        return response()->json(['ok' => true, 'message' => 'Đã tắt xác thực 2 lớp.']);
     }
 
     /**

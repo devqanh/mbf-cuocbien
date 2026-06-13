@@ -16,28 +16,32 @@ const CAT_KEYS = {
   costItems: ["costItems", "prices", "costColors"],
   choHoItems: ["choHoItems", "prices"],
   revItems: ["revItems", "prices"],
-  vehicles: ["vehicles", "vehicleType"],
+  vehicles: ["vehicles", "vehicleType", "vehicleAxle"],
   drivers: ["drivers"],
-  vehItems: ["vehItems", "prices"],
-  __vat: ["vatDefault"],
-  __freetime: ["freeTimeHours"],
+  salaryItems: ["salaryItems"],
+  routeFees: ["routeFees"],
+  fuelPrices: ["fuelPrices"],
+  __general: ["vatDefault", "freeTimeHours"],
 };
 
 // Nhãn tab (cho hộp xác nhận)
 const TAB_LABELS = {
   locations: "Địa điểm", customers: "Khách hàng", contTypes: "Loại cont", warehouses: "Kho",
   payers: "Bên thanh toán", costItems: "Khoản chi phí", choHoItems: "Khoản chi hộ", revItems: "Khoản doanh thu",
-  vehicles: "Đội xe", drivers: "Tài xế", vehItems: "Chi phí xe", __vat: "VAT mặc định", __freetime: "Free time",
+  vehicles: "Đội xe", drivers: "Tài xế", salaryItems: "Khoản lương", routeFees: "Phí tuyến đường", fuelPrices: "Bảng giá dầu", __general: "Cấu hình chung",
 };
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 function SettingsApp() {
   const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
-  const DEFAULT_CFG = { locations: [], locationCode: {}, locationCodeArr: [], locationLocked: [], customers: [], customerInfo: {}, contTypes: [], warehouses: [], warehouseCode: {}, warehouseCodeArr: [], payers: [], costItems: [], choHoItems: [], revItems: [], vehicles: [], vehicleType: {}, drivers: [], vehItems: [], prices: {}, costColors: {}, vatDefault: { hph: "8", icd: "0" }, freeTimeHours: "4" };
+  const DEFAULT_CFG = { locations: [], locationCode: {}, locationCodeArr: [], locationLocked: [], customers: [], customerInfo: {}, contTypes: [], warehouses: [], warehouseCode: {}, warehouseCodeArr: [], payers: [], costItems: [], choHoItems: [], revItems: [], vehicles: [], vehicleType: {}, vehicleAxle: {}, drivers: [], salaryItems: [], routeFees: [], fuelPrices: [], prices: {}, costColors: {}, vatDefault: { hph: "8", icd: "0" }, freeTimeHours: "4" };
   const api = (method, url, body) => fetch(url, { method, headers: { "Content-Type": "application/json", "Accept": "application/json", "X-CSRF-TOKEN": T.csrf }, body: body ? JSON.stringify(body) : undefined }).then((r) => r.json());
   const [cfg, setCfgState] = useState(DEFAULT_CFG);
   const [counts, setCounts] = useState(B.counts || {});   // badge sidebar (boot, nhẹ)
-  const [sel, setSel] = useState("locations");
+  // Tab lưu trong URL hash (vd #warehouses) → reload / chia sẻ link vẫn ở đúng tab.
+  const validTab = (t) => !!t && Object.prototype.hasOwnProperty.call(CAT_KEYS, t);
+  const hashTab = () => { const h = (window.location.hash || "").replace(/^#/, ""); return validTab(h) ? h : null; };
+  const [sel, setSel] = useState(() => hashTab() || "locations");
   const [dirty, setDirty] = useState({});   // { catKey: true }
   const [saving, setSaving] = useState(false);
   const [loadingTab, setLoadingTab] = useState(null);
@@ -61,9 +65,18 @@ function SettingsApp() {
     if (!force && loaded.current.has(tab)) return;
     fetchTab(tab);
   };
-  // Đổi tab = chọn + nạp TƯƠI tab đó (mỗi lần mở lấy dữ liệu mới → an toàn khi nhiều người sửa)
-  const selectTab = (tab) => { setSel(tab); loadTab(tab, true); };
-  useEffect(() => { fetchTab(sel); }, []);   // tải tab đầu khi mở trang
+  // Đổi tab = chọn + nạp TƯƠI tab đó + ghi vào URL hash (replaceState → không spam history)
+  const selectTab = (tab) => {
+    setSel(tab); loadTab(tab, true);
+    try { window.history.replaceState(null, "", "#" + tab); } catch (e) { window.location.hash = tab; }
+  };
+  useEffect(() => { fetchTab(sel); }, []);   // tải tab đầu (theo hash) khi mở trang
+  // Đồng bộ khi hash đổi do người dùng (sửa URL / back-forward)
+  useEffect(() => {
+    const onHash = () => { const t = hashTab(); if (t && t !== sel) { setSel(t); loadTab(t, true); } };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, [sel]);
 
   // Sửa tay → cập nhật state + đánh dấu TAB hiện tại có thay đổi (KHÔNG tự lưu)
   const setCfgKey = (key, val) => { setCfgState((c) => ({ ...c, [key]: val })); setDirty((d) => ({ ...d, [sel]: true })); };
@@ -104,7 +117,10 @@ function SettingsApp() {
     // Mỗi danh mục → endpoint riêng (1 bảng)
     const url = cur === "customers" ? ROUTES.customers
       : cur === "vehicles" ? ROUTES.vehicles
-      : (cur === "__vat" || cur === "__freetime") ? ROUTES.settings
+      : cur === "routeFees" ? ROUTES.routeFees
+      : cur === "fuelPrices" ? ROUTES.fuelPrices
+      : cur === "drivers" ? ROUTES.drivers
+      : cur === "__general" ? ROUTES.settings
       : ROUTES.catalog + cur;
     api("PUT", url, { cfg: partial }).then((r) => {
       setSaving(false);
@@ -132,6 +148,12 @@ function SettingsApp() {
           <div style={{ flex: 1 }} />
           {anyDirty && <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, color: "var(--warn)" }}><span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--warn)" }} /> Có tab chưa lưu</span>}
           <span style={{ fontSize: 12, color: "var(--ink-4)" }}>Mỗi mục lưu riêng bằng nút trong mục</span>
+          {ROUTES.prices && <a href={ROUTES.prices} title="Mở trang Bảng giá"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 13px", fontSize: 13, fontWeight: 600, borderRadius: 9, border: "1px solid var(--line)", background: "#fff", color: "var(--ink-2)", textDecoration: "none", whiteSpace: "nowrap" }}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.color = "var(--accent)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--line)"; e.currentTarget.style.color = "var(--ink-2)"; }}>
+            <i className="bi bi-tags" /> Bảng giá <i className="bi bi-arrow-right" style={{ fontSize: 11 }} />
+          </a>}
         </div>
       </header>
       <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "20px 22px 40px" }}>

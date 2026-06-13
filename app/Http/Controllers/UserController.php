@@ -32,7 +32,11 @@ class UserController extends Controller
 
         $roles = Role::orderBy('name')->get();
 
-        return view('users.index', compact('users', 'roles', 'q'));
+        // Tổng quan 2FA toàn hệ thống (2 con số nhẹ, phục vụ nhắc nhở bảo mật).
+        $twoFactorEnabled = User::whereNotNull('two_factor_confirmed_at')->count();
+        $totalUsers       = User::count();
+
+        return view('users.index', compact('users', 'roles', 'q', 'twoFactorEnabled', 'totalUsers'));
     }
 
     public function store(Request $request): RedirectResponse
@@ -74,6 +78,21 @@ class UserController extends Controller
         }
 
         return back()->with('success', "Đã xoá: {$user->name}");
+    }
+
+    /**
+     * Reset (tắt) 2FA của một thành viên — dùng khi họ mất thiết bị
+     * authenticator. Sau đó họ đăng nhập bằng mật khẩu và tự bật lại ở /profile.
+     */
+    public function resetTwoFactor(Request $request, User $user): RedirectResponse
+    {
+        if (! $user->hasTwoFactorEnabled()) {
+            return back()->with('error', "{$user->name} chưa bật 2FA.");
+        }
+
+        $user->disableTwoFactor();
+
+        return back()->with('success', "Đã reset 2FA cho {$user->name}. Họ có thể đăng nhập và thiết lập lại.");
     }
 
     /**

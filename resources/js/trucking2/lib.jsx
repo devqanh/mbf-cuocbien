@@ -75,7 +75,7 @@ function Txt({ value, onChange, placeholder }) {
 }
 
 /* Select2-style searchable combo bound to a config list. onCreate(v) adds to config. */
-function Combo({ value, onChange, options = [], onCreate, placeholder = "Chọn…", small, clearable }) {
+function Combo({ value, onChange, options = [], onCreate, placeholder = "Chọn…", small, clearable, strict }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const wrapRef = useRef(null);
@@ -87,10 +87,13 @@ function Combo({ value, onChange, options = [], onCreate, placeholder = "Chọn�
   }, [open]);
 
   const ql = q.trim().toLowerCase();
-  const filtered = options.filter((o) => !ql || o.toLowerCase().includes(ql));
-  const exact = options.some((o) => o.toLowerCase() === ql);
+  // Cho phép option dạng chuỗi HOẶC {value,label} (nhãn ≠ giá trị — vd lái xe "Tên · SĐT")
+  const opts = options.map((o) => (o && typeof o === "object") ? { value: String(o.value), label: o.label == null ? String(o.value) : String(o.label) } : { value: String(o), label: String(o) });
+  const filtered = opts.filter((o) => !ql || o.label.toLowerCase().includes(ql));
+  const exact = opts.some((o) => o.label.toLowerCase() === ql);
+  const curLabel = (opts.find((o) => o.value === value) || {}).label || value;
   const pick = (v) => { onChange(v); setOpen(false); setQ(""); };
-  const create = () => { const v = q.trim(); if (!v) return; if (onCreate && !options.includes(v)) onCreate(v); onChange(v); setOpen(false); setQ(""); };
+  const create = () => { const v = q.trim(); if (!v) return; if (onCreate && !opts.some((o) => o.value === v)) onCreate(v); onChange(v); setOpen(false); setQ(""); };
   const showClear = clearable && !!value;
   const padRight = showClear ? 50 : 28;
   const pad = small ? `7px ${padRight}px 7px 10px` : `8px ${padRight}px 8px 11px`;
@@ -102,7 +105,7 @@ function Combo({ value, onChange, options = [], onCreate, placeholder = "Chọn�
           background: "#fff", border: `1px solid ${open ? "var(--accent)" : "var(--line)"}`, borderRadius: 9, outline: "none",
           color: value ? "var(--ink)" : "var(--ink-4)", boxShadow: open ? "0 0 0 3px var(--accent-weak)" : "none",
           whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", position: "relative" }}>
-        {value || placeholder}
+        {curLabel || placeholder}
         {showClear && (
           <span role="button" title="Xóa lựa chọn"
             onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
@@ -119,24 +122,24 @@ function Combo({ value, onChange, options = [], onCreate, placeholder = "Chọn�
           <div style={{ padding: 7, borderBottom: "1px solid var(--line-2)", position: "relative" }}>
             <span style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)" }}><I.search /></span>
             <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm hoặc thêm mới…"
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (filtered.length && !ql) return; if (filtered.length === 1) pick(filtered[0]); else if (!exact && q.trim()) create(); } }}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (filtered.length && !ql) return; if (filtered.length === 1) pick(filtered[0].value); else if (!strict && !exact && q.trim()) create(); } }}
               style={{ width: "100%", padding: "7px 10px 7px 30px", fontSize: 13, border: "1px solid var(--line)", borderRadius: 8, outline: "none" }} />
           </div>
           <div style={{ maxHeight: 196, overflowY: "auto", padding: 4 }}>
             {filtered.map((o) => {
-              const sel = o === value;
+              const sel = o.value === value;
               return (
-                <button key={o} type="button" onClick={() => pick(o)}
+                <button key={o.value} type="button" onClick={() => pick(o.value)}
                   style={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
                     padding: "8px 10px", fontSize: 13.5, border: "none", borderRadius: 7, cursor: "pointer",
                     background: sel ? "var(--accent-weak)" : "transparent", color: sel ? "var(--accent)" : "var(--ink-2)", fontWeight: sel ? 600 : 400 }}
                   onMouseEnter={(e) => { if (!sel) e.currentTarget.style.background = "var(--line-2)"; }}
                   onMouseLeave={(e) => { if (!sel) e.currentTarget.style.background = "transparent"; }}>
-                  {o}{sel && <span style={{ color: "var(--accent)" }}><I.check /></span>}
+                  {o.label}{sel && <span style={{ color: "var(--accent)" }}><I.check /></span>}
                 </button>
               );
             })}
-            {ql && !exact && (
+            {ql && !exact && !strict && (
               <button type="button" onClick={create}
                 style={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", fontSize: 13.5, border: "none", borderRadius: 7, cursor: "pointer", background: "transparent", color: "var(--accent)", fontWeight: 600 }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent-weak-2)")}
@@ -144,6 +147,9 @@ function Combo({ value, onChange, options = [], onCreate, placeholder = "Chọn�
                 <span style={{ width: 17, height: 17, borderRadius: 5, background: "var(--accent-weak)", display: "grid", placeItems: "center" }}><I.plus /></span>
                 Thêm “{q.trim()}”
               </button>
+            )}
+            {ql && !exact && strict && !filtered.length && (
+              <div style={{ padding: "8px 10px", fontSize: 12.5, color: "var(--ink-4)" }}>Không có khoản phù hợp — thêm ở Cài đặt.</div>
             )}
             {!filtered.length && !q && <div style={{ padding: "12px 10px", fontSize: 12.5, color: "var(--ink-4)" }}>Chưa có dữ liệu — gõ để thêm mới.</div>}
           </div>
