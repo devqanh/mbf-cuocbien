@@ -228,10 +228,16 @@ class TruckingV2Controller extends Controller
         ]);
     }
 
-    /** Trang Cài đặt — danh mục master data (sidebar). */
+    /** Trang Cài đặt — chỉ nạp ĐẾM cho sidebar; mỗi tab lazy-load khi click (catalogData). */
     public function settings()
     {
-        return view('trucking2.cai-dat', $this->pageData(['cfg' => $this->svc->config(withPrices: false)]));
+        return view('trucking2.cai-dat', $this->pageData(['counts' => $this->svc->catalogCounts()]));
+    }
+
+    /** Dữ liệu TƯƠI của 1 tab Cài đặt (lazy-load khi click tab). */
+    public function catalogData(string $type): JsonResponse
+    {
+        return response()->json(['ok' => true, 'cfg' => $this->svc->catalogData($type)]);
     }
 
     /** Dữ liệu chung cho mọi trang: quyền + boot (inline, không cần fetch). */
@@ -275,7 +281,10 @@ class TruckingV2Controller extends Controller
     public function updateShipment(Request $request, TruckingShipment $shipment): JsonResponse
     {
         $data = $this->validateShipment($request);
-        $ship = $this->svc->saveShipment($data, $data['sheet'], $shipment);
+        // Lưu TỪNG PHẦN: chỉ field client gửi trong "fields" mới ghi đè (tránh đè thay đổi người khác).
+        $only = $request->input('fields');
+        $only = is_array($only) && $only ? array_values(array_filter(array_map('strval', $only))) : null;
+        $ship = $this->svc->saveShipment($data, $data['sheet'], $shipment, $only);
 
         return response()->json(['ok' => true, 'ship' => $this->svc->shipmentToArray($ship)]);
     }

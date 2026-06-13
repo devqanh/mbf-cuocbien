@@ -343,52 +343,72 @@ class TruckingV2Service
         ])->all();
     }
 
-    /** Upsert 1 lô + đồng bộ dòng con. $data theo shape frontend. */
-    public function saveShipment(array $data, string $sheet, ?TruckingShipment $s = null): TruckingShipment
+    /**
+     * Upsert 1 lô + đồng bộ dòng con. $data theo shape frontend.
+     *
+     * $only = danh sách FIELD (key client) được phép ghi — dùng cho LƯU TỪNG PHẦN:
+     * chỉ field người dùng vừa sửa mới ghi đè, field khác giữ nguyên giá trị trong DB
+     * → tránh ghi đè thay đổi của người khác (lost update) khi 2 người sửa 2 field khác nhau.
+     * $only = null → ghi toàn bộ (lô mới / import).
+     */
+    public function saveShipment(array $data, string $sheet, ?TruckingShipment $s = null, ?array $only = null): TruckingShipment
     {
-        return DB::transaction(function () use ($data, $sheet, $s) {
-            $customerId = null;
-            if (! empty($data['customer'])) {
-                $customerId = TruckingCustomer::firstOrCreate(['name' => trim($data['customer'])])->id;
-            }
+        return DB::transaction(function () use ($data, $sheet, $s, $only) {
+            $apply = fn (string $k) => $only === null || in_array($k, $only, true);
 
             $s ??= new TruckingShipment(['sheet' => $sheet]);
             $s->sheet = $sheet;
-            $s->fill([
-                'customer_id'     => $customerId,
-                'booking'         => $this->str($data['booking'] ?? null),
-                'inv'             => $this->str($data['inv'] ?? null),
-                'io'              => $this->str($data['io'] ?? null),
-                'cru'             => ! empty($data['cru']),
-                'qty'             => isset($data['qty']) && $data['qty'] !== '' ? (int) $data['qty'] : null,
-                'cont_type'       => $this->str($data['contType'] ?? null),
-                'cont_no'         => $this->str($data['contNo'] ?? null),
-                'declaration_no'  => $this->str($data['declNo'] ?? null),
-                'declaration_note' => $this->str($data['declNote'] ?? null),
-                'thanh_ly_date'   => $this->inDate($data['thanhLy'] ?? null),
-                'csht_note'       => $this->str($data['cshtNote'] ?? null),
-                'kho'             => $this->str($data['kho'] ?? null),
-                'from_loc'        => $this->str($data['from'] ?? null),
-                'to_loc'          => $this->str($data['to'] ?? null),
-                'bks_vao'         => $this->str($data['bksVao'] ?? null),
-                'bks_ra'          => $this->str($data['bksRa'] ?? null),
-                'driver'          => $this->str($data['driver'] ?? null),
-                'ra_mode'         => $data['raMode'] ?? 'self',
-                'ra_other_id'     => $data['raOtherId'] ?? null,
-                'sail_date'       => $this->inDate($data['sailDate'] ?? null),
-                'cut_off'         => $this->str($data['cutOff'] ?? null),
-                'cont_den'        => $this->inDate($data['contDen'] ?? null),
-                'cont_ra'         => $this->inDate($data['contRa'] ?? null),
-                'gio_den_du_kien' => $this->inDateTime($data['gioDenDuKien'] ?? null),
-                'gio_xe_den'      => $this->inDateTime($data['gioXeDen'] ?? null),
-                'gio_xe_ra'       => $this->inDateTime($data['gioXeRa'] ?? null),
-                'vat_rate'        => $this->inNum($data['rev']['vatRate'] ?? null),
-                'han_tt'          => $this->inDate($data['rev']['hanTT'] ?? null),
-                'ghi_chu'         => $this->str($data['rev']['ghiChu'] ?? null),
-            ]);
+
+            if ($apply('customer')) {
+                $customerId = null;
+                if (! empty($data['customer'])) {
+                    $customerId = TruckingCustomer::firstOrCreate(['name' => trim($data['customer'])])->id;
+                }
+                $s->customer_id = $customerId;
+            }
+
+            // Map field client → [cột, giá trị]. Chỉ ghi cột khi field đó được phép (đã sửa).
+            $cols = [
+                'booking'      => ['booking', $this->str($data['booking'] ?? null)],
+                'inv'          => ['inv', $this->str($data['inv'] ?? null)],
+                'io'           => ['io', $this->str($data['io'] ?? null)],
+                'cru'          => ['cru', ! empty($data['cru'])],
+                'qty'          => ['qty', isset($data['qty']) && $data['qty'] !== '' ? (int) $data['qty'] : null],
+                'contType'     => ['cont_type', $this->str($data['contType'] ?? null)],
+                'contNo'       => ['cont_no', $this->str($data['contNo'] ?? null)],
+                'declNo'       => ['declaration_no', $this->str($data['declNo'] ?? null)],
+                'declNote'     => ['declaration_note', $this->str($data['declNote'] ?? null)],
+                'thanhLy'      => ['thanh_ly_date', $this->inDate($data['thanhLy'] ?? null)],
+                'cshtNote'     => ['csht_note', $this->str($data['cshtNote'] ?? null)],
+                'kho'          => ['kho', $this->str($data['kho'] ?? null)],
+                'from'         => ['from_loc', $this->str($data['from'] ?? null)],
+                'to'           => ['to_loc', $this->str($data['to'] ?? null)],
+                'bksVao'       => ['bks_vao', $this->str($data['bksVao'] ?? null)],
+                'bksRa'        => ['bks_ra', $this->str($data['bksRa'] ?? null)],
+                'driver'       => ['driver', $this->str($data['driver'] ?? null)],
+                'raMode'       => ['ra_mode', $data['raMode'] ?? 'self'],
+                'raOtherId'    => ['ra_other_id', $data['raOtherId'] ?? null],
+                'sailDate'     => ['sail_date', $this->inDate($data['sailDate'] ?? null)],
+                'cutOff'       => ['cut_off', $this->str($data['cutOff'] ?? null)],
+                'contDen'      => ['cont_den', $this->inDate($data['contDen'] ?? null)],
+                'contRa'       => ['cont_ra', $this->inDate($data['contRa'] ?? null)],
+                'gioDenDuKien' => ['gio_den_du_kien', $this->inDateTime($data['gioDenDuKien'] ?? null)],
+                'gioXeDen'     => ['gio_xe_den', $this->inDateTime($data['gioXeDen'] ?? null)],
+                'gioXeRa'      => ['gio_xe_ra', $this->inDateTime($data['gioXeRa'] ?? null)],
+            ];
+            foreach ($cols as $key => [$col, $val]) {
+                if ($apply($key)) $s->{$col} = $val;
+            }
+            // rev scalars (VAT / hạn TT / ghi chú) đi cùng nhóm 'rev'
+            if ($apply('rev')) {
+                $s->vat_rate = $this->inNum($data['rev']['vatRate'] ?? null);
+                $s->han_tt   = $this->inDate($data['rev']['hanTT'] ?? null);
+                $s->ghi_chu  = $this->str($data['rev']['ghiChu'] ?? null);
+            }
             $s->save();
 
-            // Đồng bộ dòng con bằng delete+recreate (id client là tạm thời)
+            // Dòng con chỉ đồng bộ khi nhóm tương ứng được sửa (cost / rev)
+            if ($apply('cost')) {
             $s->costLines()->delete();
             foreach (($data['cost']['items'] ?? []) as $i => $c) {
                 $s->costLines()->create([
@@ -403,7 +423,9 @@ class TruckingV2Service
                     'sort'     => $i,
                 ]);
             }
+            }   // end if apply('cost')
 
+            if ($apply('rev')) {
             $s->revenueLines()->delete();
             foreach (['doanhThu', 'choHo'] as $kind) {
                 foreach (($data['rev'][$kind] ?? []) as $i => $r) {
@@ -425,6 +447,7 @@ class TruckingV2Service
                     'sort'   => $i,
                 ]);
             }
+            }   // end if apply('rev')
 
             return $s->fresh(['customer', 'costLines', 'revenueLines', 'payments']);
         });
@@ -501,6 +524,68 @@ class TruckingV2Service
         $cfg['freeTimeHours'] = TruckingSetting::get('free_time_hours', '4');
 
         return $cfg;
+    }
+
+    /** Đếm số mục mỗi danh mục — cho badge sidebar Cài đặt (không hydrate, rất nhẹ). */
+    public function catalogCounts(): array
+    {
+        $c = [];
+        foreach ($this->lookups() as $key => [$cls]) $c[$key] = $cls::count();
+        $c['customers'] = TruckingCustomer::count();
+        $c['vehicles']  = TruckingVehicle::count();
+        return $c;
+    }
+
+    /**
+     * Dữ liệu của ĐÚNG 1 tab Cài đặt (lazy-load khi click tab) — tránh nạp toàn bộ danh mục
+     * cùng lúc (nguy hiểm khi 2 người cùng cấu hình + nặng). Mỗi lần mở tab lấy dữ liệu TƯƠI.
+     */
+    public function catalogData(string $key): array
+    {
+        $lk = $this->lookups();
+        if (isset($lk[$key])) {
+            [$cls, $priced, $coded, $colored] = $lk[$key];
+            $rows = $cls::orderBy('sort')->orderBy('name')->get();
+            $out = [$key => $rows->pluck('name')->all()];
+            if ($coded) {
+                $out[$coded] = $rows->filter(fn ($r) => $r->code)->mapWithKeys(fn ($r) => [$r->name => $r->code])->all();
+                if ($key === 'locations') {
+                    $lockedIds = TruckingPriceRow::query()->whereNotNull('location_id')->distinct()->pluck('location_id');
+                    $out['locationLocked'] = TruckingLocation::whereIn('id', $lockedIds)->pluck('name')->all();
+                }
+            }
+            if ($priced) {
+                $out['prices'] = [];
+                foreach ($rows as $r) if ($r->default_price !== null) $out['prices'][$r->name] = $this->outMoney($r->default_price);
+            }
+            if ($colored) {
+                $out['costColors'] = [];
+                foreach ($rows as $r) if (! empty($r->color)) $out['costColors'][$r->name] = $r->color;
+            }
+            return $out;
+        }
+        if ($key === 'customers') {
+            $customers = TruckingCustomer::orderBy('name')->get();
+            return [
+                'customers'    => $customers->pluck('name')->all(),
+                'customerInfo' => $customers->mapWithKeys(fn ($c) => [$c->name => [
+                    'shortName' => $c->short_name ?? '', 'taxCode' => $c->tax_code ?? '', 'phone' => $c->phone ?? '',
+                    'contact' => $c->contact ?? '', 'email' => $c->email ?? '',
+                    'termDays' => $c->term_days !== null ? (string) $c->term_days : '', 'address' => $c->address ?? '', 'note' => $c->note ?? '',
+                ]])->all(),
+            ];
+        }
+        if ($key === 'vehicles') {
+            $v = TruckingVehicle::orderBy('plate')->get();
+            return ['vehicles' => $v->pluck('plate')->all(), 'vehicleType' => $v->mapWithKeys(fn ($x) => [$x->plate => $x->type])->all()];
+        }
+        if ($key === '__vat') {
+            return ['vatDefault' => ['hph' => TruckingSetting::get('vat_default_hph', '8'), 'icd' => TruckingSetting::get('vat_default_icd', '0')]];
+        }
+        if ($key === '__freetime') {
+            return ['freeTimeHours' => TruckingSetting::get('free_time_hours', '4')];
+        }
+        return [];
     }
 
     /**

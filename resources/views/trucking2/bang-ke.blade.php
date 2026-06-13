@@ -23,26 +23,5 @@ window.__TRK = {
 @endsection
 
 @push('scripts')
-@include('trucking2.partials._runtime')
-@verbatim
-<script type="text/babel" data-presets="react">
-(() => {
-const { useState } = React;
-const { KePage } = window.__ui;
-
-function StatementsApp() {
-  const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
-  const [ke] = useState(B.ke || []);
-
-  return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
-      <KePage ke={ke} onNew={() => { window.location.href = ROUTES.create; }} onOpen={(st) => { window.location.href = ROUTES.view + st.id; }} />
-    </div>
-  );
-}
-
-ReactDOM.createRoot(document.getElementById("trk-root")).render(<StatementsApp />);
-})();
-</script>
-@endverbatim
+@vite('resources/js/trucking2/pages/bang-ke.jsx')
 @endpush

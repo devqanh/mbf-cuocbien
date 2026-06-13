@@ -105,6 +105,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/bang-ke/{statement}/context', [TruckingV2Controller::class, 'statementContext'])->name('statements.context')->whereNumber('statement');
             Route::get('/bang-ke/{statement}/excel', [TruckingV2Controller::class, 'exportStatement'])->name('statements.excel')->whereNumber('statement');
             Route::get('/cai-dat',   [TruckingV2Controller::class, 'settings'])->name('settings');
+            Route::get('/catalog/{type}', [TruckingV2Controller::class, 'catalogData'])->name('catalogData');   // lazy-load 1 tab
             Route::get('/bootstrap', [TruckingV2Controller::class, 'bootstrap'])->name('bootstrap');
         });
         Route::middleware('permission:shipments.update')->group(function () {

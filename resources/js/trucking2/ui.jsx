@@ -1,0 +1,611 @@
+import React from "react";
+const { useState, useMemo, useEffect } = React;
+import { I, fmtVND, fmtNum, fmtShort, fmtDate, calcCost, calcRev, calcVeh, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn } from "@trk/lib.jsx";
+import { CostPopup, RevenuePopup, CostPopupICD, RevenuePopupICD, InfoPopup, ConfigPopup, PriceList, TRACK_COLORS, colorHex } from "@trk/pop.jsx";
+
+/* components dùng chung — export ra window.__ui */
+/* ===================== summary cell button ===================== */
+function SortBtn({ k, sort, onSort, align = "left", children }) {
+  const on = sort.key === k;
+  return (
+    <button type="button" onClick={() => onSort(k)}
+      style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "transparent", border: "none", cursor: "pointer", padding: 0, font: "inherit",
+        fontSize: 11, fontWeight: 700, color: on ? "var(--accent)" : "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em",
+        flexDirection: align === "right" ? "row-reverse" : "row" }}>
+      {children}
+      <span style={{ fontSize: 9, opacity: on ? 1 : 0.4 }}>{on ? (sort.dir > 0 ? "▲" : "▼") : "↕"}</span>
+    </button>
+  );
+}
+function CellBtn({ main, sub, tone = "ink", onClick }) {
+  const [h, setH] = useState(false);
+  const color = tone === "warn" ? "var(--warn)" : tone === "good" ? "var(--good)" : "var(--ink)";
+  return (
+    <button type="button" onClick={onClick} onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
+      title="Bấm để xem & sửa chi tiết"
+      style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8,
+        background: h ? "var(--accent-weak-2)" : "transparent", border: `1px solid ${h ? "var(--accent-weak)" : "transparent"}`,
+        borderRadius: 9, padding: "6px 9px", cursor: "pointer", transition: "all .12s" }}>
+      <span style={{ textAlign: "right", minWidth: 0 }}>
+        <div className="tnum" style={{ fontSize: 13.5, fontWeight: 600, color }}>{main}</div>
+        {sub && <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 1 }}>{sub}</div>}
+      </span>
+      <span style={{ flexShrink: 0, color: h ? "var(--accent)" : "var(--ink-4)", opacity: h ? 1 : 0.45, transition: "all .12s" }}><I.open /></span>
+    </button>
+  );
+}
+
+function Badge({ children, tone }) {
+  const map = {
+    good: ["var(--good)", "var(--good-weak)"], warn: ["var(--warn)", "var(--warn-weak)"],
+    blue: ["var(--accent)", "var(--accent-weak)"], gray: ["var(--ink-3)", "#eef0f3"],
+    amber: ["#b45309", "#fef3c7"],
+  };
+  const [fg, bg] = map[tone] || map.gray;
+  return <span style={{ fontSize: 11.5, fontWeight: 600, color: fg, background: bg, padding: "3px 9px", borderRadius: 999, whiteSpace: "nowrap" }}>{children}</span>;
+}
+
+/* clickable info cell with pencil affordance */
+function EditCell({ children, onClick }) {
+  const [h, setH] = useState(false);
+  return (
+    <div onClick={onClick} onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)} title="Bấm để sửa thông tin"
+      style={{ position: "relative", cursor: "pointer", borderRadius: 8, padding: "4px 24px 4px 7px", margin: "-4px -8px",
+        background: h ? "var(--accent-weak-2)" : "transparent", transition: "background .12s" }}>
+      {children}
+      <span style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", color: "var(--accent)", opacity: h ? 1 : 0, transition: "opacity .12s" }}><I.edit /></span>
+    </div>
+  );
+}
+
+/* ===================== table row ===================== */
+const TH = ({ children, w, align = "left", sticky }) => (
+  <th style={{ width: w, textAlign: align, padding: "11px 14px", fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em",
+    background: "#fafbfc", borderBottom: "1px solid var(--line)", position: "sticky", top: 0, left: sticky ? 0 : "auto", zIndex: sticky ? 3 : 2, whiteSpace: "nowrap" }}>{children}</th>
+);
+const TD = ({ children, align = "left", sticky, pad = "9px 14px" }) => (
+  <td style={{ padding: pad, fontSize: 13.5, textAlign: align, borderBottom: "1px solid var(--line-2)", verticalAlign: "middle",
+    position: sticky ? "sticky" : "static", left: sticky ? 0 : "auto", background: sticky ? "#fff" : "transparent", zIndex: sticky ? 1 : "auto" }}>{children}</td>
+);
+
+/* Bộ định giá lô theo BẢNG GIÁ của khách — dùng CHUNG cho Tạo bảng kê & Tính lại khi xem. */
+function makePricer(cfg) {
+  const locationCode = cfg.locationCode || {};
+  const codeOf = (name) => { const v = (name || "").toString().trim(); return locationCode[v] || v; };
+  const cont20 = (s) => /20/.test(s.contType || "");
+  const connOf = (s) => { const ft = calcFreeTime(s, cfg.freeTimeHours); return ft ? (ft.connect ? "Connect" : "Disconnect") : null; };
+  const isExport = (s) => (s.io || "").toString().toLowerCase().includes("xu");
+  const kindOf = (s) => s.cru ? (isExport(s) ? "External CRU transportation" : "Internal CRU transportation") : "Transportation 1 way of Import/Export";
+  const nk = (v) => (v || "").toString().trim().toLowerCase();
+  const priceFor = (s) => {
+    const list = ((cfg.customerInfo || {})[s.customer] || {}).priceList || [];
+    const fromRaw = (s.from || "").trim(), dropRaw = (s.to || "").trim();
+    const fromC = codeOf(s.from), dropC = codeOf(s.to), conn = connOf(s), kind = kindOf(s);
+    const eq = (a, b) => !!a && a === b;
+    const fromMatch = (p) => eq(codeOf(p.from), fromC) || eq((p.from || "").trim(), fromRaw);
+    const dropMatch = (p) => {
+      if (!dropRaw) return true;
+      const c = [codeOf(p.to1), (p.to1 || "").trim(), codeOf(p.loc), (p.loc || "").trim()];
+      return c.includes(dropC) || c.includes(dropRaw);
+    };
+    const kindMatch = (p) => nk(p.kind) === nk(kind);
+    let p = list.find((p) => fromMatch(p) && dropMatch(p) && kindMatch(p) && (!conn || (p.conn || "Connect") === conn));
+    if (!p) p = list.find((p) => fromMatch(p) && dropMatch(p) && kindMatch(p));
+    const is20 = cont20(s);
+    const cuoc = p ? toNum(is20 ? p.transFee20 : p.transFee40) : 0;
+    const dau = p ? toNum(is20 ? p.fuelFee20 : p.fuelFee40) : 0;
+    // Chi hộ = các khoản CHI PHÍ lô được tick "Chi hộ" (billable), thu lại từ khách
+    const items = (s.cost && s.cost.items) || [];
+    const choHoItems = items.filter((e) => e.billable).map((e) => ({ item: e.item || "(khoản)", amount: toNum(e.amount) }));
+    const costItems = items.map((e) => ({ item: e.item || "(khoản)", amount: toNum(e.amount), billable: !!e.billable, src: e.src || "" }));
+    const chiHo = choHoItems.reduce((a, e) => a + e.amount, 0);
+    const route = p ? ((p.from || "?") + " → " + (p.to1 || p.loc || "?")) : null;
+    const noDrop = !dropRaw && !!p;
+    return { matched: !!p, conn, kind, is20, cuoc, dau, chiHo, choHoItems, costItems, route, noDrop, phaiThu: cuoc + dau + chiHo };
+  };
+  return { priceFor, codeOf, connOf, cont20, kindOf };
+}
+
+function StatementForm({ hph, icd, cfg, onCancel, onSaved }) {
+  const { useState, useMemo } = React;
+  const customers = cfg.customers || [];
+  const [cust, setCust] = useState(customers[0] || "");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [picked, setPicked] = useState({}); // id -> bool
+  const info = (cfg.customerInfo || {})[cust] || {};
+  const today = new Date().toISOString().slice(0, 10);
+
+  // ----- Định giá lô theo BẢNG GIÁ của khách (dùng factory chung) -----
+  const { priceFor } = makePricer(cfg);
+  const all = useMemo(() => {
+    const mk = (s, sheet, date) => ({ s, sheet, date, pr: priceFor(s) });
+    const rows = [];
+    hph.forEach((s) => rows.push(mk(s, "HPH", s.contRa || s.sailDate || s.rev?.hanTT || "")));
+    icd.forEach((s) => rows.push(mk(s, "ICD", s.contRa || s.contDen || s.rev?.hanTT || "")));
+    return rows.filter((x) => x.s.customer === cust)
+      .filter((x) => (!from || !x.date || x.date >= from) && (!to || !x.date || x.date <= to));
+  }, [hph, icd, cust, from, to, cfg]);
+
+  const [amtOv, setAmtOv] = useState({}); // per-ship override of phải thu
+  const sel = all.filter((x) => picked[x.s.id] !== false); // default all selected
+  const lineAmt = (x) => (amtOv[x.s.id] != null ? amtOv[x.s.id] : x.pr.phaiThu);
+  const tongThu = sel.reduce((a, x) => a + lineAmt(x), 0);
+  const keNo = "BK-" + today.replace(/-/g, "").slice(2) + "-" + (cust ? cust.slice(0, 3).toUpperCase() : "XXX");
+
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    if (!sel.length || saving) return;
+    setSaving(true);
+    const lines = sel.map((x) => {
+      const s = x.s;
+      const thanhLy = ((s.cost && s.cost.items) || []).reduce((a, e) => a + (e.src === "thanhLyFee" ? toNum(e.amount) : 0), 0);
+      const note = (s.ghiChu && s.ghiChu.trim()) || [s.from, s.to].filter(Boolean).join(" → ") + (x.pr.conn ? " · " + x.pr.conn : "");
+      return {
+        id: s.id, booking: s.booking, sheet: x.sheet, io: s.io,
+        declNo: s.declNo || "", contType: s.contType || "", inv: s.inv || "", contNo: s.contNo || "", bks: s.bksVao || s.bksRa || "",
+        from: s.from, to: s.to, date: x.date,
+        contLabel: (x.sheet === "HPH" ? (s.qty + " × " + s.contType) : ((s.contNo || s.contType) + (s.contNo ? " · " + s.contType : ""))),
+        phaiThu: lineAmt(x), cuoc: lineAmt(x), thanhLy, note,
+        // snapshot chi tiết khoản để hiển thị đối soát TĨNH (không cần query realtime khi xem)
+        detail: { matched: x.pr.matched, cuoc: x.pr.cuoc, dau: x.pr.dau, chiHo: x.pr.chiHo, choHoItems: x.pr.choHoItems, costItems: x.pr.costItems, phaiThu: x.pr.phaiThu },
+      };
+    });
+    const payload = { id: Date.now(), no: keNo, customer: cust, info, date: today, from, to, lines, tongThu, payments: [], createdAt: new Date().toISOString() };
+    // onSaved có thể async + trả về false để huỷ (vd bấm Huỷ ở confirm) → giữ nguyên trang
+    let result;
+    try { result = await Promise.resolve(onSaved && onSaved(payload)); }
+    catch (e) { setSaving(false); return; }
+    if (result === false) { setSaving(false); return; }   // huỷ → cho bấm lại; thành công thì trang điều hướng đi
+  };
+
+  const footer = (
+    <div className="ke-noprint" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 8, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
+      <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{sel.length} lô · tổng đang chọn: <b className="tnum" style={{ color: "var(--ink)" }}>{fmtVND(tongThu)}</b></div>
+      <div style={{ display: "flex", gap: 10 }}>
+        <Btn onClick={onCancel}>Hủy</Btn>
+        <Btn onClick={() => window.print()}>In thử</Btn>
+        <Btn variant="primary" onClick={save} disabled={saving}>{saving ? "Đang lưu…" : "Lưu bảng kê"}</Btn>
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      {/* controls */}
+      <div className="ke-noprint" style={{ display: "flex", gap: 12, alignItems: "flex-end", padding: "12px 0 14px", borderBottom: "1px solid var(--line-2)", flexWrap: "wrap" }}>
+        <label style={{ display: "block" }}>
+          <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>Khách hàng</div>
+          <div style={{ position: "relative" }}>
+            <select value={cust} onChange={(e) => { setCust(e.target.value); setPicked({}); }}
+              style={{ width: 240, appearance: "none", WebkitAppearance: "none", padding: "9px 28px 9px 12px", fontSize: 13.5, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 10, background: "#fff", cursor: "pointer" }}>
+              {customers.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: "var(--ink-3)", pointerEvents: "none" }}><I.chev /></span>
+          </div>
+        </label>
+        <label style={{ display: "block" }}>
+          <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>Cont ra từ ngày</div>
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ padding: "8px 10px", fontSize: 13, border: "1px solid var(--line)", borderRadius: 9, outline: "none", colorScheme: "light" }} />
+        </label>
+        <label style={{ display: "block" }}>
+          <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>đến ngày</div>
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ padding: "8px 10px", fontSize: 13, border: "1px solid var(--line)", borderRadius: 9, outline: "none", colorScheme: "light" }} />
+        </label>
+        <div style={{ flex: 1 }} />
+        <div style={{ fontSize: 12, color: "var(--ink-4)" }}>{all.length} lô có phải thu</div>
+      </div>
+
+      {/* printable statement */}
+      <div className="ke-print" style={{ padding: "16px 4px 4px", background: "#fff" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 20, marginBottom: 14 }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em" }}>BẢNG KÊ CẦN THU</div>
+            <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 3 }} className="tnum">Số: {keNo} · Ngày lập: {fmtDate(today)}{(from || to) ? ` · Cont ra: ${fmtDate(from) || "…"} – ${fmtDate(to) || "…"}` : ""}</div>
+          </div>
+          <div style={{ textAlign: "right", fontSize: 12 }}>
+            <div style={{ fontWeight: 700, color: "var(--accent)" }}>MBF JOINT STOCK COMPANY</div>
+            <div style={{ color: "var(--ink-3)", marginTop: 2 }}>http://mbf.com.vn · 84-24-39449616</div>
+          </div>
+        </div>
+        <div style={{ background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", borderRadius: 10, padding: "11px 14px", marginBottom: 14, fontSize: 12.5 }}>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>{cust || "—"}</div>
+          <div style={{ color: "var(--ink-2)", marginTop: 3, display: "flex", gap: 16, flexWrap: "wrap" }}>
+            {info.taxCode && <span>MST: <b className="tnum">{info.taxCode}</b></span>}
+            {info.address && <span>Địa chỉ: {info.address}</span>}
+            {info.contact && <span>Liên hệ: {info.contact}</span>}
+            {info.termDays && <span>Hạn TT: {info.termDays} ngày</span>}
+          </div>
+        </div>
+
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ background: "#fafbfc" }}>
+              <th className="ke-noprint" style={{ width: 34, padding: "9px 8px", borderBottom: "1.5px solid var(--line)" }}></th>
+              <th style={{ width: 34, textAlign: "center", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)" }}>#</th>
+              <th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Lô / Booking</th>
+              <th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Tuyến · Cont</th>
+              <th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Cont ra</th>
+              <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Phải thu</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sel.length === 0 && <tr><td colSpan={6} style={{ padding: "24px", textAlign: "center", color: "var(--ink-4)" }}>Không có lô nào phù hợp.</td></tr>}
+            {all.map((x, i) => {
+              const on = picked[x.s.id] !== false;
+              return (
+                <tr key={x.s.id} style={{ opacity: on ? 1 : 0.4 }}>
+                  <td className="ke-noprint" style={{ textAlign: "center", padding: "8px", borderBottom: "1px solid var(--line-2)" }}>
+                    <input type="checkbox" checked={on} onChange={(e) => setPicked((p) => ({ ...p, [x.s.id]: e.target.checked }))} style={{ width: 16, height: 16, accentColor: "var(--accent)", cursor: "pointer" }} />
+                  </td>
+                  <td className="tnum" style={{ textAlign: "center", padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-4)" }}>{i + 1}</td>
+                  <td style={{ padding: "8px", borderBottom: "1px solid var(--line-2)" }}>
+                    <div style={{ fontWeight: 600 }} className="tnum">{x.s.booking || "—"}</div>
+                    <div style={{ fontSize: 11, color: "var(--ink-4)" }}>{x.sheet} · {x.s.io}</div>
+                  </td>
+                  <td style={{ padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>
+                    {x.s.from} → {x.s.to}<div style={{ fontSize: 11, color: "var(--ink-4)" }} className="tnum">{x.sheet === "HPH" ? (x.s.qty + " × " + x.s.contType) : ((x.s.contNo || x.s.contType) + (x.s.contNo ? " · " + x.s.contType : ""))}</div>
+                    <div className="ke-noprint" style={{ fontSize: 10.5, marginTop: 3 }}>
+                      {x.pr.matched
+                        ? <span style={{ color: "var(--good)" }}>✓ Bảng giá · {x.s.cru ? (/xu/i.test(x.s.io || "") ? "CRU ngoại" : "CRU nội") : "1 chiều"} · {x.pr.conn || "—"} · {x.pr.is20 ? "20FT" : "40FT"} · <span className="tnum">{x.pr.route}</span>{x.pr.noDrop ? <span style={{ color: "var(--warn)" }}> (lô chưa có Nơi hạ — khớp theo FROM)</span> : null} — <span className="tnum">Cước {fmtNum(x.pr.cuoc)} + Dầu {fmtNum(x.pr.dau)}{x.pr.chiHo ? " + Chi hộ " + fmtNum(x.pr.chiHo) : ""} = {fmtNum(x.pr.phaiThu)} ₫</span></span>
+                        : <span style={{ color: "var(--warn)" }}>⚠ Chưa khớp bảng giá{x.pr.chiHo ? " · mới có Chi hộ " + fmtShort(x.pr.chiHo) : " · phải thu 0"}</span>}
+                    </div>
+                  </td>
+                  <td className="tnum" style={{ padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{fmtDate(x.date) || "—"}</td>
+                  <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: "1px solid var(--line-2)", fontWeight: 600 }}>
+                    <div style={{ position: "relative", width: 150, marginLeft: "auto" }}>
+                      <input inputMode="numeric" value={(lineAmt(x) || 0).toLocaleString("vi-VN")} onChange={(e) => setAmtOv((o) => ({ ...o, [x.s.id]: parseInt(e.target.value.replace(/[^\d]/g, ""), 10) || 0 }))} className="tnum"
+                        style={{ width: "100%", padding: "6px 22px 6px 8px", fontSize: 12.5, textAlign: "right", fontWeight: 600, border: "1px solid var(--line)", borderRadius: 7, outline: "none" }}
+                        onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
+                      <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)", fontSize: 12, pointerEvents: "none" }}>₫</span>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr style={{ fontWeight: 700 }}>
+              <td className="ke-noprint" style={{ borderTop: "1.5px solid var(--line)" }}></td>
+              <td colSpan={3} style={{ padding: "11px 8px", borderTop: "1.5px solid var(--line)", textAlign: "right" }}>TỔNG PHẢI THU</td>
+              <td className="tnum" style={{ textAlign: "right", padding: "11px 8px", borderTop: "1.5px solid var(--line)" }} colSpan={2}>{fmtVND(tongThu)}</td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <div className="ke-noprint" style={{ marginTop: 14, fontSize: 12.5, color: "var(--ink-4)" }}>Sau khi lưu, mở bảng kê để nhập các đợt khách thanh toán và theo dõi công nợ.</div>
+      </div>
+      {footer}
+    </div>
+  );
+}
+
+/* Thân chi tiết bảng kê (in được) — dùng CHUNG cho modal & trang xem riêng.
+   detailById: { [shipmentId]: { found, matched, cuoc, dau, choHoItems[], costItems[], phaiThu } } để đối soát. */
+function StatementDetailBody({ st, onUpdate, detailById = {} }) {
+  const { useState } = React;
+  const [payments, setPayments] = useState(st.payments || []);
+  const sync = (arr) => { setPayments(arr); onUpdate && onUpdate({ ...st, payments: arr }); };
+  const setP = (id, np) => sync(payments.map((p) => (p.id === id ? { ...p, ...np } : p)));
+  const addP = () => sync([...payments, { id: Date.now() + Math.random(), date: new Date().toISOString().slice(0, 10), amount: "", note: "" }]);
+  const delP = (id) => sync(payments.filter((p) => p.id !== id));
+  const setLine = (id, amount) => onUpdate && onUpdate({ ...st, lines: (st.lines || []).map((l) => (l.id === id ? { ...l, phaiThu: amount } : l)) });
+  const tongThu = (st.lines || []).reduce((a, l) => a + (l.phaiThu || 0), 0);
+  const grp = (d) => { d = (d || "").toString().replace(/[^\d]/g, ""); return d ? d.replace(/\B(?=(\d{3})+(?!\d))/g, ".") : ""; };
+  const daTT = payments.reduce((a, p) => a + toNum(p.amount), 0);
+  const conNo = tongThu - daTT;
+  const info = st.info || {};
+  const setPeriod = (k, v) => onUpdate && onUpdate({ ...st, [k]: v });   // sửa kỳ cont ra (from/to)
+  const th = (txt, align) => <th style={{ textAlign: align || "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>{txt}</th>;
+  return (
+      <div className="ke-print" style={{ padding: "16px 4px 4px", background: "#fff" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 20, marginBottom: 14 }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em" }}>BẢNG KÊ CẦN THU</div>
+            <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 3 }} className="tnum">Số: {st.no} · Ngày lập: {fmtDate(st.date)}
+              <span className="ke-printonly" style={{ display: "none" }}>{(st.from || st.to) ? ` · Cont ra: ${fmtDate(st.from) || "…"} – ${fmtDate(st.to) || "…"}` : ""}</span>
+            </div>
+            {/* Kỳ cont ra — sửa được để tính lại theo khoảng ngày (ẩn khi in, in dùng dòng text trên) */}
+            <div className="ke-noprint" style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 7, fontSize: 12.5, color: "var(--ink-3)", flexWrap: "wrap" }}>
+              <span style={{ fontWeight: 600 }}>Cont ra từ</span>
+              <input type="date" value={st.from || ""} onChange={(e) => setPeriod("from", e.target.value)}
+                style={{ padding: "5px 8px", fontSize: 12.5, border: "1px solid var(--line)", borderRadius: 7, outline: "none", colorScheme: "light" }} />
+              <span style={{ fontWeight: 600 }}>đến</span>
+              <input type="date" value={st.to || ""} onChange={(e) => setPeriod("to", e.target.value)}
+                style={{ padding: "5px 8px", fontSize: 12.5, border: "1px solid var(--line)", borderRadius: 7, outline: "none", colorScheme: "light" }} />
+              {(st.from || st.to) && <button type="button" onClick={() => onUpdate && onUpdate({ ...st, from: "", to: "" })} title="Xóa khoảng ngày"
+                style={{ border: "none", background: "transparent", color: "var(--ink-4)", cursor: "pointer", fontSize: 12, padding: "2px 4px" }}>✕</button>}
+            </div>
+          </div>
+          <div style={{ textAlign: "right", fontSize: 12 }}>
+            <div style={{ fontWeight: 700, color: "var(--accent)" }}>MBF JOINT STOCK COMPANY</div>
+            <div style={{ color: "var(--ink-3)", marginTop: 2 }}>http://mbf.com.vn · 84-24-39449616</div>
+          </div>
+        </div>
+        <div style={{ background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", borderRadius: 10, padding: "11px 14px", marginBottom: 14, fontSize: 12.5 }}>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>{st.customer}</div>
+          <div style={{ color: "var(--ink-2)", marginTop: 3, display: "flex", gap: 16, flexWrap: "wrap" }}>
+            {info.taxCode && <span>MST: <b className="tnum">{info.taxCode}</b></span>}
+            {info.address && <span>Địa chỉ: {info.address}</span>}
+            {info.contact && <span>Liên hệ: {info.contact}</span>}
+            {info.termDays && <span>Hạn TT: {info.termDays} ngày</span>}
+          </div>
+        </div>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead><tr style={{ background: "#fafbfc" }}>{th("#", "center")}{th("Lô / Booking")}{th("Tuyến · Cont")}{th("Cont ra")}{th("Phải thu", "right")}</tr></thead>
+          <tbody>
+            {st.lines.map((l, i) => {
+              const d = detailById[l.id];
+              const diff = d && d.found && (d.phaiThu || 0) !== (l.phaiThu || 0);
+              return (
+              <React.Fragment key={l.id}>
+              <tr>
+                <td className="tnum" style={{ textAlign: "center", padding: "8px", borderBottom: d ? "none" : "1px solid var(--line-2)", color: "var(--ink-4)", verticalAlign: "top" }}>{i + 1}</td>
+                <td style={{ padding: "8px", borderBottom: d ? "none" : "1px solid var(--line-2)", verticalAlign: "top" }}><div style={{ fontWeight: 600 }} className="tnum">{l.booking || "—"}</div><div style={{ fontSize: 11, color: "var(--ink-4)" }}>{l.sheet} · {l.io}</div></td>
+                <td style={{ padding: "8px", borderBottom: d ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top" }}>{l.from} → {l.to}<div style={{ fontSize: 11, color: "var(--ink-4)" }} className="tnum">{l.contLabel}</div></td>
+                <td className="tnum" style={{ padding: "8px", borderBottom: d ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top" }}>{fmtDate(l.date) || "—"}</td>
+                <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d ? "none" : "1px solid var(--line-2)", fontWeight: 600, verticalAlign: "top" }}>
+                  <span className="ke-noprint"><span style={{ position: "relative", display: "inline-block", width: 150 }}>
+                    <input inputMode="numeric" value={(l.phaiThu || 0).toLocaleString("vi-VN")} onChange={(e) => setLine(l.id, parseInt(e.target.value.replace(/[^\d]/g, ""), 10) || 0)} className="tnum"
+                      style={{ width: "100%", padding: "6px 22px 6px 8px", fontSize: 12.5, textAlign: "right", fontWeight: 600, border: "1px solid var(--line)", borderRadius: 7, outline: "none" }}
+                      onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
+                    <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)", fontSize: 12, pointerEvents: "none" }}>₫</span>
+                  </span></span>
+                  <span style={{ display: "none" }} className="ke-printonly">{fmtVND(l.phaiThu)}</span>
+                </td>
+              </tr>
+              {d && d.found && (
+                <tr>
+                  <td style={{ borderBottom: "1px solid var(--line-2)" }}></td>
+                  <td colSpan={4} style={{ padding: "0 8px 9px", borderBottom: "1px solid var(--line-2)" }}>
+                    <div style={{ fontSize: 11.5, color: "var(--ink-3)", display: "flex", flexWrap: "wrap", alignItems: "center", gap: "3px 12px", lineHeight: 1.7 }}>
+                      {!d.matched && <span style={{ color: "var(--warn)", fontWeight: 700 }}>⚠ chưa khớp bảng giá</span>}
+                      <span>Cước <b className="tnum" style={{ color: "var(--ink-2)" }}>{fmtNum(d.cuoc)}</b></span>
+                      <span>+ Dầu <b className="tnum" style={{ color: "var(--ink-2)" }}>{fmtNum(d.dau)}</b></span>
+                      {d.choHoItems.map((c, j) => <span key={"h" + j} style={{ color: "var(--good)" }}>+ Chi hộ · {c.item} <b className="tnum">{fmtNum(c.amount)}</b></span>)}
+                      <span style={{ fontWeight: 700 }}>= <b className="tnum" style={{ color: "var(--accent)" }}>{fmtNum(d.phaiThu)} ₫</b></span>
+                      {diff && <span style={{ color: "var(--warn)", fontWeight: 600 }}>≠ đã lưu {fmtNum(l.phaiThu)} — bấm “Tính lại”</span>}
+                      {d.costItems.filter((c) => !c.billable).length > 0 &&
+                        <span style={{ color: "var(--ink-4)" }}>· Chi phí công ty (không thu khách): {d.costItems.filter((c) => !c.billable).map((c) => c.item + " " + fmtNum(c.amount)).join(" · ")}</span>}
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {d && !d.found && (
+                <tr><td style={{ borderBottom: "1px solid var(--line-2)" }}></td><td colSpan={4} style={{ padding: "0 8px 9px", borderBottom: "1px solid var(--line-2)", fontSize: 11.5, color: "var(--ink-4)" }}>Lô không còn trong hệ thống — giữ số đã lưu, không tính lại được.</td></tr>
+              )}
+              </React.Fragment>
+            );})}
+          </tbody>
+          <tfoot><tr style={{ fontWeight: 700 }}>
+            <td colSpan={4} style={{ padding: "11px 8px", borderTop: "1.5px solid var(--line)", textAlign: "right" }}>TỔNG PHẢI THU</td>
+            <td className="tnum" style={{ textAlign: "right", padding: "11px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtVND(tongThu)}</td>
+          </tr></tfoot>
+        </table>
+
+        {/* payments / công nợ */}
+        <div style={{ marginTop: 18 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--ink-2)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>Khách thanh toán (nhiều đợt)</div>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+            <thead><tr style={{ background: "#fafbfc" }}>{th("Đợt", "center")}{th("Ngày thu")}{th("Ghi chú")}{th("Số tiền", "right")}<th className="ke-noprint" style={{ width: 34, borderBottom: "1.5px solid var(--line)" }}></th></tr></thead>
+            <tbody>
+              {payments.length === 0 && <tr><td colSpan={5} style={{ padding: "14px", textAlign: "center", color: "var(--ink-4)" }}>Chưa có đợt thanh toán nào.</td></tr>}
+              {payments.map((p, i) => (
+                <tr key={p.id}>
+                  <td className="tnum" style={{ textAlign: "center", padding: "6px 8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-4)" }}>{i + 1}</td>
+                  <td style={{ padding: "6px 8px", borderBottom: "1px solid var(--line-2)" }}>
+                    <input type="date" value={p.date || ""} onChange={(e) => setP(p.id, { date: e.target.value })}
+                      style={{ width: "100%", padding: "6px 8px", fontSize: 12.5, border: "1px solid var(--line)", borderRadius: 7, outline: "none", colorScheme: "light" }} />
+                  </td>
+                  <td style={{ padding: "6px 8px", borderBottom: "1px solid var(--line-2)" }}>
+                    <input value={p.note || ""} onChange={(e) => setP(p.id, { note: e.target.value })} placeholder="VD: chuyển khoản…"
+                      style={{ width: "100%", padding: "6px 8px", fontSize: 12.5, border: "1px solid var(--line)", borderRadius: 7, outline: "none" }} />
+                  </td>
+                  <td style={{ padding: "6px 8px", borderBottom: "1px solid var(--line-2)" }}>
+                    <div style={{ position: "relative" }}>
+                      <input inputMode="numeric" value={grp(p.amount)} onChange={(e) => setP(p.id, { amount: e.target.value.replace(/[^\d]/g, "") })} placeholder="0" className="tnum"
+                        style={{ width: "100%", padding: "6px 24px 6px 8px", fontSize: 12.5, textAlign: "right", fontWeight: 600, border: "1px solid var(--line)", borderRadius: 7, outline: "none" }} />
+                      <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)", fontSize: 12, pointerEvents: "none" }}>₫</span>
+                    </div>
+                  </td>
+                  <td className="ke-noprint" style={{ textAlign: "center", padding: "6px 4px", borderBottom: "1px solid var(--line-2)" }}>
+                    <button type="button" onClick={() => delP(p.id)} title="Xóa đợt"
+                      style={{ width: 26, height: 26, display: "grid", placeItems: "center", border: "none", borderRadius: 6, background: "transparent", color: "var(--ink-4)", cursor: "pointer" }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = "#fce8e8"; e.currentTarget.style.color = "var(--danger)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--ink-4)"; }}><I.trash /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <button type="button" onClick={addP} className="ke-noprint"
+            style={{ display: "inline-flex", alignItems: "center", gap: 7, margin: "8px 0 2px", padding: "6px 11px", fontSize: 12.5, fontWeight: 600, border: "none", borderRadius: 7, background: "var(--accent-weak)", color: "var(--accent)", cursor: "pointer" }}>
+            <I.plus /> Thêm đợt thanh toán
+          </button>
+        </div>
+
+        <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end" }}>
+          <div style={{ width: 300, background: "#fafbfc", border: "1px solid var(--line)", borderRadius: 10, padding: "12px 16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}><span style={{ color: "var(--ink-3)" }}>Tổng phải thu</span><b className="tnum">{fmtVND(tongThu)}</b></div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}><span style={{ color: "var(--ink-3)" }}>Đã thanh toán ({payments.length} đợt)</span><b className="tnum" style={{ color: "var(--good)" }}>{fmtVND(daTT)}</b></div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, paddingTop: 8, borderTop: "1px solid var(--line)" }}><span style={{ fontWeight: 600 }}>CÒN PHẢI THU</span><b className="tnum" style={{ color: conNo > 0 ? "var(--warn)" : "var(--good)" }}>{fmtVND(Math.max(0, conNo))}</b></div>
+          </div>
+        </div>
+      </div>
+  );
+}
+
+/* Hàng nút thao tác bảng kê (Xóa · trạng thái dirty · Lưu · In) dùng chung. */
+function StatementActions({ st, onDelete, onSave, isDirty, onClose, closeLabel = "Đóng" }) {
+  const { useState } = React;
+  const dirty = !!(isDirty && isDirty(st.id));
+  const [saving, setSaving] = useState(false);
+  const doSave = () => { if (saving || !dirty) return; setSaving(true); Promise.resolve(onSave && onSave()).then(() => setSaving(false)).catch(() => setSaving(false)); };
+  return (
+    <div className="ke-noprint" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+      <button type="button" onClick={() => onDelete && onDelete(st.id)}
+        style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", fontSize: 13, fontWeight: 500, border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--ink-3)", cursor: "pointer" }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = "#fce8e8"; e.currentTarget.style.color = "var(--danger)"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "var(--ink-3)"; }}>
+        <I.trash /> Xóa bảng kê
+      </button>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {dirty && <span style={{ fontSize: 12, color: "var(--warn)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--warn)" }} />Có thay đổi chưa lưu</span>}
+        {onClose && <Btn onClick={onClose}>{closeLabel}</Btn>}
+        <Btn variant="primary" onClick={doSave} disabled={!dirty || saving}>{saving ? "Đang lưu…" : "Lưu"}</Btn>
+        <Btn onClick={() => window.print()}>In / Xuất PDF</Btn>
+      </div>
+    </div>
+  );
+}
+
+function SavedStatementModal({ st, onClose, onDelete, onUpdate, onSave, isDirty }) {
+  const footer = <StatementActions st={st} isDirty={isDirty} onSave={onSave} onClose={onClose}
+    onDelete={(id) => { onDelete(id); onClose(); }} />;
+  return (
+    <Modal title="Bảng kê cần thu" subtitle={st.no + " · " + st.customer} onClose={onClose} footer={footer} width={940} icon={<I.fx />}>
+      <StatementDetailBody st={st} onUpdate={onUpdate} />
+    </Modal>
+  );
+}
+
+/* Trang xem bảng kê đã lưu (route riêng) — chi tiết đầy đủ như lúc tạo. */
+function SavedStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUrl, onExcel, onRecalc, detailById }) {
+  const recalcDiff = detailById && (st.lines || []).some((l) => { const d = detailById[l.id]; return d && d.found && (d.phaiThu || 0) !== (l.phaiThu || 0); });
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
+      <div className="ke-noprint" style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 22px", background: "#fff", borderBottom: "1px solid var(--line)" }}>
+        <a href={backUrl} title="Về danh sách bảng kê"
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", fontSize: 13, fontWeight: 600, color: "var(--ink-2)", textDecoration: "none", border: "1px solid var(--line)", borderRadius: 9 }}>
+          <span style={{ transform: "rotate(180deg)", display: "inline-flex" }}><I.arrow /></span> Bảng kê
+        </a>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.01em" }}>Bảng kê cần thu</div>
+          <div className="tnum" style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{st.no} · {st.customer}</div>
+        </div>
+        {onRecalc && <button type="button" onClick={onRecalc} title="Tính lại phải thu từ dữ liệu lô hàng hiện tại"
+          style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 15px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: recalcDiff ? "#fff" : "var(--ink-2)", background: recalcDiff ? "var(--warn)" : "#fff", border: recalcDiff ? "none" : "1px solid var(--line)", borderRadius: 9 }}>
+          <I.fx /> Tính lại{recalcDiff ? " (có chênh lệch)" : ""}
+        </button>}
+        {onExcel && <button type="button" onClick={onExcel}
+          style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 15px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "#fff", background: "var(--good)", border: "none", borderRadius: 9 }}>
+          <I.check /> Xuất Excel
+        </button>}
+      </div>
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "22px" }}>
+        <div style={{ maxWidth: 940, margin: "0 auto", background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "8px 22px 18px" }}>
+          <StatementDetailBody st={st} onUpdate={onUpdate} detailById={detailById || {}} />
+          <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
+            <StatementActions st={st} isDirty={isDirty} onSave={onSave} onDelete={(id) => { Promise.resolve(onDelete && onDelete(id)).then(() => { window.location.href = backUrl; }); }} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BangGiaPage({ cfg, setCfg, onImported, loadPrices }) {
+  const { useState, useEffect } = React;
+  const customers = cfg.customers || [];
+  const info = cfg.customerInfo || {};
+  const [sel, setSel] = useState(customers[0] || null);
+  const cur = sel != null && customers.includes(sel) ? sel : (customers[0] || null);
+  const data = (cur && info[cur]) || {};
+  const loaded = Array.isArray(data.priceList);   // có key priceList = đã lazy-load xong
+  const [loadingCur, setLoadingCur] = useState(false);
+  // Lazy-load bảng giá của khách đang chọn nếu chưa có (priceList chưa phải mảng)
+  useEffect(() => {
+    if (cur && loadPrices && !Array.isArray((info[cur] || {}).priceList)) {
+      setLoadingCur(true);
+      Promise.resolve(loadPrices(cur)).finally(() => setLoadingCur(false));
+    }
+  }, [cur]);
+  const setPrice = (arr) => setCfg("customerInfo", { ...info, [cur]: { ...data, priceList: arr } });
+  const priceImported = (arr) => (onImported ? onImported(cur, arr) : setPrice(arr));
+  return (
+    <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
+      {/* customer list */}
+      <div style={{ width: 240, flexShrink: 0, borderRight: "1px solid var(--line)", background: "#fff", overflowY: "auto", padding: "14px 12px" }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em", padding: "2px 8px 8px" }}>Khách hàng</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+          {customers.map((name) => {
+            const active = cur === name;
+            const ci = info[name] || {};
+            const n = Array.isArray(ci.priceList) ? ci.priceList.length : (ci.priceCount || 0);
+            return (
+              <button key={name} type="button" onClick={() => setSel(name)}
+                style={{ textAlign: "left", border: "none", cursor: "pointer", borderRadius: 8, padding: "9px 11px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                  background: active ? "var(--accent-weak)" : "transparent", color: active ? "var(--accent)" : "var(--ink)", fontWeight: active ? 600 : 400, fontSize: 13.5 }}
+                onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = "var(--line-2)"; }}
+                onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = "transparent"; }}>
+                <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
+                {n > 0 && <span className="tnum" style={{ fontSize: 11, fontWeight: 600, color: active ? "var(--accent)" : "var(--ink-4)", background: active ? "#fff" : "var(--line-2)", padding: "1px 7px", borderRadius: 999 }}>{n}</span>}
+              </button>
+            );
+          })}
+          {!customers.length && <div style={{ padding: "16px 8px", fontSize: 12.5, color: "var(--ink-4)" }}>Chưa có khách hàng. Thêm trong Cấu hình → Khách hàng.</div>}
+        </div>
+      </div>
+      {/* price list */}
+      <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "24px 28px 40px" }}>
+        {cur ? (
+          <div style={{ maxWidth: 880, margin: "0 auto" }}>
+            <div style={{ marginBottom: 16 }}>
+              <h1 style={{ margin: 0, fontSize: 21, fontWeight: 700, letterSpacing: "-0.02em" }}>Bảng giá đã gửi</h1>
+              <div style={{ fontSize: 13.5, color: "var(--ink-3)", marginTop: 3 }}>{cur}{data.taxCode ? ` · MST ${data.taxCode}` : ""}</div>
+            </div>
+            <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "16px 18px" }}>
+              {loaded
+                ? <PriceList rows={data.priceList || []} onChange={setPrice} onImported={priceImported} cfg={cfg} customer={cur} />
+                : <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "40px", color: "var(--ink-4)", fontSize: 13.5 }}><i className="bi bi-arrow-repeat" style={{ animation: "trk-spin 0.7s linear infinite" }} /> Đang tải bảng giá…</div>}
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "grid", placeItems: "center", height: "100%", color: "var(--ink-4)", fontSize: 13.5 }}>Chọn một khách hàng để xem bảng giá.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function KePage({ ke, onNew, onOpen }) {
+  return (
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", padding: "20px 22px 24px", overflow: "auto" }}>
+      <div style={{ maxWidth: 1000, width: "100%", margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 18 }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em" }}>Bảng kê cần thu</h1>
+            <div style={{ fontSize: 13, color: "var(--ink-3)", marginTop: 3 }}>{ke.length} bảng kê đã tạo</div>
+          </div>
+          <button type="button" onClick={onNew}
+            style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 16px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "#fff", background: "var(--accent)", border: "none", borderRadius: 10, boxShadow: "0 1px 2px rgba(42,111,219,.4)" }}>
+            <I.plus /> Tạo bảng kê mới
+          </button>
+        </div>
+        <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "150px 1fr 120px 1fr 150px 150px", gap: 12, padding: "11px 16px", background: "#fafbfc", borderBottom: "1px solid var(--line)", fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+            <div>Số bảng kê</div><div>Khách hàng</div><div>Ngày lập</div><div>Kỳ · cont ra (từ – đến)</div><div style={{ textAlign: "right" }}>Tổng phải thu</div><div style={{ textAlign: "right" }}>Còn lại</div>
+          </div>
+          {ke.length === 0 && <div style={{ padding: "44px", textAlign: "center", color: "var(--ink-4)", fontSize: 13.5 }}>Chưa có bảng kê nào. Bấm “Tạo bảng kê mới” để bắt đầu.</div>}
+          {ke.slice().reverse().map((st) => (
+            <button key={st.id} type="button" onClick={() => onOpen(st)}
+              style={{ width: "100%", textAlign: "left", display: "grid", gridTemplateColumns: "150px 1fr 120px 1fr 150px 150px", gap: 12, alignItems: "center", padding: "12px 16px", borderBottom: "1px solid var(--line-2)", background: "transparent", border: "none", borderBottomStyle: "solid", cursor: "pointer", fontSize: 13.5 }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent-weak-2)")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
+              <span className="tnum" style={{ fontWeight: 600, color: "var(--accent)" }}>{st.no}</span>
+              <span style={{ fontWeight: 500 }}>{st.customer}</span>
+              <span className="tnum" style={{ color: "var(--ink-2)" }}>{fmtDate(st.date)}</span>
+              <span className="tnum" style={{ color: "var(--ink-3)", fontSize: 12.5 }}>{(st.from || st.to) ? `${fmtDate(st.from) || "…"} – ${fmtDate(st.to) || "…"}` : "—"}</span>
+              <span className="tnum" style={{ textAlign: "right", fontWeight: 600 }}>{fmtVND(st.tongThu)}</span>
+              {(() => { const daTT = (st.payments || []).reduce((a, p) => a + (parseInt((p.amount || "0").toString().replace(/[^\d]/g, ""), 10) || 0), 0); const con = st.tongThu - daTT; return (
+                <span className="tnum" style={{ textAlign: "right", fontWeight: 600, color: con > 0 ? "var(--warn)" : "var(--good)" }}>{fmtVND(Math.max(0, con))}</span>
+              ); })()}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export { SortBtn, CellBtn, Badge, EditCell, TH, TD, makePricer, StatementForm, StatementDetailBody, StatementActions, SavedStatementModal, SavedStatementPage, BangGiaPage, KePage };
