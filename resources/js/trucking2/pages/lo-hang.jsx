@@ -35,6 +35,7 @@ function ShipmentsApp() {
   const [followFilter, setFollowFilter] = useState("all");
   const [sort, setSort] = useState({ key: "default", dir: 1 });
   const [showExport, setShowExport] = useState(false);
+  const [exporting, setExporting] = useState(false);   // chống bấm Xuất Excel nhiều lần
   const [expFrom, setExpFrom] = useState("");
   const [expTo, setExpTo] = useState("");
   const [showImport, setShowImport] = useState(false);
@@ -121,12 +122,21 @@ function ShipmentsApp() {
       } else if (key === "vehicles") {
         url = ROUTES.vehicles; partial = { vehicles: n.vehicles, vehicleType: n.vehicleType };
       } else {
-        url = ROUTES.catalog + key; partial = { [key]: n[key], locationCode: n.locationCode, prices: n.prices };
+        url = ROUTES.catalog + key; partial = { [key]: n[key], prices: n.prices };
+        // Gửi đúng map/mảng mã theo danh mục (định danh theo mã) — tránh xoá mã khi thêm nhanh
+        if (key === "locations")  { partial.locationCode = n.locationCode;  partial.locationCodeArr = n.locationCodeArr; }
+        if (key === "warehouses") { partial.warehouseCode = n.warehouseCode; partial.warehouseCodeArr = n.warehouseCodeArr; }
       }
       if (url) api("PUT", url, { cfg: partial });
     }, 700);
   };
-  const addCfg = (key, v) => setCfgState((c) => { if ((c[key] || []).includes(v)) return c; const n = { ...c, [key]: [...(c[key] || []), v] }; saveCatalogKey(key, n); return n; });
+  const addCfg = (key, v) => setCfgState((c) => {
+    if ((c[key] || []).includes(v)) return c;
+    const n = { ...c, [key]: [...(c[key] || []), v] };
+    if (key === "locations")  n.locationCodeArr  = [...(c.locationCodeArr  || []), ""];   // giữ mảng mã thẳng hàng
+    if (key === "warehouses") n.warehouseCodeArr = [...(c.warehouseCodeArr || []), ""];
+    saveCatalogKey(key, n); return n;
+  });
 
   // Manual save: patch chỉ cập nhật local state + đánh dấu dirty; thực sự PUT khi user bấm nút Lưu trong popup.
   const dirtyIds = useRef(new Set());
@@ -187,6 +197,7 @@ function ShipmentsApp() {
 
   // Thêm lô = tạo bản NHÁP cục bộ (chưa ghi server). Chỉ tạo thật khi bấm "Lưu thông tin" (đủ Khách hàng + Số booking).
   const addRow = () => {
+    if (draft || modal) return;   // tránh tạo nhiều lô nháp khi bấm double
     const vat = (cfg.vatDefault || {})[sheet] || (isHph ? "8" : "0");
     const tmpId = "tmp_" + Date.now() + "_" + Math.floor(Math.random() * 1000);
     const base = { id: tmpId, _new: true, customer: "", booking: "", io: "Nhập", contNo: "", contType: "40HC", kho: "", bksVao: "", bksRa: "", from: "ICD Quế Võ", to: "", contDen: "", contRa: "", cutOff: "", gioDenDuKien: "", gioXeRa: "", cost: { items: [] }, rev: { vatRate: vat, doanhThu: [], choHo: [], payments: [] } };
@@ -224,7 +235,10 @@ function ShipmentsApp() {
 
   // Xuất Excel (client-side) — các cột yêu cầu + MST/email lấy từ khách hàng; lọc theo NGÀY KẾ HOẠCH (Giờ đến kế hoạch)
   const exportExcel = async () => {
+    if (exporting) return;
     if (typeof XLSX === "undefined") { window.alert("Thư viện Excel chưa tải xong, thử lại sau giây lát."); return; }
+    setExporting(true);
+    try {
     const fullCfg = await ensureCfg();   // export cần MST/email từ customerInfo
     const info = fullCfg.customerInfo || {};
     const plannedDate = (s) => (s.gioDenDuKien || "").slice(0, 10); // YYYY-MM-DD
@@ -255,6 +269,7 @@ function ShipmentsApp() {
     const stamp = new Date().toISOString().slice(0, 10);
     XLSX.writeFile(wb, `lo-hang-${stamp}.xlsx`);
     setShowExport(false);
+    } finally { setExporting(false); }
   };
 
   // ---- Import lô hàng từ Excel ----
@@ -381,9 +396,9 @@ function ShipmentsApp() {
                     <label style={{ flex: 1 }}><div style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>Đến ngày</div>
                       <input type="date" value={expTo} onChange={(e) => setExpTo(e.target.value)} style={{ width: "100%", padding: "7px 8px", fontSize: 12.5, border: "1px solid var(--line)", borderRadius: 8, outline: "none", colorScheme: "light" }} /></label>
                   </div>
-                  <button type="button" onClick={exportExcel}
-                    style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "9px 0", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "#fff", background: "var(--good)", border: "none", borderRadius: 9 }}>
-                    <i className="bi bi-download" /> Tải file Excel
+                  <button type="button" onClick={exportExcel} disabled={exporting}
+                    style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "9px 0", fontSize: 13.5, fontWeight: 600, cursor: exporting ? "default" : "pointer", color: "#fff", background: "var(--good)", border: "none", borderRadius: 9, opacity: exporting ? 0.6 : 1 }}>
+                    {exporting ? <><span style={{ width: 13, height: 13, border: "2px solid #fff", borderTopColor: "transparent", borderRadius: "50%", display: "inline-block", animation: "trk-spin .7s linear infinite" }} /> Đang xuất…</> : <><i className="bi bi-download" /> Tải file Excel</>}
                   </button>
                 </div>
               </>

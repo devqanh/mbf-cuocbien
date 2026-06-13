@@ -25,83 +25,70 @@
 
 @push('styles')
 <style>
-    .hero-card {
-        background: linear-gradient(135deg, #0153a9 0%, #013f80 100%);
-        color: #fff;
-        border: none;
-        border-radius: 14px;
-        padding: 22px 26px;
-        margin-bottom: 22px;
-        position: relative;
-        overflow: hidden;
+    /* Intro strip — gọn, không chiếm chỗ */
+    .roles-intro {
+        display: flex; align-items: center; gap: 14px;
+        background: #f3f7fd; border: 1px solid #dbe7f6;
+        border-radius: 12px; padding: 12px 16px; margin-bottom: 18px;
     }
-    .hero-card::after {
-        content: '';
-        position: absolute;
-        width: 280px; height: 280px;
-        border-radius: 50%;
-        background: rgba(255,255,255,.06);
-        top: -100px; right: -80px;
+    .roles-intro .ri-icon {
+        width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
+        background: var(--azia-primary); color: #fff;
+        display: inline-flex; align-items: center; justify-content: center; font-size: 19px;
     }
-    .hero-card h2 { font-size: 22px; font-weight: 700; margin: 0 0 6px; position: relative; z-index: 1; }
-    .hero-card p  { margin: 0; opacity: .9; position: relative; z-index: 1; max-width: 720px; line-height: 1.55; }
-    .hero-card .hero-icon {
-        width: 56px; height: 56px; border-radius: 14px;
-        background: rgba(255,255,255,.15);
-        display: inline-flex; align-items: center; justify-content: center;
-        font-size: 28px; margin-bottom: 14px;
-        position: relative; z-index: 1;
-    }
+    .roles-intro p { margin: 0; font-size: 13px; color: var(--azia-muted); line-height: 1.5; }
 
     .role-card {
         border-radius: 14px;
-        transition: all .2s;
+        transition: box-shadow .18s, transform .18s;
         border: 1px solid var(--azia-border);
         overflow: hidden;
+        height: 100%;
+        display: flex; flex-direction: column;
     }
-    .role-card:hover { box-shadow: 0 8px 24px rgba(28, 39, 60, .08); transform: translateY(-3px); }
+    .role-card:hover { box-shadow: 0 6px 20px rgba(28, 39, 60, .08); transform: translateY(-2px); }
     .role-card .role-head {
-        padding: 18px 20px;
-        display: flex; align-items: flex-start; gap: 14px;
-        border-bottom: 1px solid var(--azia-border);
-        background: #fafbfd;
+        padding: 16px 18px;
+        display: flex; align-items: flex-start; gap: 13px;
     }
     .role-icon-box {
-        width: 48px; height: 48px; border-radius: 12px;
+        width: 44px; height: 44px; border-radius: 11px;
         display: inline-flex; align-items: center; justify-content: center;
-        flex-shrink: 0; font-size: 22px;
+        flex-shrink: 0; font-size: 20px;
     }
-    .role-card .role-title { font-size: 16px; font-weight: 700; margin: 0; color: var(--azia-text); }
+    .role-card .role-title { font-size: 15.5px; font-weight: 700; margin: 0; color: var(--azia-text); }
     .role-card .role-slug  { font-size: 11px; color: var(--azia-muted); font-family: ui-monospace, monospace; }
-    .role-card .role-desc  { font-size: 13px; color: var(--azia-muted); margin: 4px 0 0; line-height: 1.5; }
+    .role-card .role-desc  { font-size: 12.5px; color: var(--azia-muted); margin: 5px 0 0; line-height: 1.5; }
 
-    .module-stat {
-        display: flex; align-items: center; gap: 10px;
-        padding: 10px 14px;
-        border-bottom: 1px solid #f0f3fa;
+    /* Thanh tổng quát + chip module (thay 8 thanh tiến trình) */
+    .role-meter { padding: 0 18px 4px; }
+    .role-meter .rm-bar { height: 6px; background: #eef0f5; border-radius: 999px; overflow: hidden; }
+    .role-meter .rm-bar > span { display: block; height: 100%; border-radius: 999px; transition: width .3s; }
+    .role-meter .rm-label { font-size: 11.5px; color: var(--azia-muted); margin-top: 5px; }
+
+    .mod-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 18px 4px; }
+    .mod-chip {
+        display: inline-flex; align-items: center; gap: 6px;
+        font-size: 11.5px; font-weight: 600; line-height: 1;
+        padding: 5px 9px; border-radius: 999px;
+        border: 1px solid var(--c, #d7dce6);
     }
-    .module-stat:last-child { border-bottom: none; }
-    .module-icon-sm {
-        width: 32px; height: 32px; border-radius: 8px;
-        display: inline-flex; align-items: center; justify-content: center;
-        flex-shrink: 0; font-size: 14px;
-    }
-    .module-stat .mod-name { font-size: 13px; font-weight: 600; flex: 1; color: var(--azia-text); }
-    .module-stat .mod-count { font-size: 12px; color: var(--azia-muted); }
-    .module-bar {
-        height: 4px; background: #eef0f5; border-radius: 999px; overflow: hidden;
-        margin-top: 4px;
-    }
-    .module-bar > span { display: block; height: 100%; border-radius: 999px; transition: width .3s; }
+    .mod-chip.full    { background: var(--c); color: #fff; border-color: var(--c); }
+    .mod-chip.partial { background: transparent; color: var(--c); }
+    .mod-chip .mc-count { font-weight: 700; opacity: .95; }
+    .mod-chip.none { background: #f4f6fb; color: #aeb6c5; border-color: #eceff5; }
+    .mod-empty { font-size: 12px; color: var(--azia-muted); padding: 4px 18px 4px; }
 
     .role-actions {
-        padding: 10px 14px;
-        background: #fafbfd;
-        border-top: 1px solid var(--azia-border);
+        padding: 12px 18px;
+        margin-top: auto;
+        border-top: 1px solid #f0f3fa;
         display: flex; gap: 8px;
     }
 
     /* Matrix */
+    .matrix-chevron { transition: transform .2s; color: var(--azia-muted); }
+    [aria-expanded="true"] .matrix-chevron { transform: rotate(180deg); }
     .matrix-table th, .matrix-table td { vertical-align: middle; }
     .matrix-table .module-row td {
         background: #f4f6fb !important;
@@ -139,6 +126,11 @@
         display: flex; align-items: center; gap: 12px;
         border-bottom: 1px solid var(--azia-border);
     }
+    .module-icon-sm {
+        width: 32px; height: 32px; border-radius: 8px;
+        display: inline-flex; align-items: center; justify-content: center;
+        flex-shrink: 0; font-size: 14px;
+    }
     .perm-module-head .mh-title { font-weight: 700; color: var(--azia-text); }
     .perm-module-head .mh-desc  { font-size: 12px; color: var(--azia-muted); }
     .perm-module-body { padding: 10px 16px; }
@@ -157,17 +149,6 @@
 @endpush
 
 @section('content')
-    {{-- HERO --}}
-    <div class="hero-card">
-        <div class="hero-icon"><i class="bi bi-shield-lock-fill"></i></div>
-        <h2>Vai trò &amp; phân quyền</h2>
-        <p>
-            <strong>Vai trò</strong> là một nhóm quyền hạn được đặt tên (vd: <em>Kế toán</em>, <em>Kho</em>).
-            Mỗi <strong>thành viên</strong> được gán một hoặc nhiều vai trò để xác định họ được phép làm những gì trong hệ thống.
-            Chỉnh quyền cho cả nhóm chỉ cần sửa vai trò — không cần đụng tới từng người dùng.
-        </p>
-    </div>
-
     <div class="page-header">
         <div>
             <nav class="breadcrumb">
@@ -177,11 +158,25 @@
                 <span class="mx-2">/</span>
                 <span>Vai trò &amp; phân quyền</span>
             </nav>
-            <h1 class="mt-1">Có <strong>{{ $roles->count() }}</strong> vai trò · <strong>{{ $permissions->count() }}</strong> quyền · <strong>{{ count($modules) }}</strong> nhóm</h1>
+            <h1 class="mt-1">Vai trò &amp; phân quyền</h1>
+            <div class="text-muted small mt-1">
+                <strong>{{ $roles->count() }}</strong> vai trò ·
+                <strong>{{ $permissions->count() }}</strong> quyền ·
+                <strong>{{ count($modules) }}</strong> nhóm
+            </div>
         </div>
         <button class="btn btn-primary" onclick="openRoleModal(null)" data-bs-toggle="modal" data-bs-target="#roleModal">
             <i class="bi bi-shield-plus me-1"></i> Tạo vai trò mới
         </button>
+    </div>
+
+    {{-- Intro gọn --}}
+    <div class="roles-intro">
+        <div class="ri-icon"><i class="bi bi-shield-lock-fill"></i></div>
+        <p>
+            <strong>Vai trò</strong> là một nhóm quyền được đặt tên (vd: <em>Kế toán</em>, <em>Kho</em>). Gán vai trò cho thành viên để
+            quyết định họ làm được gì. Sửa quyền cho cả nhóm chỉ cần sửa vai trò — không cần đụng từng người.
+        </p>
     </div>
 
     {{-- ROLE CARDS --}}
@@ -211,45 +206,43 @@
                                 @if($roleSystem($role->name))
                                     <span class="badge text-bg-danger" style="font-size:10px">HỆ THỐNG</span>
                                 @endif
-                                <span class="badge badge-soft-primary" title="Tổng số quyền">
-                                    {{ count($rolePermNames) }} / {{ $permissions->count() }} quyền
-                                </span>
                             </div>
                             <div class="role-slug">{{ $role->name }}</div>
                             <p class="role-desc">{{ $roleDesc($role->name) }}</p>
                         </div>
                     </div>
 
-                    <div>
+                    @php
+                        $totalPerm = $permissions->count();
+                        $havePerm  = count($rolePermNames);
+                        $pct       = $totalPerm > 0 ? round($havePerm / $totalPerm * 100) : 0;
+                    @endphp
+                    <div class="role-meter">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <span class="rm-label" style="margin-top:0"><strong style="color:var(--azia-text)">{{ $havePerm }}/{{ $totalPerm }}</strong> quyền</span>
+                            <span class="rm-label" style="margin-top:0">{{ $pct }}%</span>
+                        </div>
+                        <div class="rm-bar"><span style="width: {{ $pct }}%; background: {{ $hex }};"></span></div>
+                    </div>
+
+                    <div class="mod-chips">
+                        @php $anyMod = false; @endphp
                         @foreach($grouped as $modKey => $perms)
                             @php
-                                $total    = $perms->count();
-                                $granted  = $perms->pluck('name')->intersect($rolePermNames)->count();
-                                $percent  = $total > 0 ? round($granted / $total * 100) : 0;
-                                $modHex   = $moduleColor($modKey);
+                                $total   = $perms->count();
+                                $granted = $perms->pluck('name')->intersect($rolePermNames)->count();
+                                $modHex  = $moduleColor($modKey);
                             @endphp
-                            <div class="module-stat">
-                                <div class="module-icon-sm" style="background: {{ $modHex }}1f; color: {{ $modHex }};">
-                                    <i class="bi bi-{{ $moduleIcon($modKey) }}"></i>
-                                </div>
-                                <div style="flex:1; min-width:0">
-                                    <div class="d-flex justify-content-between align-items-center">
-                                        <span class="mod-name">{{ $moduleLabel($modKey) }}</span>
-                                        <span class="mod-count">
-                                            <strong>{{ $granted }}</strong>/{{ $total }}
-                                            @if($granted === $total)
-                                                <i class="bi bi-check-circle-fill text-success ms-1"></i>
-                                            @elseif($granted === 0)
-                                                <i class="bi bi-dash-circle text-muted ms-1"></i>
-                                            @endif
-                                        </span>
-                                    </div>
-                                    <div class="module-bar">
-                                        <span style="width: {{ $percent }}%; background: {{ $modHex }};"></span>
-                                    </div>
-                                </div>
-                            </div>
+                            @if($granted > 0)
+                                @php $anyMod = true; @endphp
+                                <span class="mod-chip {{ $granted === $total ? 'full' : 'partial' }}" style="--c: {{ $modHex }}"
+                                      title="{{ $moduleLabel($modKey) }}: {{ $granted }}/{{ $total }} quyền">
+                                    <i class="bi bi-{{ $moduleIcon($modKey) }}"></i>{{ $moduleLabel($modKey) }}
+                                    <span class="mc-count">{{ $granted }}/{{ $total }}</span>
+                                </span>
+                            @endif
                         @endforeach
+                        @if(! $anyMod)<span class="mod-empty">Chưa được cấp quyền nào.</span>@endif
                     </div>
 
                     @php
@@ -282,14 +275,18 @@
 
     {{-- MATRIX --}}
     <div class="card">
-        <div class="card-header">
+        <div class="card-header" role="button" data-bs-toggle="collapse" data-bs-target="#matrixCollapse"
+             aria-expanded="false" style="cursor:pointer">
             <div class="d-flex align-items-center gap-2">
                 <i class="bi bi-grid-3x3-gap" style="color: var(--azia-primary)"></i>
                 <span>Bảng so sánh chi tiết</span>
+                <span class="small text-muted fw-normal ms-1">— {{ $permissions->count() }} quyền × {{ $roles->count() }} vai trò · bấm để mở</span>
             </div>
-            <div class="small text-muted fw-normal">
-                Dấu <i class="bi bi-check-circle-fill text-success"></i> nghĩa là vai trò có quyền đó. Dấu <i class="bi bi-dash-circle text-muted"></i> là không có.
-            </div>
+            <i class="bi bi-chevron-down matrix-chevron"></i>
+        </div>
+        <div class="collapse" id="matrixCollapse">
+        <div class="px-3 pt-2 small text-muted">
+            Dấu <i class="bi bi-check-circle-fill text-success"></i> = vai trò có quyền đó. Dấu <i class="bi bi-dash-circle text-muted"></i> = không có.
         </div>
         <div class="table-responsive">
             <table class="table matrix-table mb-0">
@@ -340,6 +337,7 @@
                 </tbody>
             </table>
         </div>
+        </div>{{-- /collapse --}}
     </div>
 
     {{-- MODAL --}}

@@ -164,15 +164,28 @@ class TruckingV2Controller extends Controller
             $bks      = $val($l['bks']      ?? '', $s?->bks_vao ?: $s?->bks_ra);
             $note     = $val($l['note']     ?? '', $s?->ghi_chu);
 
-            // Tuyến vận chuyển = Nơi lấy → (các kho đã chọn, tối đa 3) → Nơi hạ — TẤT CẢ theo TÊN
-            $fromLoc = $s ? $s->from_loc : ($l['from'] ?? '');
-            $toLoc   = $s ? $s->to_loc   : ($l['to'] ?? '');
-            $khoStr  = $s ? (string) $s->kho : '';
-            $parts   = [];
-            if (trim((string) $fromLoc) !== '') $parts[] = $locN($fromLoc);
-            foreach (preg_split('/\s*,\s*/', $khoStr, -1, PREG_SPLIT_NO_EMPTY) as $k) $parts[] = $whN($k);
-            if (trim((string) $toLoc) !== '') $parts[] = $locN($toLoc);
-            $route = implode(' - ', array_filter($parts, fn ($p) => trim((string) $p) !== ''));
+            // Tuyến vận chuyển — ưu tiên tuyến ĐÃ HIỂN THỊ (detail.route: "Nơi lấy → Nơi hạ"),
+            // đổi mỗi điểm sang TÊN tường minh (địa điểm → kho → giữ nguyên nếu không khớp).
+            // Bảng kê cũ chưa có snapshot route → dựng từ Nơi lấy + Kho + Nơi hạ của lô.
+            $segName = function ($v) use ($locMap, $whMap) {
+                $v = trim((string) $v);
+                if ($v === '' || $v === '?') return '';
+                return $locMap[$v] ?? $whMap[$v] ?? $v;
+            };
+            $snapRoute = trim((string) (($l['detail']['route'] ?? '')));
+            if ($snapRoute !== '') {
+                $segs  = array_filter(array_map($segName, preg_split('/\s*→\s*/u', $snapRoute)), fn ($p) => $p !== '');
+                $route = implode(' → ', $segs);
+            } else {
+                $fromLoc = $s ? $s->from_loc : ($l['from'] ?? '');
+                $toLoc   = $s ? $s->to_loc   : ($l['to'] ?? '');
+                $khoStr  = $s ? (string) $s->kho : '';
+                $parts   = [];
+                if (trim((string) $fromLoc) !== '') $parts[] = $locN($fromLoc);
+                foreach (preg_split('/\s*,\s*/', $khoStr, -1, PREG_SPLIT_NO_EMPTY) as $k) $parts[] = $whN($k);
+                if (trim((string) $toLoc) !== '') $parts[] = $locN($toLoc);
+                $route = implode(' → ', array_filter($parts, fn ($p) => trim((string) $p) !== ''));
+            }
 
             // Phí thanh lý: snapshot, rỗng thì lấy dòng chi phí src=thanhLyFee của lô
             $thanhLy = (int) ($l['thanhLy'] ?? 0);

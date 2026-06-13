@@ -35,7 +35,7 @@ class DatabaseSeeder extends Seeder
         }
 
         // --- Roles ---
-        $superAdmin = Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web'], ['display_name' => 'Quản trị tối cao']);
+        $superAdmin = Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web'], ['display_name' => 'Quản trị toàn quyền']);
         $admin      = Role::firstOrCreate(['name' => 'admin',       'guard_name' => 'web'], ['display_name' => 'Quản trị viên']);
         $editor     = Role::firstOrCreate(['name' => 'editor',      'guard_name' => 'web'], ['display_name' => 'Biên tập viên']);
         $user       = Role::firstOrCreate(['name' => 'user',        'guard_name' => 'web'], ['display_name' => 'Nhân viên xem']);

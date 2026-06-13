@@ -8,10 +8,10 @@ import { ConfigBody } from "@trk/pop.jsx";
 
 // Mỗi tab (danh mục) lưu độc lập — gửi đúng key liên quan của tab đó
 const CAT_KEYS = {
-  locations: ["locations", "locationCode"],
+  locations: ["locations", "locationCodeArr"],
   customers: ["customers", "customerInfo"],
   contTypes: ["contTypes"],
-  warehouses: ["warehouses", "warehouseCode"],
+  warehouses: ["warehouses", "warehouseCodeArr"],
   payers: ["payers"],
   costItems: ["costItems", "prices", "costColors"],
   choHoItems: ["choHoItems", "prices"],
@@ -25,7 +25,7 @@ const CAT_KEYS = {
 
 function SettingsApp() {
   const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
-  const DEFAULT_CFG = { locations: [], locationCode: {}, locationLocked: [], customers: [], customerInfo: {}, contTypes: [], warehouses: [], warehouseCode: {}, payers: [], costItems: [], choHoItems: [], revItems: [], vehicles: [], vehicleType: {}, drivers: [], vehItems: [], prices: {}, costColors: {}, vatDefault: { hph: "8", icd: "0" }, freeTimeHours: "4" };
+  const DEFAULT_CFG = { locations: [], locationCode: {}, locationCodeArr: [], locationLocked: [], customers: [], customerInfo: {}, contTypes: [], warehouses: [], warehouseCode: {}, warehouseCodeArr: [], payers: [], costItems: [], choHoItems: [], revItems: [], vehicles: [], vehicleType: {}, drivers: [], vehItems: [], prices: {}, costColors: {}, vatDefault: { hph: "8", icd: "0" }, freeTimeHours: "4" };
   const api = (method, url, body) => fetch(url, { method, headers: { "Content-Type": "application/json", "Accept": "application/json", "X-CSRF-TOKEN": T.csrf }, body: body ? JSON.stringify(body) : undefined }).then((r) => r.json());
   const [cfg, setCfgState] = useState(DEFAULT_CFG);
   const [counts, setCounts] = useState(B.counts || {});   // badge sidebar (boot, nhẹ)

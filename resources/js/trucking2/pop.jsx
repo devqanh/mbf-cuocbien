@@ -75,11 +75,13 @@ function CostPopup({ ship, patch, onSave, isDirty, onClose, cfg = {}, addCfg }) 
 }
 
 function Field({ label, hint, req, children }) {
+  // Dùng <div> (KHÔNG dùng <label>): <label> bọc dropdown tùy biến sẽ forward click sang
+  // phần tử labelable đầu tiên (vd nút ✕ của chip) → bấm chọn lại bị xoá mục đã chọn.
   return (
-    <label style={{ display: "block" }}>
+    <div style={{ display: "block" }}>
       <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>{label}{req && <span style={{ color: "var(--danger)", marginLeft: 3, fontWeight: 700 }}>*</span>}{hint && <span style={{ color: "var(--ink-4)", fontWeight: 400, marginLeft: 5 }}>· {hint}</span>}</div>
       {children}
-    </label>
+    </div>
   );
 }
 
@@ -1263,13 +1265,15 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
   const vehType = cfg.vehicleType || {};
   const setVehType = (name, val) => setCfg("vehicleType", { ...vehType, [name]: val });
   const codeKey = (g && g.codeKey) || "locationCode";
-  const locCode = cfg[codeKey] || {};
-  const setLocCode = (name, val) => setCfg(codeKey, { ...locCode, [name]: val });
-  // Phát hiện trùng ký hiệu trong cùng danh mục (chuẩn hóa hoa + bỏ khoảng trắng)
+  // Mã (ký hiệu) lưu theo CHỈ SỐ dòng → tên được phép trùng, chỉ mã là định danh duy nhất.
+  const codeArrKey = codeKey + "Arr";
+  const codeArr = cfg[codeArrKey] || [];
+  const setCode = (i, val) => { const a = [...codeArr]; while (a.length < list.length) a.push(""); a[i] = val; setCfg(codeArrKey, a); };
+  // Phát hiện trùng ký hiệu (chuẩn hóa hoa + bỏ khoảng trắng)
   const normCode = (c) => (c || "").toString().trim().toUpperCase();
   const codeCounts = {};
-  if (g && g.coded) list.forEach((nm) => { const c = normCode(locCode[nm]); if (c) codeCounts[c] = (codeCounts[c] || 0) + 1; });
-  const isDupCode = (nm) => { const c = normCode(locCode[nm]); return !!c && codeCounts[c] > 1; };
+  if (g && g.coded) list.forEach((_, i) => { const c = normCode(codeArr[i]); if (c) codeCounts[c] = (codeCounts[c] || 0) + 1; });
+  const isDupCode = (i) => { const c = normCode(codeArr[i]); return !!c && codeCounts[c] > 1; };
   const hasDupCode = !!(g && g.coded) && Object.values(codeCounts).some((n) => n > 1);
   const costColors = cfg.costColors || {};
   const setColor = (name, val) => { const nc = { ...costColors }; if (val) nc[name] = val; else delete nc[name]; setCfg("costColors", nc); };
@@ -1278,23 +1282,27 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
   const setVatAll = (val) => { const v = val.replace(/[^\d.]/g, ""); setCfg("vatDefault", { hph: v, icd: v }); };
   const addItem = () => {
     const v = draft.trim();
-    if (!v || list.includes(v)) { setDraft(""); return; }
-    setCfg(sel, [...list, v]); setDraft("");
+    if (!v) { setDraft(""); return; }
+    // Danh mục CÓ MÃ (địa điểm/kho): cho phép trùng TÊN. Danh mục khác: vẫn chặn trùng tên.
+    if (!(g && g.coded) && list.includes(v)) { setDraft(""); return; }
+    setCfg(sel, [...list, v]);
+    if (g && g.coded) { const a = [...codeArr]; while (a.length < list.length) a.push(""); a.push(""); setCfg(codeArrKey, a); }
+    setDraft("");
   };
-  // Đổi tên: các map gắn THEO TÊN (ký hiệu/đơn giá/màu/loại xe) phải chuyển sang tên mới, không mất
+  // Đổi tên: các map gắn THEO TÊN (đơn giá/màu/loại xe) phải chuyển sang tên mới, không mất.
+  // Riêng MÃ (coded) lưu theo chỉ số → đổi tên không ảnh hưởng mã.
   const rekey = (mapKey, map, old, v) => { if (map[old] === undefined) return; const m = { ...map }; m[v] = m[old]; delete m[old]; setCfg(mapKey, m); };
   const rename = (i, v) => {
     const old = list[i]; const next = [...list]; next[i] = v; setCfg(sel, next);
     if (v === old) return;
-    if (g && g.coded)   rekey(codeKey, locCode, old, v);
     if (g && g.priced)  rekey("prices", prices, old, v);
     if (g && g.colored) rekey("costColors", costColors, old, v);
     if (g && g.fleet)   rekey("vehicleType", vehType, old, v);
   };
   const remove = (i) => {
     const old = list[i]; setCfg(sel, list.filter((_, j) => j !== i));
+    if (g && g.coded) setCfg(codeArrKey, codeArr.filter((_, j) => j !== i));
     const drop = (mapKey, map) => { if (map[old] === undefined) return; const m = { ...map }; delete m[old]; setCfg(mapKey, m); };
-    if (g && g.coded)   drop(codeKey, locCode);
     if (g && g.priced)  drop("prices", prices);
     if (g && g.colored) drop("costColors", costColors);
     if (g && g.fleet)   drop("vehicleType", vehType);
@@ -1340,6 +1348,10 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
             </div>
           </div>
           <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginBottom: 10 }}>{g.hint}</div>
+          {g.coded && <div style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12, color: "var(--ink-2)", background: "#eef4ff", border: "1px solid #d6e3fb", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>
+            <i className="bi bi-info-circle-fill" style={{ color: "var(--accent)", marginTop: 1 }} />
+            <span>Ô <b>Ký hiệu</b> được tạo tự động khi <b>import Excel bảng giá</b> (cột FROM/TO) nên đã khóa, không sửa trực tiếp tại đây. Bạn vẫn đổi được <b>tên</b> hiển thị.</span>
+          </div>}
           {hasDupCode && <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: "var(--danger)", background: "#fce8e8", border: "1px solid #f3c9c9", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>⚠ Có ký hiệu bị trùng — mỗi ký hiệu phải là duy nhất. Sửa các ô viền đỏ trước khi lưu.</div>}
           {loading ? (
             <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "30px 4px", color: "var(--ink-4)", fontSize: 13.5 }}>
@@ -1401,8 +1413,9 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
               })()}
               <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: 300, overflowY: "auto" }}>
                 {list.map((it, i) => {
-                  const codeLocked = !!g.coded && codeKey === "locationCode" && locked.has(it); // chỉ khóa Ô KÝ HIỆU địa điểm (đang được bảng giá link)
-                  const dupCode = isDupCode(it);
+                  const codeLocked = !!g.coded;            // Ký hiệu Địa điểm/Kho do import Excel tạo → luôn khóa, không sửa tay
+                  const linkedToPrice = locked.has(it);    // đang được bảng giá tham chiếu (hiện icon liên kết)
+                  const dupCode = isDupCode(i);
                   const rowGrid = g.priced && g.colored ? "24px 1fr 150px 56px 28px"
                     : g.priced ? "24px 1fr 150px 28px"
                     : g.colored ? "24px 1fr 56px 28px"
@@ -1411,7 +1424,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                     : "24px 1fr 28px";
                   return (
                   <div key={i} style={{ display: "grid", gridTemplateColumns: rowGrid, gap: 8, alignItems: "center", padding: "3px 0" }}>
-                    <span style={{ color: codeLocked ? "var(--accent)" : "var(--ink-4)" }} title={codeLocked ? "Đang được bảng giá dùng" : ""}><I.link /></span>
+                    <span style={{ color: linkedToPrice ? "var(--accent)" : "var(--ink-4)" }} title={linkedToPrice ? "Đang dùng trong bảng giá" : ""}><I.link /></span>
                     <input value={it} onChange={(e) => rename(i, e.target.value)}
                       style={{ width: "100%", padding: "7px 10px", fontSize: 13.5, border: "1px solid transparent", borderRadius: 8, outline: "none", background: "transparent" }}
                       onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.background = "#fff"; }}
@@ -1422,8 +1435,8 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                         <FlagPicker value={costColors[it] || ""} onChange={(c) => setColor(it, c)} />
                       </div>
                     )}
-                    {g.coded && <input value={locCode[it] || ""} readOnly={codeLocked} onChange={(e) => { if (!codeLocked) setLocCode(it, e.target.value); }} placeholder="VD: TV"
-                      title={codeLocked ? "Ký hiệu đang được bảng giá dùng — không sửa để giữ liên kết" : (dupCode ? "Ký hiệu bị trùng với mục khác" : "")}
+                    {g.coded && <input value={codeArr[i] || ""} readOnly={codeLocked} onChange={(e) => { if (!codeLocked) setCode(i, e.target.value); }} placeholder="VD: TV"
+                      title={codeLocked ? "Ký hiệu tạo từ import Excel — không sửa trực tiếp" : (dupCode ? "Ký hiệu bị trùng với mục khác" : "")}
                       style={{ width: "100%", padding: "7px 10px", fontSize: 13, fontWeight: 600, border: `1px solid ${dupCode ? "var(--danger)" : "var(--line)"}`, borderRadius: 8, outline: "none", textTransform: "uppercase", background: codeLocked ? "var(--line-2)" : (dupCode ? "#fce8e8" : "#fff"), color: codeLocked ? "var(--ink-3)" : (dupCode ? "var(--danger)" : "var(--ink)"), cursor: codeLocked ? "not-allowed" : "text" }}
                       onFocus={(e) => { if (!codeLocked) e.target.style.borderColor = "var(--accent)"; }} onBlur={(e) => (e.target.style.borderColor = dupCode ? "var(--danger)" : "var(--line)")} />}
                     {g.fleet && (

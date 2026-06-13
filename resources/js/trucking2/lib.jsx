@@ -157,6 +157,7 @@ function MultiCombo({ values = [], onChange, options = [], onCreate, max = 3, pl
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const wrapRef = useRef(null);
+  const searchRef = useRef(null);
   useEffect(() => {
     if (!open) return;
     const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) { setOpen(false); setQ(""); } };
@@ -164,16 +165,20 @@ function MultiCombo({ values = [], onChange, options = [], onCreate, max = 3, pl
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
   const sel = Array.isArray(values) ? values : (values ? [values] : []);
+  const selRef = useRef(sel);
+  selRef.current = sel;   // luôn giữ danh sách MỚI NHẤT để chống stale-closure khi re-render trễ
   const full = sel.length >= max;
   const ql = q.trim().toLowerCase();
   const avail = options.filter((o) => !sel.includes(o) && (!ql || o.toLowerCase().includes(ql)));
   const exact = options.some((o) => o.toLowerCase() === ql) || sel.some((o) => o.toLowerCase() === ql);
-  const addVal = (v) => { if (!v || sel.includes(v) || sel.length >= max) return; onChange([...sel, v]); setQ(""); };
-  const removeVal = (v) => onChange(sel.filter((x) => x !== v));
+  // Chọn xong GIỮ mở + focus lại ô tìm để chọn tiếp nhiều mục (không bị mất các mục đã chọn)
+  const refocus = () => { setTimeout(() => { try { searchRef.current && searchRef.current.focus(); } catch (e) {} }, 0); };
+  const addVal = (v) => { const cur = selRef.current; if (!v || cur.includes(v) || cur.length >= max) return; onChange([...cur, v]); setQ(""); refocus(); };
+  const removeVal = (v) => onChange(selRef.current.filter((x) => x !== v));
   const create = () => { const v = q.trim(); if (!v || sel.length >= max) return; if (onCreate && !options.includes(v)) onCreate(v); addVal(v); };
   return (
     <div ref={wrapRef} style={{ position: "relative", width: "100%" }}>
-      <div onClick={() => { if (!full) setOpen((o) => !o); }}
+      <div onClick={() => { if (!full) setOpen(true); }}
         style={{ display: "flex", flexWrap: "wrap", gap: 5, alignItems: "center", minHeight: 38, padding: "5px 8px",
           border: `1px solid ${open ? "var(--accent)" : "var(--line)"}`, borderRadius: 9, background: "#fff", cursor: full ? "default" : "pointer",
           boxShadow: open ? "0 0 0 3px var(--accent-weak)" : "none" }}>
@@ -192,7 +197,7 @@ function MultiCombo({ values = [], onChange, options = [], onCreate, max = 3, pl
         <div style={{ position: "absolute", zIndex: 80, top: "calc(100% + 4px)", left: 0, right: 0, background: "#fff", border: "1px solid var(--line)", borderRadius: 11, boxShadow: "0 12px 32px -8px rgba(16,19,23,.24), 0 2px 8px rgba(16,19,23,.08)", overflow: "hidden" }}>
           <div style={{ padding: 7, borderBottom: "1px solid var(--line-2)", position: "relative" }}>
             <span style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)" }}><I.search /></span>
-            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm hoặc thêm mới…"
+            <input ref={searchRef} autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm hoặc thêm mới…"
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (avail.length === 1) addVal(avail[0]); else if (!exact && q.trim()) create(); } }}
               style={{ width: "100%", padding: "7px 10px 7px 30px", fontSize: 13, border: "1px solid var(--line)", borderRadius: 8, outline: "none" }} />
           </div>
@@ -324,15 +329,24 @@ function Modal({ title, subtitle, onClose, children, footer, width = 860, tabs, 
   );
 }
 
-function Btn({ children, onClick, variant = "ghost", disabled = false }) {
-  const base = { padding: "10px 20px", fontSize: 14, fontWeight: variant === "primary" ? 600 : 500, cursor: disabled ? "not-allowed" : "pointer", borderRadius: 10, transition: "background .12s", opacity: disabled ? 0.55 : 1 };
+function Btn({ children, onClick, variant = "ghost", disabled = false, busy = false }) {
+  const [auto, setAuto] = useState(false);   // tự bận khi onClick trả Promise → chống bấm double
+  const loading = busy || auto;
+  const off = disabled || loading;
+  const handle = (e) => {
+    if (off || !onClick) return;
+    const r = onClick(e);
+    if (r && typeof r.then === "function") { setAuto(true); Promise.resolve(r).finally(() => setAuto(false)); }
+  };
+  const base = { padding: "10px 20px", fontSize: 14, fontWeight: variant === "primary" ? 600 : 500, cursor: off ? "not-allowed" : "pointer", borderRadius: 10, transition: "background .12s", opacity: off ? 0.55 : 1, display: "inline-flex", alignItems: "center", gap: 7 };
   const styles = variant === "primary"
-    ? { ...base, background: "var(--accent)", color: "#fff", border: "1px solid var(--accent)", boxShadow: disabled ? "none" : "0 1px 2px rgba(42,111,219,.4)" }
+    ? { ...base, background: "var(--accent)", color: "#fff", border: "1px solid var(--accent)", boxShadow: off ? "none" : "0 1px 2px rgba(42,111,219,.4)" }
     : { ...base, background: "#fff", color: "var(--ink-2)", border: "1px solid var(--line)" };
   return (
-    <button type="button" onClick={disabled ? undefined : onClick} style={styles} disabled={disabled}
-      onMouseEnter={(e) => { if (!disabled) e.currentTarget.style.background = variant === "primary" ? "#235dc0" : "var(--line-2)"; }}
-      onMouseLeave={(e) => { if (!disabled) e.currentTarget.style.background = variant === "primary" ? "var(--accent)" : "#fff"; }}>
+    <button type="button" onClick={handle} style={styles} disabled={off}
+      onMouseEnter={(e) => { if (!off) e.currentTarget.style.background = variant === "primary" ? "#235dc0" : "var(--line-2)"; }}
+      onMouseLeave={(e) => { if (!off) e.currentTarget.style.background = variant === "primary" ? "var(--accent)" : "#fff"; }}>
+      {loading && <span style={{ width: 13, height: 13, border: "2px solid currentColor", borderTopColor: "transparent", borderRadius: "50%", display: "inline-block", animation: "trk-spin .7s linear infinite", opacity: .8 }} />}
       {children}
     </button>
   );

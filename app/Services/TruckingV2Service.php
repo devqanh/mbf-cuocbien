@@ -465,8 +465,11 @@ class TruckingV2Service
             $rows = $cls::orderBy('sort')->orderBy('name')->get();
             $cfg[$key] = $rows->pluck('name')->all();
             if ($coded) {
+                // Map tên→mã (cho định giá; tên trùng thì lấy mã cuối — chấp nhận được)
                 $cfg[$coded] = $rows->filter(fn ($r) => $r->code)
                     ->mapWithKeys(fn ($r) => [$r->name => $r->code])->all();
+                // Mảng mã theo CHỈ SỐ dòng (định danh thực = mã; tên được phép trùng)
+                $cfg[$coded . 'Arr'] = $rows->map(fn ($r) => $r->code ?? '')->all();
             }
             if ($priced) {
                 foreach ($rows as $r) {
@@ -549,6 +552,7 @@ class TruckingV2Service
             $out = [$key => $rows->pluck('name')->all()];
             if ($coded) {
                 $out[$coded] = $rows->filter(fn ($r) => $r->code)->mapWithKeys(fn ($r) => [$r->name => $r->code])->all();
+                $out[$coded . 'Arr'] = $rows->map(fn ($r) => $r->code ?? '')->all();   // mã theo chỉ số dòng
                 if ($key === 'locations') {
                     $lockedIds = TruckingPriceRow::query()->whereNotNull('location_id')->distinct()->pluck('location_id');
                     $out['locationLocked'] = TruckingLocation::whereIn('id', $lockedIds)->pluck('name')->all();
@@ -699,11 +703,38 @@ class TruckingV2Service
     // --- reconcile từng bảng (dùng chung cho saveConfig & endpoint riêng) ---
     private function reconcileLookup(string $cls, bool $priced, $coded, bool $colored, array $cfg, string $key): void
     {
+        // Danh mục CÓ MÃ (địa điểm/kho): định danh theo MÃ (ký hiệu) — TÊN được phép trùng.
+        // Khớp & cập nhật theo mã để GIỮ id (không đứt link price_rows.location_id); mã rỗng → khớp theo tên.
+        if ($coded) {
+            $rawNames = $cfg[$key] ?? [];
+            $codeArr  = $cfg[$coded . 'Arr'] ?? null;        // mảng mã theo chỉ số dòng (mô hình mới)
+            $nameMap  = $cfg[$coded] ?? [];                  // map tên→mã (tương thích bản cũ)
+            $keepIds = [];
+            $sort = 0;
+            foreach ($rawNames as $i => $rawName) {
+                $name = trim((string) $rawName);
+                if ($name === '') continue;
+                $code = $codeArr !== null ? trim((string) ($codeArr[$i] ?? '')) : trim((string) ($nameMap[$name] ?? ''));
+                $row = $code !== ''
+                    ? $cls::where('code', $code)->first()
+                    : ($cls::where('name', $name)->whereRaw("COALESCE(code,'') = ''")->first() ?? null);
+                if ($row) {
+                    $row->update(['name' => $name, 'code' => ($code !== '' ? $code : null), 'sort' => $sort]);
+                } else {
+                    $row = $cls::create(['name' => $name, 'code' => ($code !== '' ? $code : null), 'sort' => $sort]);
+                }
+                $keepIds[] = $row->id;
+                $sort++;
+            }
+            $cls::whereNotIn('id', $keepIds ?: [0])->delete();
+            return;
+        }
+
+        // Danh mục KHÔNG mã: định danh theo TÊN (như cũ).
         $names = array_values(array_filter(array_map('trim', $cfg[$key] ?? []), fn ($v) => $v !== ''));
         $cls::whereNotIn('name', $names ?: [''])->delete();
         foreach ($names as $i => $name) {
             $attrs = ['sort' => $i];
-            if ($coded)   $attrs['code']  = $cfg[$coded][$name] ?? null;
             if ($priced)  $attrs['default_price'] = isset($cfg['prices'][$name]) ? $this->inMoney($cfg['prices'][$name]) : null;
             if ($colored) $attrs['color'] = $cfg['costColors'][$name] ?? null;
             $cls::updateOrCreate(['name' => $name], $attrs);

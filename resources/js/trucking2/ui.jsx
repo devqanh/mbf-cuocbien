@@ -72,6 +72,10 @@ const TD = ({ children, align = "left", sticky, pad = "9px 14px" }) => (
 function makePricer(cfg) {
   const locationCode = cfg.locationCode || {};
   const codeOf = (name) => { const v = (name || "").toString().trim(); return locationCode[v] || v; };
+  // Đảo ngược: ký hiệu → TÊN địa điểm, để hiển thị tuyến trực quan (không dùng viết tắt)
+  const codeToName = {};
+  Object.keys(locationCode).forEach((nm) => { const c = (locationCode[nm] || "").toString().trim(); if (c) codeToName[c] = nm; });
+  const nameOf = (v) => { v = (v || "").toString().trim(); return codeToName[v] || v; };
   const cont20 = (s) => /20/.test(s.contType || "");
   const connOf = (s) => { const ft = calcFreeTime(s, cfg.freeTimeHours); return ft ? (ft.connect ? "Connect" : "Disconnect") : null; };
   const isExport = (s) => (s.io || "").toString().toLowerCase().includes("xu");
@@ -80,7 +84,9 @@ function makePricer(cfg) {
   const priceFor = (s) => {
     const list = ((cfg.customerInfo || {})[s.customer] || {}).priceList || [];
     const fromRaw = (s.from || "").trim(), dropRaw = (s.to || "").trim();
-    const fromC = codeOf(s.from), dropC = codeOf(s.to), conn = connOf(s), kind = kindOf(s);
+    const ft = calcFreeTime(s, cfg.freeTimeHours);             // chi tiết free time để ghi rõ
+    const conn = ft ? (ft.connect ? "Connect" : "Disconnect") : null;
+    const fromC = codeOf(s.from), dropC = codeOf(s.to), kind = kindOf(s);
     const eq = (a, b) => !!a && a === b;
     const fromMatch = (p) => eq(codeOf(p.from), fromC) || eq((p.from || "").trim(), fromRaw);
     const dropMatch = (p) => {
@@ -99,9 +105,11 @@ function makePricer(cfg) {
     const choHoItems = items.filter((e) => e.billable).map((e) => ({ item: e.item || "(khoản)", amount: toNum(e.amount) }));
     const costItems = items.map((e) => ({ item: e.item || "(khoản)", amount: toNum(e.amount), billable: !!e.billable, src: e.src || "" }));
     const chiHo = choHoItems.reduce((a, e) => a + e.amount, 0);
-    const route = p ? ((p.from || "?") + " → " + (p.to1 || p.loc || "?")) : null;
+    const route = p ? ((nameOf(p.from) || "?") + " → " + (nameOf(p.to1 || p.loc) || "?")) : null;
     const noDrop = !dropRaw && !!p;
-    return { matched: !!p, conn, kind, is20, cuoc, dau, chiHo, choHoItems, costItems, route, noDrop, phaiThu: cuoc + dau + chiHo };
+    return { matched: !!p, conn, kind, is20, cuoc, dau, chiHo, choHoItems, costItems, route, noDrop,
+      ftHours: ft ? ft.hours : null, ftThreshold: ft ? ft.threshold : null, ftBasis: ft ? ft.basis : null,
+      phaiThu: cuoc + dau + chiHo };
   };
   return { priceFor, codeOf, connOf, cont20, kindOf };
 }
@@ -148,7 +156,7 @@ function StatementForm({ hph, icd, cfg, onCancel, onSaved }) {
         contLabel: (x.sheet === "HPH" ? (s.qty + " × " + s.contType) : ((s.contNo || s.contType) + (s.contNo ? " · " + s.contType : ""))),
         phaiThu: lineAmt(x), cuoc: lineAmt(x), thanhLy, note,
         // snapshot chi tiết khoản để hiển thị đối soát TĨNH (không cần query realtime khi xem)
-        detail: { matched: x.pr.matched, cuoc: x.pr.cuoc, dau: x.pr.dau, chiHo: x.pr.chiHo, choHoItems: x.pr.choHoItems, costItems: x.pr.costItems, phaiThu: x.pr.phaiThu },
+        detail: { ...x.pr },   // snapshot đầy đủ: conn/kind/loại cont/tuyến/free time + tách khoản
       };
     });
     const payload = { id: Date.now(), no: keNo, customer: cust, info, date: today, from, to, lines, tongThu, payments: [], createdAt: new Date().toISOString() };
@@ -358,8 +366,21 @@ function StatementDetailBody({ st, onUpdate, detailById = {} }) {
                 <tr>
                   <td style={{ borderBottom: "1px solid var(--line-2)" }}></td>
                   <td colSpan={4} style={{ padding: "0 8px 9px", borderBottom: "1px solid var(--line-2)" }}>
+                    {/* Hàng 1: KẾT NỐI (Connect/Disconnect) + KIND + loại cont + tuyến — ghi rõ nhất */}
+                    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "5px 8px", marginBottom: 3 }}>
+                      {d.conn === "Connect"
+                        ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, color: "var(--good)", background: "var(--good-weak)", padding: "2px 9px", borderRadius: 999 }}><span style={{ width: 6, height: 6, borderRadius: 999, background: "currentColor" }} />CONNECT</span>
+                        : d.conn === "Disconnect"
+                        ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, color: "var(--danger)", background: "#fce8e8", padding: "2px 9px", borderRadius: 999 }}><span style={{ width: 6, height: 6, borderRadius: 999, background: "currentColor" }} />DISCONNECT</span>
+                        : <span style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-4)", background: "var(--line-2)", padding: "2px 9px", borderRadius: 999 }}>KẾT NỐI: chưa xác định (thiếu giờ xe ra)</span>}
+                      {d.ftHours != null && <span style={{ fontSize: 11, color: "var(--ink-4)" }} className="tnum">Free time {fmtHours(d.ftHours)} · ngưỡng {d.ftThreshold}h{d.ftBasis ? " · từ " + d.ftBasis : ""}</span>}
+                      <span style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-3)", background: "var(--line-2)", padding: "2px 9px", borderRadius: 999 }}>{/external cru/i.test(d.kind || "") ? "CRU ngoại" : /internal cru/i.test(d.kind || "") ? "CRU nội" : "1 chiều"}</span>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-3)", background: "var(--line-2)", padding: "2px 9px", borderRadius: 999 }}>{d.is20 ? "20FT" : "40FT"}</span>
+                      {d.route && <span className="tnum" style={{ fontSize: 11, color: "var(--ink-4)" }}>{d.route}</span>}
+                      {!d.matched && <span style={{ fontSize: 11, color: "var(--warn)", fontWeight: 700 }}>⚠ chưa khớp bảng giá</span>}
+                    </div>
+                    {/* Hàng 2: tách khoản tiền */}
                     <div style={{ fontSize: 11.5, color: "var(--ink-3)", display: "flex", flexWrap: "wrap", alignItems: "center", gap: "3px 12px", lineHeight: 1.7 }}>
-                      {!d.matched && <span style={{ color: "var(--warn)", fontWeight: 700 }}>⚠ chưa khớp bảng giá</span>}
                       <span>Cước <b className="tnum" style={{ color: "var(--ink-2)" }}>{fmtNum(d.cuoc)}</b></span>
                       <span>+ Dầu <b className="tnum" style={{ color: "var(--ink-2)" }}>{fmtNum(d.dau)}</b></span>
                       {d.choHoItems.map((c, j) => <span key={"h" + j} style={{ color: "var(--good)" }}>+ Chi hộ · {c.item} <b className="tnum">{fmtNum(c.amount)}</b></span>)}

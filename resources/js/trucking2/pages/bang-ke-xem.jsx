@@ -49,14 +49,22 @@ function ViewStatementApp() {
     const shipById = {}; (r.ships || []).forEach((s) => { shipById[s.id] = s; });
 
     const live = {}; let changed = 0;
+    // So sánh cả các trường HIỂN THỊ (không chỉ số tiền) để nếu tuyến/kết nối/chi tiết đổi
+    // thì vẫn cho Lưu — vd tuyến giờ hiển thị theo TÊN thay vì ký hiệu.
+    const cmpFields = ["phaiThu", "cuoc", "dau", "chiHo", "route", "conn", "kind", "is20"];
     const lines = (st.lines || []).map((l) => {
       const s = shipById[l.id];
       if (!s) { live[l.id] = { found: false }; return l; }
       const pr = priceFor(s);
       live[l.id] = { found: true, ...pr };
-      if ((pr.phaiThu || 0) !== (l.phaiThu || 0)) changed++;
+      const od = l.detail || {};
+      const diff = (pr.phaiThu || 0) !== (l.phaiThu || 0) || cmpFields.some((k) => {
+        const a = pr[k], b = od[k];
+        return (typeof a === "number" || typeof b === "number") ? ((a || 0) !== (b || 0)) : ((a ?? "") !== (b ?? ""));
+      });
+      if (diff) changed++;
       return { ...l, phaiThu: pr.phaiThu, cuoc: pr.phaiThu,
-        detail: { matched: pr.matched, cuoc: pr.cuoc, dau: pr.dau, chiHo: pr.chiHo, choHoItems: pr.choHoItems, costItems: pr.costItems, phaiThu: pr.phaiThu } };
+        detail: { ...pr } };   // snapshot đầy đủ (conn/kind/loại/tuyến/free time)
     });
     setLiveDetail(live);
     if (changed) { dirtyIds.current.add(st.id); setSt({ ...st, lines }); }
