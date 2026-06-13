@@ -607,14 +607,23 @@ function FleetApp() {
     window.addEventListener("beforeunload", h);
     return () => window.removeEventListener("beforeunload", h);
   }, [dirty]);
-  // mở theo hash khi load trang: #<id> | #<id>/<tab> | #<id>/cost/<costId> (deep-link từ thông báo)
+  // mở theo hash: #<id> | #<id>/<tab> | #<id>/cost/<costId> (deep-link từ thông báo).
+  // Chạy lúc mount VÀ khi hash đổi mà KHÔNG reload (bấm thông báo lúc đang ở sẵn trang
+  // này → location.href chỉ đổi hash). Ghi hash nội bộ dùng replaceState nên không phát
+  // hashchange → không lặp.
   useEffect(() => {
-    const h = (window.location.hash || "").replace(/^#/, "");
-    const [idStr, tabStr, costStr] = h.split("/");
-    const v = vehicles.find((x) => String(x.id) === idStr);
-    if (!v) return;
-    if (costStr) pendingCost.current = costStr;   // nhớ phiếu cần cuộn tới
-    open(v, tabStr);
+    const applyHash = () => {
+      const h = (window.location.hash || "").replace(/^#/, "");
+      const [idStr, tabStr, costStr] = h.split("/");
+      if (!idStr) return;
+      const v = vehicles.find((x) => String(x.id) === idStr);
+      if (!v) return;
+      if (costStr) pendingCost.current = costStr;   // nhớ phiếu cần cuộn tới
+      open(v, tabStr);
+    };
+    applyHash();
+    window.addEventListener("hashchange", applyHash);
+    return () => window.removeEventListener("hashchange", applyHash);
   }, []);
   // Khi tab Chi phí đã load xong → cuộn tới + highlight đúng phiếu chi (deep-link)
   useEffect(() => {
