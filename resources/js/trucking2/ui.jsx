@@ -462,9 +462,20 @@ function StatementActions({ st, onDelete, onSave, isDirty, onClose, closeLabel =
   const dirty = !!(isDirty && isDirty(st.id));
   const [saving, setSaving] = useState(false);
   const doSave = () => { if (saving || !dirty) return; setSaving(true); Promise.resolve(onSave && onSave()).then(() => setSaving(false)).catch(() => setSaving(false)); };
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const askDelete = async () => {
+    if (!onDelete) return;
+    const ok = await window.confirmAction({
+      title: "Xóa bảng kê?",
+      text: `Bảng kê <b>${esc(st.no || "(chưa có số)")}</b>${st.customer ? " · " + esc(st.customer) : ""} sẽ bị xóa vĩnh viễn cùng toàn bộ đợt thanh toán. Không thể hoàn tác.`,
+      confirmText: '<i class="bi bi-trash me-1"></i> Xóa bảng kê',
+      danger: true,
+    });
+    if (ok) onDelete(st.id);
+  };
   return (
     <div className="ke-noprint" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
-      <button type="button" onClick={() => onDelete && onDelete(st.id)}
+      <button type="button" onClick={askDelete}
         style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", fontSize: 13, fontWeight: 500, border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--ink-3)", cursor: "pointer" }}
         onMouseEnter={(e) => { e.currentTarget.style.background = "#fce8e8"; e.currentTarget.style.color = "var(--danger)"; }}
         onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "var(--ink-3)"; }}>

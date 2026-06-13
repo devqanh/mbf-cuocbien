@@ -1031,7 +1031,17 @@ function PriceList({ rows = [], onChange, onImported, cfg = {}, customer }) {
               </div>
               <div style={{ flex: 1 }} />
               {locGroups.length > 1 && (
-                <button type="button" onClick={() => onChange(rows.filter((r) => locKey(r) !== g.key))} title="Xóa nhóm địa điểm hạ"
+                <button type="button" title="Xóa nhóm địa điểm hạ"
+                  onClick={async () => {
+                    const n = rows.filter((r) => locKey(r) === g.key).length;
+                    const ok = await window.confirmAction({
+                      title: "Xóa nhóm tuyến?",
+                      text: `Sẽ bỏ <b>${n}</b> dòng tuyến của nhóm điểm hạ này khỏi bảng giá. Thay đổi áp dụng khi bấm <b>Lưu</b>.`,
+                      confirmText: '<i class="bi bi-trash me-1"></i> Xóa nhóm',
+                      danger: true,
+                    });
+                    if (ok) onChange(rows.filter((r) => locKey(r) !== g.key));
+                  }}
                   style={{ width: 28, height: 28, display: "grid", placeItems: "center", border: "1px solid var(--line)", borderRadius: 7, background: "#fff", color: "var(--ink-4)", cursor: "pointer" }}
                   onMouseEnter={(e) => { e.currentTarget.style.background = "#fce8e8"; e.currentTarget.style.color = "var(--danger)"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "var(--ink-4)"; }}><I.trash /></button>

@@ -23,6 +23,14 @@ const CAT_KEYS = {
   __freetime: ["freeTimeHours"],
 };
 
+// Nhãn tab (cho hộp xác nhận)
+const TAB_LABELS = {
+  locations: "Địa điểm", customers: "Khách hàng", contTypes: "Loại cont", warehouses: "Kho",
+  payers: "Bên thanh toán", costItems: "Khoản chi phí", choHoItems: "Khoản chi hộ", revItems: "Khoản doanh thu",
+  vehicles: "Đội xe", drivers: "Tài xế", vehItems: "Chi phí xe", __vat: "VAT mặc định", __freetime: "Free time",
+};
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
 function SettingsApp() {
   const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
   const DEFAULT_CFG = { locations: [], locationCode: {}, locationCodeArr: [], locationLocked: [], customers: [], customerInfo: {}, contTypes: [], warehouses: [], warehouseCode: {}, warehouseCodeArr: [], payers: [], costItems: [], choHoItems: [], revItems: [], vehicles: [], vehicleType: {}, drivers: [], vehItems: [], prices: {}, costColors: {}, vatDefault: { hph: "8", icd: "0" }, freeTimeHours: "4" };
@@ -60,11 +68,30 @@ function SettingsApp() {
   // Sửa tay → cập nhật state + đánh dấu TAB hiện tại có thay đổi (KHÔNG tự lưu)
   const setCfgKey = (key, val) => { setCfgState((c) => ({ ...c, [key]: val })); setDirty((d) => ({ ...d, [sel]: true })); };
 
-  // Lưu RIÊNG tab đang chọn — chỉ gửi các key của tab đó
-  const saveCat = () => {
+  // Lưu RIÊNG tab đang chọn — chỉ gửi các key của tab đó. HỎI xác nhận trước khi lưu;
+  // cảnh báo mạnh nếu phát hiện đang XÓA bớt mục (xóa khách hàng sẽ kéo theo bảng giá).
+  const saveCat = async () => {
     if (!dirty[sel] || saving) return;
-    setSaving(true);
     const cur = sel;
+    const label = TAB_LABELS[cur] || "mục này";
+    const before = counts[cur];
+    const now = Array.isArray(cfg[cur]) ? (cfg[cur] || []).length : null;
+    const removed = (typeof before === "number" && now != null) ? Math.max(0, before - now) : 0;
+
+    let title = "Lưu thay đổi?";
+    let text = `Lưu thay đổi cho danh mục <b>${esc(label)}</b>? Thao tác sẽ ghi đè dữ liệu danh mục này trên hệ thống.`;
+    let confirmText = '<i class="bi bi-save me-1"></i> Lưu';
+    if (removed > 0) {
+      title = "Xác nhận xóa & lưu?";
+      text = cur === "customers"
+        ? `Bạn sắp xóa <b>${removed}</b> khách hàng — kèm theo <b>toàn bộ bảng giá</b> của những khách đó. Không thể hoàn tác.`
+        : `Bạn sắp xóa <b>${removed}</b> mục khỏi danh mục <b>${esc(label)}</b>. Không thể hoàn tác.`;
+      confirmText = '<i class="bi bi-trash me-1"></i> Xóa & lưu';
+    }
+    const ok = await window.confirmAction({ title, text, confirmText, danger: removed > 0 });
+    if (!ok) return;
+
+    setSaving(true);
     const keys = CAT_KEYS[cur] || [cur];
     const partial = {};
     keys.forEach((k) => { partial[k] = cfg[k]; });
