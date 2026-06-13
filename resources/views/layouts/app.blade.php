@@ -593,6 +593,7 @@
                 case 'task.mentioned': return '<i class="bi bi-at me-1"></i> Bạn được nhắc đến';
                 case 'task.commented': return '<i class="bi bi-chat-square-text-fill me-1"></i> Bình luận mới';
                 case 'task.updated':   return '<i class="bi bi-pencil-square me-1"></i> Cập nhật công việc';
+                case 'trucking.spend_request': return '<i class="bi bi-cash-coin me-1"></i> Yêu cầu chi tiền mới';
                 default:               return '<i class="bi bi-bell-fill me-1"></i> Thông báo mới';
             }
         },

@@ -27,8 +27,12 @@ use App\Models\TruckingVehicleCostType;
 use App\Models\TruckingStatement;
 use App\Models\TruckingVehicle;
 use App\Models\TruckingWarehouse;
+use App\Models\User;
+use App\Notifications\SpendRequestCreatedNotification;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -856,6 +860,19 @@ class TruckingV2Service
             'amount' => $amount, 'current_km' => $km, 'approved' => false, 'paid' => false, 'sort' => $sort,
         ]);
         if ($files) { $cost->photos = $this->storeCostPhotos($v, $files); $cost->save(); }
+
+        // Thông báo cho người duyệt chi (quyền settings.update) — best-effort, không chặn việc gửi.
+        try {
+            $approvers = User::permission('settings.update')->get();
+            if ($approvers->isNotEmpty()) {
+                Notification::send($approvers, new SpendRequestCreatedNotification($cost, $v));
+            }
+        } catch (\Throwable $e) {
+            Log::channel('single')->warning('Notify spend request failed', [
+                'cost_id' => $cost->id, 'vehicle_id' => $v->id, 'error' => $e->getMessage(),
+            ]);
+        }
+
         return ['ok' => true, 'message' => "Đã gửi yêu cầu chi “{$item}” cho xe {$v->plate}. Kế toán sẽ duyệt sau."];
     }
 
