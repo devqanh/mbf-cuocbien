@@ -6,8 +6,10 @@
     <title>Tài liệu cột &amp; công thức — Trucking</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+    {{-- Font toàn dự án (Inter) — đổi font ở partials/_font.blade.php --}}
+    @include('partials._font')
     <style>
-        body { background:#eef1f6; color:#1c273c; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+        body { background:#eef1f6; color:#1c273c; font-family: var(--app-font); }
         .doc-topbar { background: linear-gradient(135deg,#0153a9,#013f80); color:#fff; padding:14px 0; margin-bottom:24px; }
         .doc-topbar .title { font-size:16px; font-weight:800; letter-spacing:.3px; }
         .doc-wrap { max-width: 1000px; margin: 0 auto; padding: 0 16px 60px; }

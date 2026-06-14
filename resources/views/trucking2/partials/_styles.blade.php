@@ -1,6 +1,4 @@
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet" />
+{{-- Font dùng chung toàn dự án — xem partials/_font.blade.php --}}
 @verbatim
 <style>
 :root {
@@ -28,7 +26,7 @@
   html, body { height: 100%; }
   body {
     margin: 0;
-    font-family: "Be Vietnam Pro", system-ui, -apple-system, sans-serif;
+    font-family: var(--app-font, "Inter", system-ui, -apple-system, sans-serif);
     background: var(--bg);
     color: var(--ink);
     -webkit-font-smoothing: antialiased;

@@ -108,6 +108,22 @@ window.trkError = function(info){
   };
 };
 
+/* Hộp "Phiên hết hạn" (lỗi 419) — KHÔNG báo lỗi kỹ thuật, chỉ hướng dẫn TẢI LẠI TRANG để đăng nhập lại. */
+window.trkReloadPrompt = function(){
+  if (document.getElementById('trk-reload-ov')) return;   // chỉ hiện 1 lần
+  var ov = document.createElement('div'); ov.id = 'trk-reload-ov';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:4100;background:rgba(16,19,23,.45);backdrop-filter:blur(2px);display:grid;place-items:center;padding:24px;';
+  var card = document.createElement('div');
+  card.style.cssText = 'width:min(420px,100%);background:#fff;border-radius:16px;box-shadow:0 24px 50px -16px rgba(16,19,23,.5);overflow:hidden;font-family:inherit;text-align:center;padding:26px 22px 22px;';
+  card.innerHTML =
+    '<div style="width:52px;height:52px;border-radius:14px;display:grid;place-items:center;background:#fff5e6;color:#e0a92e;font-size:26px;margin:0 auto 14px;"><i class="bi bi-arrow-clockwise"></i></div>'
+    + '<div style="font-size:17px;font-weight:800;color:#1b2330;">Phiên làm việc đã hết hạn</div>'
+    + '<div style="font-size:14px;color:#5b6675;margin-top:8px;line-height:1.55;">Trang đã mở quá lâu nên cần tải lại. Bấm nút bên dưới để tải lại và đăng nhập lại.</div>'
+    + '<button data-a="reload" style="margin-top:20px;width:100%;padding:14px;font-size:15.5px;font-weight:800;border:none;border-radius:13px;background:#2a6fdb;color:#fff;cursor:pointer;"><i class="bi bi-arrow-clockwise"></i> Tải lại trang</button>';
+  ov.appendChild(card); document.body.appendChild(ov);
+  card.querySelector('[data-a=reload]').onclick = function(){ window.location.reload(); };
+};
+
 /* Gọi API JSON CÓ XỬ LÝ LỖI: 4xx/5xx/mất mạng → hiện hộp lỗi rõ ràng + ném lỗi cho caller.
    Trả Promise<data> khi thành công. Dùng thay cho fetch(...).then(r=>r.json()) trong các trang. */
 window.trkApi = function(method, url, body){
@@ -120,9 +136,9 @@ window.trkApi = function(method, url, body){
     return res.text().then(function(text){
       var data = null; try { data = text ? JSON.parse(text) : null; } catch(e){ data = null; }
       if (!res.ok){
+        if (res.status === 419){ window.trkReloadPrompt(); var e419 = new Error('expired'); e419.status = 419; throw e419; }
         var msg = (data && (data.message || data.error))
-          || (res.status===419 ? 'Phiên làm việc đã hết hạn — vui lòng tải lại trang rồi thử lại.'
-          :  res.status===403 ? 'Bạn không có quyền thực hiện thao tác này.'
+          || (res.status===403 ? 'Bạn không có quyền thực hiện thao tác này.'
           :  res.status===404 ? 'Không tìm thấy dữ liệu/đường dẫn.'
           :  ('Máy chủ trả về lỗi ' + res.status + '.'));
         window.trkError({ status: res.status, message: msg, url: url });
@@ -143,6 +159,7 @@ window.trkUpload = function(method, url, formData){
     return res.text().then(function(text){
       var data = null; try { data = text ? JSON.parse(text) : null; } catch(e){ data = null; }
       if (!res.ok){
+        if (res.status === 419){ window.trkReloadPrompt(); var e419 = new Error('expired'); e419.status = 419; throw e419; }
         var msg = (data && (data.message || data.error))
           || (res.status===413 ? 'File quá lớn — vượt giới hạn cho phép.'
           :  res.status===422 ? 'File không hợp lệ (sai định dạng hoặc quá lớn).'

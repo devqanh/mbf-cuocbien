@@ -855,7 +855,7 @@ class TruckingV2Service
 
         $sort = (int) ($v->vehicleCosts()->max('sort') ?? -1) + 1;
         $cost = $v->vehicleCosts()->create([
-            'name' => $item, 'invoice_no' => $this->nextCostInvoiceNo(), 'kind' => 'fixed',
+            'name' => $item, 'created_by' => auth()->id(), 'invoice_no' => $this->nextCostInvoiceNo(), 'kind' => 'fixed',
             'spend_date' => $this->inDate($in['date'] ?? null) ?? now()->toDateString(),
             'amount' => $amount, 'current_km' => $km, 'approved' => false, 'paid' => false, 'sort' => $sort,
         ]);
@@ -874,6 +874,100 @@ class TruckingV2Service
         }
 
         return ['ok' => true, 'message' => "Đã gửi yêu cầu chi “{$item}” cho xe {$v->plate}. Kế toán sẽ duyệt sau."];
+    }
+
+    /** Trạng thái phiếu chi: cancelled | paid | approved | pending (+ nhãn VN). */
+    public function vehicleCostStatus(TruckingVehicleCost $c): array
+    {
+        if ($c->cancelled_at) return ['code' => 'cancelled', 'label' => 'Đã hủy'];
+        if ($c->paid)         return ['code' => 'paid',      'label' => 'Đã chi'];
+        if ($c->approved)     return ['code' => 'approved',  'label' => 'Đã duyệt'];
+        return ['code' => 'pending', 'label' => 'Chờ duyệt'];
+    }
+
+    /** Lịch sử yêu cầu chi CỦA 1 user (mobile) — phiếu do chính họ gửi. */
+    public function spendRequestHistory(int $userId): array
+    {
+        return TruckingVehicleCost::with('vehicle:id,plate')
+            ->where('created_by', $userId)->orderByDesc('id')->limit(100)->get()
+            ->map(function ($c) {
+                $st = $this->vehicleCostStatus($c);
+                return [
+                    'id' => $c->id, 'vehicleId' => $c->vehicle_id, 'plate' => $c->vehicle?->plate ?? '', 'name' => $c->name ?? '',
+                    'invoiceNo' => $c->invoice_no ?? '', 'amount' => $this->outMoney($c->amount),
+                    'date' => $this->outDate($c->spend_date), 'km' => $this->outNum($c->current_km),
+                    'status' => $st['code'], 'statusLabel' => $st['label'],
+                    'canCancel' => $st['code'] === 'pending', 'canEdit' => $st['code'] === 'pending',   // chưa duyệt mới sửa/hủy được
+                    'photos' => $this->costPhotosOut(is_array($c->photos) ? $c->photos : [], $c->vehicle_id),
+                ];
+            })->all();
+    }
+
+    /** Tài xế hủy phiếu CỦA MÌNH — chỉ khi đang "Chờ duyệt". */
+    public function cancelSpendRequestByOwner(int $userId, int $costId): array
+    {
+        $c = TruckingVehicleCost::where('id', $costId)->where('created_by', $userId)->first();
+        if (! $c) return ['ok' => false, 'message' => 'Không tìm thấy phiếu của bạn.'];
+        if ($c->cancelled_at) return ['ok' => false, 'message' => 'Phiếu đã hủy trước đó.'];
+        if ($c->approved || $c->paid) return ['ok' => false, 'message' => 'Phiếu đã được duyệt/chi — không thể tự hủy. Liên hệ kế toán.'];
+        $c->forceFill(['cancelled_at' => now(), 'cancelled_by' => $userId])->save();
+        return ['ok' => true, 'message' => 'Đã hủy phiếu.'];
+    }
+
+    /** Tài xế SỬA phiếu CỦA MÌNH — chỉ khi "Chờ duyệt" (giữ ảnh cũ theo keep + thêm ảnh mới). */
+    public function updateSpendRequestByOwner(int $userId, int $costId, array $in, array $files = []): array
+    {
+        $c = TruckingVehicleCost::with('vehicle')->where('id', $costId)->where('created_by', $userId)->first();
+        if (! $c) return ['ok' => false, 'message' => 'Không tìm thấy phiếu của bạn.'];
+        if ($c->cancelled_at) return ['ok' => false, 'message' => 'Phiếu đã hủy.'];
+        if ($c->approved || $c->paid) return ['ok' => false, 'message' => 'Phiếu đã được duyệt/chi — không thể sửa.'];
+        $v = $c->vehicle;
+        if (! $v) return ['ok' => false, 'message' => 'Xe không hợp lệ.'];
+
+        $item = trim((string) ($in['costItem'] ?? ''));
+        if ($item === '' || ! in_array($item, $this->costItemNames(), true)) return ['ok' => false, 'message' => 'Loại chi phí không hợp lệ.'];
+        $amount = $this->inMoney($in['amount'] ?? null) ?? 0;
+        if ($amount <= 0) return ['ok' => false, 'message' => 'Vui lòng nhập số tiền.'];
+        $km = (isset($in['km']) && $in['km'] !== '') ? (float) preg_replace('/[^\d.]/', '', (string) $in['km']) : null;
+
+        $allow = 0;
+        foreach ((is_array($v->allowances) ? $v->allowances : []) as $a) {
+            if (mb_strtolower(trim((string) ($a['costItem'] ?? ''))) === mb_strtolower($item)) { $allow = (int) ($a['km'] ?? 0); break; }
+        }
+        if ($allow > 0) {
+            if ($km === null) return ['ok' => false, 'message' => "Khoản “{$item}” có định mức {$allow} km — vui lòng nhập KM hiện tại."];
+            $lastKm = $this->lastApprovedKm($v->id, $item);
+            if ($lastKm !== null && ($km - $lastKm) < $allow) {
+                $g = fn ($n) => number_format((float) $n, 0, '.', '.');
+                return ['ok' => false, 'message' => "Chưa đủ định mức: “{$item}” cần đi thêm ≥ {$g($allow)} km kể từ lần trước (km {$g($lastKm)})."];
+            }
+        }
+
+        // Ảnh: giữ lại các ảnh cũ có trong "keep" + thêm ảnh mới; xóa file của ảnh bị bỏ.
+        $keep = is_array($in['keep'] ?? null) ? array_map(fn ($x) => basename((string) $x), $in['keep']) : [];
+        $cur = is_array($c->photos) ? $c->photos : [];
+        $kept = array_values(array_filter($cur, fn ($p) => in_array(basename((string) ($p['file'] ?? '')), $keep, true)));
+        foreach ($cur as $p) {
+            $f = basename((string) ($p['file'] ?? ''));
+            if ($f !== '' && ! in_array($f, $keep, true)) Storage::disk('local')->delete("trucking/cost-photos/{$v->id}/{$f}");
+        }
+        $kept = array_merge($kept, $files ? $this->storeCostPhotos($v, $files) : []);
+
+        $c->forceFill([
+            'name' => $item, 'amount' => $amount, 'current_km' => $km,
+            'spend_date' => $this->inDate($in['date'] ?? null) ?? $c->spend_date,
+            'photos' => $kept,
+        ])->save();
+        return ['ok' => true, 'message' => 'Đã cập nhật phiếu.'];
+    }
+
+    /** Admin hủy phiếu — khi CHƯA thanh toán. */
+    public function cancelVehicleCost(TruckingVehicleCost $c, int $byUserId): array
+    {
+        if ($c->cancelled_at) return ['ok' => false, 'message' => 'Phiếu đã hủy.'];
+        if ($c->paid) return ['ok' => false, 'message' => 'Phiếu đã chi — không thể hủy.'];
+        $c->forceFill(['cancelled_at' => now(), 'cancelled_by' => $byUserId])->save();
+        return ['ok' => true];
     }
 
     /** Thông tin nền 1 xe (tab Thông tin) — KHÔNG kèm 3 nhóm con (lazy-load riêng từng tab). */
@@ -900,14 +994,19 @@ class TruckingV2Service
 
     private function costsOut(TruckingVehicle $v): array
     {
-        return $v->vehicleCosts()->orderBy('sort')->get()->map(fn ($c) => [
+        return $v->vehicleCosts()->with('creator:id,name')->orderBy('sort')->get()->map(function ($c) use ($v) {
+            $st = $this->vehicleCostStatus($c);
+            return [
             'id' => $c->id, 'name' => $c->name ?? '', 'costTypeId' => $c->cost_type_id, 'invoiceNo' => $c->invoice_no ?? '', 'kind' => ($c->kind === 'fixed' ? 'fixed' : 'recurring'),
             'spendDate' => $this->outDate($c->spend_date), 'dueDate' => $this->outDate($c->due_date), 'amount' => $this->outMoney($c->amount),
             'currentKm' => $this->outNum($c->current_km), 'supplier' => $c->supplier ?? '', 'note' => $c->note ?? '',
             'paid' => (bool) $c->paid, 'approved' => (bool) $c->approved,
             'paidDate' => $this->outDate($c->paid_date), 'paidMethod' => $c->paid_method ?? '', 'paidRef' => $c->paid_ref ?? '', 'paidNote' => $c->paid_note ?? '',
+            'requester' => $c->creator?->name ?? '', 'status' => $st['code'], 'statusLabel' => $st['label'],
+            'cancelled' => (bool) $c->cancelled_at, 'canCancel' => (! $c->cancelled_at && ! $c->paid),   // admin hủy khi chưa chi
             'photos' => $this->costPhotosOut(is_array($c->photos) ? $c->photos : [], $v->id),
-        ])->all();
+            ];
+        })->all();
     }
 
     // --- Ảnh thực tế đính kèm phiếu chi (hóa đơn/đồng hồ km/phụ tùng) ---
@@ -1050,14 +1149,20 @@ class TruckingV2Service
                 $nextN = $usedN ? max($usedN) : 0;
 
                 $typeId = TruckingVehicleCostType::pluck('id', 'name');
+                // GIỮ LẠI người yêu cầu + trạng thái hủy qua delete+recreate (khớp theo id dòng cũ)
+                $preserve = $v->vehicleCosts()->get(['id', 'created_by', 'cancelled_at', 'cancelled_by', 'created_at'])->keyBy('id');
                 $v->vehicleCosts()->delete();
                 foreach ($costRows as $i => $c) {
                     $inv = trim((string) ($c['invoiceNo'] ?? ''));
                     if ($inv === '') { $nextN++; $inv = 'PC-' . str_pad((string) $nextN, 4, '0', STR_PAD_LEFT); }
                     $cn = $this->str($c['name'] ?? null);
+                    $old = (isset($c['id']) && $preserve->has($c['id'])) ? $preserve[$c['id']] : null;
                     $v->vehicleCosts()->create([
                         'name' => $cn,
                         'cost_type_id' => $cn !== null ? ($typeId[$cn] ?? null) : null,
+                        'created_by'   => $old?->created_by,
+                        'cancelled_at' => $old?->cancelled_at,
+                        'cancelled_by' => $old?->cancelled_by,
                         'invoice_no' => $inv,
                         'kind' => (($c['kind'] ?? '') === 'recurring') ? 'recurring' : 'fixed',
                         'spend_date' => $this->inDate($c['spendDate'] ?? null),

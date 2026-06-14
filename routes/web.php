@@ -18,8 +18,13 @@ Route::get('/', function () {
     return redirect()->route(auth()->check() ? 'trucking2.shipments' : 'login');
 });
 
-// ===== Yêu cầu chi (PUBLIC, mobile) — tài xế gửi đề nghị chi, kế toán duyệt sau =====
+// ===== Yêu cầu chi (mobile SPA, có đăng nhập) — tài xế gửi đề nghị chi, kế toán duyệt sau =====
 Route::get ('/yeu-cau-chi', [TruckingV2Controller::class, 'spendRequestPage'])->name('trucking2.spendRequest');
+Route::post('/yeu-cau-chi/login',  [TruckingV2Controller::class, 'spendLogin'])->name('trucking2.spendRequest.login');
+Route::post('/yeu-cau-chi/logout', [TruckingV2Controller::class, 'spendLogout'])->name('trucking2.spendRequest.logout');
+Route::get ('/yeu-cau-chi/history', [TruckingV2Controller::class, 'spendHistory'])->name('trucking2.spendRequest.history');
+Route::post('/yeu-cau-chi/{cost}/cancel', [TruckingV2Controller::class, 'cancelMySpendRequest'])->name('trucking2.spendRequest.cancel')->whereNumber('cost');
+Route::post('/yeu-cau-chi/{cost}/update', [TruckingV2Controller::class, 'updateMySpendRequest'])->name('trucking2.spendRequest.update')->whereNumber('cost');
 Route::post('/yeu-cau-chi', [TruckingV2Controller::class, 'submitSpendRequest'])->name('trucking2.spendRequest.submit');
 
 // ===== Tài liệu Trucking — CÔNG KHAI (không cần đăng nhập) để gửi kế toán =====
@@ -191,6 +196,7 @@ Route::middleware('auth')->group(function () {
             Route::post('/drivers/{driver}/docs', [TruckingV2Controller::class, 'uploadDriverDocs'])->name('drivers.docs.upload')->whereNumber('driver');
             Route::delete('/drivers/{driver}/docs/{idx}', [TruckingV2Controller::class, 'deleteDriverDoc'])->name('drivers.docs.delete')->whereNumber('driver')->whereNumber('idx');
             Route::put('/quan-ly-xe/{vehicle}', [TruckingV2Controller::class, 'saveVehicle'])->name('fleet.save')->whereNumber('vehicle');
+            Route::put('/quan-ly-xe/cost/{cost}/cancel', [TruckingV2Controller::class, 'adminCancelCost'])->name('fleet.cancelCost')->whereNumber('cost');
             Route::post('/quan-ly-xe-cost-item', [TruckingV2Controller::class, 'addVehicleCostItem'])->name('fleet.costItem');
             Route::post('/quan-ly-xe/{vehicle}/cost-photo', [TruckingV2Controller::class, 'uploadCostPhotos'])->name('fleet.costPhoto.upload')->whereNumber('vehicle');
             Route::post('/quan-ly-xe/{vehicle}/docs', [TruckingV2Controller::class, 'uploadVehicleDocs'])->name('fleet.docs.upload')->whereNumber('vehicle');

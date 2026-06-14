@@ -18,6 +18,9 @@
     <link rel="stylesheet" href="@assetVer('css/app.css')">
     <link rel="stylesheet" href="@assetVer('css/loading.css')">
 
+    {{-- Font toàn dự án (Inter) — đổi font ở partials/_font.blade.php --}}
+    @include('partials._font')
+
     {{-- Global AJAX loading: patch window.fetch sớm (trước mọi script khác) --}}
     <script src="@assetVer('js/loading.js')"></script>
     @stack('styles')

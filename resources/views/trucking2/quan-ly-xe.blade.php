@@ -19,6 +19,7 @@ window.__TRK = {
   canDelete: {{ $canDelete ? 'true' : 'false' }},
   routes: {
     fleet: '{{ url("trucking-v2/quan-ly-xe") }}/',   // + {id}/data (GET) | + {id} (PUT)
+    cancelCost: '{{ url("trucking-v2/quan-ly-xe/cost") }}/',   // + {costId}/cancel (PUT)
     costItem: '{{ route("trucking2.fleet.costItem") }}',
     spendRequest: '{{ route("trucking2.spendRequest") }}',   // link public gửi yêu cầu chi
   },

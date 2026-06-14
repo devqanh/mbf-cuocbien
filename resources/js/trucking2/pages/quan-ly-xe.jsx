@@ -243,7 +243,7 @@ function CostModal({ data, isNew, onChange, onSave, onClose, costTypes = [], onU
   );
 }
 
-function CostTab({ rows, onChange, costTypes, saving, onUploadPhotos, highlightId }) {
+function CostTab({ rows, onChange, costTypes, saving, onUploadPhotos, highlightId, onCancel }) {
   const { useState } = React;
   const [filter, setFilter] = useState("all");   // all | fixed | recurring | due
   const [edit, setEdit] = useState(null);         // { i, d }  (i < 0 = thêm mới)
@@ -337,12 +337,13 @@ function CostTab({ rows, onChange, costTypes, saving, onUploadPhotos, highlightI
                 const rec = isRec(r); const sl = supLatest(r); const sup = !!sl; const ds = rec && r.dueDate && !sup ? dueStatus(r.dueDate) : null;
                 const isHl = highlightId != null && String(r.id) === String(highlightId);
                 return (
-                  <tr key={r.id || i} id={"trk-cost-" + (r.id || i)} className={isHl ? "trk-row-hl" : undefined} onClick={() => openEdit(i)} style={{ borderBottom: "1px solid var(--line-2)", cursor: "pointer", background: sup ? "#fafbfc" : "transparent", opacity: sup ? 0.66 : 1 }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent-weak-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = sup ? "#fafbfc" : "transparent")}>
+                  <tr key={r.id || i} id={"trk-cost-" + (r.id || i)} className={isHl ? "trk-row-hl" : undefined} onClick={() => openEdit(i)} style={{ borderBottom: "1px solid var(--line-2)", cursor: "pointer", background: r.cancelled ? "#f7f8fa" : (sup ? "#fafbfc" : "transparent"), opacity: r.cancelled ? 0.6 : (sup ? 0.66 : 1) }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent-weak-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = r.cancelled ? "#f7f8fa" : (sup ? "#fafbfc" : "transparent"))}>
                     <td style={{ ...cell }} className="tnum"><span style={{ fontWeight: 600, color: r.invoiceNo ? "var(--accent)" : "var(--ink-4)" }}>{r.invoiceNo || "(mới)"}</span></td>
                     <td style={cell}>
-                      <div style={{ fontWeight: 600 }}>{r.name || <span style={{ color: "var(--ink-4)", fontWeight: 400 }}>(chưa đặt tên)</span>}</div>
+                      <div style={{ fontWeight: 600, textDecoration: r.cancelled ? "line-through" : "none" }}>{r.name || <span style={{ color: "var(--ink-4)", fontWeight: 400 }}>(chưa đặt tên)</span>}</div>
                       <span style={{ fontSize: 10.5, fontWeight: 700, color: rec ? "var(--accent)" : "var(--ink-3)", background: rec ? "var(--accent-weak)" : "var(--line-2)", padding: "1px 8px", borderRadius: 999 }}>{rec ? "Định kỳ" : "Cố định"}</span>
+                      {r.requester && <span style={{ fontSize: 11, color: "var(--ink-4)", marginLeft: 8 }} title="Người yêu cầu tạo phiếu"><i className="bi bi-person" /> {r.requester}</span>}
                       {r.supplier && <span style={{ fontSize: 11.5, color: "var(--ink-4)", marginLeft: 8 }}>{r.supplier}</span>}
                       {Array.isArray(r.photos) && r.photos.length > 0 && <span title={`${r.photos.length} ảnh thực tế`} style={{ fontSize: 10.5, fontWeight: 700, color: "var(--good)", background: "var(--good-weak)", padding: "1px 7px", borderRadius: 999, marginLeft: 8 }}><i className="bi bi-camera-fill" /> {r.photos.length}</span>}
                       {toNum(r.currentKm) > 0 && <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 3 }} className="tnum"><i className="bi bi-speedometer2" /> {fmtNum(toNum(r.currentKm))} km{kmDelta[i] ? <b style={{ color: "var(--good)", marginLeft: 6 }}>▲ +{fmtNum(kmDelta[i])} km</b> : ""}</div>}
@@ -359,7 +360,7 @@ function CostTab({ rows, onChange, costTypes, saving, onUploadPhotos, highlightI
                           </div>}
                     </td>
                     <td style={{ ...cell, textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
-                      {(() => {
+                      {r.cancelled ? <span style={{ fontSize: 10.5, fontWeight: 700, color: "#64748b", background: "#eef1f6", padding: "3px 10px", borderRadius: 999, display: "inline-flex", alignItems: "center", gap: 4 }}><i className="bi bi-x-circle-fill" /> Đã hủy</span> : (() => {
                         const chip = (t, title) => <span title={title} style={{ fontSize: 10.5, fontWeight: 700, color: "var(--good)", background: "var(--good-weak)", padding: "3px 9px", borderRadius: 999, display: "inline-flex", alignItems: "center", gap: 4, justifyContent: "center" }}><i className="bi bi-check-circle-fill" /> {t}</span>;
                         const apBtn = (label, onClick) => <button type="button" onClick={onClick} style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", border: "1px solid var(--line)", borderRadius: 999, background: "#fff", color: "var(--ink-2)", cursor: "pointer" }}
                           onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--good)"; e.currentTarget.style.color = "var(--good)"; }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--line)"; e.currentTarget.style.color = "var(--ink-2)"; }}>{label}</button>;
@@ -374,9 +375,9 @@ function CostTab({ rows, onChange, costTypes, saving, onUploadPhotos, highlightI
                         );
                       })()}
                     </td>
-                    <td style={{ ...cell, textAlign: "center", whiteSpace: "nowrap" }}>
-                      {rec && iconBtn(() => openDup(i), <i className="bi bi-arrow-repeat" />, "Tạo phiếu mới (gia hạn)", true)}
-                      <span style={{ display: "inline-block", width: 4 }} />
+                    <td style={{ ...cell, textAlign: "center", whiteSpace: "nowrap" }} onClick={(e) => e.stopPropagation()}>
+                      {rec && !r.cancelled && iconBtn(() => openDup(i), <i className="bi bi-arrow-repeat" />, "Tạo phiếu mới (gia hạn)", true)}
+                      {onCancel && r.canCancel && r.id && <>{iconBtn(() => onCancel(r.id), <i className="bi bi-x-circle" />, "Hủy phiếu")}<span style={{ display: "inline-block", width: 4 }} /></>}
                       {iconBtn(() => del(i), <I.trash />, "Xóa phiếu")}
                     </td>
                   </tr>
@@ -551,6 +552,19 @@ function FleetApp() {
     setSelId(null); setDetail(null); setDirty(false); loadedSecs.current = new Set(); try { window.history.replaceState(null, "", "#"); } catch (e) {}
   };
   const upd = (np) => { setDetail((d) => ({ ...d, ...np })); setDirty(true); };
+  // Admin HỦY phiếu chi (chưa thanh toán) — endpoint riêng, rồi nạp lại danh sách chi phí
+  const cancelCost = async (id) => {
+    const ok = await window.confirmAction({ title: "Hủy phiếu chi?", text: "Phiếu sẽ chuyển <b>Đã hủy</b> và bị loại khỏi tổng chi phí/báo cáo.", confirmText: '<i class="bi bi-x-circle me-1"></i> Hủy phiếu', danger: true });
+    if (!ok) return;
+    try {
+      const r = await api("PUT", ROUTES.cancelCost + id + "/cancel");
+      if (r && r.ok) {
+        window.trkToast && window.trkToast("Đã hủy phiếu");
+        const s = await api("GET", ROUTES.fleet + selId + "/section/costs");
+        if (s && s.ok) setDetail((d) => ({ ...d, costs: s.costs || [] }));
+      } else window.trkToast && window.trkToast((r && r.message) || "Không hủy được", "error");
+    } catch (e) {}
+  };
   // Chi phí: LƯU NGAY mỗi thao tác (thêm/sửa/duyệt/thanh toán/xóa) — không gộp vào nút Lưu chung
   const [costSaving, setCostSaving] = useState(false);
   const saveCosts = (rows) => {
@@ -878,7 +892,7 @@ function FleetApp() {
             : tab === "allowance" ? <AllowanceTab rows={detail.allowances || []} onChange={(rows) => upd({ allowances: rows })} costItems={costItems} addCostItem={addCostItem} />
             : tab === "deprec" ? <DeprecTab rows={detail.depreciations || []} onChange={(rows) => upd({ depreciations: rows })} />
             : tab === "usage" ? <UsageTab rows={detail.usages || []} onChange={(rows) => upd({ usages: rows })} drivers={detail.drivers || []} />
-            : <CostTab rows={detail.costs || []} onChange={saveCosts} saving={costSaving} costTypes={detail.costTypes || []} onUploadPhotos={uploadCostPhotos} highlightId={hlCost} />}
+            : <CostTab rows={detail.costs || []} onChange={saveCosts} saving={costSaving} costTypes={detail.costTypes || []} onUploadPhotos={uploadCostPhotos} highlightId={hlCost} onCancel={cancelCost} />}
         </div>
       </div>
     </div>

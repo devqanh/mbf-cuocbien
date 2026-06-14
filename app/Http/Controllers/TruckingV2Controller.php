@@ -8,6 +8,7 @@ use App\Models\TruckingShipment;
 use App\Models\TruckingStatement;
 use App\Models\TruckingTripCostBatch;
 use App\Models\TruckingVehicle;
+use App\Models\TruckingVehicleCost;
 use App\Models\TruckingWarehouse;
 use App\Services\TruckingV2Service;
 use Illuminate\Http\JsonResponse;
@@ -500,15 +501,58 @@ class TruckingV2Controller extends Controller
         ], 'settings.update', 'settings.update'));
     }
 
-    /** Trang PUBLIC gửi yêu cầu chi (mobile) — không cần đăng nhập. */
+    /** Trang gửi yêu cầu chi (mobile SPA) — cần đăng nhập + quyền spend.request. */
     public function spendRequestPage()
     {
-        return view('trucking2.yeu-cau-chi', ['boot' => $this->svc->publicRequestData()]);
+        $u = auth()->user();
+        $can = $u && $u->can('spend.request');
+        $boot = ['auth' => ['logged' => (bool) $u, 'name' => $u?->name ?? '', 'canRequest' => (bool) $can]];
+        if ($can) {
+            $boot = array_merge($boot, $this->svc->publicRequestData());
+            $boot['history'] = $this->svc->spendRequestHistory($u->id);
+        }
+        return view('trucking2.yeu-cau-chi', ['boot' => $boot]);
     }
 
-    /** Nhận yêu cầu chi từ trang public (check định mức km) — kèm ảnh thực tế. */
+    /** Đăng nhập mobile (đơn giản, BỎ 2FA) — chỉ cho luồng yêu cầu chi. */
+    public function spendLogin(Request $request): JsonResponse
+    {
+        // Validate THỦ CÔNG (trả 200 + ok:false) để lỗi hiện NGAY trong form, tiếng Việt — không bật hộp lỗi.
+        $email = trim((string) $request->input('email'));
+        $password = (string) $request->input('password');
+        if ($email === '' || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return response()->json(['ok' => false, 'message' => 'Email không hợp lệ. Vui lòng nhập đúng địa chỉ email.']);
+        }
+        if ($password === '') {
+            return response()->json(['ok' => false, 'message' => 'Vui lòng nhập mật khẩu.']);
+        }
+        $remember = ! $request->has('remember') || $request->boolean('remember');   // mặc định LUÔN đăng nhập
+        if (! \Illuminate\Support\Facades\Auth::attempt(['email' => $email, 'password' => $password], $remember)) {
+            return response()->json(['ok' => false, 'message' => 'Email hoặc mật khẩu không đúng.']);
+        }
+        $u = auth()->user();
+        if (! $u->can('spend.request')) {
+            \Illuminate\Support\Facades\Auth::logout();
+            return response()->json(['ok' => false, 'message' => 'Tài khoản chưa được cấp quyền gửi yêu cầu chi. Liên hệ quản trị.']);
+        }
+        $request->session()->regenerate();
+        return response()->json(['ok' => true, 'name' => $u->name]);
+    }
+
+    public function spendLogout(Request $request): JsonResponse
+    {
+        \Illuminate\Support\Facades\Auth::logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+        return response()->json(['ok' => true]);
+    }
+
+    /** Nhận yêu cầu chi (check định mức km) — kèm ảnh thực tế. Cần đăng nhập + quyền. */
     public function submitSpendRequest(Request $request): JsonResponse
     {
+        if (! auth()->user()?->can('spend.request')) {
+            return response()->json(['ok' => false, 'message' => 'Phiên đăng nhập hết hạn — vui lòng đăng nhập lại.']);
+        }
         $data = $request->validate([
             'vehicleId' => ['required'],
             'costItem'  => ['required', 'string', 'max:120'],
@@ -517,8 +561,58 @@ class TruckingV2Controller extends Controller
             'km'        => ['nullable', 'string', 'max:20'],
             'photos'    => ['nullable', 'array', 'max:12'],
             'photos.*'  => ['file', 'image', 'max:20480'],
-        ]);
+        ], $this->spendValidationMessages());
         return response()->json($this->svc->createSpendRequest($data, $request->file('photos', [])));
+    }
+
+    /** Lịch sử yêu cầu chi của chính user (mobile). */
+    public function spendHistory(): JsonResponse
+    {
+        if (! auth()->user()?->can('spend.request')) return response()->json(['ok' => false], 403);
+        return response()->json(['ok' => true, 'history' => $this->svc->spendRequestHistory(auth()->id())]);
+    }
+
+    /** Tài xế tự hủy phiếu của mình (khi chưa duyệt). */
+    public function cancelMySpendRequest(int $cost): JsonResponse
+    {
+        if (! auth()->user()?->can('spend.request')) return response()->json(['ok' => false, 'message' => 'Không có quyền.']);
+        return response()->json($this->svc->cancelSpendRequestByOwner(auth()->id(), $cost));
+    }
+
+    /** Tài xế SỬA phiếu của mình (khi chưa duyệt) — kèm ảnh (keep + mới). */
+    public function updateMySpendRequest(Request $request, int $cost): JsonResponse
+    {
+        if (! auth()->user()?->can('spend.request')) return response()->json(['ok' => false, 'message' => 'Phiên đăng nhập hết hạn — đăng nhập lại.']);
+        $data = $request->validate([
+            'costItem'  => ['required', 'string', 'max:120'],
+            'date'      => ['nullable', 'string', 'max:20'],
+            'amount'    => ['required'],
+            'km'        => ['nullable', 'string', 'max:20'],
+            'keep'      => ['nullable', 'array', 'max:12'],
+            'keep.*'    => ['string', 'max:120'],
+            'photos'    => ['nullable', 'array', 'max:12'],
+            'photos.*'  => ['file', 'image', 'max:20480'],
+        ], $this->spendValidationMessages());
+        return response()->json($this->svc->updateSpendRequestByOwner(auth()->id(), $cost, $data, $request->file('photos', [])));
+    }
+
+    /** Thông báo validate tiếng Việt cho gửi/sửa yêu cầu chi. */
+    private function spendValidationMessages(): array
+    {
+        return [
+            'required'      => 'Vui lòng nhập đầy đủ thông tin bắt buộc.',
+            'photos.max'    => 'Tối đa 12 ảnh.',
+            'photos.*.image' => 'Tệp đính kèm phải là ảnh.',
+            'photos.*.max'  => 'Mỗi ảnh tối đa 20MB.',
+            'photos.*.file' => 'Tệp không hợp lệ.',
+            'max'           => 'Dữ liệu nhập quá dài.',
+        ];
+    }
+
+    /** Admin hủy phiếu chi (khi chưa thanh toán) — từ Quản lý xe. */
+    public function adminCancelCost(TruckingVehicleCost $cost): JsonResponse
+    {
+        return response()->json($this->svc->cancelVehicleCost($cost, auth()->id()));
     }
 
     /** Internal: upload ảnh thực tế cho phiếu chi (CostModal) → trả metadata để đính vào phiếu. */
