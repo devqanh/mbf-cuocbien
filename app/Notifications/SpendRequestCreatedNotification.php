@@ -4,6 +4,7 @@ namespace App\Notifications;
 
 use App\Models\TruckingVehicle;
 use App\Models\TruckingVehicleCost;
+use App\Support\Hashid;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\BroadcastMessage;
 use Illuminate\Notifications\Notification;
