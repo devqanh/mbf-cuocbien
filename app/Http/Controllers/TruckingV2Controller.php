@@ -412,22 +412,24 @@ class TruckingV2Controller extends Controller
 
     public function deleteDriverDoc(TruckingDriver $driver, int $idx): JsonResponse
     {
-        $docs = $this->svc->deleteDriverDoc($driver, $idx);
+        $docs = $this->svc->deleteDriverDoc($driver, $idx);   // $idx = id attachment
         return response()->json(['ok' => true, 'docs' => $docs]);
     }
 
-    /** Stream 1 tài liệu (kiểm soát quyền — không phụ thuộc symlink public). */
-    public function showDriverDoc(TruckingDriver $driver, int $idx)
+    /** Stream 1 file (bảng attachments tập trung) — disk-agnostic (local/S3), kiểm soát quyền theo owner. */
+    public function showAttachment(\App\Models\TruckingAttachment $attachment)
     {
-        $doc = $this->svc->driverDocAt($driver, $idx);
-        abort_unless($doc, 404);
-        $path = \Illuminate\Support\Facades\Storage::disk('local')->path($doc['path']);
-        abort_unless(is_file($path), 404);
-
-        return response()->file($path, [
-            'Content-Type'        => $doc['mime'] ?? 'application/octet-stream',
-            'Content-Disposition' => 'inline; filename="' . addslashes($doc['name'] ?? 'tai-lieu') . '"',
-        ]);
+        $u = auth()->user();
+        if ($attachment->group === 'costPhoto') {
+            $allowed = $u?->can('settings.view')
+                || ($u?->can('spend.request') && TruckingVehicleCost::where('created_by', $u->id)->whereJsonContains('photos', $attachment->id)->exists());
+        } else {
+            $allowed = $u?->can('settings.view');
+        }
+        abort_unless($allowed, 403);
+        $disk = \Illuminate\Support\Facades\Storage::disk($attachment->disk);
+        abort_unless($disk->exists($attachment->path), 404);
+        return $disk->response($attachment->path, $attachment->name ?: 'file', ['Content-Type' => $attachment->mime ?: 'application/octet-stream']);
     }
 
     // ===================== Phí xe nội bộ (trip cost) — mô hình KỲ (snapshot) =====================
@@ -615,25 +617,14 @@ class TruckingV2Controller extends Controller
         return response()->json($this->svc->cancelVehicleCost($cost, auth()->id()));
     }
 
-    /** Internal: upload ảnh thực tế cho phiếu chi (CostModal) → trả metadata để đính vào phiếu. */
+    /** Internal: upload ảnh thực tế cho phiếu chi (CostModal) → trả danh sách (kèm id + url) để đính vào phiếu. */
     public function uploadCostPhotos(Request $request, TruckingVehicle $vehicle): JsonResponse
     {
         $request->validate([
             'files'   => ['required', 'array', 'max:12'],
             'files.*' => ['file', 'image', 'max:20480'],
         ]);
-        $stored = $this->svc->storeCostPhotos($vehicle, $request->file('files', []));
-        // Trả về kèm URL xem (giống costsOut) để client hiển thị ngay
-        $photos = array_map(fn ($p) => $p + ['url' => route('trucking2.fleet.costPhoto', ['vehicle' => $vehicle->id, 'name' => $p['file']])], $stored);
-        return response()->json(['ok' => true, 'photos' => $photos]);
-    }
-
-    /** Stream 1 ảnh phiếu chi (kiểm soát quyền). */
-    public function showCostPhoto(TruckingVehicle $vehicle, string $name)
-    {
-        $path = $this->svc->costPhotoPath($vehicle, $name);
-        abort_unless($path, 404);
-        return response()->file($path);
+        return response()->json(['ok' => true, 'photos' => $this->svc->storeCostPhotos($vehicle, $request->file('files', []))]);
     }
 
     /** Tạo nhanh khoản chi phí (Combo tên phiếu chi) → trả danh mục mới. */
@@ -679,18 +670,7 @@ class TruckingV2Controller extends Controller
 
     public function deleteVehicleDoc(TruckingVehicle $vehicle, int $idx): JsonResponse
     {
-        return response()->json(['ok' => true, 'docs' => $this->svc->deleteVehicleDoc($vehicle, $idx)]);
-    }
-
-    /** Stream 1 tài liệu xe (kiểm soát quyền — không phụ thuộc symlink public). */
-    public function showVehicleDoc(TruckingVehicle $vehicle, int $idx)
-    {
-        $doc = $this->svc->vehicleDocAt($vehicle, $idx);
-        abort_unless($doc, 404);
-        $path = \Illuminate\Support\Facades\Storage::disk('local')->path($doc['path']);
-        abort_unless(is_file($path), 404);
-
-        return response()->file($path);
+        return response()->json(['ok' => true, 'docs' => $this->svc->deleteVehicleDoc($vehicle, $idx)]);   // $idx = id attachment
     }
 
     /** Import bảng giá 1 khách từ Excel (dòng đã parse phía client). */

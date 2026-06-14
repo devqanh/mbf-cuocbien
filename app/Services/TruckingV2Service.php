@@ -21,6 +21,7 @@ use App\Models\TruckingVehicleCost;
 use App\Models\TruckingVehicleDepreciation;
 use App\Models\TruckingVehicleUsage;
 use App\Models\TruckingSetting;
+use App\Models\TruckingAttachment;
 use App\Models\TruckingShipment;
 use App\Models\TruckingShipmentWarehouse;
 use App\Models\TruckingVehicleCostType;
@@ -859,7 +860,7 @@ class TruckingV2Service
             'spend_date' => $this->inDate($in['date'] ?? null) ?? now()->toDateString(),
             'amount' => $amount, 'current_km' => $km, 'approved' => false, 'paid' => false, 'sort' => $sort,
         ]);
-        if ($files) { $cost->photos = $this->storeCostPhotos($v, $files); $cost->save(); }
+        if ($files) { $cost->photos = array_map(fn ($p) => $p['id'], $this->storeCostPhotos($v, $files)); $cost->save(); }
 
         // Thông báo cho người duyệt chi (quyền settings.update) — best-effort, không chặn việc gửi.
         try {
@@ -943,20 +944,19 @@ class TruckingV2Service
             }
         }
 
-        // Ảnh: giữ lại các ảnh cũ có trong "keep" + thêm ảnh mới; xóa file của ảnh bị bỏ.
-        $keep = is_array($in['keep'] ?? null) ? array_map(fn ($x) => basename((string) $x), $in['keep']) : [];
-        $cur = is_array($c->photos) ? $c->photos : [];
-        $kept = array_values(array_filter($cur, fn ($p) => in_array(basename((string) ($p['file'] ?? '')), $keep, true)));
-        foreach ($cur as $p) {
-            $f = basename((string) ($p['file'] ?? ''));
-            if ($f !== '' && ! in_array($f, $keep, true)) Storage::disk('local')->delete("trucking/cost-photos/{$v->id}/{$f}");
+        // Ảnh (theo ID attachment): giữ lại id trong "keep" + thêm ảnh mới; xóa attachment bị bỏ.
+        $keep = is_array($in['keep'] ?? null) ? array_map('intval', $in['keep']) : [];
+        $cur = is_array($c->photos) ? array_map('intval', $c->photos) : [];
+        foreach ($cur as $id) {
+            if (! in_array($id, $keep, true)) $this->deleteAttachment($id, TruckingVehicle::class, $v->id);
         }
-        $kept = array_merge($kept, $files ? $this->storeCostPhotos($v, $files) : []);
+        $keptIds = array_values(array_filter($cur, fn ($id) => in_array($id, $keep, true)));
+        $newIds = $files ? array_map(fn ($p) => $p['id'], $this->storeCostPhotos($v, $files)) : [];
 
         $c->forceFill([
             'name' => $item, 'amount' => $amount, 'current_km' => $km,
             'spend_date' => $this->inDate($in['date'] ?? null) ?? $c->spend_date,
-            'photos' => $kept,
+            'photos' => array_merge($keptIds, $newIds),
         ])->save();
         return ['ok' => true, 'message' => 'Đã cập nhật phiếu.'];
     }
@@ -1009,63 +1009,94 @@ class TruckingV2Service
         })->all();
     }
 
-    // --- Ảnh thực tế đính kèm phiếu chi (hóa đơn/đồng hồ km/phụ tùng) ---
-    /** Map metadata ảnh → có URL xem (kèm 'file' để client round-trip qua lần lưu sau). */
-    private function costPhotosOut(array $photos, int $vehicleId): array
+    // ===================================================================
+    // FILE TẬP TRUNG (trucking_attachments) — disk theo config, dễ migrate S3
+    // ===================================================================
+    private function uploadDisk(): string { return (string) config('trucking.upload_disk', 'local'); }
+
+    /** 1 attachment → shape client (URL stream disk-agnostic qua route). */
+    private function attachmentOut(TruckingAttachment $a): array
     {
-        $out = [];
-        foreach (array_values($photos) as $p) {
-            $file = (string) ($p['file'] ?? '');
-            if ($file === '') continue;
-            $out[] = [
-                'file' => $file,
-                'name' => $p['name'] ?? $file,
-                'mime' => $p['mime'] ?? '',
-                'size' => (int) ($p['size'] ?? 0),
-                'url'  => route('trucking2.fleet.costPhoto', ['vehicle' => $vehicleId, 'name' => $file]),
-            ];
-        }
-        return $out;
+        return [
+            'id' => $a->id, 'name' => $a->name ?? '', 'type' => $a->type ?? '',
+            'mime' => $a->mime ?? '', 'size' => (int) $a->size, 'isImage' => $a->isImage(),
+            'url' => route('trucking2.attachment', ['attachment' => $a->id]),
+        ];
     }
 
-    /** Lưu các ảnh upload (chỉ ảnh) vào ổ đĩa theo xe → trả metadata [{file,name,mime,size}]. */
-    public function storeCostPhotos(TruckingVehicle $v, array $files): array
+    /** Danh sách file của 1 owner/group. */
+    public function listAttachments(string $ownerType, int $ownerId, string $group): array
     {
-        $out = [];
+        return TruckingAttachment::where(['owner_type' => $ownerType, 'owner_id' => $ownerId, 'group' => $group])
+            ->orderBy('sort')->orderBy('id')->get()->map(fn ($a) => $this->attachmentOut($a))->all();
+    }
+
+    /** Lưu nhiều file → tạo attachment rows (disk theo config). Trả về collection model. */
+    public function storeAttachments(string $ownerType, int $ownerId, string $group, array $files, ?string $type, string $dir): array
+    {
+        $disk = $this->uploadDisk();
+        $sort = (int) (TruckingAttachment::where(['owner_type' => $ownerType, 'owner_id' => $ownerId, 'group' => $group])->max('sort') ?? -1) + 1;
+        $created = [];
         foreach ($files as $file) {
             if (! $file || ! $file->isValid()) continue;
-            if (! str_starts_with((string) $file->getMimeType(), 'image/')) continue;
-            $name = $file->store("trucking/cost-photos/{$v->id}", 'local');   // .../{uniqid}.ext
-            $out[] = [
-                'file' => basename($name),
-                'name' => $file->getClientOriginalName(),
-                'mime' => $file->getMimeType(),
-                'size' => $file->getSize(),
-            ];
+            if ($group === 'costPhoto' && ! str_starts_with((string) $file->getMimeType(), 'image/')) continue;
+            $path = $file->store($dir, $disk);
+            $created[] = TruckingAttachment::create([
+                'owner_type' => $ownerType, 'owner_id' => $ownerId, 'group' => $group, 'disk' => $disk, 'path' => $path,
+                'name' => $file->getClientOriginalName(), 'type' => $this->str($type), 'mime' => $file->getMimeType(), 'size' => $file->getSize(), 'sort' => $sort++,
+            ]);
         }
+        return $created;
+    }
+
+    /** Xóa 1 attachment (kiểm tra đúng owner) → xóa file trên disk + dòng. */
+    public function deleteAttachment(int $id, string $ownerType, int $ownerId): bool
+    {
+        $a = TruckingAttachment::where(['id' => $id, 'owner_type' => $ownerType, 'owner_id' => $ownerId])->first();
+        if (! $a) return false;
+        try { Storage::disk($a->disk)->delete($a->path); } catch (\Throwable $e) {}
+        $a->delete();
+        return true;
+    }
+
+    // --- Ảnh phiếu chi: owner = XE (id ổn định), cost.photos = MẢNG ID attachment ---
+    /** Ảnh phiếu chi từ mảng id → shape client. */
+    private function costPhotosOut($ids, int $vehicleId): array
+    {
+        $ids = array_values(array_filter(array_map('intval', is_array($ids) ? $ids : [])));
+        if (! $ids) return [];
+        $rows = TruckingAttachment::whereIn('id', $ids)->where('group', 'costPhoto')->get()->keyBy('id');
+        $out = [];
+        foreach ($ids as $id) if ($rows->has($id)) $out[] = $this->attachmentOut($rows[$id]);
         return $out;
     }
 
-    /** Đường dẫn vật lý của 1 ảnh phiếu chi (chống path traversal). */
-    public function costPhotoPath(TruckingVehicle $v, string $file): ?string
+    /** Upload ảnh phiếu chi → trả shape client (kèm id) để client gắn vào phiếu. */
+    public function storeCostPhotos(TruckingVehicle $v, array $files): array
     {
-        $file = basename($file);
-        if ($file === '' || ! preg_match('/^[A-Za-z0-9._-]+$/', $file)) return null;
-        $path = Storage::disk('local')->path("trucking/cost-photos/{$v->id}/{$file}");
-        return is_file($path) ? $path : null;
+        $m = $this->storeAttachments(TruckingVehicle::class, $v->id, 'costPhoto', $files, null, "trucking/cost-photos/{$v->id}");
+        return array_map(fn ($a) => $this->attachmentOut($a), $m);
     }
 
-    /** Chỉ giữ field cần lưu của metadata ảnh (bỏ 'url'); round-trip an toàn qua delete+recreate. */
+    /** cost.photos lưu MẢNG ID (từ client gửi: mảng object {id} hoặc mảng id). */
     private function cleanCostPhotos($photos): array
     {
         if (! is_array($photos)) return [];
-        $out = [];
-        foreach ($photos as $p) {
-            $file = is_array($p) ? basename((string) ($p['file'] ?? '')) : '';
-            if ($file === '' || ! preg_match('/^[A-Za-z0-9._-]+$/', $file)) continue;
-            $out[] = ['file' => $file, 'name' => (string) ($p['name'] ?? $file), 'mime' => (string) ($p['mime'] ?? ''), 'size' => (int) ($p['size'] ?? 0)];
+        $ids = [];
+        foreach ($photos as $p) { $id = is_array($p) ? (int) ($p['id'] ?? 0) : (int) $p; if ($id > 0) $ids[] = $id; }
+        return array_values(array_unique($ids));
+    }
+
+    /** Dọn ảnh phiếu chi MỒ CÔI của 1 xe (không còn phiếu nào tham chiếu). */
+    private function pruneOrphanCostPhotos(int $vehicleId): void
+    {
+        $used = [];
+        foreach (TruckingVehicleCost::where('vehicle_id', $vehicleId)->pluck('photos') as $ph) {
+            foreach ((is_array($ph) ? $ph : []) as $id) $used[(int) $id] = true;
         }
-        return $out;
+        foreach (TruckingAttachment::where(['owner_type' => TruckingVehicle::class, 'owner_id' => $vehicleId, 'group' => 'costPhoto'])->get() as $a) {
+            if (empty($used[$a->id])) { try { Storage::disk($a->disk)->delete($a->path); } catch (\Throwable $e) {} $a->delete(); }
+        }
     }
 
     private function deprOut(TruckingVehicle $v): array
@@ -1181,6 +1212,7 @@ class TruckingV2Service
                         'sort' => $i,
                     ]);
                 }
+                $this->pruneOrphanCostPhotos($v->id);   // dọn ảnh không còn phiếu nào dùng
             }
             if (array_key_exists('depreciations', $data)) {
                 $v->vehicleDepreciations()->delete();
@@ -1212,50 +1244,20 @@ class TruckingV2Service
     // --- Tài liệu xe (ảnh/PDF/Word/Excel) — giống hồ sơ tài xế ---
     private function vehicleDocsOut(TruckingVehicle $v): array
     {
-        $docs = is_array($v->documents) ? array_values($v->documents) : [];
-        return array_map(fn ($doc, $i) => [
-            'type'    => $doc['type'] ?? '',
-            'name'    => $doc['name'] ?? '',
-            'mime'    => $doc['mime'] ?? '',
-            'size'    => (int) ($doc['size'] ?? 0),
-            'isImage' => str_starts_with((string) ($doc['mime'] ?? ''), 'image/'),
-            'url'     => route('trucking2.fleet.doc', ['vehicle' => $v->id, 'idx' => $i]),
-        ], $docs, array_keys($docs));
+        return $this->listAttachments(TruckingVehicle::class, $v->id, 'doc');
     }
 
     public function uploadVehicleDocs(TruckingVehicle $v, array $files, string $type): array
     {
-        $docs = is_array($v->documents) ? array_values($v->documents) : [];
-        foreach ($files as $file) {
-            if (! $file || ! $file->isValid()) continue;
-            $path = $file->store("trucking/vehicles/{$v->id}", 'local');
-            $docs[] = [
-                'type' => $this->str($type) ?? 'Khác',
-                'name' => $file->getClientOriginalName(),
-                'path' => $path,
-                'mime' => $file->getMimeType(),
-                'size' => $file->getSize(),
-            ];
-        }
-        $v->documents = $docs; $v->save();
+        $this->storeAttachments(TruckingVehicle::class, $v->id, 'doc', $files, $type ?: 'Khác', "trucking/vehicles/{$v->id}");
         return $this->vehicleDocsOut($v);
     }
 
-    public function deleteVehicleDoc(TruckingVehicle $v, int $idx): array
+    /** Xóa tài liệu xe theo ID attachment. */
+    public function deleteVehicleDoc(TruckingVehicle $v, int $attachmentId): array
     {
-        $docs = is_array($v->documents) ? array_values($v->documents) : [];
-        if (isset($docs[$idx])) {
-            if (! empty($docs[$idx]['path'])) Storage::disk('local')->delete($docs[$idx]['path']);
-            array_splice($docs, $idx, 1);
-            $v->documents = $docs; $v->save();
-        }
+        $this->deleteAttachment($attachmentId, TruckingVehicle::class, $v->id);
         return $this->vehicleDocsOut($v);
-    }
-
-    public function vehicleDocAt(TruckingVehicle $v, int $idx): ?array
-    {
-        $docs = is_array($v->documents) ? array_values($v->documents) : [];
-        return (isset($docs[$idx]) && ! empty($docs[$idx]['path'])) ? $docs[$idx] : null;
     }
 
     // ===================================================================
@@ -1392,18 +1394,10 @@ class TruckingV2Service
     // HỒ SƠ LÁI XE (rich: SĐT/ngày/tài khoản/tài liệu)
     // ===================================================================
 
-    /** Tài liệu của 1 lái xe → kèm URL xem (stream qua route, không cần symlink public). */
+    /** Tài liệu của 1 lái xe (từ bảng attachments tập trung). */
     private function driverDocsOut(TruckingDriver $d): array
     {
-        $docs = is_array($d->documents) ? array_values($d->documents) : [];
-        return array_map(fn ($doc, $i) => [
-            'type'    => $doc['type'] ?? '',
-            'name'    => $doc['name'] ?? '',
-            'mime'    => $doc['mime'] ?? '',
-            'size'    => (int) ($doc['size'] ?? 0),
-            'isImage' => str_starts_with((string) ($doc['mime'] ?? ''), 'image/'),
-            'url'     => route('trucking2.drivers.doc', ['driver' => $d->id, 'idx' => $i]),
-        ], $docs, array_keys($docs));
+        return $this->listAttachments(TruckingDriver::class, $d->id, 'doc');
     }
 
     /** Danh sách lái xe đầy đủ hồ sơ (cho tab Cài đặt). */
@@ -1471,44 +1465,22 @@ class TruckingV2Service
     /** Tải tài liệu (nhiều file) cho 1 lái xe → trả danh sách tài liệu mới. */
     public function uploadDriverDocs(TruckingDriver $d, array $files, string $type): array
     {
-        $docs = is_array($d->documents) ? array_values($d->documents) : [];
-        foreach ($files as $file) {
-            if (! $file || ! $file->isValid()) continue;
-            $path = $file->store("trucking/drivers/{$d->id}", 'local');
-            $docs[] = [
-                'type' => $this->str($type) ?? 'Khác',
-                'name' => $file->getClientOriginalName(),
-                'path' => $path,
-                'mime' => $file->getMimeType(),
-                'size' => $file->getSize(),
-            ];
-        }
-        $d->documents = $docs; $d->save();
+        $this->storeAttachments(TruckingDriver::class, $d->id, 'doc', $files, $type ?: 'Khác', "trucking/drivers/{$d->id}");
         return $this->driverDocsOut($d);
     }
 
-    public function deleteDriverDoc(TruckingDriver $d, int $idx): array
+    /** Xóa tài liệu lái xe theo ID attachment. */
+    public function deleteDriverDoc(TruckingDriver $d, int $attachmentId): array
     {
-        $docs = is_array($d->documents) ? array_values($d->documents) : [];
-        if (isset($docs[$idx])) {
-            if (! empty($docs[$idx]['path'])) Storage::disk('local')->delete($docs[$idx]['path']);
-            array_splice($docs, $idx, 1);
-            $d->documents = $docs; $d->save();
-        }
+        $this->deleteAttachment($attachmentId, TruckingDriver::class, $d->id);
         return $this->driverDocsOut($d);
-    }
-
-    /** Thông tin 1 tài liệu để stream (controller trả file). */
-    public function driverDocAt(TruckingDriver $d, int $idx): ?array
-    {
-        $docs = is_array($d->documents) ? array_values($d->documents) : [];
-        return (isset($docs[$idx]) && ! empty($docs[$idx]['path'])) ? $docs[$idx] : null;
     }
 
     private function deleteDriverFiles(TruckingDriver $d): void
     {
-        foreach ((is_array($d->documents) ? $d->documents : []) as $doc) {
-            if (! empty($doc['path'])) Storage::disk('local')->delete($doc['path']);
+        foreach (TruckingAttachment::where(['owner_type' => TruckingDriver::class, 'owner_id' => $d->id])->get() as $a) {
+            try { Storage::disk($a->disk)->delete($a->path); } catch (\Throwable $e) {}
+            $a->delete();
         }
     }
 

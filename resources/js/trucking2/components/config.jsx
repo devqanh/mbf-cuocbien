@@ -309,12 +309,11 @@ function DriversManager({ cfg, setCfg }) {
     } catch (err) { window.trkToast && window.trkToast("Lỗi kết nối khi tải lên", "error"); }
     setBusy(false);
   };
-  const delDoc = async (di) => {
+  const delDoc = async (attId) => {
     if (!cur || !cur.id) return;
     const ok = await window.confirmAction({ title: "Xóa tài liệu?", text: "Tài liệu này sẽ bị xóa vĩnh viễn.", confirmText: '<i class="bi bi-trash me-1"></i> Xóa', danger: true });
     if (!ok) return;
-    const res = await fetch(ROUTES.driversBase + cur.id + "/docs/" + di, { method: "DELETE", headers: { "Accept": "application/json", "X-CSRF-TOKEN": T.csrf } }).then((r) => r.json());
-    if (res && res.ok) setDriver({ docs: res.docs });
+    try { const res = await window.trkApi("DELETE", ROUTES.driversBase + cur.id + "/docs/" + attId); if (res && res.ok) setDriver({ docs: res.docs }); } catch (e) {}
   };
 
   const lbl = (t) => <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>{t}</div>;
@@ -425,7 +424,7 @@ function DriversManager({ cfg, setCfg }) {
                       <div style={{ fontSize: 11, fontWeight: 600, color: "var(--accent)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{doc.type}</div>
                       <div style={{ fontSize: 10.5, color: "var(--ink-4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={doc.name}>{doc.name}</div>
                     </div>
-                    <button type="button" onClick={() => delDoc(di)} title="Xóa tài liệu" style={{ width: 24, height: 24, flexShrink: 0, display: "grid", placeItems: "center", border: "none", borderRadius: 6, background: "transparent", color: "var(--ink-4)", cursor: "pointer" }}
+                    <button type="button" onClick={() => delDoc(doc.id)} title="Xóa tài liệu" style={{ width: 24, height: 24, flexShrink: 0, display: "grid", placeItems: "center", border: "none", borderRadius: 6, background: "transparent", color: "var(--ink-4)", cursor: "pointer" }}
                       onMouseEnter={(e) => { e.currentTarget.style.background = "#fce8e8"; e.currentTarget.style.color = "var(--danger)"; }}
                       onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--ink-4)"; }}><I.trash /></button>
                   </div>

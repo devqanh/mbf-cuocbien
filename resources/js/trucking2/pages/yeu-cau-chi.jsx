@@ -95,7 +95,7 @@ function App() {
   const startEdit = (h) => {
     setEditId(h.id); setVehicleId(String(h.vehicleId || "")); setCostItem(h.name || "");
     setDate(h.date || today10()); setAmount(h.amount || ""); setKm(h.km || "");
-    setPhotos((h.photos || []).map((p) => ({ ref: p.file, url: p.url, name: p.name })));
+    setPhotos((h.photos || []).map((p) => ({ ref: p.id, url: p.url, name: p.name })));
     setResult(null);
     try { formRef.current && formRef.current.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) {}
   };

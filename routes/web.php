@@ -180,10 +180,9 @@ Route::middleware('auth')->group(function () {
             Route::get('/quan-ly-xe',                 [TruckingV2Controller::class, 'fleet'])->name('fleet');
             Route::get('/quan-ly-xe/{vehicle}/data',  [TruckingV2Controller::class, 'vehicleData'])->name('fleet.data')->whereNumber('vehicle');
             Route::get('/quan-ly-xe/{vehicle}/section/{section}', [TruckingV2Controller::class, 'vehicleSection'])->name('fleet.section')->whereNumber('vehicle');
-            Route::get('/quan-ly-xe/{vehicle}/docs/{idx}', [TruckingV2Controller::class, 'showVehicleDoc'])->name('fleet.doc')->whereNumber('vehicle')->whereNumber('idx');
-            Route::get('/quan-ly-xe/{vehicle}/cost-photo/{name}', [TruckingV2Controller::class, 'showCostPhoto'])->name('fleet.costPhoto')->whereNumber('vehicle')->where('name', '[A-Za-z0-9._-]+');
-            Route::get('/drivers/{driver}/docs/{idx}', [TruckingV2Controller::class, 'showDriverDoc'])->name('drivers.doc')->whereNumber('driver')->whereNumber('idx');
         });
+        // Stream file tập trung (disk-agnostic local/S3) — chỉ cần đăng nhập, phân quyền theo owner trong controller
+        Route::get('/attachment/{attachment}', [TruckingV2Controller::class, 'showAttachment'])->name('attachment')->whereNumber('attachment');
         Route::middleware('permission:settings.update')->group(function () {
             Route::put('/catalog/{type}',    [TruckingV2Controller::class, 'saveCatalog'])->name('catalog.save');
             Route::put('/customers',         [TruckingV2Controller::class, 'saveCustomers'])->name('customers.save');

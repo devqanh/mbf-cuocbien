@@ -428,7 +428,7 @@ function DocsBlock({ docs, busy, docType, setDocType, onPick, onDelete, canEdit 
               <div style={{ fontSize: 11, fontWeight: 600, color: "var(--accent)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{doc.type}</div>
               <div style={{ fontSize: 10.5, color: "var(--ink-4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={doc.name}>{doc.name}</div>
             </div>
-            {canEdit && <button type="button" onClick={() => onDelete(di)} title="Xóa tài liệu"
+            {canEdit && <button type="button" onClick={() => onDelete(doc.id)} title="Xóa tài liệu"
               style={{ position: "absolute", top: 4, right: 4, width: 24, height: 24, display: "grid", placeItems: "center", border: "none", borderRadius: 6, background: "rgba(255,255,255,.92)", color: "var(--danger)", cursor: "pointer", boxShadow: "0 1px 3px rgba(0,0,0,.15)" }}><I.trash /></button>}
           </div>
         ))}
@@ -613,12 +613,11 @@ function FleetApp() {
     } catch (err) { window.trkToast && window.trkToast("Lỗi kết nối khi tải lên", "error"); }
     setDocBusy(false);
   };
-  const deleteDoc = async (idx) => {
+  const deleteDoc = async (attId) => {
     if (!selId) return;
     const ok = await window.confirmAction({ title: "Xóa tài liệu?", text: "Tài liệu này sẽ bị xóa vĩnh viễn.", confirmText: '<i class="bi bi-trash me-1"></i> Xóa', danger: true });
     if (!ok) return;
-    const res = await fetch(ROUTES.fleet + selId + "/docs/" + idx, { method: "DELETE", headers: { "Accept": "application/json", "X-CSRF-TOKEN": T.csrf } }).then((r) => r.json());
-    if (res && res.ok) setDetail((d) => ({ ...d, docs: res.docs }));
+    try { const res = await window.trkApi("DELETE", ROUTES.fleet + selId + "/docs/" + attId); if (res && res.ok) setDetail((d) => ({ ...d, docs: res.docs })); } catch (e) {}
   };
   // Cảnh báo khi reload/đóng tab lúc còn thay đổi chưa lưu (chỉ áp dụng các tab gộp; Chi phí lưu ngay)
   useEffect(() => {
