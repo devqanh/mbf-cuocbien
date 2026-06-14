@@ -566,6 +566,7 @@
                         <small class="text-muted">
                             <i class="bi bi-info-circle"></i>
                             Tag người: gõ <code>@</code> rồi chọn từ danh sách.
+                            @can('tasks.assign_others')<span class="text-primary fw-semibold">Người được tag sẽ tự động thêm vào “Được giao”.</span>@endcan
                         </small>
                         <button type="submit" class="btn btn-sm btn-primary" id="commentSubmitBtn">
                             <i class="bi bi-send me-1"></i> Gửi bình luận
@@ -1465,11 +1466,15 @@
             const q = match[1];
             if (q === lastQ && picker && activeEd === $ed) return;
             lastQ = q;
+
+            // Mở picker (tạo container) TRƯỚC khi fetch — vì openPicker() gọi closePicker()
+            // sẽ reset biến `users`. Nếu mở SAU fetch sẽ xoá mất kết quả vừa lấy
+            // → lần gõ "@" đầu tiên luôn rỗng "Không tìm thấy ai phù hợp" (bug đã sửa).
+            if (! picker || activeEd !== $ed) openPicker($ed);
             savedRange = range.cloneRange();
 
             users = await fetchUsers(q);
             activeIdx = 0;
-            if (! picker || activeEd !== $ed) openPicker($ed);
             renderPicker();
         };
 

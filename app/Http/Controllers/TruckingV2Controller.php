@@ -521,6 +521,7 @@ class TruckingV2Controller extends Controller
             'expiringCosts'   => $this->svc->expiringVehicleCosts(),
             'pendingCosts'    => $this->svc->pendingVehicleCosts(),
             'costItems'       => $this->svc->costItemNames(),
+            'dueWarnDays'     => (int) \App\Models\TruckingSetting::get('due_warn_days', '30'),
         ], 'settings.update', 'settings.update'));
     }
 
@@ -528,6 +529,77 @@ class TruckingV2Controller extends Controller
     public function assetListData(): JsonResponse
     {
         return response()->json(['ok' => true, 'assets' => $this->svc->assetList(), 'assetCategories' => $this->svc->assetCategories()]);
+    }
+
+    // ===================== Link kế hoạch (admin) =====================
+    /** Trang quản lý link kế hoạch. */
+    public function planLinks()
+    {
+        return view('trucking2.ke-hoach', $this->pageData([
+            'links' => $this->svc->planLinksForList(),
+        ], 'shipments.update', 'shipments.update'));
+    }
+
+    public function createPlanLink(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'from'  => ['required', 'string', 'max:20'],
+            'to'    => ['required', 'string', 'max:20'],
+            'title' => ['nullable', 'string', 'max:120'],
+        ]);
+        return response()->json($this->svc->createPlanLink($data, auth()->id()));
+    }
+
+    public function togglePlanLink(Request $request, \App\Models\TruckingPlanLink $planLink): JsonResponse
+    {
+        $this->svc->setPlanLinkActive($planLink, (bool) $request->boolean('active'));
+        return response()->json(['ok' => true]);
+    }
+
+    public function destroyPlanLink(\App\Models\TruckingPlanLink $planLink): JsonResponse
+    {
+        $this->svc->deletePlanLink($planLink);
+        return response()->json(['ok' => true]);
+    }
+
+    // ===================== Link kế hoạch (CÔNG KHAI — lái xe, không đăng nhập) =====================
+    private function activePlanLink(string $token): \App\Models\TruckingPlanLink
+    {
+        $l = \App\Models\TruckingPlanLink::where('token', $token)->first();
+        abort_if(! $l, 404);
+        abort_if(! $l->active, 410, 'Link kế hoạch đã ngừng hoạt động.');
+        return $l;
+    }
+
+    /** Trang công khai cho lái xe (mobile). */
+    public function planPublicPage(string $token)
+    {
+        $l = \App\Models\TruckingPlanLink::where('token', $token)->first();
+        $boot = ['active' => (bool) ($l && $l->active)];
+        if ($l && $l->active) $boot['data'] = $this->svc->planPublicData($l);
+        return view('trucking2.ke-hoach-public', ['boot' => $boot, 'token' => $token]);
+    }
+
+    public function planPublicData(string $token): JsonResponse
+    {
+        return response()->json(['ok' => true] + $this->svc->planPublicData($this->activePlanLink($token)));
+    }
+
+    public function planPublicUpdate(Request $request, string $token, string $ship): JsonResponse
+    {
+        $data = $request->validate([
+            'gioXeDen'   => ['nullable', 'string', 'max:25'],
+            'gioXeRa'    => ['nullable', 'string', 'max:25'],
+            'driverNote' => ['nullable', 'string', 'max:1000'],
+            'photos'     => ['nullable', 'array', 'max:12'],
+            'photos.*'   => ['file', 'image', 'max:20480'],
+        ]);
+        return response()->json($this->svc->planUpdateShipment($this->activePlanLink($token), $ship, $data, $request->file('photos', [])));
+    }
+
+    public function planPublicDeletePhoto(string $token, string $ship, int $att): JsonResponse
+    {
+        return response()->json($this->svc->planDeletePhoto($this->activePlanLink($token), $ship, $att));
     }
 
     /** Tạo tài sản mới (Quản lý tài sản). */
@@ -630,17 +702,21 @@ class TruckingV2Controller extends Controller
         return response()->json(['ok' => true, 'history' => $this->svc->spendRequestHistory(auth()->id())]);
     }
 
-    /** Tài xế tự hủy phiếu của mình (khi chưa duyệt). */
-    public function cancelMySpendRequest(int $cost): JsonResponse
+    /** Tài xế tự hủy phiếu của mình (khi chưa duyệt). $cost = hashid. */
+    public function cancelMySpendRequest(string $cost): JsonResponse
     {
         if (! auth()->user()?->can('spend.request')) return response()->json(['ok' => false, 'message' => 'Không có quyền.']);
-        return response()->json($this->svc->cancelSpendRequestByOwner(auth()->id(), $cost));
+        $id = \App\Support\Hashid::decode($cost);
+        if ($id === null) return response()->json(['ok' => false, 'message' => 'Phiếu không hợp lệ.']);
+        return response()->json($this->svc->cancelSpendRequestByOwner(auth()->id(), $id));
     }
 
-    /** Tài xế SỬA phiếu của mình (khi chưa duyệt) — kèm ảnh (keep + mới). */
-    public function updateMySpendRequest(Request $request, int $cost): JsonResponse
+    /** Tài xế SỬA phiếu của mình (khi chưa duyệt) — kèm ảnh (keep + mới). $cost = hashid. */
+    public function updateMySpendRequest(Request $request, string $cost): JsonResponse
     {
         if (! auth()->user()?->can('spend.request')) return response()->json(['ok' => false, 'message' => 'Phiên đăng nhập hết hạn — đăng nhập lại.']);
+        $id = \App\Support\Hashid::decode($cost);
+        if ($id === null) return response()->json(['ok' => false, 'message' => 'Phiếu không hợp lệ.']);
         $data = $request->validate([
             'costItem'  => ['required', 'string', 'max:120'],
             'date'      => ['nullable', 'string', 'max:20'],
@@ -652,7 +728,7 @@ class TruckingV2Controller extends Controller
             'photos'    => ['nullable', 'array', 'max:12'],
             'photos.*'  => ['file', 'image', 'max:20480'],
         ], $this->spendValidationMessages());
-        return response()->json($this->svc->updateSpendRequestByOwner(auth()->id(), $cost, $data, $request->file('photos', [])));
+        return response()->json($this->svc->updateSpendRequestByOwner(auth()->id(), $id, $data, $request->file('photos', [])));
     }
 
     /** Thông báo validate tiếng Việt cho gửi/sửa yêu cầu chi. */

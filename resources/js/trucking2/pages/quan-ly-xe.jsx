@@ -13,7 +13,9 @@ const normKind = (k) => (k === "fixed" ? "fixed" : "recurring");   // gộp mont
 const TAB_KEYS = ["info", "allowance", "deprec", "usage", "cost"];
 const SECTION_OF = { deprec: "depreciations", usage: "usages", cost: "costs" };   // tab → nhóm lazy-load (allowance + info nằm trong base)
 
-// Trạng thái hạn (đăng kiểm / bảo hiểm): chưa có < còn hạn < sắp hết (≤30 ngày) < hết hạn
+// Ngưỡng cảnh báo "sắp hết hạn" (số ngày) — cấu hình ở Cài đặt → Cấu hình chung
+const WARN_DAYS = (() => { try { const n = parseInt((window.__TRK || {}).boot?.dueWarnDays, 10); return n > 0 ? n : 30; } catch (e) { return 30; } })();
+// Trạng thái hạn (đăng kiểm / bảo hiểm / bảo hành / kiểm định): chưa có < còn hạn < sắp hết < hết hạn
 const DUE_NONE = { key: "none", label: "Chưa có", color: "var(--ink-4)", bg: "var(--line-2)", rank: 0 };
 const dueStatus = (iso) => {
   if (!iso) return DUE_NONE;
@@ -22,7 +24,7 @@ const dueStatus = (iso) => {
   if (isNaN(d.getTime())) return DUE_NONE;
   const days = Math.floor((d - today) / 86400000);
   if (days < 0) return { key: "expired", label: "Hết hạn", color: "var(--danger)", bg: "#fce8e8", rank: 3, days };
-  if (days <= 30) return { key: "soon", label: "Sắp hết hạn", color: "var(--warn)", bg: "#fcf3e2", rank: 2, days };
+  if (days <= WARN_DAYS) return { key: "soon", label: "Sắp hết hạn", color: "var(--warn)", bg: "#fcf3e2", rank: 2, days };
   return { key: "ok", label: "Còn hạn", color: "var(--good)", bg: "var(--good-weak)", rank: 1, days };
 };
 const vehRank = (v) => Math.max(dueStatus(v.registrationDue).rank, dueStatus(v.insuranceDue).rank);
@@ -40,6 +42,13 @@ const DueCell = ({ iso }) => {
     </div>
   );
 };
+
+// Chip thống kê nhỏ: icon + số + tooltip (0 thì mờ) — cho cột Khấu hao/Chi phí/Lượt
+const StatChip = ({ icon, n, title }) => (
+  <span title={title} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12.5, fontWeight: 600, color: n > 0 ? "var(--ink-2)" : "var(--ink-4)" }}>
+    <i className={"bi " + icon} style={{ fontSize: 13, opacity: n > 0 ? 0.85 : 0.45 }} />{n || 0}
+  </span>
+);
 
 const lbl = (t) => <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>{t}</div>;
 const card = { border: "1px solid var(--line)", borderRadius: 12, padding: "14px 16px", background: "#fafbfc" };
@@ -379,7 +388,7 @@ function CostTab({ rows, onChange, costTypes, saving, onUploadPhotos, highlightI
                     </td>
                     <td style={{ ...cell, textAlign: "center", whiteSpace: "nowrap" }} onClick={(e) => e.stopPropagation()}>
                       {rec && !r.cancelled && iconBtn(() => openDup(i), <i className="bi bi-arrow-repeat" />, "Tạo phiếu mới (gia hạn)", true)}
-                      {onCancel && r.canCancel && r.id && <>{iconBtn(() => onCancel(r.id), <i className="bi bi-x-circle" />, "Hủy phiếu")}<span style={{ display: "inline-block", width: 4 }} /></>}
+                      {onCancel && r.canCancel && r.id && <>{iconBtn(() => onCancel(r.hashid || r.id), <i className="bi bi-x-circle" />, "Hủy phiếu")}<span style={{ display: "inline-block", width: 4 }} /></>}
                       {iconBtn(() => del(i), <I.trash />, "Xóa phiếu")}
                     </td>
                   </tr>
@@ -493,6 +502,64 @@ function AllowanceTab({ rows, onChange, costItems, addCostItem }) {
   );
 }
 
+/* Modal "Phiếu chi cần xử lý" — có tìm kiếm + phân trang khi danh sách dài */
+function PendingCostsModal({ items, onClose, onOpen }) {
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE = 8;
+  const ql = q.trim().toLowerCase();
+  const filtered = ql ? (items || []).filter((c) => `${c.name || ""} ${c.plate || ""} ${c.invoiceNo || ""}`.toLowerCase().includes(ql)) : (items || []);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE));
+  const pageSafe = Math.min(page, totalPages);
+  const pageItems = filtered.slice((pageSafe - 1) * PAGE, pageSafe * PAGE);
+  const needApprove = (items || []).filter((c) => !c.approved).length;
+  const needPay = (items || []).filter((c) => c.approved && !c.paid).length;
+  const pgBtn = (label, to, disabled) => (
+    <button type="button" onClick={() => !disabled && setPage(to)} disabled={disabled}
+      style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "6px 11px", fontSize: 12.5, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 8, background: "#fff", color: disabled ? "var(--ink-4)" : "var(--ink-2)", cursor: disabled ? "default" : "pointer" }}>{label}</button>
+  );
+  return (
+    <Modal title="Phiếu chi cần xử lý" subtitle={`${needApprove} chưa duyệt · ${needPay} chờ thanh toán — bấm 1 dòng để mở xe`} width={700} icon={<I.fx />} onClose={onClose}
+      footer={<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", gap: 10 }}>
+        <span style={{ fontSize: 12.5, color: "var(--ink-4)" }}>{filtered.length} phiếu{ql ? " khớp" : ""}</span>
+        <Btn onClick={onClose}>Đóng</Btn>
+      </div>}>
+      <div style={{ padding: "4px 0" }}>
+        <div style={{ position: "relative", marginBottom: 12 }}>
+          <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)" }}><I.search /></span>
+          <input value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} placeholder="Tìm khoản chi / biển số / # hóa đơn…"
+            style={{ width: "100%", padding: "9px 12px 9px 36px", fontSize: 13.5, border: "1px solid var(--line)", borderRadius: 9, outline: "none", background: "#fff" }} />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {pageItems.map((c, i) => {
+            const st = !c.approved ? { t: "Chưa duyệt", col: "var(--warn)", bg: "#fcf3e2" } : { t: "Chờ thanh toán", col: "var(--accent)", bg: "#eef4ff" };
+            return (
+              <div key={(pageSafe - 1) * PAGE + i} onClick={() => onOpen(c.vehicleId)}
+                style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 10, cursor: "pointer", borderLeft: `3px solid ${st.col}` }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent-weak-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 600 }}>{c.name} <span className="tnum" style={{ color: "var(--ink-3)", fontWeight: 500 }}>· {c.plate}</span></div>
+                  <div className="tnum" style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 2 }}>{c.invoiceNo ? "# " + c.invoiceNo + " · " : ""}{fmtDate(c.spendDate) || "chưa có ngày"}</div>
+                </div>
+                <span className="tnum" style={{ fontWeight: 700, fontSize: 13.5 }}>{fmtVND(c.amount)}</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: st.col, background: st.bg, padding: "2px 9px", borderRadius: 999, whiteSpace: "nowrap" }}>{st.t}</span>
+              </div>
+            );
+          })}
+          {filtered.length === 0 && <div style={{ padding: "26px 4px", textAlign: "center", fontSize: 13, color: "var(--ink-4)" }}>Không tìm thấy phiếu phù hợp.</div>}
+        </div>
+        {filtered.length > PAGE && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 14 }}>
+            {pgBtn(<><i className="bi bi-chevron-left" /> Trước</>, pageSafe - 1, pageSafe <= 1)}
+            <span className="tnum" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-3)", padding: "0 6px" }}>{pageSafe}/{totalPages}</span>
+            {pgBtn(<>Sau <i className="bi bi-chevron-right" /></>, pageSafe + 1, pageSafe >= totalPages)}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 function FleetApp({ modeSwitch }) {
   const isMobile = useIsMobile();
   const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
@@ -515,6 +582,7 @@ function FleetApp({ modeSwitch }) {
   const [vFilter, setVFilter] = useState("all");   // all | expired | soon | ok
   const [vQuery, setVQuery] = useState("");
   const [selId, setSelId] = useState(null);
+  const selHash = useRef(null);   // hashid xe đang mở → dùng dựng URL (id số giữ cho so khớp/hash deep-link)
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -529,12 +597,12 @@ function FleetApp({ modeSwitch }) {
 
   const setHash = (id, t) => { try { window.history.replaceState(null, "", "#" + id + "/" + t); } catch (e) {} };
   // Lazy-load nhóm con khi mở tab (truyền id để tránh stale selId lúc vừa mở xe)
-  const ensureSection = (tabKey, id) => {
-    const sec = SECTION_OF[tabKey]; id = id || selId;
-    if (!sec || !id || loadedSecs.current.has(sec)) return;
+  const ensureSection = (tabKey, hash) => {
+    const sec = SECTION_OF[tabKey]; hash = hash || selHash.current;
+    if (!sec || !hash || loadedSecs.current.has(sec)) return;
     loadedSecs.current.add(sec);
     setSecLoading(true);
-    api("GET", ROUTES.fleet + id + "/section/" + sec).then((r) => {
+    api("GET", ROUTES.fleet + hash + "/section/" + sec).then((r) => {
       if (r && r.ok) setDetail((d) => ({ ...d, [sec]: r[sec] || [] }));
       else loadedSecs.current.delete(sec);
       setSecLoading(false);
@@ -543,18 +611,19 @@ function FleetApp({ modeSwitch }) {
   const open = (v, tabKey) => {
     const t = TAB_KEYS.includes(tabKey) ? tabKey : "info";
     loadedSecs.current = new Set();
+    selHash.current = v.hashid || v.id;
     setSelId(v.id); setDetail(null); setDirty(false); setTab(t); setLoading(true);
     setHash(v.id, t);
-    api("GET", ROUTES.fleet + v.id + "/data").then((r) => {
+    api("GET", ROUTES.fleet + (v.hashid || v.id) + "/data").then((r) => {
       if (r && r.ok) setDetail(r.vehicle);
       setLoading(false);
-      ensureSection(t, v.id);
+      ensureSection(t, v.hashid || v.id);
     }).catch(() => setLoading(false));
   };
   const goTab = (k) => { setTab(k); if (selId) setHash(selId, k); ensureSection(k); };   // đổi tab → ghi #id/tab + lazy-load nhóm
   const back = async () => {
     if (dirty && !(await window.confirmAction({ title: "Thoát khi chưa lưu?", text: "Bạn có thay đổi <b>chưa lưu</b> (tab Thông tin/Định mức/Khấu hao/Sử dụng). Thoát ra sẽ <b>mất</b> các thay đổi này.", confirmText: '<i class="bi bi-box-arrow-left me-1"></i> Thoát, không lưu', danger: true }))) return;
-    setSelId(null); setDetail(null); setDirty(false); loadedSecs.current = new Set(); try { window.history.replaceState(null, "", "#"); } catch (e) {}
+    setSelId(null); selHash.current = null; setDetail(null); setDirty(false); loadedSecs.current = new Set(); try { window.history.replaceState(null, "", "#"); } catch (e) {}
   };
   const upd = (np) => { setDetail((d) => ({ ...d, ...np })); setDirty(true); };
   // Admin HỦY phiếu chi (chưa thanh toán) — endpoint riêng, rồi nạp lại danh sách chi phí
@@ -565,7 +634,7 @@ function FleetApp({ modeSwitch }) {
       const r = await api("PUT", ROUTES.cancelCost + id + "/cancel");
       if (r && r.ok) {
         window.trkToast && window.trkToast("Đã hủy phiếu");
-        const s = await api("GET", ROUTES.fleet + selId + "/section/costs");
+        const s = await api("GET", ROUTES.fleet + selHash.current + "/section/costs");
         if (s && s.ok) setDetail((d) => ({ ...d, costs: s.costs || [] }));
       } else window.trkToast && window.trkToast((r && r.message) || "Không hủy được", "error");
     } catch (e) {}
@@ -576,7 +645,7 @@ function FleetApp({ modeSwitch }) {
     setDetail((d) => ({ ...d, costs: rows }));   // hiển thị ngay (optimistic)
     if (!selId) return;
     setCostSaving(true);
-    api("PUT", ROUTES.fleet + selId, { data: { costs: rows } })
+    api("PUT", ROUTES.fleet + selHash.current, { data: { costs: rows } })
       .then((r) => {
         setCostSaving(false);
         if (r && r.ok) { setDetail((d) => ({ ...d, costs: (r.vehicle && r.vehicle.costs) || rows })); window.trkToast && window.trkToast("Đã lưu phiếu chi"); }
@@ -589,7 +658,7 @@ function FleetApp({ modeSwitch }) {
     if (!selId || !files || !files.length) return [];
     const fd = new FormData(); Array.from(files).forEach((f) => fd.append("files[]", f));
     try {
-      const res = await window.trkUpload("POST", ROUTES.fleet + selId + "/cost-photo", fd);
+      const res = await window.trkUpload("POST", ROUTES.fleet + selHash.current + "/cost-photo", fd);
       if (res && res.ok) return res.photos || [];
       window.trkToast && window.trkToast((res && res.message) || "Tải ảnh thất bại", "error");
     } catch (e) { window.trkToast && window.trkToast("Lỗi kết nối khi tải ảnh", "error"); }
@@ -601,7 +670,7 @@ function FleetApp({ modeSwitch }) {
     setSaving(true);
     const data = { info: detail.info || {}, allowances: detail.allowances || [] };
     ["usages", "costs", "depreciations"].forEach((s) => { if (Array.isArray(detail[s])) data[s] = detail[s]; });
-    api("PUT", ROUTES.fleet + selId, { data })
+    api("PUT", ROUTES.fleet + selHash.current, { data })
       .then((r) => { setSaving(false); if (r && r.ok) { setDetail((d) => ({ ...d, ...r.vehicle })); setDirty(false); window.trkToast && window.trkToast("Đã lưu"); } else window.trkToast && window.trkToast("Lưu thất bại", "error"); })
       .catch(() => { setSaving(false); window.trkToast && window.trkToast("Lỗi kết nối khi lưu", "error"); });
   };
@@ -612,7 +681,7 @@ function FleetApp({ modeSwitch }) {
     const fd = new FormData(); files.forEach((f) => fd.append("files[]", f)); fd.append("type", docType);
     setDocBusy(true);
     try {
-      const res = await window.trkUpload("POST", ROUTES.fleet + selId + "/docs", fd);
+      const res = await window.trkUpload("POST", ROUTES.fleet + selHash.current + "/docs", fd);
       if (res && res.ok) { setDetail((d) => ({ ...d, docs: res.docs })); window.trkToast && window.trkToast(`Đã tải ${files.length} tài liệu`); }
       else window.trkToast && window.trkToast((res && res.message) || "Tải lên thất bại", "error");
     } catch (err) { window.trkToast && window.trkToast("Lỗi kết nối khi tải lên", "error"); }
@@ -622,7 +691,7 @@ function FleetApp({ modeSwitch }) {
     if (!selId) return;
     const ok = await window.confirmAction({ title: "Xóa tài liệu?", text: "Tài liệu này sẽ bị xóa vĩnh viễn.", confirmText: '<i class="bi bi-trash me-1"></i> Xóa', danger: true });
     if (!ok) return;
-    try { const res = await window.trkApi("DELETE", ROUTES.fleet + selId + "/docs/" + attId); if (res && res.ok) setDetail((d) => ({ ...d, docs: res.docs })); } catch (e) {}
+    try { const res = await window.trkApi("DELETE", ROUTES.fleet + selHash.current + "/docs/" + attId); if (res && res.ok) setDetail((d) => ({ ...d, docs: res.docs })); } catch (e) {}
   };
   // Cảnh báo khi reload/đóng tab lúc còn thay đổi chưa lưu (chỉ áp dụng các tab gộp; Chi phí lưu ngay)
   useEffect(() => {
@@ -714,7 +783,7 @@ function FleetApp({ modeSwitch }) {
               <i className="bi bi-exclamation-triangle-fill" style={{ fontSize: 18, color: expiredCount > 0 ? "var(--danger)" : "var(--warn)" }} />
               <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
                 {expiredCount > 0 && <span><b style={{ color: "var(--danger)" }}>{expiredCount} xe hết hạn</b> đăng kiểm/bảo hiểm. </span>}
-                {soonCount > 0 && <span><b style={{ color: "var(--warn)" }}>{soonCount} xe sắp hết hạn</b> (trong 30 ngày). </span>}
+                {soonCount > 0 && <span><b style={{ color: "var(--warn)" }}>{soonCount} xe sắp hết hạn</b> (trong {WARN_DAYS} ngày). </span>}
                 <span style={{ color: "var(--ink-3)" }}>Cần gia hạn để tránh phạt & gián đoạn vận hành.</span>
               </div>
             </div>
@@ -775,7 +844,7 @@ function FleetApp({ modeSwitch }) {
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
                     <thead><tr style={{ background: "#fafbfc" }}>
-                      {th("Biển số")}{th("Hạn đăng kiểm")}{th("Hạn bảo hiểm")}{th("Hồ sơ", "center")}{th("Khấu hao · Chi phí · Lượt", "center")}{th("", "right")}
+                      {th("Biển số")}{th("Hạn đăng kiểm")}{th("Hạn bảo hiểm")}{th("Hồ sơ", "center")}{th("Khấu hao · Chi phí · Lượt dùng", "center")}{th("", "right")}
                     </tr></thead>
                     <tbody>
                       {list.map((v) => {
@@ -798,7 +867,13 @@ function FleetApp({ modeSwitch }) {
                                 ? <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, color: "var(--ink-2)" }}><i className="bi bi-paperclip" />{v.docCount}</span>
                                 : <span style={{ fontSize: 12, color: "var(--ink-4)" }}>—</span>}
                             </td>
-                            <td style={{ padding: "9px 12px", textAlign: "center", fontSize: 12, color: "var(--ink-4)" }} className="tnum">{v.depCount} · {v.costCount} · {v.usageCount}</td>
+                            <td style={{ padding: "9px 12px" }} className="tnum">
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14 }}>
+                                <StatChip icon="bi-cash-stack" n={v.depCount} title="Hạng mục khấu hao" />
+                                <StatChip icon="bi-receipt" n={v.costCount} title="Phiếu chi" />
+                                <StatChip icon="bi-arrow-repeat" n={v.usageCount} title="Lượt sử dụng (gán lái xe)" />
+                              </div>
+                            </td>
                             <td style={{ padding: "9px 14px", textAlign: "right", color: "var(--ink-4)" }}><I.open /></td>
                           </tr>
                         );
@@ -838,26 +913,8 @@ function FleetApp({ modeSwitch }) {
         )}
 
         {showPending && (
-          <Modal title="Phiếu chi cần xử lý" subtitle={`${needApprove.length} chưa duyệt · ${needPay.length} chờ thanh toán — bấm 1 dòng để mở xe`} width={700} icon={<I.fx />} onClose={() => setShowPending(false)}
-            footer={<div style={{ display: "flex", justifyContent: "flex-end", width: "100%" }}><Btn onClick={() => setShowPending(false)}>Đóng</Btn></div>}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "8px 0" }}>
-              {pendingCosts.map((c, i) => {
-                const st = !c.approved ? { t: "Chưa duyệt", col: "var(--warn)", bg: "#fcf3e2" } : { t: "Chờ thanh toán", col: "var(--accent)", bg: "#eef4ff" };
-                return (
-                  <div key={i} onClick={() => { const v = vehicles.find((x) => x.id === c.vehicleId); setShowPending(false); if (v) open(v, "cost"); }}
-                    style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 10, cursor: "pointer", borderLeft: `3px solid ${st.col}` }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent-weak-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13.5, fontWeight: 600 }}>{c.name} <span className="tnum" style={{ color: "var(--ink-3)", fontWeight: 500 }}>· {c.plate}</span></div>
-                      <div className="tnum" style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 2 }}>{c.invoiceNo ? "# " + c.invoiceNo + " · " : ""}{fmtDate(c.spendDate) || "chưa có ngày"}</div>
-                    </div>
-                    <span className="tnum" style={{ fontWeight: 700, fontSize: 13.5 }}>{fmtVND(c.amount)}</span>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: st.col, background: st.bg, padding: "2px 9px", borderRadius: 999, whiteSpace: "nowrap" }}>{st.t}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </Modal>
+          <PendingCostsModal items={pendingCosts} onClose={() => setShowPending(false)}
+            onOpen={(vid) => { const v = vehicles.find((x) => x.id === vid); setShowPending(false); if (v) open(v, "cost"); }} />
         )}
       </div>
     );
@@ -1027,13 +1084,14 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
   const [costSaving, setCostSaving] = useState(false);
   const pendingCost = useRef(null);   // costId cần cuộn tới sau khi tab Chi phí load (deep-link thông báo)
   const [hlCost, setHlCost] = useState(null);
+  const selHash = useRef(null);   // hashid tài sản đang mở → dựng URL
 
-  const ensureSection = (tabKey, id) => {
-    const sec = ASSET_SECTION_OF[tabKey]; id = id || selId;
-    if (!sec || !id || loadedSecs.current.has(sec)) return;
+  const ensureSection = (tabKey, hash) => {
+    const sec = ASSET_SECTION_OF[tabKey]; hash = hash || selHash.current;
+    if (!sec || !hash || loadedSecs.current.has(sec)) return;
     loadedSecs.current.add(sec);
     setSecLoading(true);
-    api("GET", ROUTES.fleet + id + "/section/" + sec).then((r) => {
+    api("GET", ROUTES.fleet + hash + "/section/" + sec).then((r) => {
       if (r && r.ok) setDetail((d) => ({ ...d, [sec]: r[sec] || [], ...(r.costTypes ? { costTypes: r.costTypes } : {}) }));
       else loadedSecs.current.delete(sec);
       setSecLoading(false);
@@ -1042,11 +1100,12 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
   const open = (a, tabKey) => {
     const t = ASSET_TAB_KEYS.includes(tabKey) ? tabKey : "info";
     loadedSecs.current = new Set();
+    selHash.current = a.hashid || a.id;
     setSelId(a.id); setDetail(null); setDirty(false); setTab(t); setLoading(true);
-    api("GET", ROUTES.fleet + a.id + "/data").then((r) => {
+    api("GET", ROUTES.fleet + (a.hashid || a.id) + "/data").then((r) => {
       if (r && r.ok) setDetail(r.vehicle);
       setLoading(false);
-      ensureSection(t, a.id);
+      ensureSection(t, a.hashid || a.id);
     }).catch(() => setLoading(false));
   };
   const goTab = (k) => { setTab(k); ensureSection(k); };
@@ -1061,7 +1120,7 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
       if (Array.isArray(detail.depreciations)) patch.depCount = detail.depreciations.length;
       setAssets((list) => list.map((x) => x.id === selId ? { ...x, ...patch } : x));
     }
-    setSelId(null); setDetail(null); setDirty(false); loadedSecs.current = new Set();
+    setSelId(null); selHash.current = null; setDetail(null); setDirty(false); loadedSecs.current = new Set();
   };
   const upd = (np) => { setDetail((d) => ({ ...d, ...np })); setDirty(true); };
 
@@ -1070,7 +1129,7 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
     setSaving(true);
     const data = { info: detail.info || {} };
     ["costs", "depreciations"].forEach((s) => { if (Array.isArray(detail[s])) data[s] = detail[s]; });
-    api("PUT", ROUTES.fleet + selId, { data })
+    api("PUT", ROUTES.fleet + selHash.current, { data })
       .then((r) => { setSaving(false); if (r && r.ok) { setDetail((d) => ({ ...d, ...r.vehicle })); setDirty(false); window.trkToast && window.trkToast("Đã lưu"); } else window.trkToast && window.trkToast("Lưu thất bại", "error"); })
       .catch(() => { setSaving(false); window.trkToast && window.trkToast("Lỗi kết nối khi lưu", "error"); });
   };
@@ -1078,28 +1137,28 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
     setDetail((d) => ({ ...d, costs: rows }));
     if (!selId) return;
     setCostSaving(true);
-    api("PUT", ROUTES.fleet + selId, { data: { costs: rows } })
+    api("PUT", ROUTES.fleet + selHash.current, { data: { costs: rows } })
       .then((r) => { setCostSaving(false); if (r && r.ok) { setDetail((d) => ({ ...d, costs: (r.vehicle && r.vehicle.costs) || rows })); window.trkToast && window.trkToast("Đã lưu phiếu chi"); } else window.trkToast && window.trkToast("Lưu thất bại", "error"); })
       .catch(() => { setCostSaving(false); window.trkToast && window.trkToast("Lỗi kết nối khi lưu", "error"); });
   };
   const uploadCostPhotos = async (files) => {
     if (!selId || !files || !files.length) return [];
     const fd = new FormData(); Array.from(files).forEach((f) => fd.append("files[]", f));
-    try { const res = await window.trkUpload("POST", ROUTES.fleet + selId + "/cost-photo", fd); if (res && res.ok) return res.photos || []; window.trkToast && window.trkToast((res && res.message) || "Tải ảnh thất bại", "error"); }
+    try { const res = await window.trkUpload("POST", ROUTES.fleet + selHash.current + "/cost-photo", fd); if (res && res.ok) return res.photos || []; window.trkToast && window.trkToast((res && res.message) || "Tải ảnh thất bại", "error"); }
     catch (e) { window.trkToast && window.trkToast("Lỗi kết nối khi tải ảnh", "error"); }
     return [];
   };
   const cancelCost = async (id) => {
     const ok = await window.confirmAction({ title: "Hủy phiếu chi?", text: "Phiếu sẽ chuyển <b>Đã hủy</b> và bị loại khỏi tổng chi phí/báo cáo.", confirmText: '<i class="bi bi-x-circle me-1"></i> Hủy phiếu', danger: true });
     if (!ok) return;
-    try { const r = await api("PUT", ROUTES.cancelCost + id + "/cancel"); if (r && r.ok) { window.trkToast && window.trkToast("Đã hủy phiếu"); const s = await api("GET", ROUTES.fleet + selId + "/section/costs"); if (s && s.ok) setDetail((d) => ({ ...d, costs: s.costs || [] })); } else window.trkToast && window.trkToast((r && r.message) || "Không hủy được", "error"); } catch (e) {}
+    try { const r = await api("PUT", ROUTES.cancelCost + id + "/cancel"); if (r && r.ok) { window.trkToast && window.trkToast("Đã hủy phiếu"); const s = await api("GET", ROUTES.fleet + selHash.current + "/section/costs"); if (s && s.ok) setDetail((d) => ({ ...d, costs: s.costs || [] })); } else window.trkToast && window.trkToast((r && r.message) || "Không hủy được", "error"); } catch (e) {}
   };
   const uploadDocs = async (e) => {
     const files = Array.from(e.target.files || []); e.target.value = "";
     if (!files.length || !selId) return;
     const fd = new FormData(); files.forEach((f) => fd.append("files[]", f)); fd.append("type", docType);
     setDocBusy(true);
-    try { const res = await window.trkUpload("POST", ROUTES.fleet + selId + "/docs", fd); if (res && res.ok) { setDetail((d) => ({ ...d, docs: res.docs })); window.trkToast && window.trkToast(`Đã tải ${files.length} tài liệu`); } else window.trkToast && window.trkToast((res && res.message) || "Tải lên thất bại", "error"); }
+    try { const res = await window.trkUpload("POST", ROUTES.fleet + selHash.current + "/docs", fd); if (res && res.ok) { setDetail((d) => ({ ...d, docs: res.docs })); window.trkToast && window.trkToast(`Đã tải ${files.length} tài liệu`); } else window.trkToast && window.trkToast((res && res.message) || "Tải lên thất bại", "error"); }
     catch (err) { window.trkToast && window.trkToast("Lỗi kết nối khi tải lên", "error"); }
     setDocBusy(false);
   };
@@ -1107,7 +1166,7 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
     if (!selId) return;
     const ok = await window.confirmAction({ title: "Xóa tài liệu?", text: "Tài liệu này sẽ bị xóa vĩnh viễn.", confirmText: '<i class="bi bi-trash me-1"></i> Xóa', danger: true });
     if (!ok) return;
-    try { const res = await window.trkApi("DELETE", ROUTES.fleet + selId + "/docs/" + attId); if (res && res.ok) setDetail((d) => ({ ...d, docs: res.docs })); } catch (e) {}
+    try { const res = await window.trkApi("DELETE", ROUTES.fleet + selHash.current + "/docs/" + attId); if (res && res.ok) setDetail((d) => ({ ...d, docs: res.docs })); } catch (e) {}
   };
   const createAsset = async (d) => {
     try {
@@ -1120,7 +1179,7 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
     if (!selId) return;
     const ok = await window.confirmAction({ title: "Xóa tài sản?", text: "Tài sản này cùng <b>toàn bộ chi phí, khấu hao, tài liệu</b> sẽ bị xóa vĩnh viễn.", confirmText: '<i class="bi bi-trash me-1"></i> Xóa tài sản', danger: true });
     if (!ok) return;
-    try { const r = await api("DELETE", ROUTES.assetDestroy + selId); if (r && r.ok) { const id = selId; setSelId(null); setDetail(null); setDirty(false); setAssets((list) => list.filter((x) => x.id !== id)); window.trkToast && window.trkToast("Đã xóa tài sản"); } else window.trkToast && window.trkToast("Không xóa được", "error"); } catch (e) {}
+    try { const r = await api("DELETE", ROUTES.assetDestroy + selHash.current); if (r && r.ok) { const id = selId; setSelId(null); setDetail(null); setDirty(false); setAssets((list) => list.filter((x) => x.id !== id)); window.trkToast && window.trkToast("Đã xóa tài sản"); } else window.trkToast && window.trkToast("Không xóa được", "error"); } catch (e) {}
   };
 
   useEffect(() => {
@@ -1195,7 +1254,7 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
               <i className="bi bi-exclamation-triangle-fill" style={{ fontSize: 18, color: expiredCount > 0 ? "var(--danger)" : "var(--warn)" }} />
               <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
                 {expiredCount > 0 && <span><b style={{ color: "var(--danger)" }}>{expiredCount} tài sản hết hạn</b> bảo hành/kiểm định. </span>}
-                {soonCount > 0 && <span><b style={{ color: "var(--warn)" }}>{soonCount} sắp hết hạn</b> (trong 30 ngày). </span>}
+                {soonCount > 0 && <span><b style={{ color: "var(--warn)" }}>{soonCount} sắp hết hạn</b> (trong {WARN_DAYS} ngày). </span>}
               </div>
             </div>
           )}
@@ -1243,7 +1302,12 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
                             <td style={{ padding: "9px 12px", textAlign: "center" }} className="tnum">
                               {a.docCount > 0 ? <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, color: "var(--ink-2)" }}><i className="bi bi-paperclip" />{a.docCount}</span> : <span style={{ fontSize: 12, color: "var(--ink-4)" }}>—</span>}
                             </td>
-                            <td style={{ padding: "9px 12px", textAlign: "center", fontSize: 12, color: "var(--ink-4)" }} className="tnum">{a.depCount} · {a.costCount}</td>
+                            <td style={{ padding: "9px 12px" }} className="tnum">
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14 }}>
+                                <StatChip icon="bi-cash-stack" n={a.depCount} title="Hạng mục khấu hao" />
+                                <StatChip icon="bi-receipt" n={a.costCount} title="Phiếu chi" />
+                              </div>
+                            </td>
                             <td style={{ padding: "9px 14px", textAlign: "right", color: "var(--ink-4)" }}><I.open /></td>
                           </tr>
                         );

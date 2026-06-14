@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\HasHashid;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -9,6 +10,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /** Bảng kê cần thu — gom nhiều lô của 1 khách theo kỳ (ngày cont ra). */
 class TruckingStatement extends Model
 {
+    use HasHashid;
+
     protected $fillable = [
         'no', 'customer_id', 'customer_name', 'info',
         'date', 'period_from', 'period_to', 'total',

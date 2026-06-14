@@ -84,9 +84,10 @@ function App() {
   const cancelItem = async (h) => {
     const ok = await window.confirmAction({ title: "Hủy phiếu này?", text: `Phiếu <b>${h.invoiceNo || h.name}</b> · ${h.amount} đ sẽ bị hủy.`, confirmText: "Hủy phiếu", danger: true });
     if (!ok) return;
-    try { const r = await window.trkApi("POST", T.routes.cancel + h.id + "/cancel"); if (r && r.ok) { window.trkToast("Đã hủy phiếu"); refreshHistory(); } else window.trkToast((r && r.message) || "Không hủy được", "error"); } catch (e) {}
+    try { const r = await window.trkApi("POST", T.routes.cancel + (h.hashid || h.id) + "/cancel"); if (r && r.ok) { window.trkToast("Đã hủy phiếu"); refreshHistory(); } else window.trkToast((r && r.message) || "Không hủy được", "error"); } catch (e) {}
   };
-  const [editId, setEditId] = useState(null);   // đang sửa phiếu nào (null = tạo mới)
+  const [editId, setEditId] = useState(null);   // đang sửa phiếu nào (id số, để so khớp/hiển thị)
+  const [editHash, setEditHash] = useState(null);   // hashid phiếu đang sửa → dựng URL
   const [target, setTarget] = useState("vehicle");   // 'vehicle' | 'asset'
   const [vehicleId, setVehicleId] = useState(vehicles.length === 1 ? String(vehicles[0].id) : "");
   const isAsset = target === "asset";
@@ -110,13 +111,13 @@ function App() {
 
   const resetForm = () => {
     photos.forEach((p) => { if (p.file && p.url) { try { URL.revokeObjectURL(p.url); } catch (e) {} } });
-    setEditId(null); setCostItem(""); setDate(today10()); setAmount(""); setKm(""); setNote(""); setPhotos([]);
+    setEditId(null); setEditHash(null); setCostItem(""); setDate(today10()); setAmount(""); setKm(""); setNote(""); setPhotos([]);
     setTarget("vehicle"); setVehicleId(vehicles.length === 1 ? String(vehicles[0].id) : ""); setResult(null);
   };
   const startEdit = (h) => {
     const asAsset = assets.some((a) => String(a.id) === String(h.vehicleId));
     setTarget(asAsset ? "asset" : "vehicle");
-    setEditId(h.id); setVehicleId(String(h.vehicleId || "")); setCostItem(h.name || "");
+    setEditId(h.id); setEditHash(h.hashid || h.id); setVehicleId(String(h.vehicleId || "")); setCostItem(h.name || "");
     setDate(h.date || today10()); setAmount(h.amount || ""); setKm(h.km || ""); setNote(h.note || "");
     setPhotos((h.photos || []).map((p) => ({ ref: p.id, url: p.url, name: p.name })));
     setResult(null); setTab("form");
@@ -149,7 +150,7 @@ function App() {
       photos.filter((p) => p.file).forEach((p) => fd.append("photos[]", p.file));
       if (editId) photos.filter((p) => p.ref).forEach((p) => fd.append("keep[]", p.ref));
       const wasEdit = !!editId;
-      const r = await window.trkUpload("POST", editId ? (T.routes.cancel + editId + "/update") : T.routes.submit, fd);
+      const r = await window.trkUpload("POST", editId ? (T.routes.cancel + (editHash || editId) + "/update") : T.routes.submit, fd);
       if (r && r.ok) { window.trkToast(wasEdit ? "Đã cập nhật phiếu" : "Đã gửi yêu cầu chi"); resetForm(); refreshHistory(); setHistPage(1); setTab("history"); }
       else setResult(r);
     } catch (e) { setResult({ ok: false, message: "Lỗi kết nối — vui lòng thử lại." }); }

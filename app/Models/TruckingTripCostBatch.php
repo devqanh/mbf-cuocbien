@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use App\Concerns\HasHashid;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /** Phí xe nội bộ — 1 kỳ/đợt (snapshot nhiều lô theo "ngày xe ra"). */
 class TruckingTripCostBatch extends Model
 {
+    use HasHashid;
+
     protected $fillable = [
         'no', 'name', 'date', 'period_from', 'period_to', 'total', 'note',
     ];

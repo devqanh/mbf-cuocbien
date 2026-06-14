@@ -181,6 +181,19 @@ a { text-decoration: none; }
     width: 8px; height: 8px; border-radius: 50%;
     background: var(--azia-danger); border: 2px solid #fff;
 }
+
+/* Chỉ báo trạng thái realtime (socket Reverb) */
+.rt-status .rt-dot {
+    position: absolute; bottom: 7px; right: 7px;
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--azia-muted); border: 2px solid #fff;
+    transition: background .2s;
+}
+.rt-status.is-connected .rt-dot { background: var(--azia-success); }
+.rt-status.is-connecting .rt-dot { background: var(--azia-warning); animation: rtPulse 1s ease-in-out infinite; }
+.rt-status.is-down .rt-dot { background: var(--azia-danger); }
+.rt-status.is-down i { color: var(--azia-danger); }
+@keyframes rtPulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
 .user-chip {
     display: inline-flex; align-items: center; gap: 10px;
     padding: 4px 10px 4px 4px; border-radius: 999px;

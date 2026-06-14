@@ -29,6 +29,8 @@ export default defineConfig(({ mode }) => {
                     'resources/js/trucking2/pages/phi-xe.jsx',
                     'resources/js/trucking2/pages/phi-xe-tao.jsx',
                     'resources/js/trucking2/pages/phi-xe-xem.jsx',
+                    'resources/js/trucking2/pages/ke-hoach.jsx',
+                    'resources/js/trucking2/pages/ke-hoach-public.jsx',
                 ],
                 refresh: true,
             }),

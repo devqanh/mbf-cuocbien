@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\HasHashid;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -13,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class TruckingShipment extends Model
 {
+    use HasHashid;
     public const SHEET_HPH = 'hph';
     public const SHEET_ICD = 'icd';
 

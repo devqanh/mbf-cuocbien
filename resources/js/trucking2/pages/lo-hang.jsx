@@ -169,7 +169,7 @@ function ShipmentsApp() {
         const fields = [...(dirtyFields.current[id] || [])];
         const partial = { id: ship.id };
         fields.forEach((k) => { partial[k] = ship[k]; });
-        const res = await api("PUT", ROUTES.shipment + id, { sheet, ship: partial, fields });
+        const res = await api("PUT", ROUTES.shipment + (ship.hashid || id), { sheet, ship: partial, fields });
         if (res && res.ok) { dirtyIds.current.delete(id); delete dirtyFields.current[id]; }
         else ok = false;
       }
@@ -224,7 +224,7 @@ function ShipmentsApp() {
       danger: true,
     });
     if (!ok) return;
-    const res = await api("DELETE", ROUTES.shipment + id);
+    const res = await api("DELETE", ROUTES.shipment + ((s && s.hashid) || id));
     if (res && res.ok) {
       setModal(null);
       window.trkToast && window.trkToast("Đã xoá lô hàng");

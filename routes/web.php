@@ -24,9 +24,15 @@ Route::get ('/yeu-cau-chi', [TruckingV2Controller::class, 'spendRequestPage'])->
 Route::post('/yeu-cau-chi/login',  [TruckingV2Controller::class, 'spendLogin'])->name('trucking2.spendRequest.login');
 Route::post('/yeu-cau-chi/logout', [TruckingV2Controller::class, 'spendLogout'])->name('trucking2.spendRequest.logout');
 Route::get ('/yeu-cau-chi/history', [TruckingV2Controller::class, 'spendHistory'])->name('trucking2.spendRequest.history');
-Route::post('/yeu-cau-chi/{cost}/cancel', [TruckingV2Controller::class, 'cancelMySpendRequest'])->name('trucking2.spendRequest.cancel')->whereNumber('cost');
-Route::post('/yeu-cau-chi/{cost}/update', [TruckingV2Controller::class, 'updateMySpendRequest'])->name('trucking2.spendRequest.update')->whereNumber('cost');
+Route::post('/yeu-cau-chi/{cost}/cancel', [TruckingV2Controller::class, 'cancelMySpendRequest'])->name('trucking2.spendRequest.cancel');
+Route::post('/yeu-cau-chi/{cost}/update', [TruckingV2Controller::class, 'updateMySpendRequest'])->name('trucking2.spendRequest.update');
 Route::post('/yeu-cau-chi', [TruckingV2Controller::class, 'submitSpendRequest'])->name('trucking2.spendRequest.submit');
+
+// ===== Link kế hoạch CÔNG KHAI (lái xe, không đăng nhập) — token bí mật trong URL =====
+Route::get ('/ke-hoach/{token}',                 [TruckingV2Controller::class, 'planPublicPage'])->name('trucking2.plan.public');
+Route::get ('/ke-hoach/{token}/data',            [TruckingV2Controller::class, 'planPublicData'])->name('trucking2.plan.public.data');
+Route::post('/ke-hoach/{token}/{ship}/update',   [TruckingV2Controller::class, 'planPublicUpdate'])->name('trucking2.plan.public.update');
+Route::delete('/ke-hoach/{token}/{ship}/photo/{att}', [TruckingV2Controller::class, 'planPublicDeletePhoto'])->name('trucking2.plan.public.photo.delete')->whereNumber('att');
 
 // ===== Tài liệu Trucking — CÔNG KHAI (không cần đăng nhập) để gửi kế toán =====
 Route::get('/tailieu',          [TruckingController::class, 'docs'])->name('trucking.docs');
@@ -122,17 +128,21 @@ Route::middleware('auth')->group(function () {
             Route::get('/phi-xe',                  [TruckingV2Controller::class, 'tripCostPage'])->name('tripCost');
             Route::get('/phi-xe/tao',              [TruckingV2Controller::class, 'createTripCost'])->name('tripCost.create');
             Route::get('/phi-xe/compute',          [TruckingV2Controller::class, 'tripCostCompute'])->name('tripCost.compute');
-            Route::get('/phi-xe/{tripCost}',       [TruckingV2Controller::class, 'viewTripCost'])->name('tripCost.view')->whereNumber('tripCost');
-            Route::get('/phi-xe/{tripCost}/context', [TruckingV2Controller::class, 'tripCostContext'])->name('tripCost.context')->whereNumber('tripCost');
+            Route::get('/phi-xe/{tripCost}',       [TruckingV2Controller::class, 'viewTripCost'])->name('tripCost.view');
+            Route::get('/phi-xe/{tripCost}/context', [TruckingV2Controller::class, 'tripCostContext'])->name('tripCost.context');
+            Route::get('/ke-hoach',                [TruckingV2Controller::class, 'planLinks'])->name('plan');   // quản lý link kế hoạch
         });
         Route::middleware('permission:shipments.create')->group(function () {
             Route::post('/trip-costs', [TruckingV2Controller::class, 'storeTripCost'])->name('tripCost.store');
         });
         Route::middleware('permission:shipments.update')->group(function () {
-            Route::put('/trip-costs/{tripCost}', [TruckingV2Controller::class, 'updateTripCost'])->name('tripCost.update')->whereNumber('tripCost');
+            Route::put('/trip-costs/{tripCost}', [TruckingV2Controller::class, 'updateTripCost'])->name('tripCost.update');
+            Route::post('/plan-links',                       [TruckingV2Controller::class, 'createPlanLink'])->name('plan.create');
+            Route::put('/plan-links/{planLink}/toggle',      [TruckingV2Controller::class, 'togglePlanLink'])->name('plan.toggle')->whereNumber('planLink');
+            Route::delete('/plan-links/{planLink}',          [TruckingV2Controller::class, 'destroyPlanLink'])->name('plan.destroy')->whereNumber('planLink');
         });
         Route::middleware('permission:shipments.delete')->group(function () {
-            Route::delete('/trip-costs/{tripCost}', [TruckingV2Controller::class, 'destroyTripCost'])->name('tripCost.destroy')->whereNumber('tripCost');
+            Route::delete('/trip-costs/{tripCost}', [TruckingV2Controller::class, 'destroyTripCost'])->name('tripCost.destroy');
         });
         Route::middleware('permission:shipments.create')->group(function () {
             Route::post('/shipments',             [TruckingV2Controller::class, 'storeShipment'])->name('shipments.store');
@@ -159,9 +169,9 @@ Route::middleware('auth')->group(function () {
         Route::middleware('permission:statements.view')->group(function () {
             Route::get('/bang-ke',                     [TruckingV2Controller::class, 'statements'])->name('statements');
             Route::get('/bang-ke/tao',                 [TruckingV2Controller::class, 'createStatement'])->name('statements.create');
-            Route::get('/bang-ke/{statement}',         [TruckingV2Controller::class, 'viewStatement'])->name('statements.view')->whereNumber('statement');
-            Route::get('/bang-ke/{statement}/context', [TruckingV2Controller::class, 'statementContext'])->name('statements.context')->whereNumber('statement');
-            Route::get('/bang-ke/{statement}/excel',   [TruckingV2Controller::class, 'exportStatement'])->name('statements.excel')->whereNumber('statement');
+            Route::get('/bang-ke/{statement}',         [TruckingV2Controller::class, 'viewStatement'])->name('statements.view');
+            Route::get('/bang-ke/{statement}/context', [TruckingV2Controller::class, 'statementContext'])->name('statements.context');
+            Route::get('/bang-ke/{statement}/excel',   [TruckingV2Controller::class, 'exportStatement'])->name('statements.excel');
         });
         Route::middleware('permission:statements.create')->group(function () {
             Route::post('/statements', [TruckingV2Controller::class, 'storeStatement'])->name('statements.store');
@@ -180,11 +190,11 @@ Route::middleware('auth')->group(function () {
             // Quản lý xe (xe MBF nội bộ)
             Route::get('/quan-ly-xe',                 [TruckingV2Controller::class, 'fleet'])->name('fleet');
             Route::get('/quan-ly-tai-san-list',       [TruckingV2Controller::class, 'assetListData'])->name('asset.list');   // lazy-load khi mở tab Tài sản
-            Route::get('/quan-ly-xe/{vehicle}/data',  [TruckingV2Controller::class, 'vehicleData'])->name('fleet.data')->whereNumber('vehicle');
-            Route::get('/quan-ly-xe/{vehicle}/section/{section}', [TruckingV2Controller::class, 'vehicleSection'])->name('fleet.section')->whereNumber('vehicle');
+            Route::get('/quan-ly-xe/{vehicle}/data',  [TruckingV2Controller::class, 'vehicleData'])->name('fleet.data');
+            Route::get('/quan-ly-xe/{vehicle}/section/{section}', [TruckingV2Controller::class, 'vehicleSection'])->name('fleet.section');
         });
         // Stream file tập trung (disk-agnostic local/S3) — chỉ cần đăng nhập, phân quyền theo owner trong controller
-        Route::get('/attachment/{attachment}', [TruckingV2Controller::class, 'showAttachment'])->name('attachment')->whereNumber('attachment');
+        Route::get('/attachment/{attachment}', [TruckingV2Controller::class, 'showAttachment'])->name('attachment');
         Route::middleware('permission:settings.update')->group(function () {
             Route::put('/catalog/{type}',    [TruckingV2Controller::class, 'saveCatalog'])->name('catalog.save');
             Route::put('/customers',         [TruckingV2Controller::class, 'saveCustomers'])->name('customers.save');
@@ -194,18 +204,18 @@ Route::middleware('auth')->group(function () {
             Route::put('/route-fees',        [TruckingV2Controller::class, 'saveRouteFees'])->name('routeFees.save');
             Route::put('/fuel-prices',       [TruckingV2Controller::class, 'saveFuelPrices'])->name('fuelPrices.save');
             Route::put('/drivers',           [TruckingV2Controller::class, 'saveDrivers'])->name('drivers.save');
-            Route::post('/drivers/{driver}/docs', [TruckingV2Controller::class, 'uploadDriverDocs'])->name('drivers.docs.upload')->whereNumber('driver');
-            Route::delete('/drivers/{driver}/docs/{idx}', [TruckingV2Controller::class, 'deleteDriverDoc'])->name('drivers.docs.delete')->whereNumber('driver')->whereNumber('idx');
-            Route::put('/quan-ly-xe/{vehicle}', [TruckingV2Controller::class, 'saveVehicle'])->name('fleet.save')->whereNumber('vehicle');
-            Route::put('/quan-ly-xe/cost/{cost}/cancel', [TruckingV2Controller::class, 'adminCancelCost'])->name('fleet.cancelCost')->whereNumber('cost');
+            Route::post('/drivers/{driver}/docs', [TruckingV2Controller::class, 'uploadDriverDocs'])->name('drivers.docs.upload');
+            Route::delete('/drivers/{driver}/docs/{idx}', [TruckingV2Controller::class, 'deleteDriverDoc'])->name('drivers.docs.delete')->whereNumber('idx');
+            Route::put('/quan-ly-xe/{vehicle}', [TruckingV2Controller::class, 'saveVehicle'])->name('fleet.save');
+            Route::put('/quan-ly-xe/cost/{cost}/cancel', [TruckingV2Controller::class, 'adminCancelCost'])->name('fleet.cancelCost');
             Route::post('/quan-ly-xe-cost-item', [TruckingV2Controller::class, 'addVehicleCostItem'])->name('fleet.costItem');
-            Route::post('/quan-ly-xe/{vehicle}/cost-photo', [TruckingV2Controller::class, 'uploadCostPhotos'])->name('fleet.costPhoto.upload')->whereNumber('vehicle');
-            Route::post('/quan-ly-xe/{vehicle}/docs', [TruckingV2Controller::class, 'uploadVehicleDocs'])->name('fleet.docs.upload')->whereNumber('vehicle');
-            Route::delete('/quan-ly-xe/{vehicle}/docs/{idx}', [TruckingV2Controller::class, 'deleteVehicleDoc'])->name('fleet.docs.delete')->whereNumber('vehicle')->whereNumber('idx');
+            Route::post('/quan-ly-xe/{vehicle}/cost-photo', [TruckingV2Controller::class, 'uploadCostPhotos'])->name('fleet.costPhoto.upload');
+            Route::post('/quan-ly-xe/{vehicle}/docs', [TruckingV2Controller::class, 'uploadVehicleDocs'])->name('fleet.docs.upload');
+            Route::delete('/quan-ly-xe/{vehicle}/docs/{idx}', [TruckingV2Controller::class, 'deleteVehicleDoc'])->name('fleet.docs.delete')->whereNumber('idx');
             // Quản lý tài sản (kind='asset' — dùng chung route data/section/save/docs/cost ở trên)
             Route::post('/quan-ly-tai-san',          [TruckingV2Controller::class, 'createAsset'])->name('asset.create');
             Route::post('/quan-ly-tai-san-category', [TruckingV2Controller::class, 'addAssetCategory'])->name('asset.category');
-            Route::delete('/quan-ly-tai-san/{vehicle}', [TruckingV2Controller::class, 'destroyAsset'])->name('asset.destroy')->whereNumber('vehicle');
+            Route::delete('/quan-ly-tai-san/{vehicle}', [TruckingV2Controller::class, 'destroyAsset'])->name('asset.destroy');
         });
     });
 

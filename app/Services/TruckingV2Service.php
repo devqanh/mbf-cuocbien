@@ -22,10 +22,12 @@ use App\Models\TruckingVehicleDepreciation;
 use App\Models\TruckingVehicleUsage;
 use App\Models\TruckingSetting;
 use App\Models\TruckingAttachment;
+use App\Models\TruckingPlanLink;
 use App\Models\TruckingShipment;
 use App\Models\TruckingShipmentWarehouse;
 use App\Models\TruckingVehicleCostType;
 use App\Models\TruckingAssetCategory;
+use App\Support\Hashid;
 use App\Models\TruckingStatement;
 use App\Models\TruckingVehicle;
 use App\Models\TruckingWarehouse;
@@ -297,6 +299,7 @@ class TruckingV2Service
     {
         return [
             'id'           => $s->id,
+            'hashid'       => Hashid::encode($s->id),
             'customer'     => $s->customer?->name ?? '',
             'booking'      => $s->booking ?? '',
             'inv'          => $s->inv ?? '',
@@ -618,6 +621,7 @@ class TruckingV2Service
             'icd' => TruckingSetting::get('vat_default_icd', '0'),
         ];
         $cfg['freeTimeHours'] = TruckingSetting::get('free_time_hours', '4');
+        $cfg['dueWarnDays']   = TruckingSetting::get('due_warn_days', '30');
 
         return $cfg;
     }
@@ -685,10 +689,11 @@ class TruckingV2Service
                 'vehicleAxle' => $v->filter(fn ($x) => $x->axle)->mapWithKeys(fn ($x) => [$x->plate => $x->axle])->all(),
             ];
         }
-        if ($key === '__general') {   // cấu hình chung: VAT mặc định + Free time (+ mở rộng sau)
+        if ($key === '__general') {   // cấu hình chung: VAT mặc định + Free time + cảnh báo hạn (+ mở rộng sau)
             return [
                 'vatDefault'    => ['hph' => TruckingSetting::get('vat_default_hph', '8'), 'icd' => TruckingSetting::get('vat_default_icd', '0')],
                 'freeTimeHours' => TruckingSetting::get('free_time_hours', '4'),
+                'dueWarnDays'   => TruckingSetting::get('due_warn_days', '30'),
             ];
         }
         if ($key === 'routeFees') {
@@ -714,6 +719,7 @@ class TruckingV2Service
                 $info = is_array($v->info) ? $v->info : [];
                 return [
                     'id'              => $v->id,
+                    'hashid'          => Hashid::encode($v->id),
                     'plate'           => $v->plate,
                     'axle'            => $v->axle ?? '',
                     'registrationDue' => $info['registrationDue'] ?? '',   // YYYY-MM-DD (hạn đăng kiểm)
@@ -744,10 +750,11 @@ class TruckingV2Service
         }
 
         $today = Carbon::today();
+        $warnDays = (int) TruckingSetting::get('due_warn_days', '30') ?: 30;
         $out = [];
         foreach ($latest as $c) {
             $days = (int) round(($c->due_date->copy()->startOfDay()->getTimestamp() - $today->getTimestamp()) / 86400);
-            if ($days > 30) continue;   // còn hạn xa → không nhắc
+            if ($days > $warnDays) continue;   // còn hạn xa → không nhắc
             $out[] = [
                 'vehicleId' => $c->vehicle_id,
                 'plate'     => $plates[$c->vehicle_id] ?? '',
@@ -828,6 +835,7 @@ class TruckingV2Service
         $info = is_array($v->info) ? $v->info : [];
         return [
             'id'            => $v->id,
+            'hashid'        => Hashid::encode($v->id),
             'code'          => $v->plate,                       // mã tài sản (cột unique)
             'name'          => $info['name'] ?? '',
             'category'      => $info['category'] ?? '',
@@ -876,6 +884,121 @@ class TruckingV2Service
         if ($v->kind !== 'asset') return false;
         $v->delete();   // cascade các bảng con (costs/depreciations/usages)
         return true;
+    }
+
+    // ===================================================================
+    // LINK KẾ HOẠCH — lái xe cập nhật giờ xe đến/ra (công khai, mobile)
+    // ===================================================================
+
+    /** Builder lô trong khoảng "giờ đến dự kiến" của 1 link. */
+    private function planShipmentsQuery(TruckingPlanLink $link)
+    {
+        return TruckingShipment::whereNotNull('gio_den_du_kien')
+            ->whereBetween('gio_den_du_kien', [$link->from_date->copy()->startOfDay(), $link->to_date->copy()->endOfDay()]);
+    }
+
+    /** Danh sách link kế hoạch (admin). */
+    public function planLinksForList(): array
+    {
+        return TruckingPlanLink::orderByDesc('id')->get()->map(function ($l) {
+            return [
+                'id'     => $l->id,
+                'hashid' => Hashid::encode($l->id),
+                'token'  => $l->token,
+                'title'  => $l->title ?? '',
+                'from'   => $this->outDate($l->from_date),
+                'to'     => $this->outDate($l->to_date),
+                'active' => (bool) $l->active,
+                'count'  => $this->planShipmentsQuery($l)->count(),
+                'url'    => url('/ke-hoach/' . $l->token),
+            ];
+        })->all();
+    }
+
+    public function createPlanLink(array $in, ?int $userId): array
+    {
+        $from = $this->inDate($in['from'] ?? null);
+        $to   = $this->inDate($in['to'] ?? null);
+        if (! $from || ! $to) return ['ok' => false, 'message' => 'Vui lòng chọn khoảng ngày.'];
+        if ($to < $from) [$from, $to] = [$to, $from];
+        $l = TruckingPlanLink::create([
+            'token' => TruckingPlanLink::newToken(),
+            'title' => trim((string) ($in['title'] ?? '')) ?: null,
+            'from_date' => $from, 'to_date' => $to, 'active' => true, 'created_by' => $userId,
+        ]);
+        return ['ok' => true, 'link' => collect($this->planLinksForList())->firstWhere('id', $l->id)];
+    }
+
+    public function setPlanLinkActive(TruckingPlanLink $l, bool $active): void
+    {
+        $l->update(['active' => $active]);
+    }
+
+    public function deletePlanLink(TruckingPlanLink $l): void
+    {
+        $l->delete();
+    }
+
+    /** Lô cho lái xe xem/cập nhật (CHỈ field cần thiết — không lộ tài chính). */
+    private function planShipmentView(TruckingShipment $s): array
+    {
+        return [
+            'hashid'   => Hashid::encode($s->id),
+            'customer' => $s->customer?->name ?? '',
+            'booking'  => $s->booking ?? '',
+            'contNo'   => $s->cont_no ?? '',
+            'contType' => $s->cont_type ?? '',
+            'kho'      => $s->kho ?? '',
+            'from'     => $s->from_loc ?? '',
+            'to'       => $s->to_loc ?? '',
+            'bksVao'   => $s->bks_vao ?? '',
+            'bksRa'    => $s->bks_ra ?? '',
+            'gioDenDuKien' => $this->outDateTime($s->gio_den_du_kien),
+            'gioXeDen' => $this->outDateTime($s->gio_xe_den),
+            'gioXeRa'  => $this->outDateTime($s->gio_xe_ra),
+            'driverNote' => $s->driver_note ?? '',
+            'photos'   => $this->listAttachments(TruckingShipment::class, $s->id, 'shipmentPhoto'),
+        ];
+    }
+
+    /** Dữ liệu trang công khai: thông tin link + danh sách lô trong khoảng. */
+    public function planPublicData(TruckingPlanLink $link): array
+    {
+        $ships = $this->planShipmentsQuery($link)->with('customer:id,name')
+            ->orderBy('gio_den_du_kien')->get()->map(fn ($s) => $this->planShipmentView($s))->all();
+        return [
+            'title' => $link->title ?? '',
+            'from'  => $this->outDate($link->from_date),
+            'to'    => $this->outDate($link->to_date),
+            'ships' => $ships,
+        ];
+    }
+
+    /** Lái xe cập nhật 1 lô qua link (chỉ giờ xe đến/ra + ghi chú + ảnh; phải trong khoảng). */
+    public function planUpdateShipment(TruckingPlanLink $link, string $shipHashid, array $in, array $files = []): array
+    {
+        $id = Hashid::decode($shipHashid);
+        if ($id === null) return ['ok' => false, 'message' => 'Lô không hợp lệ.'];
+        $s = $this->planShipmentsQuery($link)->where('id', $id)->first();
+        if (! $s) return ['ok' => false, 'message' => 'Lô không thuộc kế hoạch này (đã đổi giờ kế hoạch?).'];
+
+        if (array_key_exists('gioXeDen', $in)) $s->gio_xe_den = $this->inDateTime($in['gioXeDen'] ?: null);
+        if (array_key_exists('gioXeRa', $in))  $s->gio_xe_ra  = $this->inDateTime($in['gioXeRa'] ?: null);
+        if (array_key_exists('driverNote', $in)) $s->driver_note = trim((string) $in['driverNote']) ?: null;
+        $s->save();
+
+        if ($files) $this->storeAttachments(TruckingShipment::class, $s->id, 'shipmentPhoto', $files, null, "trucking/shipments/{$s->id}");
+
+        return ['ok' => true, 'ship' => $this->planShipmentView($s->fresh('customer'))];
+    }
+
+    /** Xóa 1 ảnh lô qua link (chỉ ảnh thuộc lô trong khoảng). */
+    public function planDeletePhoto(TruckingPlanLink $link, string $shipHashid, int $attId): array
+    {
+        $id = Hashid::decode($shipHashid);
+        if ($id === null || ! $this->planShipmentsQuery($link)->where('id', $id)->exists()) return ['ok' => false];
+        $this->deleteAttachment($attId, TruckingShipment::class, $id);
+        return ['ok' => true, 'photos' => $this->listAttachments(TruckingShipment::class, $id, 'shipmentPhoto')];
     }
 
     /** # hóa đơn kế tiếp (PC-XXXX) toàn hệ thống. */
@@ -982,7 +1105,7 @@ class TruckingV2Service
                 $isAsset = ($c->vehicle?->kind ?? 'vehicle') === 'asset';
                 $vinfo = is_array($c->vehicle?->info) ? $c->vehicle->info : [];
                 return [
-                    'id' => $c->id, 'vehicleId' => $c->vehicle_id, 'plate' => $c->vehicle?->plate ?? '', 'name' => $c->name ?? '',
+                    'id' => $c->id, 'hashid' => Hashid::encode($c->id), 'vehicleId' => $c->vehicle_id, 'plate' => $c->vehicle?->plate ?? '', 'name' => $c->name ?? '',
                     'kind' => $isAsset ? 'asset' : 'vehicle',
                     'targetName' => $isAsset ? (($vinfo['name'] ?? '') ?: ($c->vehicle?->plate ?? '')) : ($c->vehicle?->plate ?? ''),
                     'note' => $c->note ?? '',
@@ -1066,6 +1189,7 @@ class TruckingV2Service
     {
         return [
             'id'      => $v->id,
+            'hashid'  => Hashid::encode($v->id),
             'plate'   => $v->plate,
             'axle'    => $v->axle ?? '',
             'info'    => is_array($v->info) ? $v->info : [],
@@ -1088,7 +1212,7 @@ class TruckingV2Service
         return $v->vehicleCosts()->with('creator:id,name')->orderBy('sort')->get()->map(function ($c) use ($v) {
             $st = $this->vehicleCostStatus($c);
             return [
-            'id' => $c->id, 'name' => $c->name ?? '', 'costTypeId' => $c->cost_type_id, 'invoiceNo' => $c->invoice_no ?? '', 'kind' => ($c->kind === 'fixed' ? 'fixed' : 'recurring'),
+            'id' => $c->id, 'hashid' => Hashid::encode($c->id), 'name' => $c->name ?? '', 'costTypeId' => $c->cost_type_id, 'invoiceNo' => $c->invoice_no ?? '', 'kind' => ($c->kind === 'fixed' ? 'fixed' : 'recurring'),
             'spendDate' => $this->outDate($c->spend_date), 'dueDate' => $this->outDate($c->due_date), 'amount' => $this->outMoney($c->amount),
             'currentKm' => $this->outNum($c->current_km), 'supplier' => $c->supplier ?? '', 'note' => $c->note ?? '',
             'paid' => (bool) $c->paid, 'approved' => (bool) $c->approved,
@@ -1169,7 +1293,7 @@ class TruckingV2Service
         return [
             'id' => $a->id, 'name' => $a->name ?? '', 'type' => $a->type ?? '',
             'mime' => $a->mime ?? '', 'size' => (int) $a->size, 'isImage' => $a->isImage(),
-            'url' => route('trucking2.attachment', ['attachment' => $a->id]),
+            'url' => route('trucking2.attachment', ['attachment' => $a->hashid()]),
         ];
     }
 
@@ -1555,6 +1679,7 @@ class TruckingV2Service
     {
         return TruckingDriver::orderBy('sort')->orderBy('name')->get()->map(fn ($d) => [
             'id'         => $d->id,
+            'hashid'     => Hashid::encode($d->id),
             'name'       => $d->name,
             'phones'     => is_array($d->phones) ? array_values($d->phones) : [],
             'birthday'   => $this->outDate($d->birthday),
@@ -1685,6 +1810,7 @@ class TruckingV2Service
     {
         return TruckingTripCostBatch::withCount('lines')->orderByDesc('id')->get()->map(fn ($b) => [
             'id'    => $b->id,
+            'hashid' => Hashid::encode($b->id),
             'no'    => $b->no,
             'name'  => $b->name ?? '',
             'date'  => $this->outDate($b->date),
@@ -1700,6 +1826,7 @@ class TruckingV2Service
     {
         return [
             'id'    => $b->id,
+            'hashid' => Hashid::encode($b->id),
             'no'    => $b->no,
             'name'  => $b->name ?? '',
             'date'  => $this->outDate($b->date),
@@ -2125,6 +2252,10 @@ class TruckingV2Service
         if (isset($cfg['vatDefault']['hph'])) TruckingSetting::put('vat_default_hph', $cfg['vatDefault']['hph']);
         if (isset($cfg['vatDefault']['icd'])) TruckingSetting::put('vat_default_icd', $cfg['vatDefault']['icd']);
         if (array_key_exists('freeTimeHours', $cfg)) TruckingSetting::put('free_time_hours', $cfg['freeTimeHours']);
+        if (array_key_exists('dueWarnDays', $cfg)) {
+            $d = (int) preg_replace('/[^\d]/', '', (string) $cfg['dueWarnDays']);
+            TruckingSetting::put('due_warn_days', (string) ($d > 0 ? $d : 30));
+        }
     }
 
     /** Map lower(name|code) ⇒ tên địa điểm chuẩn (để validate + chuẩn hóa NƠI LẤY/HẠ). */
@@ -2397,6 +2528,7 @@ class TruckingV2Service
         return TruckingStatement::with(['payments', 'customer'])->orderBy('id')->get()
             ->map(fn ($st) => [
                 'id'       => $st->id,
+                'hashid'   => Hashid::encode($st->id),
                 'no'       => $st->no,
                 'customer' => $st->customer_name ?? $st->customer?->name ?? '',
                 'date'     => $this->outDate($st->date),
@@ -2416,6 +2548,7 @@ class TruckingV2Service
     {
         return [
             'id'        => $st->id,
+            'hashid'    => Hashid::encode($st->id),
             'no'        => $st->no,
             'customer'  => $st->customer_name ?? $st->customer?->name ?? '',
             'info'      => $st->info ?? [],

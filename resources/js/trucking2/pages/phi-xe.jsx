@@ -18,7 +18,7 @@ function TripBatchesApp() {
       confirmText: '<i class="bi bi-trash me-1"></i> Xóa kỳ', danger: true,
     });
     if (!ok) return;
-    const res = await api("DELETE", ROUTES.batch + b.id);
+    const res = await api("DELETE", ROUTES.batch + (b.hashid || b.id));
     if (res && res.ok) { setBatches((bs) => bs.filter((x) => x.id !== b.id)); window.trkToast && window.trkToast("Đã xóa kỳ phí xe"); }
     else window.trkToast && window.trkToast("Xóa thất bại", "error");
   };
@@ -59,7 +59,7 @@ function TripBatchesApp() {
               </tr></thead>
               <tbody>
                 {batches.map((b) => (
-                  <tr key={b.id} onClick={() => { window.location.href = ROUTES.view + b.id; }}
+                  <tr key={b.id} onClick={() => { window.location.href = ROUTES.view + (b.hashid || b.id); }}
                     style={{ cursor: "pointer" }}
                     onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg)")} onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
                     <td style={{ ...td, fontWeight: 700 }} className="tnum">{b.no}</td>

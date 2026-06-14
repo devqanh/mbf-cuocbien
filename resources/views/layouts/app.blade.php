@@ -143,6 +143,12 @@
                 </ul>
 
                 <div class="header-actions d-flex align-items-center gap-2">
+                    {{-- Trạng thái realtime (socket Reverb) — chấm xanh = đang kết nối --}}
+                    <button id="rtStatus" class="icon-btn rt-status is-connecting" type="button" title="Đang kiểm tra kết nối realtime…">
+                        <i class="bi bi-broadcast"></i>
+                        <span class="rt-dot" id="rtDot"></span>
+                    </button>
+
                     @can('tasks.create')
                     <button class="icon-btn" type="button" title="Tạo task nhanh (phím N)"
                             data-bs-toggle="modal" data-bs-target="#quickTaskModal">
@@ -498,6 +504,49 @@
             });
         }
     } catch (e) { console.warn('Echo init failed:', e); }
+
+    // ---- Chỉ báo trạng thái realtime (socket Reverb) ----
+    // Bind theo trạng thái kết nối của pusher-js (Reverb dùng giao thức Pusher):
+    // connected → xanh, connecting → vàng nhấp nháy, mất kết nối → đỏ. Bấm để thử nối lại.
+    (function () {
+        const $btn = document.getElementById('rtStatus');
+        if (! $btn) return;
+        const setState = (state) => {
+            $btn.classList.remove('is-connected', 'is-connecting', 'is-down');
+            let cls, title;
+            switch (state) {
+                case 'connected':
+                    cls = 'is-connected'; title = 'Realtime: ĐANG KẾT NỐI — socket hoạt động, thông báo tới ngay.'; break;
+                case 'connecting':
+                case 'initialized':
+                    cls = 'is-connecting'; title = 'Realtime: đang kết nối…'; break;
+                default: // unavailable | failed | disconnected
+                    cls = 'is-down'; title = 'Realtime: MẤT KẾT NỐI (' + state + ') — thông báo có thể không tới ngay. Bấm để thử nối lại.';
+            }
+            $btn.classList.add(cls);
+            $btn.title = title;
+        };
+        try {
+            const pusher = window.Echo && window.Echo.connector && window.Echo.connector.pusher;
+            if (pusher && pusher.connection) {
+                setState(pusher.connection.state);
+                pusher.connection.bind('state_change', (s) => setState(s.current));
+            } else {
+                setState('failed');   // Echo chưa khởi tạo được (thiếu key…) → coi như tắt
+            }
+        } catch (e) { setState('failed'); }
+
+        // Bấm icon khi đang lỗi → ép kết nối lại
+        $btn.addEventListener('click', () => {
+            try {
+                const pusher = window.Echo && window.Echo.connector && window.Echo.connector.pusher;
+                if (pusher && pusher.connection && pusher.connection.state !== 'connected') {
+                    pusher.connect();
+                    window.Bell && window.Bell.toast && window.Bell.toast({ type: 'info', color: 'info', message: 'Đang thử kết nối lại realtime…', icon: 'broadcast' });
+                }
+            } catch (e) {}
+        });
+    })();
 
     // ---- Bell (notification) ----
     const Bell = {

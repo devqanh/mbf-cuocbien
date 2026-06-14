@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Task;
 use App\Models\TaskComment;
 use App\Models\User;
+use App\Notifications\TaskAssignedNotification;
 use App\Notifications\TaskCommentedNotification;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -50,13 +51,35 @@ class TaskCommentController extends Controller
             'mentioned_user_ids' => $mentionedIds ?: null,
         ]);
 
-        // Notify recipients
+        // ===== Tự động GÁN người được @mention vào "Được giao" =====
+        // Tag @ai trong bình luận = giao việc luôn cho người đó (khỏi mở form chọn thủ công).
+        // Chỉ áp dụng khi người bình luận có quyền giao việc cho người khác; KHÔNG gỡ ai đang được giao.
+        $autoAssignedIds = [];
+        if (! empty($mentionedIds) && $u->can('tasks.assign_others')) {
+            $currentAssigneeIds = $task->assignees->pluck('id')->all();
+            $autoAssignedIds = collect($mentionedIds)
+                ->reject(fn ($id) => $id === $u->id || in_array($id, $currentAssigneeIds, true))
+                ->values()
+                ->all();
+            if (! empty($autoAssignedIds)) {
+                $task->assignees()->syncWithoutDetaching(
+                    collect($autoAssignedIds)->mapWithKeys(fn ($id) => [$id => ['role' => 'assignee']])->all()
+                );
+                // Báo "được giao việc" (mạnh hơn mention) + tăng badge Công việc cho người mới gán
+                $newAssignees = User::whereIn('id', $autoAssignedIds)->get();
+                Notification::send($newAssignees, new TaskAssignedNotification($task, $u));
+            }
+        }
+
+        // Notify recipients — đọc lại assignees (đã gồm người vừa auto-gán) cho recipients()
         $task->load(['assignees:id', 'watchers:id']);
 
-        // Người bị mention → nhận notification kiểu "mentioned" (priority cao hơn)
+        // Người bị mention → nhận notification kiểu "mentioned" (priority cao hơn).
+        // Trừ người vừa được auto-gán (họ đã nhận noti "được giao" rồi → tránh trùng).
         if (! empty($mentionedIds)) {
             $mentioned = User::whereIn('id', $mentionedIds)
                 ->where('id', '!=', $u->id)
+                ->whereNotIn('id', $autoAssignedIds)
                 ->get();
             if ($mentioned->isNotEmpty()) {
                 Notification::send($mentioned, new TaskCommentedNotification($task, $comment, $u, isMention: true));

@@ -307,7 +307,7 @@ function DriversManager({ cfg, setCfg }) {
     const fd = new FormData(); files.forEach((f) => fd.append("files[]", f)); fd.append("type", docType);
     setBusy(true);
     try {
-      const res = await window.trkUpload("POST", ROUTES.driversBase + cur.id + "/docs", fd);
+      const res = await window.trkUpload("POST", ROUTES.driversBase + (cur.hashid || cur.id) + "/docs", fd);
       if (res && res.ok) { setDriver({ docs: res.docs }); window.trkToast && window.trkToast(`Đã tải ${files.length} tài liệu`); }
       else window.trkToast && window.trkToast((res && res.message) || "Tải lên thất bại", "error");
     } catch (err) { window.trkToast && window.trkToast("Lỗi kết nối khi tải lên", "error"); }
@@ -317,7 +317,7 @@ function DriversManager({ cfg, setCfg }) {
     if (!cur || !cur.id) return;
     const ok = await window.confirmAction({ title: "Xóa tài liệu?", text: "Tài liệu này sẽ bị xóa vĩnh viễn.", confirmText: '<i class="bi bi-trash me-1"></i> Xóa', danger: true });
     if (!ok) return;
-    try { const res = await window.trkApi("DELETE", ROUTES.driversBase + cur.id + "/docs/" + attId); if (res && res.ok) setDriver({ docs: res.docs }); } catch (e) {}
+    try { const res = await window.trkApi("DELETE", ROUTES.driversBase + (cur.hashid || cur.id) + "/docs/" + attId); if (res && res.ok) setDriver({ docs: res.docs }); } catch (e) {}
   };
 
   const lbl = (t) => <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>{t}</div>;
@@ -601,6 +601,22 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                 <div style={{ fontSize: 12, color: "var(--ink-4)", lineHeight: 1.6, marginTop: 6 }}>
                   Free time <b>&gt; {cfg.freeTimeHours || 4}h</b> → <b style={{ color: "var(--good)" }}>CONNECT</b>; nhỏ hơn → <b style={{ color: "var(--danger)" }}>DISCONNECT</b>.
                   <br />Free time = Giờ xe ra − (Giờ đến kế hoạch hoặc Giờ xe đến, lấy giờ muộn hơn).
+                </div>
+              </div>
+
+              {/* Cảnh báo hạn (xe & tài sản) */}
+              <div style={{ borderTop: "1px solid var(--line-2)", paddingTop: 18 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 8 }}>Cảnh báo hạn (xe &amp; tài sản)</div>
+                <Field label="Cảnh báo trước hạn (số ngày)">
+                  <div style={{ position: "relative", width: 140 }}>
+                    <input inputMode="numeric" value={cfg.dueWarnDays == null ? "30" : cfg.dueWarnDays} onChange={(e) => setCfg("dueWarnDays", e.target.value.replace(/[^\d]/g, ""))} className="tnum"
+                      style={{ width: "100%", padding: "8px 36px 8px 11px", fontSize: 13.5, textAlign: "right", border: "1px solid var(--line)", borderRadius: 9, outline: "none" }}
+                      onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
+                    <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)", fontSize: 12.5, pointerEvents: "none" }}>ngày</span>
+                  </div>
+                </Field>
+                <div style={{ fontSize: 12, color: "var(--ink-4)", lineHeight: 1.6, marginTop: 6 }}>
+                  Còn ≤ <b>{cfg.dueWarnDays || 30} ngày</b> sẽ chuyển nhãn <b style={{ color: "var(--warn)" }}>“Sắp hết hạn”</b> để không bị miss. Áp dụng cho <b>đăng kiểm / bảo hiểm</b> (xe), <b>bảo hành / kiểm định</b> (tài sản) và <b>chi phí định kỳ</b> (bảo hiểm, đăng kiểm…).
                 </div>
               </div>
             </div>

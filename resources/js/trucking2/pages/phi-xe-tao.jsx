@@ -51,7 +51,7 @@ function CreateTripApp() {
     if (!ok) return false;
     const payload = { no, name, from, to, rows };
     const res = await api("POST", ROUTES.store, { batch: payload });
-    if (res && res.ok) { window.location.href = ROUTES.view + res.batch.id; return; }
+    if (res && res.ok) { window.location.href = ROUTES.view + (res.batch.hashid || res.batch.id); return; }
     window.trkToast && window.trkToast("Lưu thất bại", "error"); return false;
   };
 

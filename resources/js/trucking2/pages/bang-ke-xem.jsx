@@ -25,12 +25,12 @@ function ViewStatementApp() {
   if (!st) return <div style={{ display: "grid", placeItems: "center", height: "100%", color: "var(--ink-4)" }}>Không tìm thấy bảng kê.</div>;
 
   const onUpdate = (ns) => { dirtyIds.current.add(ns.id); setSt(ns); };
-  const onSave = () => api("PUT", ROUTES.statement + st.id, { statement: st })
+  const onSave = () => api("PUT", ROUTES.statement + (st.hashid || st.id), { statement: st })
     .then((r) => { if (r && r.ok) { dirtyIds.current.delete(st.id); setLiveDetail(null); window.trkToast && window.trkToast("Đã lưu"); return true; } window.trkToast && window.trkToast("Lưu thất bại", "error"); return false; })
     .catch(() => { window.trkToast && window.trkToast("Lỗi kết nối khi lưu", "error"); return false; });
-  const onDelete = (id) => api("DELETE", ROUTES.statement + id);
+  const onDelete = () => api("DELETE", ROUTES.statement + (st.hashid || st.id));
   // Xuất Excel: tải từ server (PhpSpreadsheet dựng theo mẫu chính thức, giữ định dạng)
-  const onExcel = () => { window.location.href = ROUTES.base + st.id + "/excel"; };
+  const onExcel = () => { window.location.href = ROUTES.base + (st.hashid || st.id) + "/excel"; };
 
   // Tính lại: HỎI xác nhận → mới query realtime (bảng giá + lô hiện tại) để tính.
   // Bảng kê đã lưu là dữ liệu TĨNH — chỉ thay đổi khi bấm Lưu sau khi kiểm tra.
@@ -43,7 +43,7 @@ function ViewStatementApp() {
     });
     if (!ok) return;
 
-    const r = await api("GET", ROUTES.base + st.id + "/context").catch(() => null);
+    const r = await api("GET", ROUTES.base + (st.hashid || st.id) + "/context").catch(() => null);
     if (!r || !r.ok) { window.trkToast && window.trkToast("Không tải được dữ liệu để tính lại", "error"); return; }
     const { priceFor } = makePricer(r.cfg || {});
     const shipById = {}; (r.ships || []).forEach((s) => { shipById[s.id] = s; });

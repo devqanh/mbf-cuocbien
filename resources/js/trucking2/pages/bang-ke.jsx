@@ -11,7 +11,7 @@ function StatementsApp() {
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
-      <KePage ke={ke} onNew={() => { window.location.href = ROUTES.create; }} onOpen={(st) => { window.location.href = ROUTES.view + st.id; }} />
+      <KePage ke={ke} onNew={() => { window.location.href = ROUTES.create; }} onOpen={(st) => { window.location.href = ROUTES.view + (st.hashid || st.id); }} />
     </div>
   );
 }

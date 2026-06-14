@@ -41,7 +41,7 @@ function ViewTripApp() {
 
   // tải lazy 1 lần khi mở: cấu hình + gợi ý/chẩn đoán mới — KHÔNG ghi đè snapshot
   useEffect(() => {
-    api("GET", ROUTES.context + batch.id + "/context").then((r) => { if (r && r.ok) applyContext(r, false); }).catch(() => {});
+    api("GET", ROUTES.context + (batch.hashid || batch.id) + "/context").then((r) => { if (r && r.ok) applyContext(r, false); }).catch(() => {});
   }, []);
 
   const onRows = (rs) => { setRows(rs); setDirty(true); };
@@ -55,7 +55,7 @@ function ViewTripApp() {
     });
     if (!ok) return;
     try {
-      const r = await api("GET", ROUTES.context + batch.id + "/context");   // truy vấn realtime ngay lúc bấm
+      const r = await api("GET", ROUTES.context + (batch.hashid || batch.id) + "/context");   // truy vấn realtime ngay lúc bấm
       if (!r || !r.ok) { window.trkToast && window.trkToast("Tính lại thất bại", "error"); return false; }
       applyContext(r, true);
       setDirty(true);
@@ -68,7 +68,7 @@ function ViewTripApp() {
   };
 
   const save = async () => {
-    const res = await api("PUT", ROUTES.update + batch.id, { batch: { no, name, from, to, rows } });
+    const res = await api("PUT", ROUTES.update + (batch.hashid || batch.id), { batch: { no, name, from, to, rows } });
     if (res && res.ok) { setDirty(false); window.trkToast && window.trkToast("Đã lưu kỳ phí xe"); return; }
     window.trkToast && window.trkToast("Lưu thất bại", "error"); return false;
   };
@@ -79,7 +79,7 @@ function ViewTripApp() {
       confirmText: '<i class="bi bi-trash me-1"></i> Xóa kỳ', danger: true,
     });
     if (!ok) return;
-    const res = await api("DELETE", ROUTES.destroy + batch.id);
+    const res = await api("DELETE", ROUTES.destroy + (batch.hashid || batch.id));
     if (res && res.ok) { window.location.href = ROUTES.list; }
     else window.trkToast && window.trkToast("Xóa thất bại", "error");
   };

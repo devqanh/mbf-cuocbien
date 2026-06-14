@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use App\Concerns\HasHashid;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /** Đội xe — biển số + loại (Xe MBF | Xe ngoài) + số cầu. */
 class TruckingVehicle extends Model
 {
+    use HasHashid;
+
     protected $fillable = ['plate', 'type', 'kind', 'axle', 'info', 'documents', 'allowances'];
 
     protected $casts = [

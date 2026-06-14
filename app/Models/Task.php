@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\HasHashid;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class Task extends Model
 {
+    use HasHashid;
     public const STATUS_TODO  = 'todo';
     public const STATUS_DOING = 'doing';
     public const STATUS_DONE  = 'done';
