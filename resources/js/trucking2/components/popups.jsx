@@ -281,10 +281,10 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
       setCostItems(costItems.filter((it) => it.src !== "thanhLyFee"));
     }
   };
-  // Chỉ liệt kê cont CHƯA RA (chưa có Biển số ra — khớp badge "Chưa ra" & tab lọc của hệ thống).
+  // Chỉ liệt kê cont CHƯA RA = chưa có Giờ xe ra VÀ chưa có Biển số ra (khớp quy tắc "có giờ ra = đã ra").
   // Giữ cont đang chọn để không mất hiển thị lựa chọn.
   const sibOpts = siblings
-    .filter((s) => !(s.bksRa || "").trim() || s.id === ship.raOtherId)
+    .filter((s) => (!(s.gioXeRa || "").trim() && !(s.bksRa || "").trim()) || s.id === ship.raOtherId)
     .map((s) => ({ value: s.id, label: (s.contNo || "(chưa có cont)") + " — " + (s.booking || "(chưa có booking)") }));
   const raMode = ship.raMode || "self";
   const other = (raMode === "other" && ship.raOtherId != null) ? siblings.find((s) => s.id === ship.raOtherId) : null;
@@ -439,7 +439,7 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
             <>
               <Field label="Cắt máng" hint="ngày giờ"><DTField value={ship.cutOff} onChange={(x) => set({ cutOff: x })} /></Field>
               <Field label="Ngày cont đến"><DateField value={ship.contDen} onChange={(x) => set({ contDen: x })} /></Field>
-              <Field label="Ngày cont ra"><DateField value={ship.contRa} onChange={(x) => set({ contRa: x })} /></Field>
+              {/* Bỏ "Ngày cont ra" — dùng "Giờ xe ra" (gioXeRa) ở mục Free time làm mốc cont rời đi. */}
             </>
           )}
         </div>

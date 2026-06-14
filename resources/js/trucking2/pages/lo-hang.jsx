@@ -110,6 +110,8 @@ function ShipmentsApp() {
 
   // Cắt máng: datetime-local "YYYY-MM-DDTHH:MM" → "dd/mm/yyyy HH:MM" (giữ nguyên nếu là text cũ)
   const fmtCM = (v) => { v = v || ""; const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(v); return m ? `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}` : v; };
+  // Giờ ra dạng gọn cho badge "Đã ra": "dd/mm HH:MM" (chỉ ngày → "dd/mm")
+  const fmtRa = (v) => { v = v || ""; const m = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/.exec(v); return m ? `${m[3]}/${m[2]}${m[4] ? " " + m[4] + ":" + m[5] : ""}` : ""; };
 
   // Lưu danh mục thêm nhanh trong popup → đúng endpoint của từng bảng (debounce theo key)
   const catTimer = useRef({});
@@ -534,7 +536,7 @@ function ShipmentsApp() {
               {rows.map((s) => {
                 const cc = calcCost(s.cost); const m = metrics(s);
                 const ft = !isHph ? calcFreeTime(s, cfg.freeTimeHours) : null;
-                const out = s.bksRa && s.bksRa.trim();
+                const out = (s.gioXeRa && s.gioXeRa.trim()) || (s.bksRa && s.bksRa.trim());
                 return (
                   <div key={s.id} onClick={() => openModal({ id: s.id, type: "info" })}
                     style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px", boxShadow: "0 1px 2px rgba(16,19,23,.04)" }}>
@@ -557,7 +559,7 @@ function ShipmentsApp() {
                     <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 6 }} className="tnum">{s.contNo || "—"} · {s.contType}{s.kho ? " · " + s.kho : ""}</div>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 7 }}>
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, color: out ? "var(--good)" : "var(--warn)", background: out ? "var(--good-weak)" : "#fcf3e2" }}>
-                        <span style={{ width: 6, height: 6, borderRadius: 999, background: "currentColor" }} />{out ? "Đã ra · " + s.bksRa : "Chưa ra"}</span>
+                        <span style={{ width: 6, height: 6, borderRadius: 999, background: "currentColor" }} />{out ? ("Đã ra" + (fmtRa(s.gioXeRa) ? " · " + fmtRa(s.gioXeRa) : "") + (s.bksRa && s.bksRa.trim() ? " · " + s.bksRa : "")) : "Chưa ra"}</span>
                       {ft && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, color: ft.connect ? "var(--good)" : "var(--danger)", background: ft.connect ? "var(--good-weak)" : "#fce8e8" }}>
                         <span style={{ width: 6, height: 6, borderRadius: 999, background: "currentColor" }} />{ft.connect ? "CONNECT" : "DISCONNECT"}</span>}
                     </div>
@@ -623,11 +625,12 @@ function ShipmentsApp() {
                           <>
                             <div style={{ fontWeight: 600, fontSize: 13 }} className="tnum">{s.contNo || "—"}</div>
                             <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 2 }} className="tnum">{s.contType}{s.kho ? " · " + s.kho : ""}</div>
+                            {(() => { const out = (s.gioXeRa && s.gioXeRa.trim()) || (s.bksRa && s.bksRa.trim()); return (
                             <div style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 4, fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
-                              color: (s.bksRa && s.bksRa.trim()) ? "var(--good)" : "var(--warn)", background: (s.bksRa && s.bksRa.trim()) ? "var(--good-weak)" : "#fcf3e2" }}>
+                              color: out ? "var(--good)" : "var(--warn)", background: out ? "var(--good-weak)" : "#fcf3e2" }}>
                               <span style={{ width: 6, height: 6, borderRadius: 999, background: "currentColor" }} />
-                              {(s.bksRa && s.bksRa.trim()) ? "Đã ra · " + s.bksRa : "Chưa ra"}
-                            </div>
+                              {out ? ("Đã ra" + (fmtRa(s.gioXeRa) ? " · " + fmtRa(s.gioXeRa) : "") + (s.bksRa && s.bksRa.trim() ? " · " + s.bksRa : "")) : "Chưa ra"}
+                            </div>); })()}
                           </>
                         )}
                       </EditCell>
@@ -656,7 +659,7 @@ function ShipmentsApp() {
                               <div style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 3, fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, color: ft.connect ? "var(--good)" : "var(--danger)", background: ft.connect ? "var(--good-weak)" : "#fce8e8" }}>
                                 <span style={{ width: 6, height: 6, borderRadius: 999, background: "currentColor" }} />{ft.connect ? "CONNECT" : "DISCONNECT"} <span style={{ fontWeight: 500, opacity: .8 }}>· {fmtHours(ft.hours)}</span>
                               </div>
-                            ) : <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 2 }} className="tnum">Ra: {fmtDate(s.contRa) || "—"}</div>; })()}
+                            ) : <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 2 }} className="tnum">Ra: {fmtRa(s.gioXeRa) || "—"}</div>; })()}
                           </>
                         )}
                       </EditCell>
@@ -696,7 +699,19 @@ function ShipmentsApp() {
             </tbody>
           </table>
           )}
-          {rows.length === 0 && <div style={{ padding: "40px", textAlign: "center", color: "var(--ink-4)", fontSize: 13.5, background: isMobile ? "#fff" : "transparent", border: isMobile ? "1px solid var(--line)" : "none", borderRadius: 12 }}>{loading ? "Đang tải…" : (qDeb || filter !== "all" || followFilter !== "all" ? "Không có lô nào khớp bộ lọc." : "Chưa có lô hàng nào. Bấm “Thêm lô hàng” để bắt đầu.")}</div>}
+          {rows.length === 0 && <div style={{ padding: "40px", textAlign: "center", color: "var(--ink-4)", fontSize: 13.5, background: isMobile ? "#fff" : "transparent", border: isMobile ? "1px solid var(--line)" : "none", borderRadius: 12 }}>
+            {loading ? "Đang tải…" : (qDeb || filter !== "all" || followFilter !== "all" ? (
+              <>
+                Không có lô nào khớp <b style={{ color: "var(--ink-3)" }}>tất cả</b> bộ lọc đang chọn{(filter !== "all" && followFilter !== "all") ? " (trạng thái ra + theo dõi cộng dồn)" : ""}.
+                <div style={{ marginTop: 10 }}>
+                  <button type="button" onClick={() => { setQ(""); setFilterP("all"); setFollowP("all"); setSort({ key: "default", dir: 1 }); }}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 13px", fontSize: 12.5, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--accent)", cursor: "pointer" }}>
+                    ↺ Xóa tất cả bộ lọc
+                  </button>
+                </div>
+              </>
+            ) : "Chưa có lô hàng nào. Bấm “Thêm lô hàng” để bắt đầu.")}
+          </div>}
         </div>
 
         {/* Phân trang */}

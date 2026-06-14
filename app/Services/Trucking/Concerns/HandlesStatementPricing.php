@@ -116,12 +116,21 @@ trait HandlesStatementPricing
         $locCode   = $this->locationCodeMap();
         $threshold = TruckingSetting::get('free_time_hours', '4');
 
-        // orderBy('cont_ra') để dùng composite index (customer_id, cont_ra) khi lấy + sắp theo kỳ
-        $rows = TruckingShipment::where('customer_id', $custId)->with('costLines')->orderBy('cont_ra')->get();
+        // ============================================================
+        // NGÀY KỲ BẢNG KÊ = NGÀY của "Giờ xe ra" (cột `gio_xe_ra`) — INPUT mà bộ lọc
+        // "Cont ra từ ngày – đến ngày" ở trang Tạo bảng kê dựa vào.
+        // (Đã bỏ field "Ngày cont ra"/`cont_ra` ở popup Lô hàng — gio_xe_ra là mốc cont rời đi.)
+        // ICD: CHỈ tính theo gio_xe_ra → lô chưa có giờ ra KHÔNG vào bảng kê.
+        // HPH: fallback sail_date (HPH không có khái niệm giờ xe ra).
+        // ============================================================
+        $rows = TruckingShipment::where('customer_id', $custId)->with('costLines')->orderBy('gio_xe_ra')->get();
         $out = [];
         foreach ($rows as $s) {
             $sheet = strtoupper((string) $s->sheet);
-            $date  = $this->outDate($s->cont_ra) ?: ($sheet === 'HPH' ? $this->outDate($s->sail_date) : $this->outDate($s->cont_den));
+            // Cột "Cont ra" = ngày của Giờ xe ra (ICD). HPH fallback sail_date (HPH không có giờ xe ra).
+            $date  = $this->outDate($s->gio_xe_ra) ?: ($sheet === 'HPH' ? $this->outDate($s->sail_date) : '');
+            // Lọc theo kỳ = theo NGÀY GIỜ XE RA. Lô CHƯA CÓ giờ ra (date rỗng) → CHƯA rời đi → KHÔNG đưa vào bảng kê.
+            if (($from || $to) && ! $date) continue;
             if ($from && $date && $date < $from) continue;
             if ($to && $date && $date > $to) continue;
             $out[] = $this->candidateRow($s, $sheet, $date, $this->priceShipment($s, $priceList, $locCode, $threshold));
@@ -168,7 +177,8 @@ trait HandlesStatementPricing
             $s = $ships->get($id);
             if (! $s) continue;
             $sheet = strtoupper((string) $s->sheet);
-            $date  = $this->outDate($s->cont_ra) ?: ($sheet === 'HPH' ? $this->outDate($s->sail_date) : $this->outDate($s->cont_den));
+            // Ngày kỳ = ngày "Giờ xe ra" (gio_xe_ra) — đồng bộ với statementCandidates. HPH fallback sail_date.
+            $date  = $this->outDate($s->gio_xe_ra) ?: ($sheet === 'HPH' ? $this->outDate($s->sail_date) : '');
             $out[(string) $id] = $this->candidateRow($s, $sheet, $date, $this->priceShipment($s, $priceList, $locCode, $threshold));
         }
         return ['repriced' => $out];

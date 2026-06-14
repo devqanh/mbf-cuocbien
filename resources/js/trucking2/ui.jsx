@@ -137,8 +137,10 @@ function StatementForm({ cfg, onCancel, onSaved }) {
   // ----- Lô + ĐỊNH GIÁ lấy TỪ BACKEND (nguồn chân lý duy nhất) theo khách + kỳ -----
   const [all, setAll] = useState([]);   // [{id,booking,io,sheet,from,to,contType,contNo,qty,cru,date,contLabel,note,thanhLy,pr}]
   const [loading, setLoading] = useState(false);
+  // Chưa chọn KỲ (ngày ra) → KHÔNG tải lô (tránh kéo toàn bộ + ép người dùng chọn kỳ trước).
+  const needDate = !!cust && !from && !to;
   useEffect(() => {
-    if (!cust) { setAll([]); return; }
+    if (!cust || (!from && !to)) { setAll([]); setLoading(false); return; }
     let alive = true; setLoading(true); setPicked({});
     const p = new URLSearchParams({ customer: cust }); if (from) p.set("from", from); if (to) p.set("to", to);
     window.trkApi("GET", ROUTES.candidates + "?" + p.toString())
@@ -206,6 +208,12 @@ function StatementForm({ cfg, onCancel, onSaved }) {
         <div style={{ fontSize: 12, color: "var(--ink-4)" }}>{all.length} lô có phải thu</div>
       </div>
 
+      {/* Ghi chú cho kế toán: bộ lọc kỳ dựa theo Giờ xe ra của lô */}
+      <div className="ke-noprint" style={{ fontSize: 11.5, color: "var(--ink-4)", padding: "8px 0 0", display: "flex", alignItems: "flex-start", gap: 6, lineHeight: 1.5 }}>
+        <i className="bi bi-info-circle" style={{ marginTop: 1 }} />
+        <span>Lọc theo <b style={{ color: "var(--ink-3)" }}>Giờ xe ra</b> của lô hàng (mốc cont rời đi, nhập ở popup Lô hàng). Lô <b style={{ color: "var(--ink-3)" }}>chưa có giờ ra</b> sẽ không hiện ở đây.</span>
+      </div>
+
       {/* printable statement */}
       <div className="ke-print" style={{ padding: "16px 4px 4px", background: "#fff" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 20, marginBottom: 14 }}>
@@ -240,7 +248,15 @@ function StatementForm({ cfg, onCancel, onSaved }) {
             </tr>
           </thead>
           <tbody>
-            {!loading && all.length === 0 && <tr><td colSpan={6} style={{ padding: "24px", textAlign: "center", color: "var(--ink-4)" }}>Không có lô nào phù hợp.</td></tr>}
+            {!loading && all.length === 0 && <tr><td colSpan={6} style={{ padding: "28px 24px", textAlign: "center", color: "var(--ink-4)" }}>
+              {needDate
+                ? <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                    <i className="bi bi-calendar-range" style={{ fontSize: 26, color: "var(--accent)", opacity: .8 }} />
+                    <b style={{ color: "var(--ink-2)", fontSize: 13.5 }}>Vui lòng chọn ngày ra của lô hàng</b>
+                    <span style={{ fontSize: 12.5 }}>Chọn <b>Cont ra từ ngày</b> (và đến ngày) ở trên để lọc lô đưa vào bảng kê.</span>
+                  </span>
+                : (cust ? "Không có lô nào phù hợp trong kỳ đã chọn." : "Chọn khách hàng để bắt đầu.")}
+            </td></tr>}
             {loading && <tr><td colSpan={6} style={{ padding: "24px", textAlign: "center", color: "var(--ink-4)" }}>Đang tải lô + định giá…</td></tr>}
             {!loading && all.map((x, i) => {
               const on = picked[x.id] !== false;

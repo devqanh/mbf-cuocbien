@@ -138,8 +138,21 @@ trait HandlesShipments
         // --- Aggregate toàn cục trên tập đã tìm ---
         $totalCost = (int) round((float) TruckingCostLine::whereIn('shipment_id', $searched()->select('id'))->sum('amount'));
 
+        // "Đã ra" = đã có GIỜ XE RA (hoặc Biển số ra). Ưu tiên giờ xe ra vì xe thuê ngoài
+        // nhiều khi không cập nhật được biển số → chỉ cần có giờ ra là coi như đã ra.
+        $applyOut = function ($q) {
+            return $q->where(function ($w) {
+                $w->where(fn ($a) => $a->whereNotNull('gio_xe_ra')->where('gio_xe_ra', '!=', ''))
+                  ->orWhere(fn ($a) => $a->whereNotNull('bks_ra')->where('bks_ra', '!=', ''));
+            });
+        };
+        $applyNotOut = function ($q) {
+            return $q->where(fn ($a) => $a->whereNull('gio_xe_ra')->orWhere('gio_xe_ra', ''))
+                     ->where(fn ($a) => $a->whereNull('bks_ra')->orWhere('bks_ra', ''));
+        };
+
         $allCount = $searched()->count();
-        $outCount = $searched()->whereNotNull('bks_ra')->where('bks_ra', '!=', '')->count();
+        $outCount = $applyOut($searched())->count();
         $filterCounts = ['all' => $allCount, 'out' => $outCount, 'notout' => $allCount - $outCount];
 
         $followStats = $this->followStats($searched(), $followNames, $nameHex);
@@ -147,9 +160,9 @@ trait HandlesShipments
         // --- Danh sách hiển thị: q + lọc + follow + sort + phân trang ---
         $list = $searched();
         if ($filter === 'out') {
-            $list->whereNotNull('bks_ra')->where('bks_ra', '!=', '');
+            $applyOut($list);
         } elseif ($filter === 'notout') {
-            $list->where(fn ($w) => $w->whereNull('bks_ra')->orWhere('bks_ra', ''));
+            $applyNotOut($list);
         }
         if ($followNames) {
             if ($follow === 'any') {
