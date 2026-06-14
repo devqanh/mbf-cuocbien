@@ -52,8 +52,8 @@ class SpendRequestCreatedNotification extends Notification
             'item'       => $this->cost->name,
             'invoice_no' => $this->cost->invoice_no,
             'amount'     => $amount,
-            // Deep-link: mở đúng chế độ (xe / tài sản) + tab chi phí + cuộn tới phiếu.
-            'url'        => route('trucking2.fleet') . '#' . ($isAsset ? 'asset/' : '') . $this->vehicle->id . '/cost/' . $this->cost->id,
+            // Deep-link: mở đúng chế độ (xe / tài sản) + tab chi phí + cuộn tới phiếu. Dùng hashid (không lộ id).
+            'url'        => route('trucking2.fleet') . '#' . ($isAsset ? 'asset/' : '') . Hashid::encode($this->vehicle->id) . '/cost/' . Hashid::encode($this->cost->id),
             'message'    => sprintf('Yêu cầu chi “%s” cho %s %s — %s đ. Chờ duyệt.',
                 $this->cost->name,
                 $isAsset ? 'tài sản' : 'xe',

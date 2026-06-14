@@ -25,6 +25,7 @@
     <li><button type="button" data-stab="company"><i class="bi bi-building"></i> Công ty</button></li>
     <li><button type="button" data-stab="seller"><i class="bi bi-file-earmark-spreadsheet"></i> Bên bán</button></li>
     <li><button type="button" data-stab="storage"><i class="bi bi-hdd-stack"></i> Lưu trữ file</button></li>
+    <li><button type="button" data-stab="features"><i class="bi bi-toggles"></i> Tính năng</button></li>
     <li><button type="button" data-stab="backup"><i class="bi bi-database-down"></i> Sao lưu CSDL</button></li>
   </ul>
 
@@ -164,10 +165,38 @@
       </div>
     </div>
 
-    {{-- Thanh lưu (chỉ hiện ở các tab cấu hình, ẩn ở tab Sao lưu) --}}
+    {{-- Tab: Tính năng (bật/tắt module) --}}
+    <div class="settings-pane" data-spane="features">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body p-4">
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <i class="bi bi-toggles text-primary"></i>
+            <h6 class="mb-0 fw-bold">Bật / tắt tính năng</h6>
+          </div>
+          <p class="text-muted small mb-3">Bật/tắt các tính năng tùy chọn của hệ thống. Tắt rồi vẫn giữ nguyên dữ liệu, bật lại là dùng tiếp.</p>
+
+          <div class="d-flex align-items-start justify-content-between gap-3 p-3 rounded-3" style="background:#f8f9fb;border:1px solid #e9edf3;">
+            <div>
+              <div class="fw-semibold"><i class="bi bi-link-45deg me-1 text-primary"></i> Link kế hoạch (cho lái xe)</div>
+              <div class="text-muted small mt-1" style="max-width:560px;line-height:1.5;">
+                Hiện nút <b>“Link kế hoạch”</b> ở trang <b>Lô hàng</b> để tạo link công khai cho lái xe tự cập nhật giờ xe.
+                Tắt → ẩn nút và khóa trang quản lý link kế hoạch.
+              </div>
+            </div>
+            <div class="form-check form-switch fs-4 mt-1" style="padding-left:3.2em;">
+              <input type="checkbox" class="form-check-input" role="switch" id="feat-plan-link"
+                     name="feature_plan_link" value="1" {{ old('feature_plan_link', $features['plan_link']) ? 'checked' : '' }}
+                     style="cursor:pointer;">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {{-- Thanh lưu (hiện ở các tab cấu hình, ẩn ở tab Sao lưu) --}}
     <div id="settings-savebar" class="settings-savebar mt-3">
       <button type="submit" class="btn btn-primary fw-semibold"><i class="bi bi-save me-1"></i> Lưu cài đặt</button>
-      <span class="small text-muted">Lưu chung cho 3 tab: Công ty, Bên bán, Lưu trữ file.</span>
+      <span class="small text-muted">Lưu chung cho các tab: Công ty, Bên bán, Lưu trữ file, Tính năng.</span>
     </div>
   </form>
 
@@ -283,7 +312,7 @@
   trkToggleS3();
 
   (function(){
-    var TABS = ['company','seller','storage','backup'];
+    var TABS = ['company','seller','storage','features','backup'];
     var wrap = document.querySelector('[data-initial-tab]');
     var btns = document.querySelectorAll('.settings-tabs [data-stab]');
     var panes = document.querySelectorAll('.settings-pane');

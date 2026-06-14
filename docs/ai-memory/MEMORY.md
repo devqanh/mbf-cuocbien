@@ -1,0 +1,21 @@
+- [Trucking redesign](trucking-redesign.md) — chuyển Trucking từ Luckysheet sang mô hình record+popup; chuẩn hóa quan hệ, khởi tạo mới, cả HPH+ICD
+- [No seed demo](no-seed-demo.md) — đừng tự seed demo Trucking; user tự test thủ công
+- [Trucking perf lazy-load](trucking-perf-lazy-load.md) — user nhạy với số model/query Debugbar; boot tối thiểu + phân trang server-side + lazy-load master data/bảng giá
+- [Trucking Vite architecture](trucking-vite-architecture.md) — React đã build bằng Vite (resources/js/trucking2); sửa .jsx phải `npm run build`, không sửa JSX trong blade nữa
+- [Trucking partial save](trucking-partial-save.md) — lưu lô theo field đã sửa (dirtyFields + $only) để tránh lost-update khi nhiều người sửa
+- [Phí xe batch model](phi-xe-batch-model.md) — Phí xe nội bộ = mô hình kỳ/snapshot (như Bảng kê), list→tạo→xem; cảnh báo cộng trùng qua usedIn
+- [Trucking demo command](trucking-demo-command.md) — `php artisan trucking:demo` seed / `clear` demo Phí xe T6; chỉ đụng data demo tự tạo
+- [Trucking report schema](trucking-report-schema.md) — lô hàng có cột/tham chiếu chốt sẵn (totals + cost_item_id/payer_id/vehicle_id/location_id + shipment_warehouses) để query báo cáo; maintain qua recomputeShipmentDerived / trucking:recompute-derived
+- [Spend request flow](spend-request-flow.md) — /yeu-cau-chi cần quyền spend.request + login mobile (bỏ 2FA); phiếu=vehicle_cost có created_by/cancelled; tài xế & admin hủy phiếu theo quy tắc
+- [File attachments](file-attachments.md) — mọi upload gom về bảng trucking_attachments (polymorphic, disk theo file) để S3-ready; stream 1 route disk-agnostic; xóa theo id attachment
+- [Two-factor auth](two-factor-auth.md) — 2FA/TOTP tự viết thuần PHP (không package), QR client-side; profile bật/tắt + login challenge + admin reset
+- [Font global config](font-global-config.md) — font toàn dự án tập trung ở partials/_font.blade.php (Inter); đổi 1 chỗ + view:clear, không cần npm build
+- [Dev tunnel + Vite](dev-tunnel-vite.md) — local map ra domain qua Cloudflare Tunnel/ngrok (chỉ 443); npm run dev lỗi vì 5173 không lộ; dùng VITE_TUNNEL_HOST hoặc dev qua URL local
+- [Asset management](asset-management.md) — Quản lý tài sản dùng chung trang/bảng Quản lý xe (cột kind=vehicle|asset, type='asset' không đụng phí xe); tái dùng tab chi phí/khấu hao/tài liệu
+- [Plan link](plan-link.md) — link kế hoạch công khai (token) cho lái xe mobile cập nhật giờ xe đến/ra + ảnh; lọc theo Giờ đến dự kiến; nút ở toolbar Lô hàng
+- [Dev no build](dev-no-build.md) — đang npm run dev, KHÔNG cần npm run build sau khi sửa .jsx
+- [Memory in repo](memory-in-repo.md) — memory junction sang repo docs/ai-memory để git/xem lại
+- [Trucking architecture](trucking-architecture.md) — controller đã tách theo domain (App\Http\Controllers\Trucking, BaseTruckingController); service đang tách dần bằng trait (Concerns), giữ nguyên route name + call-site
+- [Hashid routes](hashid-routes.md) — URL dùng hashid thay id số (Optimus+base62 thuần PHP, trait HasHashid, giữ id số trong JSON/payload + thêm field hashid); áp cho trucking entities + Task
+- [Mobile responsive](mobile-responsive.md) — hook useIsMobile (lib.jsx) + foundation CSS (_styles + app.css); bảng→card trên điện thoại, ép input 16px chống iOS zoom; yeu-cau-chi đã mobile-first sẵn
+- [DB backup](db-backup.md) — `php artisan db:backup` (gzip, giữ 15 bản, báo cáo sys.backup_last_run); lịch daily 02:00 ở routes/console.php (CẦN cron schedule:run); card sao lưu ở /system-settings

@@ -1,0 +1,496 @@
+<?php
+
+namespace App\Services\Trucking\Concerns;
+
+use App\Models\TruckingContType;
+use App\Models\TruckingCostItem;
+use App\Models\TruckingCostLine;
+use App\Models\TruckingChohoItem;
+use App\Models\TruckingCustomer;
+use App\Models\TruckingDriver;
+use App\Models\TruckingLocation;
+use App\Models\TruckingPayer;
+use App\Models\TruckingPriceRow;
+use App\Models\TruckingFuelPrice;
+use App\Models\TruckingRevenueItem;
+use App\Models\TruckingRouteFee;
+use App\Models\TruckingSalaryItem;
+use App\Models\TruckingTripCostBatch;
+use App\Models\TruckingTripCostLine;
+use App\Models\TruckingVehicleCost;
+use App\Models\TruckingVehicleDepreciation;
+use App\Models\TruckingVehicleUsage;
+use App\Models\TruckingSetting;
+use App\Models\TruckingAttachment;
+use App\Models\TruckingPlanLink;
+use App\Models\TruckingShipment;
+use App\Models\TruckingShipmentWarehouse;
+use App\Models\TruckingVehicleCostType;
+use App\Models\TruckingAssetCategory;
+use App\Support\Hashid;
+use App\Models\TruckingStatement;
+use App\Models\TruckingVehicle;
+use App\Models\TruckingWarehouse;
+use App\Models\User;
+use App\Notifications\SpendRequestCreatedNotification;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Storage;
+
+/** Tach tu TruckingV2Service - nhom HandlesPricingAndImport. */
+trait HandlesPricingAndImport
+{
+    /**
+     * Bảng giá của ĐÚNG 1 khách (lazy-load cho trang Bảng giá). Dùng toBase() để KHÔNG
+     * hydrate model Eloquent — chỉ đọc + serialize nên stdClass đủ; bảng giá lớn (hàng
+     * trăm dòng) nhờ vậy nhẹ RAM/CPU hơn nhiều.
+     */
+    public function customerPriceList(string $name): array
+    {
+        $name = trim($name);
+        if ($name === '') return [];
+        $custId = TruckingCustomer::where('name', $name)->value('id');
+        if (! $custId) return [];
+
+        return TruckingPriceRow::where('customer_id', $custId)->orderBy('sort')
+            ->toBase()->get()
+            ->map(fn ($p) => $this->priceRowToArray($p))->all();
+    }
+
+    /**
+     * Cfg TỐI THIỂU cho bảng danh sách Lô hàng (không có popup): chỉ màu theo dõi (chip
+     * "chưa điền" trên dòng), ngưỡng free time (cột lịch trình) và VAT mặc định (thêm lô).
+     * Toàn bộ danh mục dropdown (địa điểm, kho, khách, loại cont...) lazy-load khi mở popup.
+     */
+    public function shipmentBoardConfig(): array
+    {
+        return [
+            'costColors'    => TruckingCostItem::whereNotNull('color')->where('color', '!=', '')
+                                  ->pluck('color', 'name')->all(),
+            'freeTimeHours' => TruckingSetting::get('free_time_hours', '4'),
+            'vatDefault'    => [
+                'hph' => TruckingSetting::get('vat_default_hph', '8'),
+                'icd' => TruckingSetting::get('vat_default_icd', '0'),
+            ],
+        ];
+    }
+
+    /**
+     * Cfg cho trang Bảng giá: chỉ khách hàng (+ đếm dòng giá cho badge) và địa điểm
+     * (autocomplete trong PriceList). KHÔNG nạp các danh mục khác (kho/payer/loại cont...)
+     * vì trang Bảng giá không dùng.
+     */
+    public function priceBookConfig(): array
+    {
+        $locations = TruckingLocation::orderBy('sort')->orderBy('name')->get();
+        $customers = TruckingCustomer::withCount('priceRows')->orderBy('name')->get();
+
+        return [
+            'locations'    => $locations->pluck('name')->all(),
+            'locationCode' => $locations->filter(fn ($l) => $l->code)->mapWithKeys(fn ($l) => [$l->name => $l->code])->all(),
+            'customers'    => $customers->pluck('name')->all(),
+            'customerInfo' => $customers->mapWithKeys(fn ($c) => [$c->name => [
+                'shortName' => $c->short_name ?? '',
+                'taxCode'   => $c->tax_code ?? '',
+                'phone'     => $c->phone ?? '',
+                'contact'   => $c->contact ?? '',
+                'email'     => $c->email ?? '',
+                'termDays'  => $c->term_days !== null ? (string) $c->term_days : '',
+                'address'   => $c->address ?? '',
+                'note'      => $c->note ?? '',
+                'priceCount' => (int) ($c->price_rows_count ?? 0),
+            ]])->all(),
+        ];
+    }
+
+    /** Lưu toàn bộ cfg (tương thích cũ) — gọi reconcile cho mọi key có mặt. */
+    public function saveConfig(array $cfg): void
+    {
+        DB::transaction(function () use ($cfg) {
+            foreach ($this->lookups() as $key => [$cls, $priced, $coded, $colored]) {
+                if (array_key_exists($key, $cfg)) $this->reconcileLookup($cls, $priced, $coded, $colored, $cfg, $key);
+            }
+            if (array_key_exists('customers', $cfg)) $this->reconcileCustomers($cfg);
+            if (array_key_exists('vehicles', $cfg))  $this->reconcileVehicles($cfg);
+            $this->reconcileSettings($cfg);
+        });
+    }
+
+    /** Lưu RIÊNG 1 danh mục lookup (mỗi tab Cài đặt = 1 bảng). */
+    public function saveCatalog(string $cfgKey, array $cfg): void
+    {
+        $lk = $this->lookups();
+        if (! isset($lk[$cfgKey])) {
+            throw new \InvalidArgumentException("Danh mục không hợp lệ: {$cfgKey}");
+        }
+        [$cls, $priced, $coded, $colored] = $lk[$cfgKey];
+        DB::transaction(fn () => $this->reconcileLookup($cls, $priced, $coded, $colored, $cfg, $cfgKey));
+    }
+
+    public function saveCustomers(array $cfg): void { DB::transaction(fn () => $this->reconcileCustomers($cfg)); }
+
+    /** Đổi TÊN khách hàng (update theo id — giữ nguyên liên kết lô hàng & bảng giá). */
+    public function renameCustomer(string $old, string $new): array
+    {
+        $old = trim($old); $new = trim($new);
+        if ($new === '') return ['ok' => false, 'message' => 'Tên mới không được trống'];
+        $cust = TruckingCustomer::where('name', $old)->first();
+        if (! $cust) return ['ok' => false, 'message' => 'Không tìm thấy khách hàng'];
+        if ($new !== $old && TruckingCustomer::where('name', $new)->exists()) {
+            return ['ok' => false, 'message' => 'Tên khách hàng đã tồn tại'];
+        }
+        $cust->update(['name' => $new]);
+        return ['ok' => true];
+    }
+    public function saveVehicles(array $cfg): void  { DB::transaction(fn () => $this->reconcileVehicles($cfg)); }
+    public function saveSettings(array $cfg): void  { DB::transaction(fn () => $this->reconcileSettings($cfg)); }
+
+    /** @return string[] danh sách cfgKey lookup hợp lệ (cho validate route). */
+    public function catalogKeys(): array { return array_keys($this->lookups()); }
+
+    // --- reconcile từng bảng (dùng chung cho saveConfig & endpoint riêng) ---
+    private function reconcileLookup(string $cls, bool $priced, $coded, bool $colored, array $cfg, string $key): void
+    {
+        // Danh mục CÓ MÃ (địa điểm/kho): định danh theo MÃ (ký hiệu) — TÊN được phép trùng.
+        // Khớp & cập nhật theo mã để GIỮ id (không đứt link price_rows.location_id); mã rỗng → khớp theo tên.
+        if ($coded) {
+            $rawNames = $cfg[$key] ?? [];
+            $codeArr  = $cfg[$coded . 'Arr'] ?? null;        // mảng mã theo chỉ số dòng (mô hình mới)
+            $nameMap  = $cfg[$coded] ?? [];                  // map tên→mã (tương thích bản cũ)
+            $keepIds = [];
+            $sort = 0;
+            foreach ($rawNames as $i => $rawName) {
+                $name = trim((string) $rawName);
+                if ($name === '') continue;
+                $code = $codeArr !== null ? trim((string) ($codeArr[$i] ?? '')) : trim((string) ($nameMap[$name] ?? ''));
+                $row = $code !== ''
+                    ? $cls::where('code', $code)->first()
+                    : ($cls::where('name', $name)->whereRaw("COALESCE(code,'') = ''")->first() ?? null);
+                if ($row) {
+                    $row->update(['name' => $name, 'code' => ($code !== '' ? $code : null), 'sort' => $sort]);
+                } else {
+                    $row = $cls::create(['name' => $name, 'code' => ($code !== '' ? $code : null), 'sort' => $sort]);
+                }
+                $keepIds[] = $row->id;
+                $sort++;
+            }
+            $cls::whereNotIn('id', $keepIds ?: [0])->delete();
+            return;
+        }
+
+        // Danh mục KHÔNG mã: định danh theo TÊN (như cũ).
+        $names = array_values(array_filter(array_map('trim', $cfg[$key] ?? []), fn ($v) => $v !== ''));
+        $cls::whereNotIn('name', $names ?: [''])->delete();
+        foreach ($names as $i => $name) {
+            $attrs = ['sort' => $i];
+            if ($priced)  $attrs['default_price'] = isset($cfg['prices'][$name]) ? $this->inMoney($cfg['prices'][$name]) : null;
+            if ($colored) $attrs['color'] = $cfg['costColors'][$name] ?? null;
+            $cls::updateOrCreate(['name' => $name], $attrs);
+        }
+    }
+
+    private function reconcileCustomers(array $cfg): void
+    {
+        $names = array_values(array_filter(array_map('trim', $cfg['customers'] ?? []), fn ($v) => $v !== ''));
+        TruckingCustomer::whereNotIn('name', $names ?: [''])->delete();
+        $info = $cfg['customerInfo'] ?? [];
+        foreach ($names as $name) {
+            $d = $info[$name] ?? [];
+            $cust = TruckingCustomer::updateOrCreate(['name' => $name], [
+                'short_name' => $d['shortName'] ?? null,
+                'tax_code'   => $d['taxCode'] ?? null,
+                'phone'      => $d['phone'] ?? null,
+                'contact'    => $d['contact'] ?? null,
+                'email'      => $d['email'] ?? null,
+                'term_days'  => isset($d['termDays']) && $d['termDays'] !== '' ? (int) $d['termDays'] : null,
+                'address'    => $d['address'] ?? null,
+                'note'       => $d['note'] ?? null,
+            ]);
+            // Chỉ động vào bảng giá khi payload có 'priceList' (trang Bảng giá);
+            // trang Cài đặt > Khách hàng không gửi priceList → giữ nguyên giá.
+            if (array_key_exists('priceList', $d)) {
+                $cust->priceRows()->delete();
+                foreach (($d['priceList'] ?? []) as $i => $p) {
+                    $cust->priceRows()->create($this->priceRowAttrs($p, $i));
+                }
+            }
+        }
+    }
+
+    private function reconcileVehicles(array $cfg): void
+    {
+        $plates = array_values(array_filter(array_map('trim', $cfg['vehicles'] ?? []), fn ($v) => $v !== ''));
+        TruckingVehicle::whereNotIn('plate', $plates ?: [''])->delete();
+        foreach ($plates as $plate) {
+            $type = $cfg['vehicleType'][$plate] ?? 'MBF';
+            // Số cầu chỉ áp dụng cho xe MBF (xe ngoài không cần)
+            $axle = $type === 'MBF' ? (($cfg['vehicleAxle'][$plate] ?? null) ?: null) : null;
+            TruckingVehicle::updateOrCreate(['plate' => $plate], ['type' => $type, 'axle' => $axle]);
+        }
+    }
+
+    private function reconcileSettings(array $cfg): void
+    {
+        if (isset($cfg['vatDefault']['hph'])) TruckingSetting::put('vat_default_hph', $cfg['vatDefault']['hph']);
+        if (isset($cfg['vatDefault']['icd'])) TruckingSetting::put('vat_default_icd', $cfg['vatDefault']['icd']);
+        if (array_key_exists('freeTimeHours', $cfg)) TruckingSetting::put('free_time_hours', $cfg['freeTimeHours']);
+        if (array_key_exists('dueWarnDays', $cfg)) {
+            $d = (int) preg_replace('/[^\d]/', '', (string) $cfg['dueWarnDays']);
+            TruckingSetting::put('due_warn_days', (string) ($d > 0 ? $d : 30));
+        }
+    }
+
+    /** Map lower(name|code) ⇒ tên địa điểm chuẩn (để validate + chuẩn hóa NƠI LẤY/HẠ). */
+    private function locationNameMap(): array
+    {
+        $map = [];
+        foreach (TruckingLocation::get(['name', 'code']) as $l) {
+            if ($l->name) $map[mb_strtolower(trim($l->name))] = $l->name;
+            if ($l->code) $map[mb_strtolower(trim($l->code))] = $l->name ?: $l->code;
+        }
+        return $map;
+    }
+
+    /**
+     * Kiểm tra TRƯỚC toàn bộ dòng import (không ghi DB). Trả danh sách lỗi rõ
+     * ràng theo từng dòng/booking. Quy tắc: khách hàng + NƠI LẤY + NƠI HẠ đều
+     * phải có sẵn trong hệ thống.
+     */
+    public function validateShipmentRows(array $rows): array
+    {
+        $custSet = array_flip(TruckingCustomer::pluck('name')->map(fn ($n) => mb_strtolower(trim($n)))->all());
+        $locMap = $this->locationNameMap();
+        $errors = [];
+
+        foreach ($rows as $i => $row) {
+            $reasons = [];
+            $name = trim((string) ($row['customer'] ?? ''));
+            if ($name === '')                                     $reasons[] = 'Thiếu khách hàng';
+            elseif (! isset($custSet[mb_strtolower($name)]))      $reasons[] = "Khách hàng “{$name}” chưa có trong hệ thống";
+
+            $from = trim((string) ($row['from'] ?? ''));
+            if ($from === '')                                     $reasons[] = 'Thiếu nơi lấy';
+            elseif (! isset($locMap[mb_strtolower($from)]))       $reasons[] = "Nơi lấy “{$from}” chưa có trong danh mục địa điểm";
+
+            $to = trim((string) ($row['to'] ?? ''));
+            if ($to === '')                                       $reasons[] = 'Thiếu nơi hạ';
+            elseif (! isset($locMap[mb_strtolower($to)]))         $reasons[] = "Nơi hạ “{$to}” chưa có trong danh mục địa điểm";
+
+            if ($reasons) {
+                $errors[] = ['line' => $i + 1, 'customer' => $name, 'booking' => (string) ($row['booking'] ?? ''), 'reasons' => $reasons];
+            }
+        }
+        return $errors;
+    }
+
+    /** Dry-run: chỉ kiểm tra, không import. */
+    public function validateShipments(array $rows): array
+    {
+        $errors = $this->validateShipmentRows($rows);
+        return ['valid' => empty($errors), 'total' => count($rows), 'errors' => $errors];
+    }
+
+    /**
+     * Import lô hàng — ALL-OR-NOTHING: chỉ cần 1 dòng lỗi là KHÔNG import gì cả.
+     * NƠI LẤY/HẠ được chuẩn hóa về tên địa điểm chuẩn.
+     */
+    public function importShipments(string $sheet, array $rows): array
+    {
+        $errors = $this->validateShipmentRows($rows);
+        if ($errors) {
+            return ['valid' => false, 'created' => 0, 'ships' => [], 'errors' => $errors, 'total' => count($rows)];
+        }
+
+        $vat = (string) TruckingSetting::get($sheet === 'hph' ? 'vat_default_hph' : 'vat_default_icd', '0');
+        $locMap = $this->locationNameMap();
+        $norm = fn ($v) => $locMap[mb_strtolower(trim((string) $v))] ?? $v;
+
+        return DB::transaction(function () use ($sheet, $rows, $vat, $norm) {
+            $ships = [];
+            foreach ($rows as $row) {
+                $base = [
+                    'customer'     => $row['customer'] ?? null,
+                    'booking'      => $row['booking'] ?? null,
+                    'inv'          => $row['inv'] ?? null,
+                    'io'           => $row['io'] ?? null,
+                    'qty'          => 1,
+                    'contType'     => $row['contType'] ?? null,
+                    'cutOff'       => $row['cutOff'] ?? null,
+                    'from'         => $norm($row['from'] ?? null),
+                    'to'           => $norm($row['to'] ?? null),
+                    'kho'          => $row['kho'] ?? null,
+                    'gioDenDuKien' => $row['gioDenDuKien'] ?? null,
+                    'cost'         => ['items' => []],
+                    'rev'          => ['vatRate' => $vat, 'doanhThu' => [], 'choHo' => [], 'payments' => []],
+                ];
+                // Ưu tiên 1: Tên container có nhiều số (mỗi dòng 1 số) → tách mỗi số 1 lô
+                $conts = array_values(array_filter(array_map('trim', preg_split('/[\r\n;,]+/', (string) ($row['contNo'] ?? ''))), fn ($v) => $v !== ''));
+                if (count($conts)) {
+                    foreach ($conts as $cn) {
+                        $ships[] = $this->shipmentToArray($this->saveShipment($base + ['contNo' => $cn], $sheet));
+                    }
+                    continue;
+                }
+                // Ưu tiên 2: cont trống → nhân bản theo SỐ LƯỢNG (để điền số cont sau)
+                $qd = preg_replace('/[^\d]/', '', (string) ($row['qty'] ?? ''));
+                $n = $qd === '' ? 1 : max(1, (int) $qd);
+                for ($k = 0; $k < $n; $k++) {
+                    $ships[] = $this->shipmentToArray($this->saveShipment($base + ['contNo' => null], $sheet));
+                }
+            }
+            return ['valid' => true, 'created' => count($ships), 'ships' => $ships, 'errors' => [], 'total' => count($rows)];
+        });
+    }
+
+    // ===================================================================
+    // PRICE ROWS (bảng giá) — serialize, persist, import
+    // ===================================================================
+    /** 1 dòng bảng giá → shape frontend. */
+    private function priceRowToArray($p): array
+    {
+        return [
+            'id'         => $p->id,
+            'locationId' => $p->location_id,
+            'loc'        => $p->loc ?? '',
+            'conn'       => $p->conn ?? 'Connect',
+            'kind'       => $p->kind ?? '',
+            'from'       => $p->from ?? '',
+            'to1'        => $p->to1 ?? '',
+            'to2'        => $p->to2 ?? '',
+            'to3'        => $p->to3 ?? '',
+            'to4'        => $p->to4 ?? '',
+            'distance'   => $p->distance ?? '',
+            'transFee40' => $this->outMoney($p->trans_fee_40),
+            'transFee20' => $this->outMoney($p->trans_fee_20),
+            'fuelFee40'  => $this->outMoney($p->fuel_fee_40),
+            'fuelFee20'  => $this->outMoney($p->fuel_fee_20),
+        ];
+    }
+
+    /** Thuộc tính DB của 1 dòng bảng giá (dùng cho cả lưu tay & import). */
+    private function priceRowAttrs(array $p, int $i): array
+    {
+        return [
+            'location_id'  => $this->resolveLocationId($p['loc'] ?? null),
+            'loc'          => $this->str($p['loc'] ?? null),
+            'conn'         => $p['conn'] ?? 'Connect',
+            'kind'         => $this->str($p['kind'] ?? null),
+            'from'         => $this->str($p['from'] ?? null),
+            'to1'          => $this->str($p['to1'] ?? null),
+            'to2'          => $this->str($p['to2'] ?? null),
+            'to3'          => $this->str($p['to3'] ?? null),
+            'to4'          => $this->str($p['to4'] ?? null),
+            'distance'     => $this->str($p['distance'] ?? null),
+            'trans_fee_40' => $this->inMoney($p['transFee40'] ?? null),
+            'trans_fee_20' => $this->inMoney($p['transFee20'] ?? null),
+            'fuel_fee_40'  => $this->inMoney($p['fuelFee40'] ?? null),
+            'fuel_fee_20'  => $this->inMoney($p['fuelFee20'] ?? null),
+            'sort'         => $i,
+        ];
+    }
+
+    /**
+     * "Điểm Hạ" → location_id: CHỈ khớp địa điểm đã có (theo code rồi name),
+     * KHÔNG tự tạo địa điểm mới từ điểm hạ. Danh mục Địa điểm được nạp từ
+     * cột FROM + TO (xem registerLocationCode). Chưa khớp → null.
+     */
+    private function resolveLocationId(?string $code): ?int
+    {
+        $code = trim((string) $code);
+        if ($code === '') return null;
+
+        $loc = TruckingLocation::where('code', $code)->first()
+            ?? TruckingLocation::where('name', $code)->first();
+
+        return $loc?->id;
+    }
+
+    /**
+     * Đăng ký 1 KÝ HIỆU (FROM / TO) vào danh mục Địa điểm.
+     * Đã có code → giữ; có name trùng nhưng thiếu code → gán code;
+     * chưa có → tạo mới (name = code = ký hiệu) để user đặt tên sau.
+     */
+    private function registerLocationCode(?string $code): void
+    {
+        $code = trim((string) $code);
+        if ($code === '') return;
+
+        $loc = TruckingLocation::where('code', $code)->first()
+            ?? TruckingLocation::where('name', $code)->first();
+
+        if (! $loc) {
+            TruckingLocation::create(['name' => $code, 'code' => $code]);
+        } elseif (! $loc->code) {
+            $loc->update(['code' => $code]);
+        }
+    }
+
+    /**
+     * Import bảng giá cho 1 khách từ các dòng đã parse (client).
+     * Khóa định danh = (conn, loc, kind, from, to1..to4). Trùng → cập nhật
+     * khoảng cách + phí; chưa có → tạo mới.
+     */
+    public function importPriceRows(string $customerName, array $rows, bool $replace = false): array
+    {
+        return DB::transaction(function () use ($customerName, $rows, $replace) {
+            $cust = TruckingCustomer::firstOrCreate(['name' => trim($customerName)]);
+            if ($replace) $cust->priceRows()->delete();   // xóa sạch bảng giá cũ trước khi nạp lại
+            $created = 0; $updated = 0;
+            $sort = (int) ($cust->priceRows()->max('sort') ?? 0);
+
+            foreach ($rows as $p) {
+                $attrs = $this->priceRowAttrs($p, 0);
+
+                $q = $cust->priceRows();
+                foreach (['conn', 'loc', 'kind', 'from', 'to1', 'to2', 'to3', 'to4'] as $k) {
+                    $v = $attrs[$k];
+                    $v === null ? $q->whereNull($k) : $q->where($k, $v);
+                }
+                $existing = $q->first();
+
+                if ($existing) {
+                    $existing->update([
+                        'location_id'  => $attrs['location_id'],
+                        'distance'     => $attrs['distance'],
+                        'trans_fee_40' => $attrs['trans_fee_40'],
+                        'trans_fee_20' => $attrs['trans_fee_20'],
+                        'fuel_fee_40'  => $attrs['fuel_fee_40'],
+                        'fuel_fee_20'  => $attrs['fuel_fee_20'],
+                    ]);
+                    $updated++;
+                } else {
+                    $attrs['sort'] = ++$sort;
+                    $cust->priceRows()->create($attrs);
+                    $created++;
+                }
+            }
+
+            // Ký hiệu FROM + TO → danh mục Địa điểm; đồng thời TO → danh mục Kho.
+            // (Điểm Hạ KHÔNG dùng để tạo địa điểm nữa.)
+            $whNames = [];
+            foreach ($rows as $p) {
+                $this->registerLocationCode($p['from'] ?? null);
+                foreach (['to1', 'to2', 'to3', 'to4'] as $k) {
+                    $v = trim((string) ($p[$k] ?? ''));
+                    if ($v === '') continue;
+                    $this->registerLocationCode($v);
+                    $whNames[$v] = true;
+                }
+            }
+            foreach (array_keys($whNames) as $name) {
+                TruckingWarehouse::firstOrCreate(['name' => $name], ['code' => $name]);
+            }
+
+            $cust->load('priceRows');
+            return [
+                'created'   => $created,
+                'updated'   => $updated,
+                'imported'  => $created + $updated,
+                'priceList' => $cust->priceRows->map(fn ($p) => $this->priceRowToArray($p))->all(),
+            ];
+        });
+    }
+
+}

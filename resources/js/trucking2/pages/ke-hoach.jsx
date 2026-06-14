@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import "@trk/shared.js";
 
 const { useState } = React;
-import { I, Txt, DateField, Btn, fmtDate, useIsMobile } from "@trk/lib.jsx";
+import { I, Txt, DateField, Btn, Modal, fmtDate, useIsMobile } from "@trk/lib.jsx";
 
 function PlanApp() {
   const isMobile = useIsMobile();
@@ -38,6 +38,22 @@ function PlanApp() {
     try { const r = await api("DELETE", ROUTES.base + lk.id); if (r && r.ok) setLinks((ls) => ls.filter((x) => x.id !== lk.id)); } catch (e) {}
   };
   const copy = (url) => { try { navigator.clipboard && navigator.clipboard.writeText(url); window.trkToast && window.trkToast("Đã sao chép link"); } catch (e) {} };
+
+  // Sửa link (đổi tên + khoảng ngày)
+  const [edit, setEdit] = useState(null);   // {id, title, from, to}
+  const [eBusy, setEBusy] = useState(false);
+  const [eErr, setEErr] = useState("");
+  const openEdit = (lk) => { setEErr(""); setEdit({ id: lk.id, title: lk.title || "", from: lk.from, to: lk.to }); };
+  const saveEdit = async () => {
+    if (!edit.from || !edit.to) return setEErr("Vui lòng chọn khoảng ngày.");
+    setEErr(""); setEBusy(true);
+    try {
+      const r = await api("PUT", ROUTES.base + edit.id, { from: edit.from, to: edit.to, title: edit.title });
+      if (r && r.ok && r.link) { setLinks((ls) => ls.map((x) => x.id === edit.id ? r.link : x)); setEdit(null); window.trkToast && window.trkToast("Đã cập nhật link"); }
+      else setEErr((r && r.message) || "Lưu thất bại");
+    } catch (e) { setEErr("Lỗi kết nối."); }
+    setEBusy(false);
+  };
 
   const card = { border: "1px solid var(--line)", borderRadius: 12, padding: "14px 16px", background: "#fff" };
   const lbl = (t) => <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>{t}</div>;
@@ -84,6 +100,7 @@ function PlanApp() {
                     <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
                       <button type="button" onClick={() => copy(lk.url)} style={{ fontSize: 12.5, fontWeight: 600, padding: "7px 12px", border: "1px solid var(--accent)", borderRadius: 8, background: "#fff", color: "var(--accent)", cursor: "pointer" }}><i className="bi bi-clipboard" /> Sao chép</button>
                       <a href={lk.url} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, fontWeight: 600, padding: "7px 12px", border: "none", borderRadius: 8, background: "var(--accent)", color: "#fff", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 5 }}><i className="bi bi-box-arrow-up-right" /> Mở</a>
+                      {canEdit && <button type="button" onClick={() => openEdit(lk)} title="Sửa tên / khoảng ngày" style={{ fontSize: 12.5, fontWeight: 600, padding: "7px 12px", border: "1px solid var(--line)", borderRadius: 8, background: "#fff", color: "var(--ink-2)", cursor: "pointer" }}><i className="bi bi-pencil" /> Sửa</button>}
                       {canEdit && <button type="button" onClick={() => toggle(lk)} title={lk.active ? "Tắt link" : "Bật link"} style={{ fontSize: 12.5, fontWeight: 600, padding: "7px 12px", border: "1px solid var(--line)", borderRadius: 8, background: "#fff", color: "var(--ink-2)", cursor: "pointer" }}><i className={"bi " + (lk.active ? "bi-pause-circle" : "bi-play-circle")} /> {lk.active ? "Tắt" : "Bật"}</button>}
                       {canEdit && <button type="button" onClick={() => del(lk)} title="Xóa link" style={{ fontSize: 12.5, fontWeight: 600, padding: "7px 10px", border: "1px solid var(--line)", borderRadius: 8, background: "#fff", color: "var(--danger)", cursor: "pointer" }}><I.trash /></button>}
                     </div>
@@ -93,6 +110,18 @@ function PlanApp() {
             </div>
           )}
       </div>
+
+      {edit && (
+        <Modal title="Sửa link kế hoạch" subtitle="Đổi tên & khoảng ngày (theo Giờ đến dự kiến)" width={460} icon={<I.edit />} onClose={() => setEdit(null)}
+          footer={<div style={{ display: "flex", justifyContent: "flex-end", gap: 10, width: "100%" }}><Btn onClick={() => setEdit(null)}>Hủy</Btn><Btn variant="primary" onClick={saveEdit} disabled={eBusy}>{eBusy ? "Đang lưu…" : "Lưu"}</Btn></div>}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: "4px 0" }}>
+            {eErr && <div style={{ gridColumn: "1 / -1", fontSize: 12.5, color: "#b42318", background: "#fdecec", border: "1px solid #f3c9c9", borderRadius: 9, padding: "8px 12px" }}><i className="bi bi-exclamation-triangle-fill" /> {eErr}</div>}
+            <div style={{ gridColumn: "1 / -1" }}>{lbl("Tiêu đề")}<Txt value={edit.title} onChange={(x) => setEdit((e) => ({ ...e, title: x }))} placeholder="VD: Kế hoạch tuần này" /></div>
+            <div>{lbl("Từ ngày")}<DateField value={edit.from} onChange={(x) => setEdit((e) => ({ ...e, from: x }))} /></div>
+            <div>{lbl("Đến ngày")}<DateField value={edit.to} onChange={(x) => setEdit((e) => ({ ...e, to: x }))} /></div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

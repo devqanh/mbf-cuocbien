@@ -613,14 +613,14 @@ function FleetApp({ modeSwitch }) {
     loadedSecs.current = new Set();
     selHash.current = v.hashid || v.id;
     setSelId(v.id); setDetail(null); setDirty(false); setTab(t); setLoading(true);
-    setHash(v.id, t);
+    setHash(v.hashid || v.id, t);
     api("GET", ROUTES.fleet + (v.hashid || v.id) + "/data").then((r) => {
       if (r && r.ok) setDetail(r.vehicle);
       setLoading(false);
       ensureSection(t, v.hashid || v.id);
     }).catch(() => setLoading(false));
   };
-  const goTab = (k) => { setTab(k); if (selId) setHash(selId, k); ensureSection(k); };   // đổi tab → ghi #id/tab + lazy-load nhóm
+  const goTab = (k) => { setTab(k); if (selId) setHash(selHash.current, k); ensureSection(k); };   // đổi tab → ghi #hashid/tab + lazy-load nhóm
   const back = async () => {
     if (dirty && !(await window.confirmAction({ title: "Thoát khi chưa lưu?", text: "Bạn có thay đổi <b>chưa lưu</b> (tab Thông tin/Định mức/Khấu hao/Sử dụng). Thoát ra sẽ <b>mất</b> các thay đổi này.", confirmText: '<i class="bi bi-box-arrow-left me-1"></i> Thoát, không lưu', danger: true }))) return;
     setSelId(null); selHash.current = null; setDetail(null); setDirty(false); loadedSecs.current = new Set(); try { window.history.replaceState(null, "", "#"); } catch (e) {}
@@ -707,23 +707,25 @@ function FleetApp({ modeSwitch }) {
   useEffect(() => {
     const applyHash = () => {
       const h = (window.location.hash || "").replace(/^#/, "");
-      const [idStr, tabStr, costStr] = h.split("/");
-      if (!idStr) return;
-      const v = vehicles.find((x) => String(x.id) === idStr);
+      const [idStr, tabStr, costStr] = h.split("/");   // idStr = hashid xe
+      if (!idStr || idStr === "asset") return;
+      const v = vehicles.find((x) => String(x.hashid) === idStr || String(x.id) === idStr);
       if (!v) return;
-      if (costStr) pendingCost.current = costStr;   // nhớ phiếu cần cuộn tới
+      if (costStr) pendingCost.current = costStr;   // hashid phiếu cần cuộn tới
       open(v, tabStr);
     };
     applyHash();
     window.addEventListener("hashchange", applyHash);
     return () => window.removeEventListener("hashchange", applyHash);
   }, []);
-  // Khi tab Chi phí đã load xong → cuộn tới + highlight đúng phiếu chi (deep-link)
+  // Khi tab Chi phí đã load xong → cuộn tới + highlight đúng phiếu chi (deep-link, theo hashid)
   useEffect(() => {
-    const cid = pendingCost.current;
-    if (!cid || tab !== "cost" || !detail || !Array.isArray(detail.costs)) return;
-    if (!detail.costs.some((c) => String(c.id) === String(cid))) return;   // phiếu không thuộc xe này
+    const cidHash = pendingCost.current;
+    if (!cidHash || tab !== "cost" || !detail || !Array.isArray(detail.costs)) return;
+    const c = detail.costs.find((x) => String(x.hashid) === String(cidHash) || String(x.id) === String(cidHash));
+    if (!c) return;   // phiếu không thuộc xe này
     pendingCost.current = null;
+    const cid = c.id;
     setHlCost(String(cid));
     setTimeout(() => { const el = document.getElementById("trk-cost-" + cid); if (el) el.scrollIntoView({ behavior: "smooth", block: "center" }); }, 140);
     const t = setTimeout(() => setHlCost(null), 2800);
@@ -1188,24 +1190,25 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
     window.addEventListener("beforeunload", h);
     return () => window.removeEventListener("beforeunload", h);
   }, [dirty]);
-  // Deep-link thông báo (#asset/<id>/cost/<costId>): mở đúng tài sản + tab Chi phí khi đã nạp danh sách
+  // Deep-link thông báo (#asset/<hashid>/cost/<costHashid>): mở đúng tài sản + tab Chi phí khi đã nạp
   useEffect(() => {
     if (!loaded || selId) return;
-    const m = (window.location.hash || "").replace(/^#/, "").match(/^asset\/(\d+)(?:\/cost\/(\d+))?/);
+    const m = (window.location.hash || "").replace(/^#/, "").match(/^asset\/([0-9A-Za-z]+)(?:\/cost\/([0-9A-Za-z]+))?/);
     if (!m) return;
-    const a = assets.find((x) => String(x.id) === m[1]);
+    const a = assets.find((x) => String(x.hashid) === m[1] || String(x.id) === m[1]);
     if (!a) return;
     if (m[2]) pendingCost.current = m[2];
     open(a, "cost");
   }, [loaded]);
-  // Khi tab Chi phí load xong → cuộn tới + highlight phiếu chi (deep-link)
+  // Khi tab Chi phí load xong → cuộn tới + highlight phiếu chi (deep-link, theo hashid)
   useEffect(() => {
-    const cid = pendingCost.current;
-    if (!cid || tab !== "cost" || !detail || !Array.isArray(detail.costs)) return;
-    if (!detail.costs.some((c) => String(c.id) === String(cid))) return;
+    const cidHash = pendingCost.current;
+    if (!cidHash || tab !== "cost" || !detail || !Array.isArray(detail.costs)) return;
+    const c = detail.costs.find((x) => String(x.hashid) === String(cidHash) || String(x.id) === String(cidHash));
+    if (!c) return;
     pendingCost.current = null;
-    setHlCost(String(cid));
-    setTimeout(() => { const el = document.getElementById("trk-cost-" + cid); if (el) el.scrollIntoView({ behavior: "smooth", block: "center" }); }, 140);
+    setHlCost(String(c.id));
+    setTimeout(() => { const el = document.getElementById("trk-cost-" + c.id); if (el) el.scrollIntoView({ behavior: "smooth", block: "center" }); }, 140);
     const t = setTimeout(() => setHlCost(null), 2800);
     return () => clearTimeout(t);
   }, [detail, tab]);

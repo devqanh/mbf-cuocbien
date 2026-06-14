@@ -131,11 +131,13 @@ function ShipmentsApp() {
       if (url) api("PUT", url, { cfg: partial });
     }, 700);
   };
-  const addCfg = (key, v) => setCfgState((c) => {
+  const addCfg = (key, v, opts) => setCfgState((c) => {
     if ((c[key] || []).includes(v)) return c;
     const n = { ...c, [key]: [...(c[key] || []), v] };
     if (key === "locations")  n.locationCodeArr  = [...(c.locationCodeArr  || []), ""];   // giữ mảng mã thẳng hàng
     if (key === "warehouses") n.warehouseCodeArr = [...(c.warehouseCodeArr || []), ""];
+    // Biển số gõ nhanh ở ô BKS lô hàng → mặc định "Xe ngoài" (không tự lọt vào đội xe MBF)
+    if (key === "vehicles" && opts && opts.external) n.vehicleType = { ...(c.vehicleType || {}), [v]: "Ngoài" };
     saveCatalogKey(key, n); return n;
   });
 
@@ -394,6 +396,13 @@ function ShipmentsApp() {
               onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.background = "#fff"; }}
               onBlur={(e) => { e.target.style.borderColor = "var(--line)"; e.target.style.background = "#fafbfc"; }} />
           </div>
+          {ROUTES.plan && (
+            <a href={ROUTES.plan} title="Tạo link kế hoạch cho lái xe cập nhật giờ xe"
+              style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "var(--ink-2)", background: "#fff", border: "1px solid var(--line)", borderRadius: 10, textDecoration: "none" }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
+              <i className="bi bi-link-45deg" style={{ color: "var(--accent)" }} /> Link kế hoạch
+            </a>
+          )}
           <button type="button" onClick={() => { ensureCfg(); setShowImport(true); }} title="Import lô hàng từ Excel"
             style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "var(--ink-2)", background: "#fff", border: "1px solid var(--line)", borderRadius: 10 }}
             onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>

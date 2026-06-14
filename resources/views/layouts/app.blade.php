@@ -65,12 +65,6 @@
                             <i class="bi bi-cash-stack"></i> Chi phí & lương lái xe
                         </a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link {{ request()->routeIs('trucking2.plan') ? 'active' : '' }}"
-                           href="{{ route('trucking2.plan') }}">
-                            <i class="bi bi-link-45deg"></i> Link kế hoạch
-                        </a>
-                    </li>
                     @endcan
                     @can('settings.view')
                     <li class="nav-item">

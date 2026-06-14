@@ -43,6 +43,9 @@ class SystemSettingController extends Controller
             ],
             'backups'    => $this->listBackups(),
             'lastBackup' => $this->lastBackup(),
+            'features'   => [
+                'plan_link' => TruckingSetting::bool('sys.feature_plan_link', true),
+            ],
         ]);
     }
 
@@ -164,6 +167,9 @@ class SystemSettingController extends Controller
         if (trim((string) ($data['s3_secret'] ?? '')) !== '') {
             TruckingSetting::put('sys.s3_secret', Crypt::encryptString(trim($data['s3_secret'])));
         }
+
+        // Tính năng (feature flag) — checkbox: có gửi = bật, không gửi = tắt
+        TruckingSetting::put('sys.feature_plan_link', $request->boolean('feature_plan_link') ? '1' : '0');
 
         return back()->with('success', 'Đã lưu cài đặt hệ thống.');
     }

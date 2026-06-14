@@ -20,4 +20,11 @@ class TruckingSetting extends Model
     {
         static::query()->updateOrCreate(['key' => $key], ['value' => $value]);
     }
+
+    /** Đọc 1 setting kiểu bật/tắt — lưu '1'/'0'. */
+    public static function bool(string $key, bool $default = true): bool
+    {
+        $v = static::get($key, $default ? '1' : '0');
+        return in_array($v, ['1', 1, true, 'true'], true);
+    }
 }

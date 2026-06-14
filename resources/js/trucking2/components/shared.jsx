@@ -3,12 +3,28 @@ import ReactDOM from "react-dom";
 const { useState, useRef, useMemo, useEffect } = React;
 import { I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, fmtVND, fmtNum, fmtShort, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, useIsMobile } from "@trk/lib.jsx";
 
+/* Ngày + giờ — Flatpickr (locale VN, đã nạp ở layout). Lưu ISO Y-m-d\TH:i (giữ format datetime-local cũ),
+   hiển thị d/m/Y · H:i, 24h. disableMobile để dùng cùng UI trên điện thoại thay vì picker mặc định khó dùng. */
 function DTField({ value, onChange }) {
-  return (
-    <input type="datetime-local" value={value || ""} onChange={(e) => onChange(e.target.value)}
-      style={{ width: "100%", padding: "7px 10px", fontSize: 13, border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: value ? "var(--ink-2)" : "var(--ink-4)", outline: "none", colorScheme: "light" }}
-      onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
-  );
+  const ref = useRef(null);
+  const fp = useRef(null);
+  const cb = useRef(onChange); cb.current = onChange;
+  useEffect(() => {
+    if (!ref.current || typeof window.flatpickr === "undefined") return;
+    const inst = window.flatpickr(ref.current, {
+      enableTime: true, time_24hr: true, minuteIncrement: 5,
+      dateFormat: "Y-m-d\\TH:i", altInput: true, altFormat: "d/m/Y · H:i", altInputClass: "trk-fp",
+      allowInput: false, disableMobile: true, closeOnSelect: false,
+      onChange: (_, str) => cb.current(str),
+    });
+    fp.current = inst;
+    if (value) inst.setDate(value, false);
+    return () => { try { inst.destroy(); } catch (e) {} };
+  }, []);
+  useEffect(() => {
+    if (fp.current && (value || "") !== (fp.current.input.value || "")) fp.current.setDate(value || "", false);
+  }, [value]);
+  return <input ref={ref} type="text" className="trk-fp" placeholder="dd/mm/yyyy --:--" />;
 }
 
 /* ===================== COST POPUP (centerpiece) ===================== */

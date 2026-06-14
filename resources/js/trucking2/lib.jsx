@@ -261,12 +261,27 @@ function MultiCombo({ values = [], onChange, options = [], onCreate, max = 3, pl
     </div>
   );
 }
+/* Ngày — dùng Flatpickr (đã nạp sẵn ở layout, locale VN) để dễ thao tác hơn input date mặc định.
+   Lưu giá trị ISO Y-m-d (không đổi format cũ), hiển thị d/m/Y. disableMobile để dùng cùng UI trên điện thoại. */
 function DateField({ value, onChange }) {
-  return (
-    <input type="date" value={value || ""} onChange={(e) => onChange(e.target.value)}
-      style={{ width: "100%", padding: "7px 10px", fontSize: 13, border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: value ? "var(--ink-2)" : "var(--ink-4)", outline: "none", colorScheme: "light" }}
-      onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
-  );
+  const ref = useRef(null);
+  const fp = useRef(null);
+  const cb = useRef(onChange); cb.current = onChange;
+  useEffect(() => {
+    if (!ref.current || typeof window.flatpickr === "undefined") return;
+    const inst = window.flatpickr(ref.current, {
+      dateFormat: "Y-m-d", altInput: true, altFormat: "d/m/Y", altInputClass: "trk-fp",
+      allowInput: false, disableMobile: true,
+      onChange: (_, str) => cb.current(str),
+    });
+    fp.current = inst;
+    if (value) inst.setDate(value, false);
+    return () => { try { inst.destroy(); } catch (e) {} };
+  }, []);
+  useEffect(() => {
+    if (fp.current && (value || "") !== (fp.current.input.value || "")) fp.current.setDate(value || "", false);
+  }, [value]);
+  return <input ref={ref} type="text" className="trk-fp" placeholder="dd/mm/yyyy" />;
 }
 function Num({ value, onChange, suffix, placeholder = "0" }) {
   // Chừa lề phải theo ĐỘ DÀI hậu tố để số không bị đè lên (vd "tháng", "ngày" dài hơn "km"/"₫")

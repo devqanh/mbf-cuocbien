@@ -1,6 +1,6 @@
 import React from "react";
 const { useState, useMemo, useEffect } = React;
-import { I, fmtVND, fmtNum, fmtShort, fmtDate, calcCost, calcRev, calcVeh, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, useIsMobile } from "@trk/lib.jsx";
+import { I, fmtVND, fmtNum, fmtShort, fmtDate, calcCost, calcRev, calcVeh, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, Combo, useIsMobile } from "@trk/lib.jsx";
 import { CostPopup, RevenuePopup, CostPopupICD, RevenuePopupICD, InfoPopup, ConfigPopup, PriceList, TRACK_COLORS, colorHex } from "@trk/pop.jsx";
 
 /* components dùng chung — export ra window.__ui */
@@ -87,6 +87,8 @@ function makePricer(cfg) {
   const connOf = (s) => { const ft = calcFreeTime(s, cfg.freeTimeHours); return ft ? (ft.connect ? "Connect" : "Disconnect") : null; };
   const isExport = (s) => (s.io || "").toString().toLowerCase().includes("xu");
   const kindOf = (s) => s.cru ? (isExport(s) ? "External CRU transportation" : "Internal CRU transportation") : "Transportation 1 way of Import/Export";
+  // So khớp KIND: bỏ khoảng trắng 2 đầu + KHÔNG phân biệt hoa/thường
+  // (vd "external cru transportation" = "External CRU transportation" = "EXTERNAL CRU TRANSPORTATION").
   const nk = (v) => (v || "").toString().trim().toLowerCase();
   const priceFor = (s) => {
     const list = ((cfg.customerInfo || {})[s.customer] || {}).priceList || [];
@@ -121,8 +123,9 @@ function makePricer(cfg) {
   return { priceFor, codeOf, connOf, cont20, kindOf };
 }
 
-function StatementForm({ hph, icd, cfg, onCancel, onSaved }) {
-  const { useState, useMemo } = React;
+function StatementForm({ cfg, onCancel, onSaved }) {
+  const { useState, useEffect } = React;
+  const T = window.__TRK || {}; const ROUTES = T.routes || {};
   const customers = cfg.customers || [];
   const [cust, setCust] = useState(customers[0] || "");
   const [from, setFrom] = useState("");
@@ -131,20 +134,22 @@ function StatementForm({ hph, icd, cfg, onCancel, onSaved }) {
   const info = (cfg.customerInfo || {})[cust] || {};
   const today = new Date().toISOString().slice(0, 10);
 
-  // ----- Định giá lô theo BẢNG GIÁ của khách (dùng factory chung) -----
-  const { priceFor } = makePricer(cfg);
-  const all = useMemo(() => {
-    const mk = (s, sheet, date) => ({ s, sheet, date, pr: priceFor(s) });
-    const rows = [];
-    hph.forEach((s) => rows.push(mk(s, "HPH", s.contRa || s.sailDate || s.rev?.hanTT || "")));
-    icd.forEach((s) => rows.push(mk(s, "ICD", s.contRa || s.contDen || s.rev?.hanTT || "")));
-    return rows.filter((x) => x.s.customer === cust)
-      .filter((x) => (!from || !x.date || x.date >= from) && (!to || !x.date || x.date <= to));
-  }, [hph, icd, cust, from, to, cfg]);
+  // ----- Lô + ĐỊNH GIÁ lấy TỪ BACKEND (nguồn chân lý duy nhất) theo khách + kỳ -----
+  const [all, setAll] = useState([]);   // [{id,booking,io,sheet,from,to,contType,contNo,qty,cru,date,contLabel,note,thanhLy,pr}]
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (!cust) { setAll([]); return; }
+    let alive = true; setLoading(true); setPicked({});
+    const p = new URLSearchParams({ customer: cust }); if (from) p.set("from", from); if (to) p.set("to", to);
+    window.trkApi("GET", ROUTES.candidates + "?" + p.toString())
+      .then((r) => { if (alive) { setAll(r && r.ok ? (r.candidates || []) : []); setLoading(false); } })
+      .catch(() => { if (alive) { setAll([]); setLoading(false); } });
+    return () => { alive = false; };
+  }, [cust, from, to]);
 
-  const [amtOv, setAmtOv] = useState({}); // per-ship override of phải thu
-  const sel = all.filter((x) => picked[x.s.id] !== false); // default all selected
-  const lineAmt = (x) => (amtOv[x.s.id] != null ? amtOv[x.s.id] : x.pr.phaiThu);
+  const [amtOv, setAmtOv] = useState({}); // override phải thu theo lô
+  const sel = all.filter((x) => picked[x.id] !== false); // mặc định chọn hết
+  const lineAmt = (x) => (amtOv[x.id] != null ? amtOv[x.id] : x.pr.phaiThu);
   const tongThu = sel.reduce((a, x) => a + lineAmt(x), 0);
   const keNo = "BK-" + today.replace(/-/g, "").slice(2) + "-" + (cust ? cust.slice(0, 3).toUpperCase() : "XXX");
 
@@ -152,20 +157,14 @@ function StatementForm({ hph, icd, cfg, onCancel, onSaved }) {
   const save = async () => {
     if (!sel.length || saving) return;
     setSaving(true);
-    const lines = sel.map((x) => {
-      const s = x.s;
-      const thanhLy = ((s.cost && s.cost.items) || []).reduce((a, e) => a + (e.src === "thanhLyFee" ? toNum(e.amount) : 0), 0);
-      const note = (s.ghiChu && s.ghiChu.trim()) || [s.from, s.to].filter(Boolean).join(" → ") + (x.pr.conn ? " · " + x.pr.conn : "");
-      return {
-        id: s.id, booking: s.booking, sheet: x.sheet, io: s.io,
-        declNo: s.declNo || "", contType: s.contType || "", inv: s.inv || "", contNo: s.contNo || "", bks: s.bksVao || s.bksRa || "",
-        from: s.from, to: s.to, date: x.date,
-        contLabel: (x.sheet === "HPH" ? (s.qty + " × " + s.contType) : ((s.contNo || s.contType) + (s.contNo ? " · " + s.contType : ""))),
-        phaiThu: lineAmt(x), cuoc: lineAmt(x), thanhLy, note,
-        // snapshot chi tiết khoản để hiển thị đối soát TĨNH (không cần query realtime khi xem)
-        detail: { ...x.pr },   // snapshot đầy đủ: conn/kind/loại cont/tuyến/free time + tách khoản
-      };
-    });
+    const lines = sel.map((x) => ({
+      id: x.id, booking: x.booking, sheet: x.sheet, io: x.io,
+      declNo: x.declNo || "", contType: x.contType || "", inv: x.inv || "", contNo: x.contNo || "", bks: x.bks || "",
+      from: x.from, to: x.to, date: x.date, contLabel: x.contLabel,
+      phaiThu: lineAmt(x), cuoc: lineAmt(x), thanhLy: x.thanhLy || 0, note: x.note,
+      // snapshot định giá (backend) để hiển thị đối soát TĨNH (không query lại khi xem)
+      detail: { ...x.pr },
+    }));
     const payload = { id: Date.now(), no: keNo, customer: cust, info, date: today, from, to, lines, tongThu, payments: [], createdAt: new Date().toISOString() };
     // onSaved có thể async + trả về false để huỷ (vd bấm Huỷ ở confirm) → giữ nguyên trang
     let result;
@@ -191,12 +190,8 @@ function StatementForm({ hph, icd, cfg, onCancel, onSaved }) {
       <div className="ke-noprint" style={{ display: "flex", gap: 12, alignItems: "flex-end", padding: "12px 0 14px", borderBottom: "1px solid var(--line-2)", flexWrap: "wrap" }}>
         <label style={{ display: "block" }}>
           <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>Khách hàng</div>
-          <div style={{ position: "relative" }}>
-            <select value={cust} onChange={(e) => { setCust(e.target.value); setPicked({}); }}
-              style={{ width: 240, appearance: "none", WebkitAppearance: "none", padding: "9px 28px 9px 12px", fontSize: 13.5, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 10, background: "#fff", cursor: "pointer" }}>
-              {customers.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: "var(--ink-3)", pointerEvents: "none" }}><I.chev /></span>
+          <div style={{ width: 240 }}>
+            <Combo value={cust} onChange={(v) => { setCust(v); setPicked({}); }} options={customers} placeholder="Chọn khách hàng…" strict />
           </div>
         </label>
         <label style={{ display: "block" }}>
@@ -245,31 +240,32 @@ function StatementForm({ hph, icd, cfg, onCancel, onSaved }) {
             </tr>
           </thead>
           <tbody>
-            {sel.length === 0 && <tr><td colSpan={6} style={{ padding: "24px", textAlign: "center", color: "var(--ink-4)" }}>Không có lô nào phù hợp.</td></tr>}
-            {all.map((x, i) => {
-              const on = picked[x.s.id] !== false;
+            {!loading && all.length === 0 && <tr><td colSpan={6} style={{ padding: "24px", textAlign: "center", color: "var(--ink-4)" }}>Không có lô nào phù hợp.</td></tr>}
+            {loading && <tr><td colSpan={6} style={{ padding: "24px", textAlign: "center", color: "var(--ink-4)" }}>Đang tải lô + định giá…</td></tr>}
+            {!loading && all.map((x, i) => {
+              const on = picked[x.id] !== false;
               return (
-                <tr key={x.s.id} style={{ opacity: on ? 1 : 0.4 }}>
+                <tr key={x.id} style={{ opacity: on ? 1 : 0.4 }}>
                   <td className="ke-noprint" style={{ textAlign: "center", padding: "8px", borderBottom: "1px solid var(--line-2)" }}>
-                    <input type="checkbox" checked={on} onChange={(e) => setPicked((p) => ({ ...p, [x.s.id]: e.target.checked }))} style={{ width: 16, height: 16, accentColor: "var(--accent)", cursor: "pointer" }} />
+                    <input type="checkbox" checked={on} onChange={(e) => setPicked((p) => ({ ...p, [x.id]: e.target.checked }))} style={{ width: 16, height: 16, accentColor: "var(--accent)", cursor: "pointer" }} />
                   </td>
                   <td className="tnum" style={{ textAlign: "center", padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-4)" }}>{i + 1}</td>
                   <td style={{ padding: "8px", borderBottom: "1px solid var(--line-2)" }}>
-                    <div style={{ fontWeight: 600 }} className="tnum">{x.s.booking || "—"}</div>
-                    <div style={{ fontSize: 11, color: "var(--ink-4)" }}>{x.sheet} · {x.s.io}</div>
+                    <div style={{ fontWeight: 600 }} className="tnum">{x.booking || "—"}</div>
+                    <div style={{ fontSize: 11, color: "var(--ink-4)" }}>{x.sheet} · {x.io}</div>
                   </td>
                   <td style={{ padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>
-                    {x.s.from} → {x.s.to}<div style={{ fontSize: 11, color: "var(--ink-4)" }} className="tnum">{x.sheet === "HPH" ? (x.s.qty + " × " + x.s.contType) : ((x.s.contNo || x.s.contType) + (x.s.contNo ? " · " + x.s.contType : ""))}</div>
+                    {x.from} → {x.to}<div style={{ fontSize: 11, color: "var(--ink-4)" }} className="tnum">{x.contLabel}</div>
                     <div className="ke-noprint" style={{ fontSize: 10.5, marginTop: 3 }}>
                       {x.pr.matched
-                        ? <span style={{ color: "var(--good)" }}>✓ Bảng giá · {x.s.cru ? (/xu/i.test(x.s.io || "") ? "CRU ngoại" : "CRU nội") : "1 chiều"} · {x.pr.conn || "—"} · {x.pr.is20 ? "20FT" : "40FT"} · <span className="tnum">{x.pr.route}</span>{x.pr.noDrop ? <span style={{ color: "var(--warn)" }}> (lô chưa có Nơi hạ — khớp theo FROM)</span> : null} — <span className="tnum">Cước {fmtNum(x.pr.cuoc)} + Dầu {fmtNum(x.pr.dau)}{x.pr.chiHo ? " + Chi hộ " + fmtNum(x.pr.chiHo) : ""} = {fmtNum(x.pr.phaiThu)} ₫</span></span>
+                        ? <span style={{ color: "var(--good)" }}>✓ Bảng giá · {x.cru ? (/xu/i.test(x.io || "") ? "CRU ngoại" : "CRU nội") : "1 chiều"} · {x.pr.conn || "—"} · {x.pr.is20 ? "20FT" : "40FT"} · <span className="tnum">{x.pr.route}</span>{x.pr.noDrop ? <span style={{ color: "var(--warn)" }}> (lô chưa có Nơi hạ — khớp theo FROM)</span> : null} — <span className="tnum">Cước {fmtNum(x.pr.cuoc)} + Dầu {fmtNum(x.pr.dau)}{x.pr.chiHo ? " + Chi hộ " + fmtNum(x.pr.chiHo) : ""} = {fmtNum(x.pr.phaiThu)} ₫</span></span>
                         : <span style={{ color: "var(--warn)" }}>⚠ Chưa khớp bảng giá{x.pr.chiHo ? " · mới có Chi hộ " + fmtShort(x.pr.chiHo) : " · phải thu 0"}</span>}
                     </div>
                   </td>
                   <td className="tnum" style={{ padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{fmtDate(x.date) || "—"}</td>
                   <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: "1px solid var(--line-2)", fontWeight: 600 }}>
                     <div style={{ position: "relative", width: 150, marginLeft: "auto" }}>
-                      <input inputMode="numeric" value={(lineAmt(x) || 0).toLocaleString("vi-VN")} onChange={(e) => setAmtOv((o) => ({ ...o, [x.s.id]: parseInt(e.target.value.replace(/[^\d]/g, ""), 10) || 0 }))} className="tnum"
+                      <input inputMode="numeric" value={(lineAmt(x) || 0).toLocaleString("vi-VN")} onChange={(e) => setAmtOv((o) => ({ ...o, [x.id]: parseInt(e.target.value.replace(/[^\d]/g, ""), 10) || 0 }))} className="tnum"
                         style={{ width: "100%", padding: "6px 22px 6px 8px", fontSize: 12.5, textAlign: "right", fontWeight: 600, border: "1px solid var(--line)", borderRadius: 7, outline: "none" }}
                         onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
                       <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)", fontSize: 12, pointerEvents: "none" }}>₫</span>

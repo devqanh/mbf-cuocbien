@@ -15,6 +15,7 @@ window.__TRK = {
   routes: {
     statementStore: '{{ route("trucking2.statements.store") }}',
     statements: '{{ route("trucking2.statements") }}',
+    candidates: '{{ route("trucking2.statements.candidates") }}',   // lô đã định giá ở backend
   },
   boot: @json($boot),
 };

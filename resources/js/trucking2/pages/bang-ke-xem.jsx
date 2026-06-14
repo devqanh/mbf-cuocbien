@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import "@trk/shared.js";
 
 const { useState, useRef, useMemo, useEffect } = React;
-import { SavedStatementPage, makePricer } from "@trk/ui.jsx";
+import { SavedStatementPage } from "@trk/ui.jsx";
 
 function ViewStatementApp() {
   const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
@@ -43,19 +43,18 @@ function ViewStatementApp() {
     });
     if (!ok) return;
 
-    const r = await api("GET", ROUTES.base + (st.hashid || st.id) + "/context").catch(() => null);
+    const r = await api("GET", ROUTES.base + (st.hashid || st.id) + "/reprice").catch(() => null);
     if (!r || !r.ok) { window.trkToast && window.trkToast("Không tải được dữ liệu để tính lại", "error"); return; }
-    const { priceFor } = makePricer(r.cfg || {});
-    const shipById = {}; (r.ships || []).forEach((s) => { shipById[s.id] = s; });
+    const rep = r.repriced || {};   // { shipmentId => { pr, ... } } — đã định giá ở BACKEND
 
     const live = {}; let changed = 0;
     // So sánh cả các trường HIỂN THỊ (không chỉ số tiền) để nếu tuyến/kết nối/chi tiết đổi
     // thì vẫn cho Lưu — vd tuyến giờ hiển thị theo TÊN thay vì ký hiệu.
     const cmpFields = ["phaiThu", "cuoc", "dau", "chiHo", "route", "conn", "kind", "is20"];
     const lines = (st.lines || []).map((l) => {
-      const s = shipById[l.id];
-      if (!s) { live[l.id] = { found: false }; return l; }
-      const pr = priceFor(s);
+      const c = rep[String(l.id)];
+      if (!c) { live[l.id] = { found: false }; return l; }
+      const pr = c.pr;
       live[l.id] = { found: true, ...pr };
       const od = l.detail || {};
       const diff = (pr.phaiThu || 0) !== (l.phaiThu || 0) || cmpFields.some((k) => {

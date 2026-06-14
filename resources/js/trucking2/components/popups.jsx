@@ -255,6 +255,8 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
   const isMobile = useIsMobile();
   const set = (np) => patch(np);
   const add = (k, v) => addCfg && addCfg(k, v);
+  // Biển số gõ tạo mới ở các ô BKS lô hàng → mặc định "Xe ngoài" (xe thuê ngoài, không lọt đội xe MBF)
+  const addVehExt = (v) => addCfg && addCfg("vehicles", v, { external: true });
   const hqFee = ((ship.cost && ship.cost.items) || []).some((it) => it.src === "thanhLyFee" && toNum(it.amount) > 0);
   const hqFilled = [ship.declNo, ship.declNote, ship.thanhLy, ship.cshtNote].filter((v) => (v || "").toString().trim()).length + (hqFee ? 1 : 0);
   const [hqOpen, setHqOpen] = useState(false);
@@ -348,8 +350,8 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
               <Field label="Kho" hint="tối đa 3"><MultiCombo values={(ship.kho || "").split(/\s*,\s*/).filter(Boolean)} onChange={(arr) => set({ kho: arr.join(", ") })} options={cfg.warehouses || []} onCreate={(v) => add("warehouses", v)} max={3} placeholder="Chọn kho (tối đa 3)…" /></Field>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: "12px 0 0" }}>
-              <Field label="BKS vào"><Combo value={ship.bksVao} onChange={(x) => set({ bksVao: x })} options={cfg.vehicles || []} onCreate={(v) => add("vehicles", v)} placeholder="15C-123.45…" /></Field>
-              <Field label="BKS ra"><Combo value={ship.bksRa} onChange={(x) => set({ bksRa: x })} options={cfg.vehicles || []} onCreate={(v) => add("vehicles", v)} placeholder="15C-678.90…" /></Field>
+              <Field label="BKS vào"><Combo value={ship.bksVao} onChange={(x) => set({ bksVao: x })} options={cfg.vehicles || []} onCreate={addVehExt} placeholder="15C-123.45…" /></Field>
+              <Field label="BKS ra"><Combo value={ship.bksRa} onChange={(x) => set({ bksRa: x })} options={cfg.vehicles || []} onCreate={addVehExt} placeholder="15C-678.90…" /></Field>
             </div>
           </>
         )}
@@ -478,7 +480,7 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
                     <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                       <div style={{ width: 220 }}><DTField value={otherGioXeRa} onChange={(x) => setRa(x)} /></div>
                       <div style={{ width: 190 }}>
-                        <Combo value={otherBksRa} onChange={(x) => setRaBks(x)} options={cfg.vehicles || []} onCreate={(x) => add("vehicles", x)} placeholder="BKS ra…" small />
+                        <Combo value={otherBksRa} onChange={(x) => setRaBks(x)} options={cfg.vehicles || []} onCreate={addVehExt} placeholder="BKS ra…" small />
                       </div>
                     </div>
                     <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 7, lineHeight: 1.5 }}>

@@ -8,7 +8,7 @@ import { StatementForm } from "@trk/ui.jsx";
 function CreateStatementApp() {
   const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
   const api = (method, url, body) => window.trkApi(method, url, body);
-  const hph = B.hph || []; const icd = B.icd || []; const cfg = B.cfg || {};
+  const cfg = B.cfg || {};   // chỉ cần khách + thông tin khách; lô + định giá lấy từ backend (candidates)
   const back = () => { window.location.href = ROUTES.statements; };
 
   const onSaved = async (st) => {
@@ -42,7 +42,7 @@ function CreateStatementApp() {
       </header>
       <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "20px 22px 40px" }}>
         <div style={{ maxWidth: 960, margin: "0 auto", background: "#fff", border: "1px solid var(--line)", borderRadius: 14, padding: "16px 22px 18px" }}>
-          <StatementForm hph={hph} icd={icd} cfg={cfg} onSaved={onSaved} onCancel={back} />
+          <StatementForm cfg={cfg} onSaved={onSaved} onCancel={back} />
         </div>
       </div>
     </div>

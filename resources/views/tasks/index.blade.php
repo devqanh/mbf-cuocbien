@@ -501,6 +501,51 @@
     }
     .empty-state i { font-size: 56px; opacity: .3; }
     .empty-state h5 { font-weight: 700; color: var(--azia-text); }
+
+    /* ================= MOBILE / TABLET ================= */
+    @media (max-width: 992px) {
+        /* Bộ lọc: từ sidebar dọc → thanh chip cuộn ngang phía trên (không ngốn chiều cao) */
+        .task-sidebar {
+            position: static;
+            display: flex;
+            flex-wrap: nowrap;
+            gap: 8px;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            padding: 10px;
+            margin-bottom: 4px;
+        }
+        .task-sidebar::-webkit-scrollbar { height: 0; }
+        .task-sidebar-title { display: none; }
+        .task-view-item {
+            flex-shrink: 0;
+            white-space: nowrap;
+            margin-bottom: 0;
+            border: 1px solid var(--azia-border);
+            padding: 7px 12px;
+        }
+        .task-view-item.active { border-color: var(--azia-primary); }
+        .task-view-item .count { margin-left: 6px; }
+
+        /* Mobile không có hover → nút thao tác luôn hiện + target chạm to hơn */
+        .task-actions { opacity: 1 !important; }
+        .status-current { width: 34px; height: 34px; }
+        .task-actions .icon-act { width: 34px; height: 34px; font-size: 14px; }
+    }
+
+    @media (max-width: 576px) {
+        /* Hàng tìm kiếm + nút tạo: chiếm trọn bề ngang, ô tìm co giãn, nút full-width dễ bấm */
+        .page-header > .d-flex { width: 100%; flex-wrap: wrap; }
+        .page-header form.d-flex { flex: 1 1 100%; }
+        .page-header input[type="search"] { min-width: 0 !important; flex: 1; }
+        .page-header .btn-primary { flex: 1 1 100%; justify-content: center; }
+
+        /* Card gọn hơn; ẩn avatar stack bên phải (đã có “X người” ở dòng phụ) để title rộng hơn */
+        .task-row { padding: 12px 13px; gap: 10px; }
+        .task-right .task-assignees { display: none; }
+        .task-title-link { font-size: 14.5px; }
+        .group-section { margin-bottom: 16px; }
+    }
 </style>
 @endpush
 

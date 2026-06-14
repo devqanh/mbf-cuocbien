@@ -48,6 +48,16 @@
   }
   @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
   @keyframes trk-spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }
+  /* Input ngày/giờ Flatpickr (DateField/DTField) — đồng bộ với các field khác */
+  .trk-fp {
+    width: 100%; padding: 8px 11px; font-size: 13.5px; box-sizing: border-box;
+    border: 1px solid var(--line); border-radius: 9px; background: #fff;
+    color: var(--ink-2); outline: none; cursor: pointer;
+  }
+  .trk-fp:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-weak); }
+  .trk-fp::placeholder { color: var(--ink-4); }
+  /* Lịch Flatpickr phải nổi trên modal lô hàng (z-index modal = 1100) */
+  .flatpickr-calendar { z-index: 1200 !important; }
 /* tích hợp layout app */
 main.app-body{padding:0 !important;}
 #trk-root{overflow:hidden;background:var(--bg);}
