@@ -19,3 +19,4 @@
 - [Hashid routes](hashid-routes.md) — URL dùng hashid thay id số (Optimus+base62 thuần PHP, trait HasHashid, giữ id số trong JSON/payload + thêm field hashid); áp cho trucking entities + Task
 - [Mobile responsive](mobile-responsive.md) — hook useIsMobile (lib.jsx) + foundation CSS (_styles + app.css); bảng→card trên điện thoại, ép input 16px chống iOS zoom; yeu-cau-chi đã mobile-first sẵn
 - [DB backup](db-backup.md) — `php artisan db:backup` (gzip, giữ 15 bản, báo cáo sys.backup_last_run); lịch daily 02:00 ở routes/console.php (CẦN cron schedule:run); card sao lưu ở /system-settings
+- [Date fields](date-fields.md) — input ngày/giờ React dùng DateField/DTField (Flatpickr locale VN, fallback native), KHÔNG dùng type=date native; trừ 2 trang public lái xe

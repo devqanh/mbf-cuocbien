@@ -6,11 +6,12 @@ import { I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section,
 /* Ngày + giờ — Flatpickr (locale VN, đã nạp ở layout). Lưu ISO Y-m-d\TH:i (giữ format datetime-local cũ),
    hiển thị d/m/Y · H:i, 24h. disableMobile để dùng cùng UI trên điện thoại thay vì picker mặc định khó dùng. */
 function DTField({ value, onChange }) {
+  const hasFp = typeof window !== "undefined" && !!window.flatpickr;
   const ref = useRef(null);
   const fp = useRef(null);
   const cb = useRef(onChange); cb.current = onChange;
   useEffect(() => {
-    if (!ref.current || typeof window.flatpickr === "undefined") return;
+    if (!hasFp || !ref.current) return;
     const inst = window.flatpickr(ref.current, {
       enableTime: true, time_24hr: true, minuteIncrement: 5,
       dateFormat: "Y-m-d\\TH:i", altInput: true, altFormat: "d/m/Y · H:i", altInputClass: "trk-fp",
@@ -24,6 +25,8 @@ function DTField({ value, onChange }) {
   useEffect(() => {
     if (fp.current && (value || "") !== (fp.current.input.value || "")) fp.current.setDate(value || "", false);
   }, [value]);
+  // Fallback: nơi không nạp Flatpickr → input datetime-local gốc (vẫn hoạt động).
+  if (!hasFp) return <input type="datetime-local" className="trk-fp" value={value || ""} onChange={(e) => onChange(e.target.value)} style={{ colorScheme: "light" }} />;
   return <input ref={ref} type="text" className="trk-fp" placeholder="dd/mm/yyyy --:--" />;
 }
 

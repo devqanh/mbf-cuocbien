@@ -116,7 +116,8 @@ trait HandlesStatementPricing
         $locCode   = $this->locationCodeMap();
         $threshold = TruckingSetting::get('free_time_hours', '4');
 
-        $rows = TruckingShipment::where('customer_id', $custId)->with('costLines')->orderBy('id')->get();
+        // orderBy('cont_ra') để dùng composite index (customer_id, cont_ra) khi lấy + sắp theo kỳ
+        $rows = TruckingShipment::where('customer_id', $custId)->with('costLines')->orderBy('cont_ra')->get();
         $out = [];
         foreach ($rows as $s) {
             $sheet = strtoupper((string) $s->sheet);

@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import "@trk/shared.js";
 
 const { useState, useMemo, useEffect, useRef } = React;
-import { I, fmtVND, fmtShort, fmtDate, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, useIsMobile } from "@trk/lib.jsx";
+import { I, fmtVND, fmtShort, fmtDate, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, useIsMobile, DateField } from "@trk/lib.jsx";
 import { CostPopup, RevenuePopup, RevenuePopupICD, InfoPopup, colorHex } from "@trk/pop.jsx";
 import { SortBtn, CellBtn, Badge, EditCell, TH, TD } from "@trk/ui.jsx";
 
@@ -422,10 +422,10 @@ function ShipmentsApp() {
                   <div style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)", marginBottom: 3 }}>Xuất Excel</div>
                   <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginBottom: 11, lineHeight: 1.5 }}>Lọc theo <b style={{ color: "var(--ink-3)" }}>ngày kế hoạch</b> (Giờ đến kế hoạch). Để trống = xuất tất cả {pageInfo.total} lô.</div>
                   <div style={{ display: "flex", gap: 8, marginBottom: 11 }}>
-                    <label style={{ flex: 1 }}><div style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>Từ ngày</div>
-                      <input type="date" value={expFrom} onChange={(e) => setExpFrom(e.target.value)} style={{ width: "100%", padding: "7px 8px", fontSize: 12.5, border: "1px solid var(--line)", borderRadius: 8, outline: "none", colorScheme: "light" }} /></label>
-                    <label style={{ flex: 1 }}><div style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>Đến ngày</div>
-                      <input type="date" value={expTo} onChange={(e) => setExpTo(e.target.value)} style={{ width: "100%", padding: "7px 8px", fontSize: 12.5, border: "1px solid var(--line)", borderRadius: 8, outline: "none", colorScheme: "light" }} /></label>
+                    <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>Từ ngày</div>
+                      <DateField value={expFrom} onChange={setExpFrom} /></div>
+                    <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>Đến ngày</div>
+                      <DateField value={expTo} onChange={setExpTo} /></div>
                   </div>
                   <button type="button" onClick={exportExcel} disabled={exporting}
                     style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "9px 0", fontSize: 13.5, fontWeight: 600, cursor: exporting ? "default" : "pointer", color: "#fff", background: "var(--good)", border: "none", borderRadius: 9, opacity: exporting ? 0.6 : 1 }}>

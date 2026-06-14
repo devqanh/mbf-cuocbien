@@ -1,6 +1,6 @@
 import React from "react";
 const { useState, useMemo, useEffect } = React;
-import { I, fmtVND, fmtNum, fmtShort, fmtDate, calcCost, calcRev, calcVeh, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, Combo, useIsMobile } from "@trk/lib.jsx";
+import { I, fmtVND, fmtNum, fmtShort, fmtDate, calcCost, calcRev, calcVeh, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, Combo, useIsMobile, DateField } from "@trk/lib.jsx";
 import { CostPopup, RevenuePopup, CostPopupICD, RevenuePopupICD, InfoPopup, ConfigPopup, PriceList, TRACK_COLORS, colorHex } from "@trk/pop.jsx";
 
 /* components dùng chung — export ra window.__ui */
@@ -194,14 +194,14 @@ function StatementForm({ cfg, onCancel, onSaved }) {
             <Combo value={cust} onChange={(v) => { setCust(v); setPicked({}); }} options={customers} placeholder="Chọn khách hàng…" strict />
           </div>
         </label>
-        <label style={{ display: "block" }}>
+        <div style={{ display: "block" }}>
           <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>Cont ra từ ngày</div>
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ padding: "8px 10px", fontSize: 13, border: "1px solid var(--line)", borderRadius: 9, outline: "none", colorScheme: "light" }} />
-        </label>
-        <label style={{ display: "block" }}>
+          <div style={{ width: 150 }}><DateField value={from} onChange={setFrom} /></div>
+        </div>
+        <div style={{ display: "block" }}>
           <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>đến ngày</div>
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ padding: "8px 10px", fontSize: 13, border: "1px solid var(--line)", borderRadius: 9, outline: "none", colorScheme: "light" }} />
-        </label>
+          <div style={{ width: 150 }}><DateField value={to} onChange={setTo} /></div>
+        </div>
         <div style={{ flex: 1 }} />
         <div style={{ fontSize: 12, color: "var(--ink-4)" }}>{all.length} lô có phải thu</div>
       </div>
@@ -319,11 +319,9 @@ function StatementDetailBody({ st, onUpdate, detailById = {} }) {
             {/* Kỳ cont ra — sửa được để tính lại theo khoảng ngày (ẩn khi in, in dùng dòng text trên) */}
             <div className="ke-noprint" style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 7, fontSize: 12.5, color: "var(--ink-3)", flexWrap: "wrap" }}>
               <span style={{ fontWeight: 600 }}>Cont ra từ</span>
-              <input type="date" value={st.from || ""} onChange={(e) => setPeriod("from", e.target.value)}
-                style={{ padding: "5px 8px", fontSize: 12.5, border: "1px solid var(--line)", borderRadius: 7, outline: "none", colorScheme: "light" }} />
+              <div style={{ width: 140 }}><DateField value={st.from || ""} onChange={(v) => setPeriod("from", v)} /></div>
               <span style={{ fontWeight: 600 }}>đến</span>
-              <input type="date" value={st.to || ""} onChange={(e) => setPeriod("to", e.target.value)}
-                style={{ padding: "5px 8px", fontSize: 12.5, border: "1px solid var(--line)", borderRadius: 7, outline: "none", colorScheme: "light" }} />
+              <div style={{ width: 140 }}><DateField value={st.to || ""} onChange={(v) => setPeriod("to", v)} /></div>
               {(st.from || st.to) && <button type="button" onClick={() => onUpdate && onUpdate({ ...st, from: "", to: "" })} title="Xóa khoảng ngày"
                 style={{ border: "none", background: "transparent", color: "var(--ink-4)", cursor: "pointer", fontSize: 12, padding: "2px 4px" }}>✕</button>}
             </div>
@@ -418,8 +416,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {} }) {
                 <tr key={p.id}>
                   <td className="tnum" style={{ textAlign: "center", padding: "6px 8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-4)" }}>{i + 1}</td>
                   <td style={{ padding: "6px 8px", borderBottom: "1px solid var(--line-2)" }}>
-                    <input type="date" value={p.date || ""} onChange={(e) => setP(p.id, { date: e.target.value })}
-                      style={{ width: "100%", padding: "6px 8px", fontSize: 12.5, border: "1px solid var(--line)", borderRadius: 7, outline: "none", colorScheme: "light" }} />
+                    <DateField value={p.date || ""} onChange={(v) => setP(p.id, { date: v })} />
                   </td>
                   <td style={{ padding: "6px 8px", borderBottom: "1px solid var(--line-2)" }}>
                     <input value={p.note || ""} onChange={(e) => setP(p.id, { note: e.target.value })} placeholder="VD: chuyển khoản…"
