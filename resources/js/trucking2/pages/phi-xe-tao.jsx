@@ -58,15 +58,17 @@ function CreateTripApp() {
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
       <header style={{ background: "#fff", borderBottom: "1px solid var(--line)", padding: "0 22px", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, height: 58 }}>
-          <button type="button" onClick={back} title="Quay lại danh sách"
-            style={{ width: 34, height: 34, display: "grid", placeItems: "center", border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--ink-2)", cursor: "pointer" }}>
-            <span style={{ transform: "rotate(180deg)", display: "grid" }}><I.arrow /></span>
-          </button>
-          <div style={{ width: 32, height: 32, borderRadius: 9, background: "var(--accent)", color: "#fff", display: "grid", placeItems: "center" }}><I.fx /></div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 15.5, fontWeight: 700, lineHeight: 1.1 }}>Tạo kỳ phí xe</div>
-            <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Chọn khoảng ngày xe ra → Tính → kiểm tra/sửa → Lưu</div>
+        <div className="trk-head" style={{ display: "flex", alignItems: "center", gap: 12, height: 58 }}>
+          <div className="trk-head-lead" style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
+            <button type="button" onClick={back} title="Quay lại danh sách"
+              style={{ width: 34, height: 34, flexShrink: 0, display: "grid", placeItems: "center", border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--ink-2)", cursor: "pointer" }}>
+              <span style={{ transform: "rotate(180deg)", display: "grid" }}><I.arrow /></span>
+            </button>
+            <div style={{ width: 32, height: 32, flexShrink: 0, borderRadius: 9, background: "var(--accent)", color: "#fff", display: "grid", placeItems: "center" }}><I.fx /></div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 15.5, fontWeight: 700, lineHeight: 1.1 }}>Tạo kỳ phí xe</div>
+              <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Chọn khoảng ngày xe ra → Tính → kiểm tra/sửa → Lưu</div>
+            </div>
           </div>
           {rows && rows.length > 0 && <div style={{ textAlign: "right", marginRight: 8 }}>
             <div style={{ fontSize: 11.5, color: "var(--ink-4)" }}>Tổng {rows.length} lô</div>

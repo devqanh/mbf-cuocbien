@@ -3,11 +3,12 @@ import { createRoot } from "react-dom/client";
 import "@trk/shared.js";
 
 const { useState, useMemo, useEffect, useRef } = React;
-import { I, fmtVND, fmtShort, fmtDate, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn } from "@trk/lib.jsx";
+import { I, fmtVND, fmtShort, fmtDate, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, useIsMobile } from "@trk/lib.jsx";
 import { CostPopup, RevenuePopup, RevenuePopupICD, InfoPopup, colorHex } from "@trk/pop.jsx";
 import { SortBtn, CellBtn, Badge, EditCell, TH, TD } from "@trk/ui.jsx";
 
 function ShipmentsApp() {
+  const isMobile = useIsMobile();
   const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
   const DEFAULT_CFG = { locations: [], locationCode: {}, customers: [], customerInfo: {}, contTypes: [], warehouses: [], payers: [], costItems: [], choHoItems: [], revItems: [], vehicles: [], vehicleType: {}, drivers: [], prices: {}, costColors: {}, vatDefault: { hph: "8", icd: "0" }, freeTimeHours: "4" };
   const api = (method, url, body) => window.trkApi(method, url, body);
@@ -381,15 +382,15 @@ function ShipmentsApp() {
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
       {/* top bar */}
-      <header style={{ background: "#fff", borderBottom: "1px solid var(--line)", padding: "0 22px", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 14, height: 58 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 9, background: "var(--accent)", color: "#fff", display: "grid", placeItems: "center" }}><I.truck /></div>
+      <header style={{ background: "#fff", borderBottom: "1px solid var(--line)", padding: isMobile ? "10px 14px" : "0 22px", flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 14, height: isMobile ? "auto" : 58, flexWrap: "wrap" }}>
+          <div style={{ width: 32, height: 32, borderRadius: 9, background: "var(--accent)", color: "#fff", display: "grid", placeItems: "center", flexShrink: 0 }}><I.truck /></div>
           <div style={{ fontSize: 15.5, fontWeight: 700, letterSpacing: "-0.01em" }}>Lô hàng</div>
           <div style={{ flex: 1 }} />
-          <div style={{ position: "relative" }}>
+          <div style={{ position: "relative", order: isMobile ? 5 : 0, flex: isMobile ? "1 1 100%" : "0 0 auto" }}>
             <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)" }}><I.search /></span>
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm khách, booking, container…"
-              style={{ width: 260, padding: "9px 12px 9px 34px", fontSize: 13.5, border: "1px solid var(--line)", borderRadius: 10, outline: "none", background: "#fafbfc" }}
+              style={{ width: isMobile ? "100%" : 260, padding: "9px 12px 9px 34px", fontSize: 13.5, border: "1px solid var(--line)", borderRadius: 10, outline: "none", background: "#fafbfc" }}
               onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.background = "#fff"; }}
               onBlur={(e) => { e.target.style.borderColor = "var(--line)"; e.target.style.background = "#fafbfc"; }} />
           </div>
@@ -408,7 +409,7 @@ function ShipmentsApp() {
             {showExport && (
               <>
                 <div onClick={() => setShowExport(false)} style={{ position: "fixed", inset: 0, zIndex: 1200 }} />
-                <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 1201, width: 308, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 12px 32px -8px rgba(16,19,23,.24), 0 2px 8px rgba(16,19,23,.08)", padding: 14 }}>
+                <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 1201, width: "min(308px, calc(100vw - 28px))", background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 12px 32px -8px rgba(16,19,23,.24), 0 2px 8px rgba(16,19,23,.08)", padding: 14 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)", marginBottom: 3 }}>Xuất Excel</div>
                   <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginBottom: 11, lineHeight: 1.5 }}>Lọc theo <b style={{ color: "var(--ink-3)" }}>ngày kế hoạch</b> (Giờ đến kế hoạch). Để trống = xuất tất cả {pageInfo.total} lô.</div>
                   <div style={{ display: "flex", gap: 8, marginBottom: 11 }}>
@@ -443,7 +444,7 @@ function ShipmentsApp() {
       </div>
 
       {/* filter bar */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#fff", borderBottom: "1px solid var(--line)", padding: "10px 22px", flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#fff", borderBottom: "1px solid var(--line)", padding: isMobile ? "10px 14px" : "10px 22px", flexShrink: 0, flexWrap: "wrap" }}>
         <span style={{ fontSize: 12.5, color: "var(--ink-3)", fontWeight: 500 }}>Lọc:</span>
         <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 9, padding: 3 }}>
           {[["all", "Tất cả"], ["notout", "Chưa ra"], ["out", "Đã ra"]].map(([k, label]) => {
@@ -516,8 +517,59 @@ function ShipmentsApp() {
       </div>
 
       {/* table */}
-      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", padding: "16px 22px 14px" }}>
-        <div style={{ flex: 1, minHeight: 0, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, overflow: "auto" }}>
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", padding: isMobile ? "12px 12px 14px" : "16px 22px 14px" }}>
+        <div style={{ flex: 1, minHeight: 0, background: isMobile ? "transparent" : "#fff", border: isMobile ? "none" : "1px solid var(--line)", borderRadius: 12, overflow: "auto" }}>
+          {/* ===== Mobile: danh sách dạng card ===== */}
+          {isMobile && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {rows.map((s) => {
+                const cc = calcCost(s.cost); const m = metrics(s);
+                const ft = !isHph ? calcFreeTime(s, cfg.freeTimeHours) : null;
+                const out = s.bksRa && s.bksRa.trim();
+                return (
+                  <div key={s.id} onClick={() => openModal({ id: s.id, type: "info" })}
+                    style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px", boxShadow: "0 1px 2px rgba(16,19,23,.04)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontWeight: 600, fontSize: 15 }}>{s.customer || <span style={{ color: "var(--ink-4)", fontWeight: 400 }}>(chưa đặt tên)</span>}</div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+                          <span className="tnum" style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{s.booking || "—"}</span>
+                          <Badge tone={s.io === "Nhập" ? "blue" : "gray"}>{s.io}</Badge>
+                          {s.cru ? <Badge tone="amber">CRU</Badge> : null}
+                        </div>
+                      </div>
+                      <span className="tnum" style={{ fontSize: 11.5, color: "var(--ink-4)", flexShrink: 0 }}>{String(s.id).startsWith("tmp") ? "mới" : ("#" + s.id)}</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, marginTop: 8 }}>
+                      <span style={{ color: "var(--ink-2)" }}>{s.from || "—"}</span>
+                      <span style={{ color: "var(--accent)", flexShrink: 0 }}><I.arrow /></span>
+                      <span style={{ color: "var(--ink-2)" }}>{s.to || "—"}</span>
+                    </div>
+                    <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 6 }} className="tnum">{s.contNo || "—"} · {s.contType}{s.kho ? " · " + s.kho : ""}</div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 7 }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, color: out ? "var(--good)" : "var(--warn)", background: out ? "var(--good-weak)" : "#fcf3e2" }}>
+                        <span style={{ width: 6, height: 6, borderRadius: 999, background: "currentColor" }} />{out ? "Đã ra · " + s.bksRa : "Chưa ra"}</span>
+                      {ft && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, color: ft.connect ? "var(--good)" : "var(--danger)", background: ft.connect ? "var(--good-weak)" : "#fce8e8" }}>
+                        <span style={{ width: 6, height: 6, borderRadius: 999, background: "currentColor" }} />{ft.connect ? "CONNECT" : "DISCONNECT"}</span>}
+                    </div>
+                    <div style={{ display: "flex", gap: 8, marginTop: 11, paddingTop: 11, borderTop: "1px solid var(--line-2)" }}>
+                      <button type="button" onClick={(e) => { e.stopPropagation(); openModal({ id: s.id, type: "cost" }); }}
+                        style={{ flex: 1, textAlign: "left", border: "1px solid var(--line)", borderRadius: 9, background: "#fafbfc", padding: "8px 11px", cursor: "pointer" }}>
+                        <div style={{ fontSize: 10.5, color: "var(--ink-4)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Chi phí</div>
+                        <div className="tnum" style={{ fontSize: 14, fontWeight: 700, marginTop: 2 }}>{fmtVND(m.cost)}</div>
+                      </button>
+                      <button type="button" onClick={(e) => { e.stopPropagation(); openModal({ id: s.id, type: "rev" }); }}
+                        style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid var(--accent-weak)", borderRadius: 9, background: "var(--accent-weak)", color: "var(--accent)", padding: "8px 14px", cursor: "pointer", fontWeight: 700, fontSize: 13.5 }}>
+                        ₫ Doanh thu
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {/* ===== Desktop: bảng ===== */}
+          {!isMobile && (
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: minW }}>
             <thead>
               <tr>
@@ -634,7 +686,8 @@ function ShipmentsApp() {
               })}
             </tbody>
           </table>
-          {rows.length === 0 && <div style={{ padding: "40px", textAlign: "center", color: "var(--ink-4)", fontSize: 13.5 }}>{loading ? "Đang tải…" : (qDeb || filter !== "all" || followFilter !== "all" ? "Không có lô nào khớp bộ lọc." : "Chưa có lô hàng nào. Bấm “Thêm lô hàng” để bắt đầu.")}</div>}
+          )}
+          {rows.length === 0 && <div style={{ padding: "40px", textAlign: "center", color: "var(--ink-4)", fontSize: 13.5, background: isMobile ? "#fff" : "transparent", border: isMobile ? "1px solid var(--line)" : "none", borderRadius: 12 }}>{loading ? "Đang tải…" : (qDeb || filter !== "all" || followFilter !== "all" ? "Không có lô nào khớp bộ lọc." : "Chưa có lô hàng nào. Bấm “Thêm lô hàng” để bắt đầu.")}</div>}
         </div>
 
         {/* Phân trang */}

@@ -60,6 +60,12 @@ return [
             'color'       => '#16a34a',
             'description' => 'Gửi yêu cầu chi (phiếu chi xe) từ mobile — tài xế đề nghị, kế toán duyệt',
         ],
+        'system' => [
+            'label'       => 'Cài đặt hệ thống',
+            'icon'        => 'gear-wide-connected',
+            'color'       => '#64748b',
+            'description' => 'Cấu hình chung toàn hệ thống — nơi lưu file (local/S3) và các cấu hình khác',
+        ],
         'tasks' => [
             'label'       => 'Ghi chú & công việc',
             'icon'        => 'check2-square',
@@ -99,6 +105,8 @@ return [
         'settings.update' => ['label' => 'Sửa cài đặt Trucking', 'desc' => 'Sửa danh mục, khách hàng, đội xe, VAT/free-time'],
 
         'spend.request' => ['label' => 'Gửi yêu cầu chi', 'desc' => 'Đăng nhập trang mobile để gửi yêu cầu chi (phiếu chi xe) + xem/hủy phiếu của mình'],
+
+        'system.settings' => ['label' => 'Cài đặt hệ thống', 'desc' => 'Cấu hình chung: nơi lưu file (local/S3) và các cấu hình toàn hệ thống khác'],
 
         'tasks.view'           => ['label' => 'Xem ghi chú & công việc',  'desc' => 'Xem danh sách ghi chú và task được giao'],
         'tasks.create'         => ['label' => 'Tạo ghi chú & công việc',  'desc' => 'Tạo task / ghi chú mới, đặt hạn nhắc'],

@@ -143,10 +143,11 @@ function SettingsApp() {
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
       <header style={{ background: "#fff", borderBottom: "1px solid var(--line)", padding: "0 22px", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 14, height: 58 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 9, background: "var(--accent)", color: "#fff", display: "grid", placeItems: "center" }}><I.cog /></div>
-          <div style={{ fontSize: 15.5, fontWeight: 700, letterSpacing: "-0.01em" }}>Cài đặt dữ liệu danh mục</div>
-          <div style={{ flex: 1 }} />
+        <div className="trk-head" style={{ display: "flex", alignItems: "center", gap: 14, height: 58 }}>
+          <div className="trk-head-lead" style={{ display: "flex", alignItems: "center", gap: 14, flex: 1, minWidth: 0 }}>
+            <div style={{ width: 32, height: 32, flexShrink: 0, borderRadius: 9, background: "var(--accent)", color: "#fff", display: "grid", placeItems: "center" }}><I.cog /></div>
+            <div style={{ fontSize: 15.5, fontWeight: 700, letterSpacing: "-0.01em" }}>Cài đặt dữ liệu danh mục</div>
+          </div>
           {anyDirty && <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, color: "var(--warn)" }}><span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--warn)" }} /> Có tab chưa lưu</span>}
           <span style={{ fontSize: 12, color: "var(--ink-4)" }}>Mỗi mục lưu riêng bằng nút trong mục</span>
           {ROUTES.prices && <a href={ROUTES.prices} title="Mở trang Bảng giá"

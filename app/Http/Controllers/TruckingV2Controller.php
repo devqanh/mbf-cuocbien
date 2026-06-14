@@ -427,6 +427,7 @@ class TruckingV2Controller extends Controller
             $allowed = $u?->can('settings.view');
         }
         abort_unless($allowed, 403);
+        if ($attachment->disk === 's3') $this->svc->applyS3Config();
         $disk = \Illuminate\Support\Facades\Storage::disk($attachment->disk);
         abort_unless($disk->exists($attachment->path), 404);
         return $disk->response($attachment->path, $attachment->name ?: 'file', ['Content-Type' => $attachment->mime ?: 'application/octet-stream']);

@@ -50,10 +50,11 @@ function PricesApp() {
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
       <header style={{ background: "#fff", borderBottom: "1px solid var(--line)", padding: "0 22px", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 14, height: 58 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 9, background: "var(--accent)", color: "#fff", display: "grid", placeItems: "center" }}><I.truck /></div>
-          <div style={{ fontSize: 15.5, fontWeight: 700, letterSpacing: "-0.01em" }}>Bảng giá đã gửi</div>
-          <div style={{ flex: 1 }} />
+        <div className="trk-head" style={{ display: "flex", alignItems: "center", gap: 14, height: 58 }}>
+          <div className="trk-head-lead" style={{ display: "flex", alignItems: "center", gap: 14, flex: 1, minWidth: 0 }}>
+            <div style={{ width: 32, height: 32, flexShrink: 0, borderRadius: 9, background: "var(--accent)", color: "#fff", display: "grid", placeItems: "center" }}><I.truck /></div>
+            <div style={{ fontSize: 15.5, fontWeight: 700, letterSpacing: "-0.01em" }}>Bảng giá đã gửi</div>
+          </div>
           {statusEl}
           <button type="button" onClick={save} disabled={!dirty || saving}
             style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 16px", fontSize: 13.5, fontWeight: 600, cursor: dirty && !saving ? "pointer" : "default",

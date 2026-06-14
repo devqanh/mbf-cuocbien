@@ -1,6 +1,21 @@
 import React from "react";
 const { useState, useRef, useMemo, useEffect, useCallback } = React;
 
+/* ============================ responsive ============================ */
+/* Hook dùng chung: true khi viewport ≤ bp (mặc định 640px = điện thoại).
+   Dùng để stack grid/sidebar, đổi bảng→card, bớt padding trên mobile. */
+function useIsMobile(bp = 640) {
+  const get = () => (typeof window !== "undefined" ? window.innerWidth <= bp : false);
+  const [m, setM] = useState(get);
+  useEffect(() => {
+    const on = () => setM(get());
+    window.addEventListener("resize", on);
+    window.addEventListener("orientationchange", on);
+    return () => { window.removeEventListener("resize", on); window.removeEventListener("orientationchange", on); };
+  }, [bp]);
+  return m;
+}
+
 /* ============================ helpers ============================ */
 const onlyDigits = (s) => (s || "").toString().replace(/[^\d]/g, "");
 const groupVND = (d) => { d = onlyDigits(d); return d ? d.replace(/\B(?=(\d{3})+(?!\d))/g, ".") : ""; };
@@ -292,17 +307,21 @@ function Section({ title, total, totalLabel, children, headPayer }) {
 
 /* ============================ Modal shell ============================ */
 function Modal({ title, subtitle, onClose, children, footer, width = 860, tabs, tab, onTab, icon }) {
+  const isMobile = useIsMobile();
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+  const padX = isMobile ? 14 : 22;
+  // iOS: dùng svh (small viewport height) để modal luôn nằm trọn trong vùng nhìn thấy
+  // dù thanh công cụ Safari hiện/ẩn — tránh header bị đẩy lên trên mép màn hình.
   return (
     <div onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
-      style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(16,19,23,.34)", backdropFilter: "blur(2px)", display: "grid", placeItems: "center", padding: 24 }}>
+      style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(16,19,23,.34)", backdropFilter: "blur(2px)", display: "grid", placeItems: "center", padding: isMobile ? 10 : 24 }}>
       <div role="dialog" aria-modal="true"
-        style={{ width: `min(${width}px,100%)`, maxHeight: "90vh", display: "flex", flexDirection: "column", background: "var(--panel)", borderRadius: "var(--radius)", boxShadow: "var(--shadow-modal)", overflow: "hidden" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 14, padding: "18px 22px 0" }}>
+        style={{ width: `min(${width}px,100%)`, maxHeight: isMobile ? "92svh" : "90vh", display: "flex", flexDirection: "column", background: "var(--panel)", borderRadius: "var(--radius)", boxShadow: "var(--shadow-modal)", overflow: "hidden" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 14, padding: `18px ${padX}px 0` }}>
           <div style={{ width: 38, height: 38, borderRadius: 10, flexShrink: 0, background: "var(--accent-weak)", color: "var(--accent)", display: "grid", placeItems: "center" }}>{icon || <I.truck />}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <h2 style={{ margin: 0, fontSize: 17, fontWeight: 600, letterSpacing: "-0.01em" }}>{title}</h2>
@@ -317,7 +336,7 @@ function Modal({ title, subtitle, onClose, children, footer, width = 860, tabs, 
         </div>
 
         {tabs && (
-          <div style={{ display: "flex", gap: 4, padding: "14px 22px 0", marginTop: 4 }}>
+          <div style={{ display: "flex", gap: 4, padding: `14px ${padX}px 0`, marginTop: 4, overflowX: "auto", whiteSpace: "nowrap" }}>
             {tabs.map((t) => (
               <button key={t.id} type="button" onClick={() => onTab(t.id)}
                 style={{ border: "none", background: "transparent", cursor: "pointer", padding: "8px 14px 12px", fontSize: 13.5, fontWeight: 600,
@@ -329,9 +348,9 @@ function Modal({ title, subtitle, onClose, children, footer, width = 860, tabs, 
         )}
         <div style={{ borderBottom: "1px solid var(--line)" }} />
 
-        <div style={{ overflowY: "auto", flex: 1, padding: "4px 22px 18px" }}>{children}</div>
+        <div style={{ overflowY: "auto", flex: 1, padding: `4px ${padX}px 18px` }}>{children}</div>
 
-        {footer && <div style={{ borderTop: "1px solid var(--line)", padding: "14px 22px 16px", background: "#fff" }}>{footer}</div>}
+        {footer && <div style={{ borderTop: "1px solid var(--line)", padding: `14px ${padX}px 16px`, background: "#fff" }}>{footer}</div>}
       </div>
     </div>
   );
@@ -430,4 +449,4 @@ const fmtHours = (h) => {
   return (neg ? "-" : "") + (mm ? `${hh}h${String(mm).padStart(2, "0")}` : `${hh}h`);
 };
 
-export { useState, useRef, useMemo, useEffect, useCallback, onlyDigits, groupVND, toNum, fmtVND, fmtNum, fmtShort, fmtDate, PAYERS, VAT_RATE, I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours };
+export { useState, useRef, useMemo, useEffect, useCallback, useIsMobile, onlyDigits, groupVND, toNum, fmtVND, fmtNum, fmtShort, fmtDate, PAYERS, VAT_RATE, I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours };

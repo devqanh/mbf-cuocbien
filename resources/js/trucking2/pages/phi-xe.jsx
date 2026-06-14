@@ -29,11 +29,13 @@ function TripBatchesApp() {
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
       <header style={{ background: "#fff", borderBottom: "1px solid var(--line)", padding: "0 22px", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, height: 58 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 9, background: "var(--accent)", color: "#fff", display: "grid", placeItems: "center" }}><I.truck /></div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 15.5, fontWeight: 700, lineHeight: 1.1 }}>Phí xe nội bộ</div>
-            <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Lịch sử các kỳ tính phí chuyến (theo ngày xe ra)</div>
+        <div className="trk-head" style={{ display: "flex", alignItems: "center", gap: 12, height: 58 }}>
+          <div className="trk-head-lead" style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
+            <div style={{ width: 32, height: 32, flexShrink: 0, borderRadius: 9, background: "var(--accent)", color: "#fff", display: "grid", placeItems: "center" }}><I.truck /></div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 15.5, fontWeight: 700, lineHeight: 1.1 }}>Phí xe nội bộ</div>
+              <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Lịch sử các kỳ tính phí chuyến (theo ngày xe ra)</div>
+            </div>
           </div>
           {T.canEdit && <Btn variant="primary" onClick={() => { window.location.href = ROUTES.create; }}><I.plus /> Tạo kỳ phí xe</Btn>}
         </div>

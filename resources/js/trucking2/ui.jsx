@@ -1,6 +1,6 @@
 import React from "react";
 const { useState, useMemo, useEffect } = React;
-import { I, fmtVND, fmtNum, fmtShort, fmtDate, calcCost, calcRev, calcVeh, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn } from "@trk/lib.jsx";
+import { I, fmtVND, fmtNum, fmtShort, fmtDate, calcCost, calcRev, calcVeh, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, useIsMobile } from "@trk/lib.jsx";
 import { CostPopup, RevenuePopup, CostPopupICD, RevenuePopupICD, InfoPopup, ConfigPopup, PriceList, TRACK_COLORS, colorHex } from "@trk/pop.jsx";
 
 /* components dùng chung — export ra window.__ui */
@@ -506,14 +506,16 @@ function SavedStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUrl, 
   const recalcDiff = detailById && (st.lines || []).some((l) => { const d = detailById[l.id]; return d && d.found && (d.phaiThu || 0) !== (l.phaiThu || 0); });
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
-      <div className="ke-noprint" style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 22px", background: "#fff", borderBottom: "1px solid var(--line)" }}>
-        <a href={backUrl} title="Về danh sách bảng kê"
-          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", fontSize: 13, fontWeight: 600, color: "var(--ink-2)", textDecoration: "none", border: "1px solid var(--line)", borderRadius: 9 }}>
-          <span style={{ transform: "rotate(180deg)", display: "inline-flex" }}><I.arrow /></span> Bảng kê
-        </a>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.01em" }}>Bảng kê cần thu</div>
-          <div className="tnum" style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{st.no} · {st.customer}</div>
+      <div className="ke-noprint trk-head" style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 22px", background: "#fff", borderBottom: "1px solid var(--line)" }}>
+        <div className="trk-head-lead" style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
+          <a href={backUrl} title="Về danh sách bảng kê"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0, padding: "7px 12px", fontSize: 13, fontWeight: 600, color: "var(--ink-2)", textDecoration: "none", border: "1px solid var(--line)", borderRadius: 9 }}>
+            <span style={{ transform: "rotate(180deg)", display: "inline-flex" }}><I.arrow /></span> Bảng kê
+          </a>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.01em" }}>Bảng kê cần thu</div>
+            <div className="tnum" style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{st.no} · {st.customer}</div>
+          </div>
         </div>
         {onRecalc && <button type="button" onClick={onRecalc} title="Tính lại phải thu từ dữ liệu lô hàng hiện tại"
           style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 15px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: recalcDiff ? "#fff" : "var(--ink-2)", background: recalcDiff ? "var(--warn)" : "#fff", border: recalcDiff ? "none" : "1px solid var(--line)", borderRadius: 9 }}>
@@ -538,6 +540,7 @@ function SavedStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUrl, 
 
 function BangGiaPage({ cfg, setCfg, onImported, loadPrices }) {
   const { useState, useEffect } = React;
+  const isMobile = useIsMobile();
   const customers = cfg.customers || [];
   const info = cfg.customerInfo || {};
   const [sel, setSel] = useState(customers[0] || null);
@@ -555,21 +558,21 @@ function BangGiaPage({ cfg, setCfg, onImported, loadPrices }) {
   const setPrice = (arr) => setCfg("customerInfo", { ...info, [cur]: { ...data, priceList: arr } });
   const priceImported = (arr) => (onImported ? onImported(cur, arr) : setPrice(arr));
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
-      {/* customer list */}
-      <div style={{ width: 240, flexShrink: 0, borderRight: "1px solid var(--line)", background: "#fff", overflowY: "auto", padding: "14px 12px" }}>
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: isMobile ? "column" : "row", overflow: "hidden" }}>
+      {/* customer list — dọc trên desktop, thanh chọn ngang cuộn được trên mobile */}
+      <div style={{ width: isMobile ? "100%" : 240, flexShrink: 0, borderRight: isMobile ? "none" : "1px solid var(--line)", borderBottom: isMobile ? "1px solid var(--line)" : "none", background: "#fff", overflowY: isMobile ? "visible" : "auto", overflowX: isMobile ? "auto" : "visible", padding: isMobile ? "10px 12px" : "14px 12px" }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em", padding: "2px 8px 8px" }}>Khách hàng</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+        <div style={{ display: "flex", flexDirection: isMobile ? "row" : "column", gap: isMobile ? 7 : 1, flexWrap: isMobile ? "nowrap" : "wrap" }}>
           {customers.map((name) => {
             const active = cur === name;
             const ci = info[name] || {};
             const n = Array.isArray(ci.priceList) ? ci.priceList.length : (ci.priceCount || 0);
             return (
               <button key={name} type="button" onClick={() => setSel(name)}
-                style={{ textAlign: "left", border: "none", cursor: "pointer", borderRadius: 8, padding: "9px 11px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
-                  background: active ? "var(--accent-weak)" : "transparent", color: active ? "var(--accent)" : "var(--ink)", fontWeight: active ? 600 : 400, fontSize: 13.5 }}
-                onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = "var(--line-2)"; }}
-                onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = "transparent"; }}>
+                style={{ textAlign: "left", border: isMobile ? "1px solid var(--line)" : "none", cursor: "pointer", borderRadius: isMobile ? 999 : 8, padding: "9px 11px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexShrink: 0, whiteSpace: "nowrap",
+                  background: active ? "var(--accent-weak)" : (isMobile ? "#fff" : "transparent"), color: active ? "var(--accent)" : "var(--ink)", fontWeight: active ? 600 : 400, fontSize: 13.5 }}
+                onMouseEnter={(e) => { if (!active && !isMobile) e.currentTarget.style.background = "var(--line-2)"; }}
+                onMouseLeave={(e) => { if (!active && !isMobile) e.currentTarget.style.background = "transparent"; }}>
                 <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
                 {n > 0 && <span className="tnum" style={{ fontSize: 11, fontWeight: 600, color: active ? "var(--accent)" : "var(--ink-4)", background: active ? "#fff" : "var(--line-2)", padding: "1px 7px", borderRadius: 999 }}>{n}</span>}
               </button>
@@ -579,7 +582,7 @@ function BangGiaPage({ cfg, setCfg, onImported, loadPrices }) {
         </div>
       </div>
       {/* price list */}
-      <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "24px 28px 40px" }}>
+      <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: isMobile ? "16px 14px 40px" : "24px 28px 40px" }}>
         {cur ? (
           <div style={{ maxWidth: 880, margin: "0 auto" }}>
             <div style={{ marginBottom: 16 }}>
@@ -601,10 +604,12 @@ function BangGiaPage({ cfg, setCfg, onImported, loadPrices }) {
 }
 
 function KePage({ ke, onNew, onOpen }) {
+  const isMobile = useIsMobile();
+  const cols = "150px 1fr 120px 1fr 150px 150px";
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", padding: "20px 22px 24px", overflow: "auto" }}>
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", padding: isMobile ? "16px 14px 24px" : "20px 22px 24px", overflow: "auto" }}>
       <div style={{ maxWidth: 1000, width: "100%", margin: "0 auto" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 18 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 18, flexWrap: "wrap" }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em" }}>Bảng kê cần thu</h1>
             <div style={{ fontSize: 13, color: "var(--ink-3)", marginTop: 3 }}>{ke.length} bảng kê đã tạo</div>
@@ -614,14 +619,41 @@ function KePage({ ke, onNew, onOpen }) {
             <I.plus /> Tạo bảng kê mới
           </button>
         </div>
+        {/* ===== Mobile: card list ===== */}
+        {isMobile && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {ke.length === 0 && <div style={{ padding: "44px", textAlign: "center", color: "var(--ink-4)", fontSize: 13.5, background: "#fff", border: "1px solid var(--line)", borderRadius: 12 }}>Chưa có bảng kê nào. Bấm “Tạo bảng kê mới” để bắt đầu.</div>}
+            {ke.slice().reverse().map((st) => {
+              const daTT = (st.payments || []).reduce((a, p) => a + (parseInt((p.amount || "0").toString().replace(/[^\d]/g, ""), 10) || 0), 0);
+              const con = st.tongThu - daTT;
+              return (
+                <button key={st.id} type="button" onClick={() => onOpen(st)}
+                  style={{ width: "100%", textAlign: "left", background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px", cursor: "pointer", boxShadow: "0 1px 2px rgba(16,19,23,.04)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
+                    <span className="tnum" style={{ fontWeight: 700, color: "var(--accent)", fontSize: 14 }}>{st.no}</span>
+                    <span className="tnum" style={{ color: "var(--ink-3)", fontSize: 12.5 }}>{fmtDate(st.date)}</span>
+                  </div>
+                  <div style={{ fontWeight: 600, fontSize: 14.5, marginTop: 4 }}>{st.customer}</div>
+                  <div className="tnum" style={{ color: "var(--ink-4)", fontSize: 12, marginTop: 2 }}>{(st.from || st.to) ? `Cont ra: ${fmtDate(st.from) || "…"} – ${fmtDate(st.to) || "…"}` : "—"}</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 9, paddingTop: 9, borderTop: "1px solid var(--line-2)" }}>
+                    <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Tổng: <b className="tnum" style={{ color: "var(--ink)" }}>{fmtVND(st.tongThu)}</b></span>
+                    <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Còn: <b className="tnum" style={{ color: con > 0 ? "var(--warn)" : "var(--good)" }}>{fmtVND(Math.max(0, con))}</b></span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {/* ===== Desktop: grid table ===== */}
+        {!isMobile && (
         <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "150px 1fr 120px 1fr 150px 150px", gap: 12, padding: "11px 16px", background: "#fafbfc", borderBottom: "1px solid var(--line)", fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+          <div style={{ display: "grid", gridTemplateColumns: cols, gap: 12, padding: "11px 16px", background: "#fafbfc", borderBottom: "1px solid var(--line)", fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
             <div>Số bảng kê</div><div>Khách hàng</div><div>Ngày lập</div><div>Kỳ · cont ra (từ – đến)</div><div style={{ textAlign: "right" }}>Tổng phải thu</div><div style={{ textAlign: "right" }}>Còn lại</div>
           </div>
           {ke.length === 0 && <div style={{ padding: "44px", textAlign: "center", color: "var(--ink-4)", fontSize: 13.5 }}>Chưa có bảng kê nào. Bấm “Tạo bảng kê mới” để bắt đầu.</div>}
           {ke.slice().reverse().map((st) => (
             <button key={st.id} type="button" onClick={() => onOpen(st)}
-              style={{ width: "100%", textAlign: "left", display: "grid", gridTemplateColumns: "150px 1fr 120px 1fr 150px 150px", gap: 12, alignItems: "center", padding: "12px 16px", borderBottom: "1px solid var(--line-2)", background: "transparent", border: "none", borderBottomStyle: "solid", cursor: "pointer", fontSize: 13.5 }}
+              style={{ width: "100%", textAlign: "left", display: "grid", gridTemplateColumns: cols, gap: 12, alignItems: "center", padding: "12px 16px", borderBottom: "1px solid var(--line-2)", background: "transparent", border: "none", borderBottomStyle: "solid", cursor: "pointer", fontSize: 13.5 }}
               onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent-weak-2)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
               <span className="tnum" style={{ fontWeight: 600, color: "var(--accent)" }}>{st.no}</span>
@@ -635,6 +667,7 @@ function KePage({ ke, onNew, onOpen }) {
             </button>
           ))}
         </div>
+        )}
       </div>
     </div>
   );

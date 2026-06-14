@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import "@trk/shared.js";
 
 const { useState, useEffect, useRef } = React;
-import { I, Money, Num, Txt, Combo, DateField, Btn, Modal, fmtVND, fmtNum, fmtDate, toNum } from "@trk/lib.jsx";
+import { I, Money, Num, Txt, Combo, DateField, Btn, Modal, fmtVND, fmtNum, fmtDate, toNum, useIsMobile } from "@trk/lib.jsx";
 import { ChkBox } from "@trk/pop.jsx";
 
 const num = (v) => parseFloat((v ?? "").toString().replace(/[^\d.-]/g, "")) || 0;
@@ -104,6 +104,7 @@ function DeprecTab({ rows, onChange }) {
 
 /* ---- Tab: Thời gian sử dụng xe ---- */
 function UsageTab({ rows, onChange, drivers }) {
+  const isMobile = useIsMobile();
   const set = (i, np) => onChange(rows.map((r, j) => (j === i ? { ...r, ...np } : r)));
   const add = () => onChange([...(rows || []), { id: Date.now() + Math.random(), driver: "", from: "", to: "", note: "" }]);
   const del = (i) => onChange(rows.filter((_, j) => j !== i));
@@ -112,7 +113,7 @@ function UsageTab({ rows, onChange, drivers }) {
       <div style={{ fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.5 }}>Gán lái xe (danh mục Lái xe) theo khoảng thời gian dùng xe — để sau tính lương theo phí tuyến đường.</div>
       {(rows || []).length === 0 && <div style={{ padding: "12px 2px", fontSize: 12.5, color: "var(--ink-4)" }}>Chưa có lịch sử — bấm <b>+ Thêm lượt sử dụng</b>.</div>}
       {(rows || []).map((r, i) => (
-        <div key={r.id || i} style={{ display: "grid", gridTemplateColumns: "1fr 150px 150px 1fr 34px", gap: 10, alignItems: "end", ...card }}>
+        <div key={r.id || i} style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 150px 150px 1fr 34px", gap: 10, alignItems: "end", ...card }}>
           <div>{lbl("Lái xe")}<Combo value={r.driver} onChange={(x) => set(i, { driver: x })} options={drivers || []} placeholder="Chọn lái xe…" /></div>
           <div>{lbl("Từ ngày")}<DateField value={r.from} onChange={(x) => set(i, { from: x })} /></div>
           <div>{lbl("Đến ngày")}<DateField value={r.to} onChange={(x) => set(i, { to: x })} /></div>
@@ -245,6 +246,7 @@ function CostModal({ data, isNew, onChange, onSave, onClose, costTypes = [], onU
 
 function CostTab({ rows, onChange, costTypes, saving, onUploadPhotos, highlightId, onCancel }) {
   const { useState } = React;
+  const isMobile = useIsMobile();
   const [filter, setFilter] = useState("all");   // all | fixed | recurring | due
   const [edit, setEdit] = useState(null);         // { i, d }  (i < 0 = thêm mới)
   const [payIdx, setPayIdx] = useState(null);     // index phiếu đang duyệt thanh toán
@@ -326,8 +328,8 @@ function CostTab({ rows, onChange, costTypes, saving, onUploadPhotos, highlightI
       {all.length > 0 && shown === 0 && <div style={{ padding: "20px 4px", textAlign: "center", fontSize: 13, color: "var(--ink-4)" }}>Không có phiếu chi khớp bộ lọc.</div>}
 
       {all.length > 0 && shown > 0 && (
-        <div style={{ border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <div style={{ border: "1px solid var(--line)", borderRadius: 12, overflow: "auto", WebkitOverflowScrolling: "touch" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: isMobile ? 720 : undefined }}>
             <thead><tr style={{ background: "#fafbfc" }}>
               {th("# Hóa đơn", 104)}{th("Khoản chi · KM")}{th("Ngày chi", 104)}{th("Số tiền", 124, "right")}{th("Hạn & trạng thái", 200)}{th("Duyệt · TT", 132, "center")}{th("", 74, "center")}
             </tr></thead>
@@ -468,6 +470,7 @@ function InfoTab({ info, onChange, canEdit, docsProps }) {
 
 /* ---- Tab: Định mức km theo loại chi phí (chặn tạo yêu cầu chi quá sớm) ---- */
 function AllowanceTab({ rows, onChange, costItems, addCostItem }) {
+  const isMobile = useIsMobile();
   const set = (i, np) => onChange(rows.map((r, j) => (j === i ? { ...r, ...np } : r)));
   const add = () => onChange([...(rows || []), { costItem: "", km: "" }]);
   const del = (i) => onChange(rows.filter((_, j) => j !== i));
@@ -478,7 +481,7 @@ function AllowanceTab({ rows, onChange, costItems, addCostItem }) {
       </div>
       {(rows || []).length === 0 && <div style={{ padding: "10px 2px", fontSize: 12.5, color: "var(--ink-4)" }}>Chưa có định mức — bấm <b>+ Thêm định mức</b>.</div>}
       {(rows || []).map((r, i) => (
-        <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 170px 40px", gap: 10, alignItems: "end", ...card }}>
+        <div key={i} style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 170px 40px", gap: 10, alignItems: "end", ...card }}>
           <div>{lbl("Loại chi phí")}<Combo value={r.costItem} onChange={(x) => set(i, { costItem: x })} options={costItems || []} onCreate={(v) => { set(i, { costItem: v }); addCostItem && addCostItem(v); }} placeholder="Chọn loại chi phí…" /></div>
           <div>{lbl("Định mức (km)")}<Num value={r.km} onChange={(x) => set(i, { km: x })} suffix="km" /></div>
           {delBtn(() => del(i))}
@@ -490,6 +493,7 @@ function AllowanceTab({ rows, onChange, costItems, addCostItem }) {
 }
 
 function FleetApp() {
+  const isMobile = useIsMobile();
   const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
   const api = (method, url, body) => window.trkApi(method, url, body);
   const canEdit = !!T.canEdit;
@@ -681,7 +685,7 @@ function FleetApp() {
 
     return (
       <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)", overflow: "auto" }}>
-        <div style={{ maxWidth: 1120, width: "100%", margin: "0 auto", padding: "22px" }}>
+        <div style={{ maxWidth: 1120, width: "100%", margin: "0 auto", padding: isMobile ? "16px 14px" : "22px" }}>
           <div style={{ marginBottom: 14 }}>
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em" }}>Quản lý xe</h1>
             <div style={{ fontSize: 13, color: "var(--ink-3)", marginTop: 3 }}>{vehicles.length} xe nội bộ (MBF). Bấm vào xe để xem thông tin, khấu hao, chi phí.</div>
@@ -759,7 +763,7 @@ function FleetApp() {
             </div>
             <div style={{ flex: 1 }} />
             <input value={vQuery} onChange={(e) => setVQuery(e.target.value)} placeholder="Tìm biển số…"
-              style={{ width: 220, padding: "8px 12px", fontSize: 13.5, border: "1px solid var(--line)", borderRadius: 9, outline: "none", background: "#fff" }} />
+              style={{ width: isMobile ? "100%" : 220, flex: isMobile ? "1 1 100%" : "0 0 auto", padding: "8px 12px", fontSize: 13.5, border: "1px solid var(--line)", borderRadius: 9, outline: "none", background: "#fff" }} />
           </div>
 
           {vehicles.length === 0
@@ -861,25 +865,27 @@ function FleetApp() {
   const TABS = [["info", "Thông tin xe"], ["allowance", "Định mức"], ["deprec", "Khấu hao"], ["usage", "Thời gian sử dụng"], ["cost", "Chi phí"]];
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 22px", background: "#fff", borderBottom: "1px solid var(--line)" }}>
-        <button type="button" onClick={back} title="Về danh sách xe"
-          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", fontSize: 13, fontWeight: 600, color: "var(--ink-2)", border: "1px solid var(--line)", borderRadius: 9, background: "#fff", cursor: "pointer" }}>
-          <span style={{ transform: "rotate(180deg)", display: "inline-flex" }}><I.arrow /></span> Danh sách xe
-        </button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 16, fontWeight: 700 }} className="tnum">{detail ? detail.plate : "…"}{detail && detail.axle ? " · " + detail.axle + " cầu" : ""}</div>
-          <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Xe MBF nội bộ</div>
+      <div className="trk-head" style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 22px", background: "#fff", borderBottom: "1px solid var(--line)" }}>
+        <div className="trk-head-lead" style={{ display: "flex", alignItems: "center", gap: 14, flex: 1, minWidth: 0 }}>
+          <button type="button" onClick={back} title="Về danh sách xe"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0, padding: "7px 12px", fontSize: 13, fontWeight: 600, color: "var(--ink-2)", border: "1px solid var(--line)", borderRadius: 9, background: "#fff", cursor: "pointer" }}>
+            <span style={{ transform: "rotate(180deg)", display: "inline-flex" }}><I.arrow /></span> Danh sách xe
+          </button>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 16, fontWeight: 700 }} className="tnum">{detail ? detail.plate : "…"}{detail && detail.axle ? " · " + detail.axle + " cầu" : ""}</div>
+            <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Xe MBF nội bộ</div>
+          </div>
         </div>
         {costSaving && <span style={{ fontSize: 12, color: "var(--ink-4)", display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 13, height: 13, border: "2px solid var(--line)", borderTopColor: "var(--accent)", borderRadius: "50%", display: "inline-block", animation: "trk-spin .7s linear infinite" }} />Đang lưu phiếu chi…</span>}
         {dirty && <span style={{ fontSize: 12, color: "var(--warn)", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 5 }} title="Thay đổi chưa được lưu — bấm Lưu trước khi rời trang">
           <i className="bi bi-exclamation-circle-fill" /> Chưa lưu — bấm Lưu</span>}
         {canEdit && dirty && <Btn variant="primary" onClick={save} disabled={saving}>{saving ? "Đang lưu…" : "Lưu"}</Btn>}
       </div>
-      <div style={{ display: "flex", gap: 4, padding: "10px 22px 0", background: "#fff", borderBottom: "1px solid var(--line)" }}>
+      <div style={{ display: "flex", gap: 4, padding: "10px 22px 0", background: "#fff", borderBottom: "1px solid var(--line)", overflowX: "auto", WebkitOverflowScrolling: "touch", whiteSpace: "nowrap" }}>
         {TABS.map(([k, t]) => {
           const on = tab === k;
           return <button key={k} type="button" onClick={() => goTab(k)}
-            style={{ border: "none", borderBottom: on ? "2px solid var(--accent)" : "2px solid transparent", background: "transparent", padding: "8px 12px 11px", fontSize: 13.5, fontWeight: 600, color: on ? "var(--accent)" : "var(--ink-3)", cursor: "pointer" }}>{t}</button>;
+            style={{ border: "none", flexShrink: 0, borderBottom: on ? "2px solid var(--accent)" : "2px solid transparent", background: "transparent", padding: "8px 12px 11px", fontSize: 13.5, fontWeight: 600, color: on ? "var(--accent)" : "var(--ink-3)", cursor: "pointer" }}>{t}</button>;
         })}
       </div>
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "22px" }}>

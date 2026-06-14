@@ -1,6 +1,6 @@
 import React from "react";
 const { useState, useRef, useMemo, useEffect } = React;
-import { I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, fmtVND, fmtNum, fmtShort, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum } from "@trk/lib.jsx";
+import { I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, fmtVND, fmtNum, fmtShort, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, useIsMobile } from "@trk/lib.jsx";
 import { DTField, Field, DriverSpendRows, VatLine, ItemRows, ChiHoRows, DoanhThuRows, ChkBox, TRACK_COLORS, SWATCHES, colorHex, FlagPicker, CostLineRows, PaymentRows, Seg } from "./shared.jsx";
 
 const CFG_GROUPS = [
@@ -82,6 +82,7 @@ function RouteFees({ rows = [], onChange, warehouses = [], isDup = () => false }
 /* ===================== BẢNG GIÁ DẦU (repeater theo ngày) ===================== */
 
 function FuelPrices({ rows = [], onChange }) {
+  const isMobile = useIsMobile();
   const set = (i, np) => onChange(rows.map((r, j) => (j === i ? { ...r, ...np } : r)));
   const add = () => onChange([...(rows || []), { id: Date.now() + Math.random(), from: "", to: "", price: "", note: "" }]);
   const del = (i) => onChange(rows.filter((_, j) => j !== i));
@@ -93,7 +94,7 @@ function FuelPrices({ rows = [], onChange }) {
       </div>
       {(rows || []).length === 0 && <div style={{ padding: "12px 2px", fontSize: 12.5, color: "var(--ink-4)" }}>Chưa có mốc giá dầu nào — bấm <b>+ Thêm mốc giá</b>.</div>}
       {(rows || []).map((r, i) => (
-        <div key={r.id || i} style={{ display: "grid", gridTemplateColumns: "150px 150px 160px 1fr 34px", gap: 10, alignItems: "end", border: "1px solid var(--line)", borderRadius: 10, padding: "10px 12px", background: "#fafbfc" }}>
+        <div key={r.id || i} style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "150px 150px 160px 1fr 34px", gap: 10, alignItems: "end", border: "1px solid var(--line)", borderRadius: 10, padding: "10px 12px", background: "#fafbfc" }}>
           <div>{lbl("Từ ngày")}<DateField value={r.from} onChange={(x) => set(i, { from: x })} /></div>
           <div>{lbl(<>Đến ngày <span style={{ color: "var(--ink-4)", fontWeight: 400 }}>(tùy chọn)</span></>)}<DateField value={r.to} onChange={(x) => set(i, { to: x })} /></div>
           <div>{lbl("Đơn giá (đ/lít)")}<Money value={r.price} onChange={(x) => set(i, { price: x })} /></div>
@@ -122,6 +123,7 @@ const CUST_FIELDS = [
 ];
 
 function CustomerManager({ cfg, setCfg }) {
+  const isMobile = useIsMobile();
   const customers = cfg.customers || [];
   const info = cfg.customerInfo || {};
   const [sel, setSel] = useState(customers[0] || null);
@@ -164,9 +166,9 @@ function CustomerManager({ cfg, setCfg }) {
       onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
   );
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "176px 1fr", gap: 16, minHeight: 360 }}>
+    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "176px 1fr", gap: 16, minHeight: isMobile ? 0 : 360 }}>
       {/* customer list */}
-      <div style={{ borderRight: "1px solid var(--line-2)", paddingRight: 12, display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <div style={{ borderRight: isMobile ? "none" : "1px solid var(--line-2)", borderBottom: isMobile ? "1px solid var(--line-2)" : "none", paddingRight: isMobile ? 0 : 12, paddingBottom: isMobile ? 12 : 0, display: "flex", flexDirection: "column", minHeight: 0 }}>
         <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
           <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Thêm khách…"
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
@@ -217,7 +219,7 @@ function CustomerManager({ cfg, setCfg }) {
               </button>
             ); })()}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
             {CUST_FIELDS.map((f) => (
               <Field key={f.k} label={f.label}>{inp(data[f.k], (v) => setField(f.k, v), f.ph)}</Field>
             ))}
@@ -268,6 +270,7 @@ function tenureLabel(joined) {
 const DOC_TYPES = ["CCCD mặt trước", "CCCD mặt sau", "Bằng lái xe", "Khác"];
 
 function DriversManager({ cfg, setCfg }) {
+  const isMobile = useIsMobile();
   const drivers = cfg.drivers || [];
   const [sel, setSel] = useState(0);
   const [draft, setDraft] = useState("");
@@ -324,9 +327,9 @@ function DriversManager({ cfg, setCfg }) {
   );
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 16, minHeight: 380 }}>
+    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "200px 1fr", gap: 16, minHeight: isMobile ? 0 : 380 }}>
       {/* danh sách lái xe */}
-      <div style={{ borderRight: "1px solid var(--line-2)", paddingRight: 12, display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <div style={{ borderRight: isMobile ? "none" : "1px solid var(--line-2)", borderBottom: isMobile ? "1px solid var(--line-2)" : "none", paddingRight: isMobile ? 0 : 12, paddingBottom: isMobile ? 12 : 0, display: "flex", flexDirection: "column", minHeight: 0 }}>
         <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
           <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Thêm lái xe…"
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
@@ -375,7 +378,7 @@ function DriversManager({ cfg, setCfg }) {
           </div>
 
           {/* ngày sinh + ngày vào + thâm niên */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, alignItems: "end" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr", gap: 12, alignItems: "end" }}>
             <div>{lbl("Ngày sinh")}<DateField value={cur.birthday} onChange={(v) => setDriver({ birthday: v })} /></div>
             <div>{lbl("Ngày vào công ty")}<DateField value={cur.joinedDate} onChange={(v) => setDriver({ joinedDate: v })} /></div>
             <div>{lbl("Thâm niên (tự tính)")}<div style={{ padding: "8px 11px", fontSize: 13.5, fontWeight: 600, color: cur.joinedDate ? "var(--accent)" : "var(--ink-4)", background: "var(--bg)", border: "1px solid var(--line)", borderRadius: 9 }} className="tnum">{tenureLabel(cur.joinedDate) || "—"}</div></div>
@@ -386,7 +389,7 @@ function DriversManager({ cfg, setCfg }) {
             {lbl("Tài khoản ngân hàng")}
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {(cur.banks || []).map((b, i) => (
-                <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr 1fr 32px", gap: 8, alignItems: "center" }}>
+                <div key={i} style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr 32px" : "1fr 1.2fr 1fr 32px", gap: 8, alignItems: "center" }}>
                   <Txt value={b.bank} onChange={(v) => setBank(i, { bank: v })} placeholder="Ngân hàng (VD: VCB)" />
                   <Txt value={b.number} onChange={(v) => setBank(i, { number: v })} placeholder="Số tài khoản" />
                   <Txt value={b.holder} onChange={(v) => setBank(i, { holder: v })} placeholder="Chủ tài khoản" />
@@ -442,6 +445,7 @@ function DriversManager({ cfg, setCfg }) {
 }
 
 function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap, counts = {}, loading = false }) {
+  const isMobile = useIsMobile();
   const [draft, setDraft] = useState("");
   const list = cfg[sel] || [];
   const locked = new Set(cfg.locationLocked || []);
@@ -504,16 +508,19 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
     if (g && g.fleet) { drop("vehicleType", vehType); drop("vehicleAxle", vehAxle); }
   };
   return (
-      <div style={{ display: "grid", gridTemplateColumns: "210px 1fr", gap: 18, padding: "14px 0 4px", minHeight: 380 }}>
-        {/* group list — sticky + cuộn nội bộ khi danh sách dài (nhiều danh mục) */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 2, borderRight: "1px solid var(--line-2)", paddingRight: 14,
-          position: "sticky", top: 8, alignSelf: "start", maxHeight: "calc(100vh - 150px)", overflowY: "auto" }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "210px 1fr", gap: isMobile ? 12 : 18, padding: "14px 0 4px", minHeight: isMobile ? 0 : 380 }}>
+        {/* group list — dọc/sticky trên desktop; thanh pill cuộn ngang trên mobile */}
+        <div style={{ display: "flex", flexDirection: isMobile ? "row" : "column", gap: isMobile ? 7 : 2,
+          borderRight: isMobile ? "none" : "1px solid var(--line-2)", borderBottom: isMobile ? "1px solid var(--line-2)" : "none",
+          paddingRight: isMobile ? 0 : 14, paddingBottom: isMobile ? 12 : 0,
+          position: isMobile ? "static" : "sticky", top: 8, alignSelf: "start",
+          maxHeight: isMobile ? "none" : "calc(100vh - 150px)", overflowY: isMobile ? "visible" : "auto", overflowX: isMobile ? "auto" : "visible", flexWrap: "nowrap" }}>
           {CFG_GROUPS.map((grp) => {
             const active = sel === grp.key;
             return (
               <button key={grp.key} type="button" onClick={() => { setSel(grp.key); setDraft(""); }}
-                style={{ textAlign: "left", border: "none", cursor: "pointer", borderRadius: 9, padding: "9px 11px",
-                  background: active ? "var(--accent-weak)" : "transparent", transition: "background .12s" }}
+                style={{ textAlign: "left", border: isMobile ? "1px solid var(--line)" : "none", cursor: "pointer", borderRadius: isMobile ? 999 : 9, padding: "9px 11px", flexShrink: isMobile ? 0 : undefined, whiteSpace: isMobile ? "nowrap" : undefined,
+                  background: active ? "var(--accent-weak)" : (isMobile ? "#fff" : "transparent"), transition: "background .12s" }}
                 onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = "var(--line-2)"; }}
                 onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = "transparent"; }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>

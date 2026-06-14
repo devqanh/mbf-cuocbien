@@ -1,6 +1,6 @@
 import React from "react";
 const { useState, useRef, useMemo, useEffect } = React;
-import { I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, fmtVND, fmtNum, fmtShort, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum } from "@trk/lib.jsx";
+import { I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, fmtVND, fmtNum, fmtShort, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, useIsMobile } from "@trk/lib.jsx";
 import { DTField, Field, DriverSpendRows, VatLine, ItemRows, ChiHoRows, DoanhThuRows, ChkBox, TRACK_COLORS, SWATCHES, colorHex, FlagPicker, CostLineRows, PaymentRows, Seg } from "./shared.jsx";
 
 // Địa điểm dạng select2: giá trị = tên (giữ nguyên dữ liệu), nhãn = "Tên - Ký hiệu" để dễ nhận diện + tìm theo ký hiệu.
@@ -142,6 +142,7 @@ function RevenuePopup({ ship, patch, onSave, isDirty, onClose, cfg = {}, addCfg 
 /* ===================== ICD — CHI PHÍ CHUYẾN XE ===================== */
 
 function CostPopupICD({ ship, patch, onSave, isDirty, onClose, cfg = {}, addCfg }) {
+  const isMobile = useIsMobile();
   const v = ship.veh || {};
   const setV = (np) => patch({ veh: { ...v, ...np } });
   const tong = calcVehICD(v);
@@ -164,7 +165,7 @@ function CostPopupICD({ ship, patch, onSave, isDirty, onClose, cfg = {}, addCfg 
   return (
     <Modal title="Chi phí chuyến xe" subtitle={<>Lô <b style={{ color: "var(--ink-2)" }}>{ship.booking}</b> · {ship.customer}</>} onClose={onClose} footer={footer} width={760}>
       <Section title="Xe chạy">
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: "8px 0" }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, padding: "8px 0" }}>
           <Field label="Biển số xe" hint="danh mục"><Combo value={v.bienSo} onChange={(x) => setV({ bienSo: x })} options={cfg.vehicles || []} onCreate={(x) => addCfg && addCfg("vehicles", x)} placeholder="15C-123.45…" /></Field>
           <Field label="Lái xe" hint="danh mục"><Combo value={v.laiXe} onChange={(x) => setV({ laiXe: x })} options={cfg.drivers || []} onCreate={(x) => addCfg && addCfg("drivers", x)} placeholder="Chọn lái xe…" /></Field>
         </div>
@@ -178,7 +179,7 @@ function CostPopupICD({ ship, patch, onSave, isDirty, onClose, cfg = {}, addCfg 
         </div>
       </Section>
       <Section title="Nhiên liệu & quãng đường">
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, padding: "10px 0" }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr", gap: 12, padding: "10px 0" }}>
           <Field label="Quãng đường"><Num value={v.km} onChange={(x) => setV({ km: x })} suffix="km" /></Field>
           <Field label="Số lít"><Num value={v.lit} onChange={(x) => setV({ lit: x })} suffix="L" /></Field>
           <Field label="Đơn giá dầu"><Money value={v.donGia} onChange={(x) => setV({ donGia: x })} dim /></Field>
@@ -251,6 +252,7 @@ function RevenuePopupICD({ ship, patch, onSave, isDirty, onClose, cfg = {}, addC
 /* ===================== INFO EDIT POPUP (khách / cont / tuyến / lịch) ===================== */
 
 function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], onClose, onDelete, canDelete, isHph, cfg = {}, addCfg }) {
+  const isMobile = useIsMobile();
   const set = (np) => patch(np);
   const add = (k, v) => addCfg && addCfg(k, v);
   const hqFee = ((ship.cost && ship.cost.items) || []).some((it) => it.src === "thanhLyFee" && toNum(it.amount) > 0);
@@ -333,14 +335,14 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
 
       <Section title="Container">
         {isHph ? (
-          <div style={{ display: "grid", gridTemplateColumns: "120px 1fr 1.4fr", gap: 12, padding: "10px 0" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "120px 1fr 1.4fr", gap: 12, padding: "10px 0" }}>
             <Field label="Số lượng"><Num value={ship.qty} onChange={(x) => set({ qty: x })} /></Field>
             <Field label="Loại cont" hint="danh mục"><Combo value={ship.contType} onChange={(x) => set({ contType: x })} options={cfg.contTypes || []} onCreate={(v) => add("contTypes", v)} placeholder="40HC…" /></Field>
             <Field label="Số container"><Txt value={ship.contNo} onChange={(x) => set({ contNo: x })} placeholder="TGHU…" /></Field>
           </div>
         ) : (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr", gap: 12, padding: "10px 0 0" }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.2fr 1fr 1fr", gap: 12, padding: "10px 0 0" }}>
               <Field label="Số container"><Txt value={ship.contNo} onChange={(x) => set({ contNo: x })} placeholder="TGHU 123 4567" /></Field>
               <Field label="Loại cont" hint="danh mục"><Combo value={ship.contType} onChange={(x) => set({ contType: x })} options={cfg.contTypes || []} onCreate={(v) => add("contTypes", v)} placeholder="40HC…" /></Field>
               <Field label="Kho" hint="tối đa 3"><MultiCombo values={(ship.kho || "").split(/\s*,\s*/).filter(Boolean)} onChange={(arr) => set({ kho: arr.join(", ") })} options={cfg.warehouses || []} onCreate={(v) => add("warehouses", v)} max={3} placeholder="Chọn kho (tối đa 3)…" /></Field>
@@ -394,7 +396,7 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
         </div>
         {extHired && (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 12, padding: "10px 0 4px", alignItems: "end" }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "220px 1fr", gap: 12, padding: "10px 0 4px", alignItems: "end" }}>
               <Field label="Số tiền (cước xe ngoài)"><Money value={extLine.amount} onChange={(x) => setExt({ amount: x })} dim /></Field>
               <Field label="Ghi chú thông tin nhà xe"><Txt value={extLine.note} onChange={(x) => setExt({ note: x })} placeholder="Tên nhà xe, SĐT, biển số…" /></Field>
             </div>
@@ -438,7 +440,7 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
         return (
           <Section title="Free time & kết nối">
             <div style={{ fontSize: 11.5, color: "var(--ink-4)", padding: "2px 0 6px" }}>Free time = Giờ xe ra − (Giờ đến kế hoạch hoặc Giờ xe đến, lấy giờ muộn hơn). Ngưỡng <b style={{ color: "var(--ink-3)" }}>{ft ? ft.threshold : (cfg.freeTimeHours || 4)}h</b> chỉnh trong Cấu hình. Có thể để trống nếu chưa có giờ.</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, padding: "4px 0 6px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr", gap: 12, padding: "4px 0 6px" }}>
               <Field label="Giờ đến kế hoạch"><DTField value={ship.gioDenDuKien} onChange={(x) => set({ gioDenDuKien: x })} /></Field>
               <Field label="Giờ xe đến"><DTField value={ship.gioXeDen} onChange={(x) => set({ gioXeDen: x })} /></Field>
               <Field label="Giờ xe ra">{raMode === "other"

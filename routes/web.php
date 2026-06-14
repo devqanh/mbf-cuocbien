@@ -5,6 +5,7 @@ use App\Http\Controllers\Auth\TwoFactorChallengeController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RoleController;
+use App\Http\Controllers\SystemSettingController;
 use App\Http\Controllers\ShipmentController;
 use App\Http\Controllers\TaskCommentController;
 use App\Http\Controllers\TaskController;
@@ -265,5 +266,12 @@ Route::middleware('auth')->group(function () {
     });
     Route::middleware('permission:roles.delete')->group(function () {
         Route::delete('/roles/{role}', [RoleController::class, 'destroy'])->name('roles.destroy');
+    });
+
+    // ===== Cài đặt hệ thống (chung) =====
+    Route::middleware('permission:system.settings')->group(function () {
+        Route::get ('/system-settings',      [SystemSettingController::class, 'index'])->name('system.settings');
+        Route::put ('/system-settings',      [SystemSettingController::class, 'update'])->name('system.settings.update');
+        Route::post('/system-settings/test', [SystemSettingController::class, 'test'])->name('system.settings.test');
     });
 });

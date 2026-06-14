@@ -51,5 +51,30 @@
 /* tích hợp layout app */
 main.app-body{padding:0 !important;}
 #trk-root{overflow:hidden;background:var(--bg);}
+body{ -webkit-text-size-adjust:100%; }
+
+/* ============================ MOBILE (≤640px) ============================
+   Trang React dùng inline-style nên không thể media-query từng phần tử;
+   ở đây ép các quy tắc nền tảng (đè inline nhờ !important) cho toàn bộ
+   feature page. KHÔNG ảnh hưởng trang Yêu cầu chi (blade riêng, không nạp file này). */
+@media (max-width: 640px) {
+  /* iOS Safari tự zoom khi focus input <16px → ép tối thiểu 16px */
+  #trk-root input:not([type=checkbox]):not([type=radio]),
+  #trk-root select,
+  #trk-root textarea { font-size: 16px !important; }
+
+  /* Bảng rộng: luôn cho cuộn ngang mượt, tránh "kẹt" nội dung */
+  #trk-root table { -webkit-overflow-scrolling: touch; }
+
+  /* Thanh cuộn mảnh hơn cho cảm ứng */
+  ::-webkit-scrollbar { height: 7px; width: 7px; }
+
+  /* Header trang chi tiết (back + tiêu đề + nút) — xuống dòng gọn:
+     hàng 1 = back + tiêu đề (.trk-head-lead chiếm full), hàng 2 = các nút. */
+  .trk-head { flex-wrap: wrap !important; height: auto !important; min-height: 56px; row-gap: 10px; padding-top: 9px; padding-bottom: 9px; align-items: flex-start !important; }
+  .trk-head-lead { flex: 1 1 100% !important; }
+  /* Nút trong header chi tiết: cho phép co lại, không tràn */
+  .trk-head > button, .trk-head > a { flex: 0 1 auto; }
+}
 </style>
 @endverbatim

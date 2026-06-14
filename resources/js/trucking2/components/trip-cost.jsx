@@ -1,5 +1,5 @@
 import React from "react";
-import { I, Money, Num, Txt, Combo, fmtVND, fmtNum, fmtDate } from "@trk/lib.jsx";
+import { I, Money, Num, Txt, Combo, fmtVND, fmtNum, fmtDate, useIsMobile } from "@trk/lib.jsx";
 
 // tiền tệ thô → số (chấp nhận "1.200.000", 1200000, "")
 export const n = (v) => parseFloat((v ?? "").toString().replace(/[^\d.-]/g, "")) || 0;
@@ -123,25 +123,32 @@ function EditCol({ title, color, highlight, total, children }) {
 }
 
 function ExtrasRepeater({ extras = [], onChange, readOnly, accent, addLabel = "Thêm phí khác", compact, nameOptions }) {
+  const isMobile = useIsMobile();
   const set = (i, np) => onChange(extras.map((e, j) => (j === i ? { ...e, ...np } : e)));
   const add = () => onChange([...(extras || []), { name: "", amount: "", note: "" }]);
   const del = (i) => onChange(extras.filter((_, j) => j !== i));
   const aBg = accent ? "#fef3c7" : "var(--accent-weak)"; const aFg = accent || "var(--accent)";
-  const grid = compact ? (readOnly ? "1fr 110px" : "1fr 110px 28px") : (readOnly ? "1fr 130px 1fr" : "1fr 130px 1fr 30px");
+  // Mobile: bỏ cột ghi chú khỏi hàng (tên + tiền + xóa) cho dễ thao tác
+  const grid = compact ? (readOnly ? "1fr 110px" : "1fr 110px 28px")
+    : isMobile ? (readOnly ? "1fr 120px" : "1fr 120px 30px")
+    : (readOnly ? "1fr 130px 1fr" : "1fr 130px 1fr 30px");
   if (readOnly && !(extras || []).length) return null;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
       {(extras || []).map((e, i) => (
-        <div key={i} style={{ display: "grid", gridTemplateColumns: grid, gap: 6, alignItems: "center" }}>
-          {nameOptions
-            ? <Combo value={e.name} onChange={(x) => set(i, { name: x })} options={nameOptions} strict small placeholder="Chọn khoản…" />
-            : <Txt value={e.name} onChange={(x) => set(i, { name: x })} placeholder="Tên khoản" />}
-          <Money value={e.amount} onChange={(x) => set(i, { amount: x })} dim />
-          {!compact && <Txt value={e.note} onChange={(x) => set(i, { note: x })} placeholder="Ghi chú" />}
-          {!readOnly && <button type="button" onClick={() => del(i)} title="Xóa"
-            style={{ width: 28, height: 30, display: "grid", placeItems: "center", border: "none", borderRadius: 7, background: "transparent", color: "var(--ink-4)", cursor: "pointer" }}
-            onMouseEnter={(ev) => { ev.currentTarget.style.background = "#fce8e8"; ev.currentTarget.style.color = "var(--danger)"; }}
-            onMouseLeave={(ev) => { ev.currentTarget.style.background = "transparent"; ev.currentTarget.style.color = "var(--ink-4)"; }}><I.trash /></button>}
+        <div key={i} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ display: "grid", gridTemplateColumns: grid, gap: 6, alignItems: "center" }}>
+            {nameOptions
+              ? <Combo value={e.name} onChange={(x) => set(i, { name: x })} options={nameOptions} strict small placeholder="Chọn khoản…" />
+              : <Txt value={e.name} onChange={(x) => set(i, { name: x })} placeholder="Tên khoản" />}
+            <Money value={e.amount} onChange={(x) => set(i, { amount: x })} dim />
+            {!compact && !isMobile && <Txt value={e.note} onChange={(x) => set(i, { note: x })} placeholder="Ghi chú" />}
+            {!readOnly && <button type="button" onClick={() => del(i)} title="Xóa"
+              style={{ width: 28, height: 30, display: "grid", placeItems: "center", border: "none", borderRadius: 7, background: "transparent", color: "var(--ink-4)", cursor: "pointer" }}
+              onMouseEnter={(ev) => { ev.currentTarget.style.background = "#fce8e8"; ev.currentTarget.style.color = "var(--danger)"; }}
+              onMouseLeave={(ev) => { ev.currentTarget.style.background = "transparent"; ev.currentTarget.style.color = "var(--ink-4)"; }}><I.trash /></button>}
+          </div>
+          {!compact && isMobile && <Txt value={e.note} onChange={(x) => set(i, { note: x })} placeholder="Ghi chú" />}
         </div>
       ))}
       {!readOnly && <button type="button" onClick={add}

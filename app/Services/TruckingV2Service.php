@@ -1012,7 +1012,32 @@ class TruckingV2Service
     // ===================================================================
     // FILE TẬP TRUNG (trucking_attachments) — disk theo config, dễ migrate S3
     // ===================================================================
-    private function uploadDisk(): string { return (string) config('trucking.upload_disk', 'local'); }
+    private function uploadDisk(): string { return TruckingSetting::get('sys.upload_disk') ?: (string) config('trucking.upload_disk', 'local'); }
+
+    /** Nạp cấu hình S3 từ DB (Cài đặt hệ thống) vào disk 's3' — gọi LAZY trước khi đụng file s3 (không query khi dùng local). */
+    public function applyS3Config(): void
+    {
+        static $done = false;
+        if ($done) return;
+        $done = true;
+        $key = TruckingSetting::get('sys.s3_key');
+        if (! $key) return;   // chưa cấu hình → dùng env mặc định trong config/filesystems
+        $secret = TruckingSetting::get('sys.s3_secret');
+        try { $secret = $secret ? \Illuminate\Support\Facades\Crypt::decryptString($secret) : ''; } catch (\Throwable $e) { $secret = ''; }
+        config(['filesystems.disks.s3' => array_merge((array) config('filesystems.disks.s3', []), array_filter([
+            'driver'   => 's3', 'key' => $key, 'secret' => $secret,
+            'region'   => TruckingSetting::get('sys.s3_region'), 'bucket' => TruckingSetting::get('sys.s3_bucket'),
+            'url'      => TruckingSetting::get('sys.s3_url') ?: null,
+            'endpoint' => TruckingSetting::get('sys.s3_endpoint') ?: null,
+            'use_path_style_endpoint' => (bool) TruckingSetting::get('sys.s3_endpoint'),
+        ], fn ($v) => $v !== null && $v !== ''))]);
+    }
+
+    private function disk(string $name)
+    {
+        if ($name === 's3') $this->applyS3Config();
+        return Storage::disk($name);
+    }
 
     /** 1 attachment → shape client (URL stream disk-agnostic qua route). */
     private function attachmentOut(TruckingAttachment $a): array
@@ -1035,6 +1060,7 @@ class TruckingV2Service
     public function storeAttachments(string $ownerType, int $ownerId, string $group, array $files, ?string $type, string $dir): array
     {
         $disk = $this->uploadDisk();
+        if ($disk === 's3') $this->applyS3Config();
         $sort = (int) (TruckingAttachment::where(['owner_type' => $ownerType, 'owner_id' => $ownerId, 'group' => $group])->max('sort') ?? -1) + 1;
         $created = [];
         foreach ($files as $file) {
@@ -1054,7 +1080,7 @@ class TruckingV2Service
     {
         $a = TruckingAttachment::where(['id' => $id, 'owner_type' => $ownerType, 'owner_id' => $ownerId])->first();
         if (! $a) return false;
-        try { Storage::disk($a->disk)->delete($a->path); } catch (\Throwable $e) {}
+        try { $this->disk($a->disk)->delete($a->path); } catch (\Throwable $e) {}
         $a->delete();
         return true;
     }
@@ -1095,7 +1121,7 @@ class TruckingV2Service
             foreach ((is_array($ph) ? $ph : []) as $id) $used[(int) $id] = true;
         }
         foreach (TruckingAttachment::where(['owner_type' => TruckingVehicle::class, 'owner_id' => $vehicleId, 'group' => 'costPhoto'])->get() as $a) {
-            if (empty($used[$a->id])) { try { Storage::disk($a->disk)->delete($a->path); } catch (\Throwable $e) {} $a->delete(); }
+            if (empty($used[$a->id])) { try { $this->disk($a->disk)->delete($a->path); } catch (\Throwable $e) {} $a->delete(); }
         }
     }
 
@@ -1479,7 +1505,7 @@ class TruckingV2Service
     private function deleteDriverFiles(TruckingDriver $d): void
     {
         foreach (TruckingAttachment::where(['owner_type' => TruckingDriver::class, 'owner_id' => $d->id])->get() as $a) {
-            try { Storage::disk($a->disk)->delete($a->path); } catch (\Throwable $e) {}
+            try { $this->disk($a->disk)->delete($a->path); } catch (\Throwable $e) {}
             $a->delete();
         }
     }

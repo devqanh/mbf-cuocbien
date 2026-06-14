@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom";
 const { useState, useRef, useMemo, useEffect } = React;
-import { I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, fmtVND, fmtNum, fmtShort, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum } from "@trk/lib.jsx";
+import { I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, fmtVND, fmtNum, fmtShort, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, useIsMobile } from "@trk/lib.jsx";
 
 function DTField({ value, onChange }) {
   return (
@@ -27,21 +27,25 @@ function Field({ label, hint, req, children }) {
 /* Editable VAT rate (%) — kế toán tự nhập, mặc định gợi ý */
 
 function DriverSpendRows({ rows = [], onChange, drivers = [], onCreateDriver }) {
+  const isMobile = useIsMobile();
   const set = (id, np) => onChange(rows.map((e) => (e.id === id ? { ...e, ...np } : e)));
   const add = () => onChange([...rows, { id: Date.now() + Math.random(), who: "", date: "", amount: "", note: "" }]);
   const del = (id) => onChange(rows.filter((e) => e.id !== id));
+  const dsCols = "150px 150px 1fr 150px 30px";
   return (
     <div style={{ padding: "6px 0 0" }}>
       <div style={{ fontSize: 11.5, color: "var(--ink-4)", padding: "0 0 4px" }}>Theo dõi từng lần lái xe ứng/chi tiền mặt — ai chi, ngày nào, bao nhiêu.</div>
+      <div style={{ overflowX: isMobile ? "auto" : "visible", WebkitOverflowScrolling: "touch" }}>
+      <div style={{ minWidth: isMobile ? 640 : undefined }}>
       {rows.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "150px 150px 1fr 150px 30px", gap: 10, padding: "0 0 4px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: dsCols, gap: 10, padding: "0 0 4px" }}>
           {["Người chi", "Ngày chi", "Nội dung", "Số tiền", ""].map((h, i) => (
             <div key={i} style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-4)", textTransform: "uppercase", letterSpacing: "0.04em", textAlign: i === 3 ? "right" : "left" }}>{h}</div>
           ))}
         </div>
       )}
       {rows.map((e) => (
-        <div key={e.id} style={{ display: "grid", gridTemplateColumns: "150px 150px 1fr 150px 30px", gap: 10, alignItems: "center", padding: "5px 0" }}>
+        <div key={e.id} style={{ display: "grid", gridTemplateColumns: dsCols, gap: 10, alignItems: "center", padding: "5px 0" }}>
           <Combo value={e.who} onChange={(x) => set(e.id, { who: x })} options={drivers} onCreate={onCreateDriver} placeholder="Lái xe…" small />
           <DateField value={e.date} onChange={(x) => set(e.id, { date: x })} />
           <Txt value={e.note} onChange={(x) => set(e.id, { note: x })} placeholder="Nội dung chi…" />
@@ -54,6 +58,8 @@ function DriverSpendRows({ rows = [], onChange, drivers = [], onCreateDriver }) 
           </button>
         </div>
       ))}
+      </div>
+      </div>
       <button type="button" onClick={add}
         style={{ display: "inline-flex", alignItems: "center", gap: 7, margin: "6px 0 2px", padding: "6px 10px 6px 7px", background: "transparent", border: "none", cursor: "pointer", color: "var(--accent)", fontSize: 13, fontWeight: 600, borderRadius: 8 }}
         onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent-weak-2)")}
@@ -228,6 +234,7 @@ function FlagPicker({ value, missing, onChange }) {
 }
 
 function CostLineRows({ rows = [], onChange, options = [], onCreate, payers = [], onCreatePayer, prices = {}, costColors = {} }) {
+  const isMobile = useIsMobile();
   const set = (id, np) => onChange(rows.map((e) => (e.id === id ? { ...e, ...np } : e)));
   const pickItem = (e, item) => set(e.id, { item, amount: toNum(e.amount) ? e.amount : (prices[item] || "") });
   const add = () => onChange([...rows, { id: Date.now() + Math.random(), item: "", amount: "", payer: "", date: "", billable: false }]);
@@ -235,6 +242,8 @@ function CostLineRows({ rows = [], onChange, options = [], onCreate, payers = []
   const cols = "1fr 124px 118px 124px 92px 44px 28px";
   return (
     <div style={{ padding: "4px 0 0" }}>
+      <div style={{ overflowX: isMobile ? "auto" : "visible", WebkitOverflowScrolling: "touch" }}>
+      <div style={{ minWidth: isMobile ? 660 : undefined }}>
       <div style={{ display: "grid", gridTemplateColumns: cols, gap: 9, padding: "8px 0 5px" }}>
         {["Khoản chi phí", "Số tiền", "Người chi", "Ngày hóa đơn", "Chi hộ", "Theo dõi", ""].map((h, i) => (
           <div key={i} style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-4)", textTransform: "uppercase", letterSpacing: "0.04em", textAlign: i === 1 ? "right" : (i === 4 || i === 5) ? "center" : "left" }}>{h}</div>
@@ -271,6 +280,8 @@ function CostLineRows({ rows = [], onChange, options = [], onCreate, payers = []
         </div>
       ); })}
       {!rows.length && <div style={{ fontSize: 13, color: "var(--ink-4)", padding: "10px 0" }}>Chưa có khoản chi phí nào.</div>}
+      </div>
+      </div>
       <div style={{ fontSize: 11.5, color: "var(--ink-4)", padding: "2px 0 0" }}>Màu <b style={{ color: "var(--ink-3)" }}>Theo dõi</b> được gắn sẵn cho từng khoản tại <b style={{ color: "var(--ink-3)" }}>Cài đặt → Khoản chi phí</b>. Khoản có gắn màu mà <b style={{ color: "var(--ink-3)" }}>chưa điền số tiền</b> sẽ hiện nhắc ngoài bảng lô; điền rồi thì ẩn.</div>
       <button type="button" onClick={add}
         style={{ display: "inline-flex", alignItems: "center", gap: 7, margin: "8px 0 2px", padding: "6px 10px 6px 7px", background: "transparent", border: "none", cursor: "pointer", color: "var(--accent)", fontSize: 13, fontWeight: 600, borderRadius: 8 }}

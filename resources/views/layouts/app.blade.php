@@ -114,9 +114,9 @@
                     @endcan
 
                     {{-- Quản trị — chỉ hiện nếu có ít nhất 1 quyền users.view hoặc roles.view --}}
-                    @if(auth()->user()->hasAnyPermission(['users.view', 'roles.view']))
+                    @if(auth()->user()->hasAnyPermission(['users.view', 'roles.view', 'system.settings']))
                     <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle {{ request()->routeIs('users.*','roles.*') ? 'active' : '' }}"
+                        <a class="nav-link dropdown-toggle {{ request()->routeIs('users.*','roles.*','system.*') ? 'active' : '' }}"
                            href="#" data-bs-toggle="dropdown" role="button">
                             <i class="bi bi-shield-lock"></i> Quản trị
                         </a>
@@ -130,6 +130,12 @@
                             <li><a class="dropdown-item {{ request()->routeIs('roles.*') ? 'active' : '' }}"
                                    href="{{ route('roles.index') }}">
                                 <i class="bi bi-shield-check"></i> Danh sách phân quyền</a></li>
+                            @endcan
+                            @can('system.settings')
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item {{ request()->routeIs('system.*') ? 'active' : '' }}"
+                                   href="{{ route('system.settings') }}">
+                                <i class="bi bi-gear-wide-connected"></i> Cài đặt hệ thống</a></li>
                             @endcan
                         </ul>
                     </li>
