@@ -27,7 +27,17 @@ function DTField({ value, onChange }) {
   }, [value]);
   // Fallback: nơi không nạp Flatpickr → input datetime-local gốc (vẫn hoạt động).
   if (!hasFp) return <input type="datetime-local" className="trk-fp" value={value || ""} onChange={(e) => onChange(e.target.value)} style={{ colorScheme: "light" }} />;
-  return <input ref={ref} type="text" className="trk-fp" placeholder="dd/mm/yyyy --:--" />;
+  return (
+    <div style={{ position: "relative", width: "100%" }}>
+      <input ref={ref} type="text" className="trk-fp" placeholder="dd/mm/yyyy --:--" />
+      {value ? (
+        <span role="button" title="Xoá ngày giờ"
+          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          onClick={(e) => { e.stopPropagation(); if (fp.current) fp.current.clear(); else onChange(""); }}
+          style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", display: "inline-flex", color: "var(--ink-4)", cursor: "pointer", zIndex: 2 }}><I.x /></span>
+      ) : null}
+    </div>
+  );
 }
 
 /* ===================== COST POPUP (centerpiece) ===================== */

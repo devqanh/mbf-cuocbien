@@ -281,14 +281,24 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
       setCostItems(costItems.filter((it) => it.src !== "thanhLyFee"));
     }
   };
-  const sibOpts = siblings.map((s) => ({ value: s.id, label: (s.contNo || "(chưa có cont)") + " — " + (s.booking || "(chưa có booking)") }));
+  // Chỉ liệt kê cont CHƯA RA (chưa có Biển số ra — khớp badge "Chưa ra" & tab lọc của hệ thống).
+  // Giữ cont đang chọn để không mất hiển thị lựa chọn.
+  const sibOpts = siblings
+    .filter((s) => !(s.bksRa || "").trim() || s.id === ship.raOtherId)
+    .map((s) => ({ value: s.id, label: (s.contNo || "(chưa có cont)") + " — " + (s.booking || "(chưa có booking)") }));
   const raMode = ship.raMode || "self";
   const other = (raMode === "other" && ship.raOtherId != null) ? siblings.find((s) => s.id === ship.raOtherId) : null;
   // Khi "cont khác ra": input giờ ra/BKS ra chỉ ghi vào cont kia (qua patchOther), KHÔNG động vào cont hiện tại.
-  const setRa = (val) => { if (other && patchOther) patchOther(other.id, { gioXeRa: val }); else set({ gioXeRa: val }); };
-  const setRaBks = (val) => { if (other && patchOther) patchOther(other.id, { bksRa: val }); else set({ bksRa: val }); };
-  const otherGioXeRa = other ? (other.gioXeRa || "") : "";
-  const otherBksRa = other ? (other.bksRa || "") : "";
+  // Giữ state cục bộ để field PHẢN ÁNH NGAY khi sửa — vì patchOther cập nhật danh sách lô (data),
+  // còn giá trị hiển thị lấy từ siblings không tự cập nhật → nếu đọc thẳng siblings sẽ "không nhận".
+  const [raEdit, setRaEdit] = useState({ id: null, gioXeRa: "", bksRa: "" });
+  useEffect(() => {
+    if (other) setRaEdit({ id: other.id, gioXeRa: other.gioXeRa || "", bksRa: other.bksRa || "" });
+  }, [ship.raOtherId, raMode]);
+  const setRa = (val) => { if (other && patchOther) { setRaEdit((e) => ({ ...e, gioXeRa: val })); patchOther(other.id, { gioXeRa: val }); } else set({ gioXeRa: val }); };
+  const setRaBks = (val) => { if (other && patchOther) { setRaEdit((e) => ({ ...e, bksRa: val })); patchOther(other.id, { bksRa: val }); } else set({ bksRa: val }); };
+  const otherGioXeRa = (other && raEdit.id === other.id) ? raEdit.gioXeRa : (other ? other.gioXeRa || "" : "");
+  const otherBksRa = (other && raEdit.id === other.id) ? raEdit.bksRa : (other ? other.bksRa || "" : "");
 
   const dirty = !!(isDirty && (isDirty(ship.id) || (other && isDirty(other.id))));
   const missingReq = !((ship.customer || "").toString().trim()) || !((ship.booking || "").toString().trim());

@@ -203,8 +203,13 @@ trait HandlesShipments
     public function siblingsList(string $sheet): array
     {
         return TruckingShipment::ofSheet($sheet)->orderBy('id')
-            ->toBase()->get(['id', 'cont_no', 'booking'])   // không hydrate model — chỉ cần 3 cột
-            ->map(fn ($s) => ['id' => $s->id, 'contNo' => $s->cont_no ?? '', 'booking' => $s->booking ?? ''])
+            ->toBase()->get(['id', 'cont_no', 'booking', 'gio_xe_ra', 'bks_ra'])   // không hydrate model — chỉ cột cần
+            ->map(fn ($s) => [
+                'id' => $s->id, 'contNo' => $s->cont_no ?? '', 'booking' => $s->booking ?? '',
+                // datetime thô "Y-m-d H:i:s" → "Y-m-dTH:i" cho DTField; bksRa giữ chuỗi
+                'gioXeRa' => $s->gio_xe_ra ? str_replace(' ', 'T', substr((string) $s->gio_xe_ra, 0, 16)) : '',
+                'bksRa'   => $s->bks_ra ?? '',
+            ])
             ->all();
     }
 
