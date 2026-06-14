@@ -66,6 +66,7 @@ class TruckingV2Controller extends Controller
             'hph' => $this->svc->shipments('hph'),
             'icd' => $this->svc->shipments('icd'),
             'cfg' => $this->svc->config(),
+            'company' => $this->svc->companyInfo(),
         ], 'statements.create', 'statements.delete'));
     }
 
@@ -74,6 +75,7 @@ class TruckingV2Controller extends Controller
     {
         return view('trucking2.bang-ke-xem', $this->pageData([
             'st' => $this->svc->statementToArray($statement),
+            'company' => $this->svc->companyInfo(),
         ], 'statements.update', 'statements.delete'));
     }
 
@@ -111,10 +113,21 @@ class TruckingV2Controller extends Controller
 
         $dmy = fn (?string $iso) => $iso && preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $iso, $m) ? "{$m[3]}/{$m[2]}/{$m[1]}" : (string) $iso;
 
-        // Bên mua + Debit/Date
-        $sh->setCellValue('A8', 'BÊN MUA: ' . ($st['customer'] ?? ''));
+        // BÊN MUA — tự lấy từ bảng kê (khách + địa chỉ + MST đã lưu theo khách)
+        $sh->setCellValue('A8', 'BÊN MUA:  ' . ($st['customer'] ?? ''));
         $sh->setCellValue('A9', 'Địa chỉ: ' . ($info['address'] ?? ''));
         $sh->setCellValue('A10', 'MST: ' . ($info['taxCode'] ?? ''));
+        if (trim((string) ($info['rep'] ?? '')) !== '')   $sh->setCellValue('A11', 'Đại diện: ' . $info['rep']);
+        if (trim((string) ($info['title'] ?? '')) !== '') $sh->setCellValue('D11', 'Chức vụ: ' . $info['title']);
+
+        // BÊN BÁN — tự điền từ Cài đặt hệ thống (không phải sửa template tay nữa)
+        $seller = $this->svc->sellerInfo();
+        $sh->setCellValue('A13', 'BÊN BÁN: ' . $seller['name']);
+        $sh->setCellValue('A14', 'Địa chỉ: ' . $seller['address']);
+        $sh->setCellValue('A15', 'MST: ' . $seller['tax']);
+        if (trim($seller['rep']) !== '')   $sh->setCellValue('A16', 'Đại diện: ' . $seller['rep']);
+        if (trim($seller['title']) !== '') $sh->setCellValue('D16', 'Chức vụ: ' . $seller['title']);
+
         $sh->setCellValueExplicit('O18', (string) ($st['no'] ?? ''), DataType::TYPE_STRING);
         $sh->setCellValueExplicit('O19', $dmy($st['date'] ?? null), DataType::TYPE_STRING);
 
@@ -220,6 +233,12 @@ class TruckingV2Controller extends Controller
         if (count($d) === 3) {
             $sh->setCellValue('J' . (70 + $delta), "Ngày {$d[2]} tháng {$d[1]} năm {$d[0]}");
         }
+
+        // Reset vị trí cuộn/ô chọn về đầu (template lưu sẵn topLeftCell=A67, selected=J73
+        // → mở file bị cuộn xuống, không thấy dữ liệu). Giữ đóng băng tiêu đề ở dòng 22.
+        $sh->freezePane('A22', 'A22');   // arg 2 = ô top-left của vùng cuộn → kéo về dòng 22
+        $sh->setSelectedCells('A1');
+        $ss->setActiveSheetIndex($ss->getIndex($sh));
 
         $writer   = new XlsxWriter($ss);
         $filename = 'bang-ke-' . preg_replace('/[^\w\-]+/u', '-', (string) ($st['no'] ?? 'export')) . '.xlsx';

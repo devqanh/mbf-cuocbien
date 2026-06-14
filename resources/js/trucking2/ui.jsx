@@ -4,6 +4,13 @@ import { I, fmtVND, fmtNum, fmtShort, fmtDate, calcCost, calcRev, calcVeh, calcV
 import { CostPopup, RevenuePopup, CostPopupICD, RevenuePopupICD, InfoPopup, ConfigPopup, PriceList, TRACK_COLORS, colorHex } from "@trk/pop.jsx";
 
 /* components dùng chung — export ra window.__ui */
+
+/* Thông tin công ty cho header bảng kê (màn hình + bản in).
+   Cấu hình ở Cài đặt hệ thống → truyền qua boot; fallback giữ mặc định cũ. */
+const CO = (window.__TRK && window.__TRK.boot && window.__TRK.boot.company) || {};
+const CO_NAME = CO.name || "MBF JOINT STOCK COMPANY";
+const CO_SUB = [CO.website, CO.phone].filter(Boolean).join(" · ") || "http://mbf.com.vn · 84-24-39449616";
+
 /* ===================== summary cell button ===================== */
 function SortBtn({ k, sort, onSort, align = "left", children }) {
   const on = sort.key === k;
@@ -212,8 +219,8 @@ function StatementForm({ hph, icd, cfg, onCancel, onSaved }) {
             <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 3 }} className="tnum">Số: {keNo} · Ngày lập: {fmtDate(today)}{(from || to) ? ` · Cont ra: ${fmtDate(from) || "…"} – ${fmtDate(to) || "…"}` : ""}</div>
           </div>
           <div style={{ textAlign: "right", fontSize: 12 }}>
-            <div style={{ fontWeight: 700, color: "var(--accent)" }}>MBF JOINT STOCK COMPANY</div>
-            <div style={{ color: "var(--ink-3)", marginTop: 2 }}>http://mbf.com.vn · 84-24-39449616</div>
+            <div style={{ fontWeight: 700, color: "var(--accent)" }}>{CO_NAME}</div>
+            <div style={{ color: "var(--ink-3)", marginTop: 2 }}>{CO_SUB}</div>
           </div>
         </div>
         <div style={{ background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", borderRadius: 10, padding: "11px 14px", marginBottom: 14, fontSize: 12.5 }}>
@@ -326,8 +333,8 @@ function StatementDetailBody({ st, onUpdate, detailById = {} }) {
             </div>
           </div>
           <div style={{ textAlign: "right", fontSize: 12 }}>
-            <div style={{ fontWeight: 700, color: "var(--accent)" }}>MBF JOINT STOCK COMPANY</div>
-            <div style={{ color: "var(--ink-3)", marginTop: 2 }}>http://mbf.com.vn · 84-24-39449616</div>
+            <div style={{ fontWeight: 700, color: "var(--accent)" }}>{CO_NAME}</div>
+            <div style={{ color: "var(--ink-3)", marginTop: 2 }}>{CO_SUB}</div>
           </div>
         </div>
         <div style={{ background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", borderRadius: 10, padding: "11px 14px", marginBottom: 14, fontSize: 12.5 }}>

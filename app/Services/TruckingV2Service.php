@@ -1009,6 +1009,39 @@ class TruckingV2Service
         })->all();
     }
 
+    /**
+     * Thông tin công ty (header bảng kê trên màn hình + bản in) — cấu hình ở Cài đặt hệ thống.
+     * 1 query gộp 3 key; có default để hệ thống cũ/chưa cấu hình vẫn hiển thị đúng.
+     */
+    public function companyInfo(): array
+    {
+        $r = TruckingSetting::whereIn('key', ['sys.company_name', 'sys.company_website', 'sys.company_phone'])
+            ->pluck('value', 'key');
+        return [
+            'name'    => ($r['sys.company_name']    ?? '') ?: 'MBF JOINT STOCK COMPANY',
+            'website' => ($r['sys.company_website'] ?? '') ?: 'http://mbf.com.vn',
+            'phone'   => ($r['sys.company_phone']   ?? '') ?: '84-24-39449616',
+        ];
+    }
+
+    /**
+     * Thông tin BÊN BÁN cho file Excel bảng kê — cấu hình ở Cài đặt hệ thống.
+     * Tách riêng với companyInfo() vì tên pháp lý (tiếng Việt) khác tên hiển thị (tiếng Anh).
+     * Default = thông tin MBF như template cũ → chưa cấu hình vẫn xuất đúng.
+     */
+    public function sellerInfo(): array
+    {
+        $r = TruckingSetting::whereIn('key', ['sys.seller_name', 'sys.seller_address', 'sys.seller_tax', 'sys.seller_rep', 'sys.seller_title'])
+            ->pluck('value', 'key');
+        return [
+            'name'    => ($r['sys.seller_name']    ?? '') ?: 'CÔNG TY CỔ PHẦN MBF',
+            'address' => ($r['sys.seller_address'] ?? '') ?: 'Số 58 Xóm Giếng, Thôn Cổ Điển A, Xã Thanh Trì, Thành phố Hà Nội, Việt Nam',
+            'tax'     => ($r['sys.seller_tax']     ?? '') ?: '0105040296',
+            'rep'     => (string) ($r['sys.seller_rep']   ?? ''),
+            'title'   => (string) ($r['sys.seller_title'] ?? ''),
+        ];
+    }
+
     // ===================================================================
     // FILE TẬP TRUNG (trucking_attachments) — disk theo config, dễ migrate S3
     // ===================================================================
