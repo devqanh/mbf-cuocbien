@@ -534,6 +534,13 @@ function SavedStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUrl, 
         </button>}
       </div>
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "22px" }}>
+        <div className="ke-noprint" style={{ maxWidth: 940, margin: "0 auto 14px", display: "flex", gap: 10, alignItems: "flex-start", background: "#eff5ff", border: "1px solid #cfe0fb", borderRadius: 12, padding: "12px 14px", fontSize: 13, color: "#1f4f9e", lineHeight: 1.6 }}>
+          <i className="bi bi-info-circle-fill" style={{ fontSize: 16, marginTop: 1, flexShrink: 0 }} />
+          <div>
+            Bảng kê này đã được <b>chốt số khi tạo</b> để lưu hồ sơ. Nếu sau này <b>lô hàng gốc bị sửa hoặc xóa</b>, bảng kê này <b>vẫn giữ nguyên</b> — không bị ảnh hưởng.
+            <br />Khi bạn thấy lô hàng có thay đổi và muốn cập nhật phải thu, bấm nút <b>Tính lại</b> ở trên — hệ thống sẽ đọc lại thông tin lô hàng hiện tại và tính lại bảng kê.
+          </div>
+        </div>
         <div style={{ maxWidth: 940, margin: "0 auto", background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "8px 22px 18px" }}>
           <StatementDetailBody st={st} onUpdate={onUpdate} detailById={detailById || {}} />
           <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--line)" }}>

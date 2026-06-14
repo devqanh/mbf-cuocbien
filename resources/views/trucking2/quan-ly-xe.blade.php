@@ -22,6 +22,10 @@ window.__TRK = {
     cancelCost: '{{ url("trucking-v2/quan-ly-xe/cost") }}/',   // + {costId}/cancel (PUT)
     costItem: '{{ route("trucking2.fleet.costItem") }}',
     spendRequest: '{{ route("trucking2.spendRequest") }}',   // link public gửi yêu cầu chi
+    assetList: '{{ route("trucking2.asset.list") }}',   // lazy-load danh sách tài sản
+    assetCreate: '{{ route("trucking2.asset.create") }}',
+    assetCategory: '{{ route("trucking2.asset.category") }}',
+    assetDestroy: '{{ url("trucking-v2/quan-ly-tai-san") }}/',   // + {id} (DELETE)
   },
   boot: @json($boot),
 };

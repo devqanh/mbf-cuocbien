@@ -33,7 +33,7 @@ function TripBatchesApp() {
           <div className="trk-head-lead" style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
             <div style={{ width: 32, height: 32, flexShrink: 0, borderRadius: 9, background: "var(--accent)", color: "#fff", display: "grid", placeItems: "center" }}><I.truck /></div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 15.5, fontWeight: 700, lineHeight: 1.1 }}>Phí xe nội bộ</div>
+              <div style={{ fontSize: 15.5, fontWeight: 700, lineHeight: 1.1 }}>Chi phí & lương lái xe</div>
               <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Lịch sử các kỳ tính phí chuyến (theo ngày xe ra)</div>
             </div>
           </div>

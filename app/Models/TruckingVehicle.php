@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /** Đội xe — biển số + loại (Xe MBF | Xe ngoài) + số cầu. */
 class TruckingVehicle extends Model
 {
-    protected $fillable = ['plate', 'type', 'axle', 'info', 'documents', 'allowances'];
+    protected $fillable = ['plate', 'type', 'kind', 'axle', 'info', 'documents', 'allowances'];
 
     protected $casts = [
         'info'       => 'array',

@@ -25,6 +25,7 @@ use App\Models\TruckingAttachment;
 use App\Models\TruckingShipment;
 use App\Models\TruckingShipmentWarehouse;
 use App\Models\TruckingVehicleCostType;
+use App\Models\TruckingAssetCategory;
 use App\Models\TruckingStatement;
 use App\Models\TruckingVehicle;
 use App\Models\TruckingWarehouse;
@@ -62,6 +63,7 @@ class TruckingV2Service
             'revItems'   => [TruckingRevenueItem::class, true,  false,           false],
             'salaryItems' => [TruckingSalaryItem::class, false, false,           false],
             'vehicleCostTypes' => [TruckingVehicleCostType::class, false, false,  false],
+            'assetCategories'  => [TruckingAssetCategory::class,   false, false,  false],
         ];
     }
 
@@ -799,6 +801,83 @@ class TruckingV2Service
         return $this->costItemNames();
     }
 
+    // ===================================================================
+    // QUẢN LÝ TÀI SẢN (kind='asset') — dùng chung bảng trucking_vehicles
+    // (tái dùng tab Chi phí/Khấu hao/Tài liệu); KHÔNG đụng phí xe (type='asset' ≠ 'MBF').
+    // ===================================================================
+
+    /** Danh mục loại tài sản (Combo "Loại tài sản"). */
+    public function assetCategories(): array
+    {
+        return TruckingAssetCategory::orderBy('sort')->orderBy('name')->pluck('name')->all();
+    }
+
+    /** Thêm nhanh 1 loại tài sản → trả danh sách mới. */
+    public function addAssetCategory(string $name): array
+    {
+        $name = trim($name);
+        if ($name !== '') {
+            TruckingAssetCategory::firstOrCreate(['name' => $name], ['sort' => (int) (TruckingAssetCategory::max('sort') ?? 0) + 1]);
+        }
+        return $this->assetCategories();
+    }
+
+    /** 1 tài sản → shape danh sách (kèm đếm + hạn để cảnh báo như xe). docCount đếm từ attachments (group='doc'). */
+    private function assetListRow(TruckingVehicle $v, int $docCount = 0): array
+    {
+        $info = is_array($v->info) ? $v->info : [];
+        return [
+            'id'            => $v->id,
+            'code'          => $v->plate,                       // mã tài sản (cột unique)
+            'name'          => $info['name'] ?? '',
+            'category'      => $info['category'] ?? '',
+            'status'        => $info['status'] ?? '',
+            'location'      => $info['location'] ?? '',
+            'warrantyDue'   => $info['warrantyDue'] ?? '',      // YYYY-MM-DD
+            'inspectionDue' => $info['inspectionDue'] ?? '',    // YYYY-MM-DD
+            'docCount'      => $docCount,
+            'costCount'     => (int) ($v->vehicle_costs_count ?? 0),
+            'depCount'      => (int) ($v->vehicle_depreciations_count ?? 0),
+        ];
+    }
+
+    /** Danh sách tài sản (kind='asset'). */
+    public function assetList(): array
+    {
+        $rows = TruckingVehicle::where('kind', 'asset')
+            ->withCount(['vehicleCosts', 'vehicleDepreciations'])
+            ->orderBy('plate')->get();
+        // Đếm tài liệu (attachments group='doc') 1 query gộp → tránh N+1
+        $docCounts = TruckingAttachment::where('owner_type', TruckingVehicle::class)->where('group', 'doc')
+            ->whereIn('owner_id', $rows->pluck('id'))->selectRaw('owner_id, COUNT(*) c')->groupBy('owner_id')->pluck('c', 'owner_id');
+        return $rows->map(fn ($v) => $this->assetListRow($v, (int) ($docCounts[$v->id] ?? 0)))->all();
+    }
+
+    /** Tạo tài sản mới (tên + loại + mã tự sinh nếu trống) → trả dòng danh sách. */
+    public function createAsset(array $data): array
+    {
+        $name = trim((string) ($data['name'] ?? ''));
+        $code = trim((string) ($data['code'] ?? ''));
+        if ($code === '') {
+            $n = TruckingVehicle::where('kind', 'asset')->count() + 1;
+            do { $code = 'TS-' . str_pad((string) $n, 4, '0', STR_PAD_LEFT); $n++; } while (TruckingVehicle::where('plate', $code)->exists());
+        }
+        $info = [
+            'name'     => $name,
+            'category' => trim((string) ($data['category'] ?? '')),
+        ];
+        $v = TruckingVehicle::create(['plate' => $code, 'type' => 'asset', 'kind' => 'asset', 'info' => $info]);
+        return $this->assetListRow($v->loadCount(['vehicleCosts', 'vehicleDepreciations']));
+    }
+
+    /** Xóa tài sản (CHỈ kind='asset' — chặn xóa nhầm xe vì xe còn link phí xe). */
+    public function destroyAsset(TruckingVehicle $v): bool
+    {
+        if ($v->kind !== 'asset') return false;
+        $v->delete();   // cascade các bảng con (costs/depreciations/usages)
+        return true;
+    }
+
     /** # hóa đơn kế tiếp (PC-XXXX) toàn hệ thống. */
     public function nextCostInvoiceNo(): string
     {
@@ -819,21 +898,24 @@ class TruckingV2Service
         return $row ? (float) $row->current_km : null;
     }
 
-    /** Dữ liệu cho trang PUBLIC gửi yêu cầu chi (chỉ xe MBF + danh mục khoản chi). */
+    /** Dữ liệu cho trang PUBLIC gửi yêu cầu chi (xe MBF + tài sản + danh mục khoản chi). */
     public function publicRequestData(): array
     {
         return [
             'vehicles'  => TruckingVehicle::where('type', 'MBF')->orderBy('plate')->get(['id', 'plate'])
                 ->map(fn ($v) => ['id' => $v->id, 'plate' => $v->plate])->all(),
+            'assets'    => TruckingVehicle::where('kind', 'asset')->orderBy('plate')->get(['id', 'plate', 'info'])
+                ->map(fn ($v) => ['id' => $v->id, 'code' => $v->plate, 'name' => (is_array($v->info) ? ($v->info['name'] ?? '') : '') ?: $v->plate])->all(),
             'costItems' => $this->costItemNames(),
         ];
     }
 
-    /** Tạo YÊU CẦU CHI (phiếu chi chờ duyệt) từ trang public — CHECK định mức km. */
+    /** Tạo YÊU CẦU CHI (phiếu chi chờ duyệt) từ trang public — xe (CHECK định mức km) hoặc tài sản. */
     public function createSpendRequest(array $in, array $files = []): array
     {
-        $v = TruckingVehicle::where('type', 'MBF')->find((int) ($in['vehicleId'] ?? 0));
-        if (! $v) return ['ok' => false, 'message' => 'Xe không hợp lệ.'];
+        $v = TruckingVehicle::where('id', (int) ($in['vehicleId'] ?? 0))
+            ->where(fn ($q) => $q->where('type', 'MBF')->orWhere('kind', 'asset'))->first();
+        if (! $v) return ['ok' => false, 'message' => 'Đối tượng không hợp lệ.'];
         $item = trim((string) ($in['costItem'] ?? ''));
         if ($item === '' || ! in_array($item, $this->costItemNames(), true)) return ['ok' => false, 'message' => 'Loại chi phí không hợp lệ.'];
         $amount = $this->inMoney($in['amount'] ?? null) ?? 0;
@@ -858,7 +940,8 @@ class TruckingV2Service
         $cost = $v->vehicleCosts()->create([
             'name' => $item, 'created_by' => auth()->id(), 'invoice_no' => $this->nextCostInvoiceNo(), 'kind' => 'fixed',
             'spend_date' => $this->inDate($in['date'] ?? null) ?? now()->toDateString(),
-            'amount' => $amount, 'current_km' => $km, 'approved' => false, 'paid' => false, 'sort' => $sort,
+            'amount' => $amount, 'current_km' => $km, 'note' => trim((string) ($in['note'] ?? '')),
+            'approved' => false, 'paid' => false, 'sort' => $sort,
         ]);
         if ($files) { $cost->photos = array_map(fn ($p) => $p['id'], $this->storeCostPhotos($v, $files)); $cost->save(); }
 
@@ -874,7 +957,10 @@ class TruckingV2Service
             ]);
         }
 
-        return ['ok' => true, 'message' => "Đã gửi yêu cầu chi “{$item}” cho xe {$v->plate}. Kế toán sẽ duyệt sau."];
+        $label = $v->kind === 'asset'
+            ? 'tài sản ' . ((is_array($v->info) ? ($v->info['name'] ?? '') : '') ?: $v->plate)
+            : 'xe ' . $v->plate;
+        return ['ok' => true, 'message' => "Đã gửi yêu cầu chi “{$item}” cho {$label}. Kế toán sẽ duyệt sau."];
     }
 
     /** Trạng thái phiếu chi: cancelled | paid | approved | pending (+ nhãn VN). */
@@ -889,12 +975,17 @@ class TruckingV2Service
     /** Lịch sử yêu cầu chi CỦA 1 user (mobile) — phiếu do chính họ gửi. */
     public function spendRequestHistory(int $userId): array
     {
-        return TruckingVehicleCost::with('vehicle:id,plate')
+        return TruckingVehicleCost::with('vehicle:id,plate,kind,info')
             ->where('created_by', $userId)->orderByDesc('id')->limit(100)->get()
             ->map(function ($c) {
                 $st = $this->vehicleCostStatus($c);
+                $isAsset = ($c->vehicle?->kind ?? 'vehicle') === 'asset';
+                $vinfo = is_array($c->vehicle?->info) ? $c->vehicle->info : [];
                 return [
                     'id' => $c->id, 'vehicleId' => $c->vehicle_id, 'plate' => $c->vehicle?->plate ?? '', 'name' => $c->name ?? '',
+                    'kind' => $isAsset ? 'asset' : 'vehicle',
+                    'targetName' => $isAsset ? (($vinfo['name'] ?? '') ?: ($c->vehicle?->plate ?? '')) : ($c->vehicle?->plate ?? ''),
+                    'note' => $c->note ?? '',
                     'invoiceNo' => $c->invoice_no ?? '', 'amount' => $this->outMoney($c->amount),
                     'date' => $this->outDate($c->spend_date), 'km' => $this->outNum($c->current_km),
                     'status' => $st['code'], 'statusLabel' => $st['label'],
@@ -954,7 +1045,7 @@ class TruckingV2Service
         $newIds = $files ? array_map(fn ($p) => $p['id'], $this->storeCostPhotos($v, $files)) : [];
 
         $c->forceFill([
-            'name' => $item, 'amount' => $amount, 'current_km' => $km,
+            'name' => $item, 'amount' => $amount, 'current_km' => $km, 'note' => trim((string) ($in['note'] ?? '')),
             'spend_date' => $this->inDate($in['date'] ?? null) ?? $c->spend_date,
             'photos' => array_merge($keptIds, $newIds),
         ])->save();

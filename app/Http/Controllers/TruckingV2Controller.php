@@ -515,12 +515,46 @@ class TruckingV2Controller extends Controller
     /** Trang Quản lý xe — danh sách xe MBF nội bộ. */
     public function fleet()
     {
+        // Tài sản lazy-load riêng (assetListData) → mở trang chế độ Xe KHÔNG query tài sản.
         return view('trucking2.quan-ly-xe', $this->pageData([
-            'vehicles'      => $this->svc->mbfVehicles(),
-            'expiringCosts' => $this->svc->expiringVehicleCosts(),
-            'pendingCosts'  => $this->svc->pendingVehicleCosts(),
-            'costItems'     => $this->svc->costItemNames(),
+            'vehicles'        => $this->svc->mbfVehicles(),
+            'expiringCosts'   => $this->svc->expiringVehicleCosts(),
+            'pendingCosts'    => $this->svc->pendingVehicleCosts(),
+            'costItems'       => $this->svc->costItemNames(),
         ], 'settings.update', 'settings.update'));
+    }
+
+    /** Danh sách tài sản — lazy-load khi mở tab Tài sản (không nằm trong boot). */
+    public function assetListData(): JsonResponse
+    {
+        return response()->json(['ok' => true, 'assets' => $this->svc->assetList(), 'assetCategories' => $this->svc->assetCategories()]);
+    }
+
+    /** Tạo tài sản mới (Quản lý tài sản). */
+    public function createAsset(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'name'     => ['required', 'string', 'max:255'],
+            'code'     => ['nullable', 'string', 'max:64', 'unique:trucking_vehicles,plate'],
+            'category' => ['nullable', 'string', 'max:120'],
+        ], [
+            'name.required'   => 'Vui lòng nhập tên tài sản.',
+            'code.unique'     => 'Mã tài sản đã tồn tại, chọn mã khác.',
+        ]);
+        return response()->json(['ok' => true, 'asset' => $this->svc->createAsset($data)]);
+    }
+
+    /** Thêm nhanh loại tài sản → trả danh mục mới. */
+    public function addAssetCategory(Request $request): JsonResponse
+    {
+        $name = (string) $request->validate(['name' => ['required', 'string', 'max:120']])['name'];
+        return response()->json(['ok' => true, 'categories' => $this->svc->addAssetCategory($name)]);
+    }
+
+    /** Xóa tài sản (chỉ kind='asset'). */
+    public function destroyAsset(TruckingVehicle $vehicle): JsonResponse
+    {
+        return response()->json(['ok' => $this->svc->destroyAsset($vehicle)]);
     }
 
     /** Trang gửi yêu cầu chi (mobile SPA) — cần đăng nhập + quyền spend.request. */
@@ -531,7 +565,8 @@ class TruckingV2Controller extends Controller
         $boot = ['auth' => ['logged' => (bool) $u, 'name' => $u?->name ?? '', 'canRequest' => (bool) $can]];
         if ($can) {
             $boot = array_merge($boot, $this->svc->publicRequestData());
-            $boot['history'] = $this->svc->spendRequestHistory($u->id);
+            // Lịch sử lazy-load khi mở tab (GET /yeu-cau-chi/history) — boot chỉ cần SỐ LƯỢNG cho badge.
+            $boot['historyCount'] = \App\Models\TruckingVehicleCost::where('created_by', $u->id)->count();
         }
         return view('trucking2.yeu-cau-chi', ['boot' => $boot]);
     }
@@ -581,6 +616,7 @@ class TruckingV2Controller extends Controller
             'date'      => ['nullable', 'string', 'max:20'],
             'amount'    => ['required'],
             'km'        => ['nullable', 'string', 'max:20'],
+            'note'      => ['nullable', 'string', 'max:1000'],
             'photos'    => ['nullable', 'array', 'max:12'],
             'photos.*'  => ['file', 'image', 'max:20480'],
         ], $this->spendValidationMessages());
@@ -610,6 +646,7 @@ class TruckingV2Controller extends Controller
             'date'      => ['nullable', 'string', 'max:20'],
             'amount'    => ['required'],
             'km'        => ['nullable', 'string', 'max:20'],
+            'note'      => ['nullable', 'string', 'max:1000'],
             'keep'      => ['nullable', 'array', 'max:12'],
             'keep.*'    => ['string', 'max:120'],
             'photos'    => ['nullable', 'array', 'max:12'],

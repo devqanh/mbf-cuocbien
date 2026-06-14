@@ -62,7 +62,7 @@
                     <li class="nav-item">
                         <a class="nav-link {{ request()->routeIs('trucking2.tripCost') ? 'active' : '' }}"
                            href="{{ route('trucking2.tripCost') }}">
-                            <i class="bi bi-cash-stack"></i> Phí xe nội bộ
+                            <i class="bi bi-cash-stack"></i> Chi phí & lương lái xe
                         </a>
                     </li>
                     @endcan
@@ -70,7 +70,7 @@
                     <li class="nav-item">
                         <a class="nav-link {{ request()->routeIs('trucking2.fleet') ? 'active' : '' }}"
                            href="{{ route('trucking2.fleet') }}">
-                            <i class="bi bi-truck-front"></i> Quản lý xe
+                            <i class="bi bi-truck-front"></i> Quản lý tài sản
                         </a>
                     </li>
                     <li class="nav-item">

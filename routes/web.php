@@ -179,6 +179,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/catalog/{type}', [TruckingV2Controller::class, 'catalogData'])->name('catalogData');   // lazy-load 1 tab
             // Quản lý xe (xe MBF nội bộ)
             Route::get('/quan-ly-xe',                 [TruckingV2Controller::class, 'fleet'])->name('fleet');
+            Route::get('/quan-ly-tai-san-list',       [TruckingV2Controller::class, 'assetListData'])->name('asset.list');   // lazy-load khi mở tab Tài sản
             Route::get('/quan-ly-xe/{vehicle}/data',  [TruckingV2Controller::class, 'vehicleData'])->name('fleet.data')->whereNumber('vehicle');
             Route::get('/quan-ly-xe/{vehicle}/section/{section}', [TruckingV2Controller::class, 'vehicleSection'])->name('fleet.section')->whereNumber('vehicle');
         });
@@ -201,6 +202,10 @@ Route::middleware('auth')->group(function () {
             Route::post('/quan-ly-xe/{vehicle}/cost-photo', [TruckingV2Controller::class, 'uploadCostPhotos'])->name('fleet.costPhoto.upload')->whereNumber('vehicle');
             Route::post('/quan-ly-xe/{vehicle}/docs', [TruckingV2Controller::class, 'uploadVehicleDocs'])->name('fleet.docs.upload')->whereNumber('vehicle');
             Route::delete('/quan-ly-xe/{vehicle}/docs/{idx}', [TruckingV2Controller::class, 'deleteVehicleDoc'])->name('fleet.docs.delete')->whereNumber('vehicle')->whereNumber('idx');
+            // Quản lý tài sản (kind='asset' — dùng chung route data/section/save/docs/cost ở trên)
+            Route::post('/quan-ly-tai-san',          [TruckingV2Controller::class, 'createAsset'])->name('asset.create');
+            Route::post('/quan-ly-tai-san-category', [TruckingV2Controller::class, 'addAssetCategory'])->name('asset.category');
+            Route::delete('/quan-ly-tai-san/{vehicle}', [TruckingV2Controller::class, 'destroyAsset'])->name('asset.destroy')->whereNumber('vehicle');
         });
     });
 
@@ -273,5 +278,7 @@ Route::middleware('auth')->group(function () {
         Route::get ('/system-settings',      [SystemSettingController::class, 'index'])->name('system.settings');
         Route::put ('/system-settings',      [SystemSettingController::class, 'update'])->name('system.settings.update');
         Route::post('/system-settings/test', [SystemSettingController::class, 'test'])->name('system.settings.test');
+        Route::post('/system-settings/backup', [SystemSettingController::class, 'backupNow'])->name('system.settings.backupNow');
+        Route::get ('/system-settings/backup/{file}/download', [SystemSettingController::class, 'downloadBackup'])->name('system.settings.backupDownload');
     });
 });

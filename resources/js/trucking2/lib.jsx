@@ -1,4 +1,5 @@
 import React from "react";
+import { createPortal } from "react-dom";
 const { useState, useRef, useMemo, useEffect, useCallback } = React;
 
 /* ============================ responsive ============================ */
@@ -93,12 +94,27 @@ function Txt({ value, onChange, placeholder }) {
 function Combo({ value, onChange, options = [], onCreate, placeholder = "Chọn…", small, clearable, strict }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
+  const [pos, setPos] = useState(null);   // vị trí dropdown (fixed) — thoát khỏi overflow của modal
   const wrapRef = useRef(null);
+  const btnRef = useRef(null);
+  const popRef = useRef(null);
+  // Đặt dropdown theo viewport: tự lật LÊN khi dưới thiếu chỗ (trong modal cuộn)
+  const place = () => {
+    const el = btnRef.current; if (!el) return;
+    const r = el.getBoundingClientRect();
+    const below = window.innerHeight - r.bottom, above = r.top, want = 264;
+    const up = below < Math.min(want, 220) && above > below;
+    setPos({ left: r.left, width: r.width, top: r.top, bottom: r.bottom, up, maxH: Math.max(150, Math.min(want, (up ? above : below) - 14)) });
+  };
   useEffect(() => {
-    if (!open) return;
-    const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) { setOpen(false); setQ(""); } };
+    if (!open) { setPos(null); return; }
+    place();
+    const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target) && popRef.current && !popRef.current.contains(e.target)) { setOpen(false); setQ(""); } };
+    const onMove = () => place();
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    window.addEventListener("scroll", onMove, true);
+    window.addEventListener("resize", onMove);
+    return () => { document.removeEventListener("mousedown", onDoc); window.removeEventListener("scroll", onMove, true); window.removeEventListener("resize", onMove); };
   }, [open]);
 
   const ql = q.trim().toLowerCase();
@@ -115,7 +131,7 @@ function Combo({ value, onChange, options = [], onCreate, placeholder = "Chọn�
 
   return (
     <div ref={wrapRef} style={{ position: "relative", width: "100%" }}>
-      <button type="button" onClick={() => setOpen((o) => !o)}
+      <button type="button" ref={btnRef} onClick={() => setOpen((o) => !o)}
         style={{ width: "100%", textAlign: "left", padding: pad, fontSize: small ? 13 : 13.5, cursor: "pointer",
           background: "#fff", border: `1px solid ${open ? "var(--accent)" : "var(--line)"}`, borderRadius: 9, outline: "none",
           color: value ? "var(--ink)" : "var(--ink-4)", boxShadow: open ? "0 0 0 3px var(--accent-weak)" : "none",
@@ -131,16 +147,18 @@ function Combo({ value, onChange, options = [], onCreate, placeholder = "Chọn�
         )}
         <span style={{ position: "absolute", right: 9, top: "50%", transform: `translateY(-50%) rotate(${open ? 180 : 0}deg)`, color: "var(--ink-3)", transition: "transform .12s", pointerEvents: "none" }}><I.chev /></span>
       </button>
-      {open && (
-        <div style={{ position: "absolute", zIndex: 80, top: "calc(100% + 4px)", left: 0, right: 0, background: "#fff",
+      {open && pos && createPortal(
+        <div ref={popRef} style={{ position: "fixed", zIndex: 9999, left: pos.left, width: pos.width,
+          ...(pos.up ? { bottom: Math.round(window.innerHeight - pos.top + 4) } : { top: Math.round(pos.bottom + 4) }),
+          display: "flex", flexDirection: "column", background: "#fff",
           border: "1px solid var(--line)", borderRadius: 11, boxShadow: "0 12px 32px -8px rgba(16,19,23,.24), 0 2px 8px rgba(16,19,23,.08)", overflow: "hidden" }}>
-          <div style={{ padding: 7, borderBottom: "1px solid var(--line-2)", position: "relative" }}>
+          <div style={{ padding: 7, borderBottom: "1px solid var(--line-2)", position: "relative", flexShrink: 0 }}>
             <span style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)" }}><I.search /></span>
             <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm hoặc thêm mới…"
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (filtered.length && !ql) return; if (filtered.length === 1) pick(filtered[0].value); else if (!strict && !exact && q.trim()) create(); } }}
               style={{ width: "100%", padding: "7px 10px 7px 30px", fontSize: 13, border: "1px solid var(--line)", borderRadius: 8, outline: "none" }} />
           </div>
-          <div style={{ maxHeight: 196, overflowY: "auto", padding: 4 }}>
+          <div style={{ maxHeight: pos.maxH, overflowY: "auto", padding: 4 }}>
             {filtered.map((o) => {
               const sel = o.value === value;
               return (
@@ -168,7 +186,8 @@ function Combo({ value, onChange, options = [], onCreate, placeholder = "Chọn�
             )}
             {!filtered.length && !q && <div style={{ padding: "12px 10px", fontSize: 12.5, color: "var(--ink-4)" }}>Chưa có dữ liệu — gõ để thêm mới.</div>}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

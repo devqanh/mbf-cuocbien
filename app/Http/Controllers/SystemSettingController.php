@@ -5,8 +5,11 @@ namespace App\Http\Controllers;
 use App\Models\TruckingSetting;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**
  * Cài đặt hệ thống (chung) — hiện có: nơi lưu file (local / S3). Lưu vào TruckingSetting (prefix 'sys.').
@@ -38,7 +41,78 @@ class SystemSettingController extends Controller
                 'endpoint' => TruckingSetting::get('sys.s3_endpoint', ''),
                 'hasSecret' => (bool) TruckingSetting::get('sys.s3_secret'),
             ],
+            'backups'    => $this->listBackups(),
+            'lastBackup' => $this->lastBackup(),
         ]);
+    }
+
+    // ===================== Sao lưu CSDL =====================
+
+    private function backupDir(): string
+    {
+        return storage_path('app/backups');
+    }
+
+    /** Danh sách tối đa 15 bản sao lưu gần nhất (mới → cũ). */
+    private function listBackups(): array
+    {
+        $dir = $this->backupDir();
+        if (! is_dir($dir)) return [];
+        $files = glob($dir . DIRECTORY_SEPARATOR . '*.sql.gz') ?: [];
+        usort($files, fn ($a, $b) => filemtime($b) <=> filemtime($a));
+        return array_map(fn ($f) => [
+            'name'  => basename($f),
+            'bytes' => (int) filesize($f),
+            'human' => $this->humanBytes((int) filesize($f)),
+            'at'    => date('d/m/Y H:i', filemtime($f)),
+        ], array_slice($files, 0, 15));
+    }
+
+    /** Báo cáo lần chạy gần nhất (do command db:backup ghi lại). */
+    private function lastBackup(): ?array
+    {
+        $raw = TruckingSetting::get('sys.backup_last_run');
+        if (! $raw) return null;
+        $d = json_decode($raw, true);
+        if (! is_array($d)) return null;
+        $d['at_human'] = ! empty($d['at']) ? Carbon::parse($d['at'])->format('d/m/Y H:i') : '';
+        $d['human']    = $this->humanBytes((int) ($d['bytes'] ?? 0));
+        return $d;
+    }
+
+    private function humanBytes(int $b): string
+    {
+        if ($b >= 1073741824) return round($b / 1073741824, 2) . ' GB';
+        if ($b >= 1048576)    return round($b / 1048576, 2) . ' MB';
+        if ($b >= 1024)       return round($b / 1024) . ' KB';
+        return $b . ' B';
+    }
+
+    /** Chạy sao lưu ngay (đồng bộ) từ nút trên trang. */
+    public function backupNow(): RedirectResponse
+    {
+        try {
+            $code = Artisan::call('db:backup');
+            if ($code === 0) {
+                return back()->with('tab', 'backup')->with('success', 'Đã tạo bản sao lưu mới.');
+            }
+            return back()->with('tab', 'backup')->with('error', 'Sao lưu thất bại: ' . trim(Artisan::output()));
+        } catch (\Throwable $e) {
+            return back()->with('tab', 'backup')->with('error', 'Lỗi khi sao lưu: ' . $e->getMessage());
+        }
+    }
+
+    /** Tải 1 file sao lưu — chặn path traversal, chỉ cho file .sql.gz trong thư mục backups. */
+    public function downloadBackup(string $file): BinaryFileResponse
+    {
+        if (! preg_match('/^[A-Za-z0-9_.\-]+\.sql\.gz$/', $file)) {
+            abort(404);
+        }
+        $path = $this->backupDir() . DIRECTORY_SEPARATOR . $file;
+        if (! is_file($path)) {
+            abort(404);
+        }
+        return response()->download($path);
     }
 
     public function update(Request $request): RedirectResponse
@@ -64,11 +138,11 @@ class SystemSettingController extends Controller
         if ($data['upload_disk'] === 's3') {
             foreach (['s3_key' => 'Access Key', 's3_region' => 'Region', 's3_bucket' => 'Bucket'] as $k => $label) {
                 if (trim((string) ($data[$k] ?? '')) === '') {
-                    return back()->withInput()->with('error', "Chọn S3 thì bắt buộc nhập {$label}.");
+                    return back()->withInput()->with('tab', 'storage')->with('error', "Chọn S3 thì bắt buộc nhập {$label}.");
                 }
             }
             if (! TruckingSetting::get('sys.s3_secret') && trim((string) ($data['s3_secret'] ?? '')) === '') {
-                return back()->withInput()->with('error', 'Chọn S3 thì bắt buộc nhập Secret Key.');
+                return back()->withInput()->with('tab', 'storage')->with('error', 'Chọn S3 thì bắt buộc nhập Secret Key.');
             }
         }
 
@@ -104,9 +178,9 @@ class SystemSettingController extends Controller
             Storage::disk($disk)->put($name, 'ok');
             $ok = Storage::disk($disk)->get($name) === 'ok';
             Storage::disk($disk)->delete($name);
-            return back()->with($ok ? 'success' : 'error', $ok ? "Kết nối disk “{$disk}” OK." : "Đọc/ghi disk “{$disk}” thất bại.");
+            return back()->with('tab', 'storage')->with($ok ? 'success' : 'error', $ok ? "Kết nối disk “{$disk}” OK." : "Đọc/ghi disk “{$disk}” thất bại.");
         } catch (\Throwable $e) {
-            return back()->with('error', "Lỗi kết nối disk “{$disk}”: " . $e->getMessage());
+            return back()->with('tab', 'storage')->with('error', "Lỗi kết nối disk “{$disk}”: " . $e->getMessage());
         }
     }
 }

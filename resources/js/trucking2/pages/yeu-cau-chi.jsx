@@ -58,13 +58,28 @@ function Picker({ value, onChange, options, placeholder, icon }) {
   );
 }
 
+const HIST_PAGE_SIZE = 6;   // số phiếu mỗi trang lịch sử
+
 function App() {
-  const { useState, useRef } = React;
+  const { useState, useRef, useEffect } = React;
   const vehicles = B.vehicles || [];
+  const assets = B.assets || [];
+  const hasAssets = assets.length > 0;
   const costItems = B.costItems || [];
   const auth = B.auth || {};
-  const [history, setHistory] = useState(B.history || []);
-  const refreshHistory = async () => { try { const r = await window.trkApi("GET", T.routes.history); if (r && r.ok) setHistory(r.history || []); } catch (e) {} };
+  const [tab, setTab] = useState("form");   // 'form' | 'history'
+  const [history, setHistory] = useState([]);
+  const [histCount, setHistCount] = useState(B.historyCount || 0);   // badge (boot, nhẹ)
+  const [histLoaded, setHistLoaded] = useState(false);
+  const [histLoading, setHistLoading] = useState(false);
+  const [histPage, setHistPage] = useState(1);
+  const refreshHistory = async () => {
+    setHistLoading(true);
+    try { const r = await window.trkApi("GET", T.routes.history); if (r && r.ok) { setHistory(r.history || []); setHistCount((r.history || []).length); setHistLoaded(true); } }
+    catch (e) {} finally { setHistLoading(false); }
+  };
+  // Lazy-load lịch sử lần đầu mở tab (không nằm trong boot)
+  useEffect(() => { if (tab === "history" && !histLoaded && !histLoading) refreshHistory(); }, [tab]);
   const logout = async () => { try { await window.trkApi("POST", T.routes.logout); } catch (e) {} window.location.reload(); };
   const cancelItem = async (h) => {
     const ok = await window.confirmAction({ title: "Hủy phiếu này?", text: `Phiếu <b>${h.invoiceNo || h.name}</b> · ${h.amount} đ sẽ bị hủy.`, confirmText: "Hủy phiếu", danger: true });
@@ -72,11 +87,17 @@ function App() {
     try { const r = await window.trkApi("POST", T.routes.cancel + h.id + "/cancel"); if (r && r.ok) { window.trkToast("Đã hủy phiếu"); refreshHistory(); } else window.trkToast((r && r.message) || "Không hủy được", "error"); } catch (e) {}
   };
   const [editId, setEditId] = useState(null);   // đang sửa phiếu nào (null = tạo mới)
+  const [target, setTarget] = useState("vehicle");   // 'vehicle' | 'asset'
   const [vehicleId, setVehicleId] = useState(vehicles.length === 1 ? String(vehicles[0].id) : "");
+  const isAsset = target === "asset";
+  const targetOpts = isAsset
+    ? assets.map((a) => ({ v: String(a.id), t: a.name + (a.code ? " · " + a.code : "") }))
+    : vehicles.map((v) => ({ v: String(v.id), t: v.plate }));
   const [costItem, setCostItem] = useState("");
   const [date, setDate] = useState(today10());
   const [amount, setAmount] = useState("");
   const [km, setKm] = useState("");
+  const [note, setNote] = useState("");
   const [photos, setPhotos] = useState([]);   // [{file?:File mới, ref?:basename ảnh cũ, url, name}]
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
@@ -89,15 +110,17 @@ function App() {
 
   const resetForm = () => {
     photos.forEach((p) => { if (p.file && p.url) { try { URL.revokeObjectURL(p.url); } catch (e) {} } });
-    setEditId(null); setCostItem(""); setDate(today10()); setAmount(""); setKm(""); setPhotos([]);
-    setVehicleId(vehicles.length === 1 ? String(vehicles[0].id) : ""); setResult(null);
+    setEditId(null); setCostItem(""); setDate(today10()); setAmount(""); setKm(""); setNote(""); setPhotos([]);
+    setTarget("vehicle"); setVehicleId(vehicles.length === 1 ? String(vehicles[0].id) : ""); setResult(null);
   };
   const startEdit = (h) => {
+    const asAsset = assets.some((a) => String(a.id) === String(h.vehicleId));
+    setTarget(asAsset ? "asset" : "vehicle");
     setEditId(h.id); setVehicleId(String(h.vehicleId || "")); setCostItem(h.name || "");
-    setDate(h.date || today10()); setAmount(h.amount || ""); setKm(h.km || "");
+    setDate(h.date || today10()); setAmount(h.amount || ""); setKm(h.km || ""); setNote(h.note || "");
     setPhotos((h.photos || []).map((p) => ({ ref: p.id, url: p.url, name: p.name })));
-    setResult(null);
-    try { formRef.current && formRef.current.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) {}
+    setResult(null); setTab("form");
+    try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (e) {}
   };
 
   const addPhotos = (e) => {
@@ -110,7 +133,7 @@ function App() {
   const submit = async () => {
     if (busy) return;
     setResult(null);
-    if (!vehicleId) return setResult({ ok: false, message: "Vui lòng chọn xe." });
+    if (!vehicleId) return setResult({ ok: false, message: isAsset ? "Vui lòng chọn tài sản." : "Vui lòng chọn xe." });
     if (!costItem) return setResult({ ok: false, message: "Vui lòng chọn loại chi phí." });
     const amt = amount.replace(/[^\d]/g, "");
     if (!amt) return setResult({ ok: false, message: "Vui lòng nhập số tiền." });
@@ -122,14 +145,20 @@ function App() {
       fd.append("date", date);
       fd.append("amount", amt);
       fd.append("km", km.replace(/[^\d]/g, ""));
+      fd.append("note", note);
       photos.filter((p) => p.file).forEach((p) => fd.append("photos[]", p.file));
       if (editId) photos.filter((p) => p.ref).forEach((p) => fd.append("keep[]", p.ref));
+      const wasEdit = !!editId;
       const r = await window.trkUpload("POST", editId ? (T.routes.cancel + editId + "/update") : T.routes.submit, fd);
-      if (r && r.ok) { window.trkToast(editId ? "Đã cập nhật phiếu" : "Đã gửi yêu cầu chi"); resetForm(); refreshHistory(); }
+      if (r && r.ok) { window.trkToast(wasEdit ? "Đã cập nhật phiếu" : "Đã gửi yêu cầu chi"); resetForm(); refreshHistory(); setHistPage(1); setTab("history"); }
       else setResult(r);
     } catch (e) { setResult({ ok: false, message: "Lỗi kết nối — vui lòng thử lại." }); }
     setBusy(false);
   };
+
+  const histTotalPages = Math.max(1, Math.ceil(history.length / HIST_PAGE_SIZE));
+  const histPageSafe = Math.min(histPage, histTotalPages);
+  const histPageItems = history.slice((histPageSafe - 1) * HIST_PAGE_SIZE, histPageSafe * HIST_PAGE_SIZE);
 
   return (
     <div style={{ maxWidth: 480, margin: "0 auto", padding: "20px 16px 48px" }}>
@@ -142,6 +171,21 @@ function App() {
         <button type="button" onClick={logout} title="Đăng xuất" style={{ flexShrink: 0, border: "1px solid #d9dee7", background: "#fff", color: "#6b7585", borderRadius: 10, padding: "8px 11px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}><i className="bi bi-box-arrow-right" /></button>
       </div>
 
+      {/* Tabs: Gửi yêu cầu | Lịch sử */}
+      <div style={{ display: "flex", background: "#eceef2", borderRadius: 13, padding: 4, gap: 3, marginBottom: 16 }}>
+        {[["form", "Gửi yêu cầu", "bi-pencil-square", null], ["history", "Lịch sử", "bi-clock-history", histCount]].map(([k, t, ic, badge]) => {
+          const on = tab === k;
+          return (
+            <button key={k} type="button" onClick={() => setTab(k)}
+              style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, border: "none", cursor: "pointer", fontSize: 14.5, fontWeight: 700, padding: "11px 10px", borderRadius: 10, background: on ? "#fff" : "transparent", color: on ? "#2a6fdb" : "#6b7585", boxShadow: on ? "0 1px 3px rgba(16,24,40,.12)" : "none" }}>
+              <i className={"bi " + ic} /> {t}
+              {badge ? <span style={{ fontSize: 11, fontWeight: 800, color: on ? "#2a6fdb" : "#8b95a5", background: on ? "#eaf1fd" : "#dfe3ea", padding: "0 7px", borderRadius: 999, minWidth: 18, textAlign: "center" }}>{badge}</span> : null}
+            </button>
+          );
+        })}
+      </div>
+
+      {tab === "form" && (
       <div ref={formRef} style={{ background: "#fff", border: "1px solid #e3e7ee", borderRadius: 18, padding: "20px 16px", boxShadow: "0 1px 3px rgba(16,24,40,.05)" }}>
         {editId && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#eff5ff", border: "1px solid #cfe0fb", borderRadius: 12, padding: "10px 12px", marginBottom: 16, fontSize: 13.5, color: "#1f4f9e" }}>
@@ -153,9 +197,26 @@ function App() {
           <label style={label}>Người yêu cầu</label>
           <div style={{ ...input, background: "#f4f6fa", color: "#6b7585", display: "flex", alignItems: "center", gap: 9, cursor: "default" }}><i className="bi bi-person-circle" style={{ fontSize: 18, color: "#9aa3b2" }} />{auth.name || "—"}</div>
         </div>
+        {!editId && (
+          <div style={field}>
+            <label style={label}>Đề nghị chi cho</label>
+            <div style={{ display: "flex", background: "#eef1f5", borderRadius: 12, padding: 4, gap: 3 }}>
+              {[["vehicle", "Xe", "bi-truck"], ["asset", "Tài sản", "bi-box-seam"]].map(([k, t, ic]) => {
+                const on = target === k;
+                return (
+                  <button key={k} type="button" onClick={() => { setTarget(k); setVehicleId(""); }}
+                    style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, border: "none", cursor: "pointer", fontSize: 14.5, fontWeight: 700, padding: "10px 12px", borderRadius: 9, background: on ? "#fff" : "transparent", color: on ? "#2a6fdb" : "#6b7585", boxShadow: on ? "0 1px 3px rgba(16,24,40,.12)" : "none" }}>
+                    <i className={"bi " + ic} /> {t}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         <div style={field}>
-          <label style={label}>Xe <span style={{ color: "#e0533d" }}>*</span></label>
-          <Picker value={vehicleId} onChange={setVehicleId} options={vehicles.map((v) => ({ v: String(v.id), t: v.plate }))} placeholder="Chọn xe…" icon="bi-truck" />
+          <label style={label}>{isAsset ? "Tài sản" : "Xe"} <span style={{ color: "#e0533d" }}>*</span></label>
+          <Picker value={vehicleId} onChange={setVehicleId} options={targetOpts} placeholder={isAsset ? "Chọn tài sản…" : "Chọn xe…"} icon={isAsset ? "bi-box-seam" : "bi-truck"} />
+          {isAsset && !hasAssets && <div style={{ fontSize: 12.5, color: "#9aa3b2", marginTop: 7, display: "flex", alignItems: "center", gap: 6 }}><i className="bi bi-info-circle" /> Chưa có tài sản nào — thêm ở mục <b style={{ color: "#6b7585" }}>Quản lý tài sản</b>.</div>}
         </div>
         <div style={field}>
           <label style={label}>Loại chi phí <span style={{ color: "#e0533d" }}>*</span></label>
@@ -167,10 +228,12 @@ function App() {
             <label style={label}>Ngày chi</label>
             <input type="date" style={{ ...input, colorScheme: "light" }} value={date} onChange={(e) => setDate(e.target.value)} />
           </div>
-          <div style={{ ...field, flex: 1 }}>
-            <label style={label}>KM hiện tại</label>
-            <input inputMode="numeric" style={{ ...input, textAlign: "right", fontVariantNumeric: "tabular-nums" }} value={group(km)} onChange={(e) => setKm(e.target.value)} placeholder="Số đồng hồ" />
-          </div>
+          {!isAsset && (
+            <div style={{ ...field, flex: 1 }}>
+              <label style={label}>KM hiện tại</label>
+              <input inputMode="numeric" style={{ ...input, textAlign: "right", fontVariantNumeric: "tabular-nums" }} value={group(km)} onChange={(e) => setKm(e.target.value)} placeholder="Số đồng hồ" />
+            </div>
+          )}
         </div>
 
         <div style={field}>
@@ -179,6 +242,12 @@ function App() {
             <input inputMode="numeric" style={{ ...input, textAlign: "right", fontWeight: 800, fontSize: 19, paddingRight: 42, fontVariantNumeric: "tabular-nums" }} value={group(amount)} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
             <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 14, fontWeight: 700, color: "#9aa3b2" }}>đ</span>
           </div>
+        </div>
+
+        <div style={field}>
+          <label style={label}>Ghi chú / giải trình <span style={{ color: "#9aa3b2", fontWeight: 400 }}>(để kế toán hiểu rõ)</span></label>
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="VD: thay lốp sau bị thủng, mua tại garage gần KCN…"
+            style={{ ...input, resize: "vertical", minHeight: 56, lineHeight: 1.5, fontFamily: "inherit" }} />
         </div>
 
         <div style={field}>
@@ -215,30 +284,41 @@ function App() {
           {busy ? <><span style={{ width: 18, height: 18, border: "2.5px solid rgba(255,255,255,.45)", borderTopColor: "#fff", borderRadius: "50%", display: "inline-block", animation: "trk-spin .7s linear infinite" }} /> {editId ? "Đang cập nhật…" : "Đang gửi…"}</> : (editId ? <><i className="bi bi-check-lg" /> Cập nhật phiếu</> : <><i className="bi bi-send-fill" /> Gửi yêu cầu</>)}
         </button>
       </div>
+      )}
 
-      <div style={{ marginTop: 22 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: "#3a4759", margin: "0 4px 10px" }}>Lịch sử yêu cầu{history.length ? ` (${history.length})` : ""}</div>
-        {history.length === 0 ? (
+      {tab === "history" && (
+      <div>
+        {(histLoading && !histLoaded) ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 9, padding: "40px 16px", color: "#9aa3b2", fontSize: 14 }}>
+            <span style={{ width: 18, height: 18, border: "2.5px solid #e3e7ee", borderTopColor: "#2a6fdb", borderRadius: "50%", display: "inline-block", animation: "trk-spin .7s linear infinite" }} /> Đang tải lịch sử…
+          </div>
+        ) : history.length === 0 ? (
           <div style={{ background: "#fff", border: "1px dashed #d0d7e2", borderRadius: 14, padding: "28px 16px", textAlign: "center", color: "#9aa3b2" }}>
             <div style={{ fontSize: 32, marginBottom: 6, color: "#c3ccda" }}><i className="bi bi-inbox" /></div>
-            <div style={{ fontSize: 13.5 }}>Chưa có phiếu nào.<br />Điền form trên rồi bấm <b>Gửi yêu cầu</b>.</div>
+            <div style={{ fontSize: 13.5 }}>Chưa có phiếu nào.<br />Sang tab <b>Gửi yêu cầu</b> để tạo phiếu mới.</div>
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {history.map((h) => {
+            {histPageItems.map((h) => {
               const st = ({ pending: ["#e0a92e", "#fdf3df"], approved: ["#2a6fdb", "#eaf1fd"], paid: ["#16a34a", "#e8f6ee"], cancelled: ["#94a3b8", "#f1f3f6"] })[h.status] || ["#6b7585", "#f1f3f6"];
               return (
                 <div key={h.id} style={{ background: "#fff", border: editId === h.id ? "1.5px solid #2a6fdb" : "1px solid #e3e7ee", borderRadius: 14, padding: "12px 14px", opacity: h.status === "cancelled" ? 0.7 : 1 }}>
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 14.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: h.status === "cancelled" ? "line-through" : "none" }}>{h.name}</div>
-                      <div style={{ fontSize: 12, color: "#9aa3b2", marginTop: 2 }}>{h.plate} · {dmy(h.date)}{h.invoiceNo ? " · " + h.invoiceNo : ""}{(h.photos || []).length ? " · 📷 " + h.photos.length : ""}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                        {(() => { const a = h.kind === "asset"; return (
+                          <span style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, fontWeight: 700, color: a ? "#7c3aed" : "#2a6fdb", background: a ? "#f1ebfe" : "#eaf1fd", padding: "2px 8px", borderRadius: 999 }}><i className={"bi " + (a ? "bi-box-seam" : "bi-truck")} /> {a ? "Tài sản" : "Xe"}</span>
+                        ); })()}
+                        <div style={{ fontSize: 14.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: h.status === "cancelled" ? "line-through" : "none" }}>{h.name}</div>
+                      </div>
+                      <div style={{ fontSize: 12, color: "#9aa3b2", marginTop: 2 }}>{h.targetName || h.plate} · {dmy(h.date)}{h.invoiceNo ? " · " + h.invoiceNo : ""}{(h.photos || []).length ? " · 📷 " + h.photos.length : ""}</div>
                     </div>
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
                       <div style={{ fontSize: 15.5, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{group(h.amount)} đ</div>
                       <span style={{ display: "inline-block", marginTop: 3, fontSize: 11, fontWeight: 700, color: st[0], background: st[1], padding: "2px 9px", borderRadius: 999 }}>{h.statusLabel}</span>
                     </div>
                   </div>
+                  {h.note && <div style={{ marginTop: 8, fontSize: 12.5, color: "#5a6677", background: "#f7f9fc", border: "1px solid #eef1f6", borderRadius: 9, padding: "7px 10px", lineHeight: 1.5 }}><i className="bi bi-chat-left-text" style={{ color: "#9aa3b2", marginRight: 5 }} />{h.note}</div>}
                   {(h.canEdit || h.canCancel) && (
                     <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
                       {h.canEdit && <button type="button" onClick={() => startEdit(h)} style={{ flex: 1, padding: "9px", fontSize: 13.5, fontWeight: 700, border: "1px solid #cfe0fb", background: "#fff", color: "#2a6fdb", borderRadius: 10, cursor: "pointer" }}><i className="bi bi-pencil" /> Sửa</button>}
@@ -250,7 +330,17 @@ function App() {
             })}
           </div>
         )}
+        {histLoaded && history.length > HIST_PAGE_SIZE && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 14 }}>
+            <button type="button" onClick={() => setHistPage((p) => Math.max(1, p - 1))} disabled={histPageSafe <= 1}
+              style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "8px 12px", fontSize: 13.5, fontWeight: 700, border: "1px solid #d9dee7", borderRadius: 10, background: "#fff", color: histPageSafe <= 1 ? "#c3ccda" : "#3a4759", cursor: histPageSafe <= 1 ? "default" : "pointer" }}><i className="bi bi-chevron-left" /> Trước</button>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "#6b7585", padding: "0 8px" }} className="tnum">{histPageSafe}/{histTotalPages}</span>
+            <button type="button" onClick={() => setHistPage((p) => Math.min(histTotalPages, p + 1))} disabled={histPageSafe >= histTotalPages}
+              style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "8px 12px", fontSize: 13.5, fontWeight: 700, border: "1px solid #d9dee7", borderRadius: 10, background: "#fff", color: histPageSafe >= histTotalPages ? "#c3ccda" : "#3a4759", cursor: histPageSafe >= histTotalPages ? "default" : "pointer" }}>Sau <i className="bi bi-chevron-right" /></button>
+          </div>
+        )}
       </div>
+      )}
 
       <div style={{ textAlign: "center", fontSize: 11.5, color: "#9aa3b2", marginTop: 18 }}>MBF Joint Stock Company</div>
     </div>

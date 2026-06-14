@@ -36,21 +36,27 @@ class SpendRequestCreatedNotification extends Notification
 
     public function toArray(object $notifiable): array
     {
-        $amount = (int) round((float) $this->cost->amount);
+        $amount  = (int) round((float) $this->cost->amount);
+        $isAsset = ($this->vehicle->kind ?? 'vehicle') === 'asset';
+        $vinfo   = is_array($this->vehicle->info) ? $this->vehicle->info : [];
+        $target  = $isAsset ? (($vinfo['name'] ?? '') ?: $this->vehicle->plate) : $this->vehicle->plate;
 
         return [
             'type'       => 'trucking.spend_request',
             'cost_id'    => $this->cost->id,
             'vehicle_id' => $this->vehicle->id,
+            'kind'       => $isAsset ? 'asset' : 'vehicle',
             'plate'      => $this->vehicle->plate,
+            'target'     => $target,
             'item'       => $this->cost->name,
             'invoice_no' => $this->cost->invoice_no,
             'amount'     => $amount,
-            // Deep-link: mở xe + tab chi phí + cuộn tới đúng phiếu chi.
-            'url'        => route('trucking2.fleet') . '#' . $this->vehicle->id . '/cost/' . $this->cost->id,
-            'message'    => sprintf('Yêu cầu chi “%s” cho xe %s — %s đ. Chờ duyệt.',
+            // Deep-link: mở đúng chế độ (xe / tài sản) + tab chi phí + cuộn tới phiếu.
+            'url'        => route('trucking2.fleet') . '#' . ($isAsset ? 'asset/' : '') . $this->vehicle->id . '/cost/' . $this->cost->id,
+            'message'    => sprintf('Yêu cầu chi “%s” cho %s %s — %s đ. Chờ duyệt.',
                 $this->cost->name,
-                $this->vehicle->plate,
+                $isAsset ? 'tài sản' : 'xe',
+                $target,
                 number_format($amount, 0, ',', '.')),
             'icon'       => 'cash-coin',
             'color'      => 'warning',

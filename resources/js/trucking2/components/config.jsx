@@ -16,6 +16,7 @@ const CFG_GROUPS = [
   { key: "drivers", label: "Lái xe", hint: "hồ sơ tài xế — SĐT (nhiều số), ngày sinh, ngày vào công ty (tự tính thâm niên), tài khoản ngân hàng, tài liệu CCCD/bằng lái", ph: "VD: A.Tuấn", drivers: true },
   { key: "salaryItems", label: "Khoản lương (lái xe)", hint: "các khoản lương thêm (thưởng, phụ cấp…) — chọn ở Phí xe nội bộ thay vì nhập tay để sau tổng hợp lương dễ", ph: "VD: Thưởng chuyên cần" },
   { key: "vehicleCostTypes", label: "Loại chi phí xe", hint: "loại chi phí bảo dưỡng/sửa chữa xe — chọn ở Quản lý xe (tab Chi phí) để nhóm báo cáo theo loại", ph: "VD: Bảo dưỡng định kỳ" },
+  { key: "assetCategories", label: "Loại tài sản", hint: "phân loại tài sản (máy móc, thiết bị, nhà xưởng…) — chọn khi thêm/sửa tài sản ở Quản lý tài sản", ph: "VD: Máy móc thiết bị" },
   { key: "routeFees", label: "Phí tuyến đường", hint: "định mức phí & dầu cho từng tuyến (tập kho) — vé trạm, tiền đường, trợ cấp, phí khác, lương CRU, km, dầu 2 cầu/1 cầu", ph: "", routefees: true },
   { key: "fuelPrices", label: "Bảng giá dầu", hint: "đơn giá dầu (đồng/lít) theo khoảng ngày — link tính tiền dầu cho tuyến theo ngày của lô", ph: "", fuelprices: true },
   { key: "__general", label: "Cấu hình chung", hint: "cấu hình dùng chung cho hệ thống — VAT mặc định, ngưỡng Free time… (mở rộng thêm sau)", general: true },
