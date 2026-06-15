@@ -50,6 +50,16 @@ function popupHtml(p) {
   </div>`;
 }
 
+/* Style bản đồ TỐI GIẢN cho logistics: ẩn POI (quán ăn/khu vui chơi…), transit, icon biển báo
+   → chỉ còn ĐƯỜNG + tên đường + cao tốc, để xe & kho nổi bật, dễ nhìn tuyến. */
+const MAP_STYLE = [
+  { featureType: "poi", stylers: [{ visibility: "off" }] },
+  { featureType: "poi.business", stylers: [{ visibility: "off" }] },
+  { featureType: "transit", stylers: [{ visibility: "off" }] },
+  { featureType: "road", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+  { featureType: "administrative.neighborhood", stylers: [{ visibility: "off" }] },
+];
+
 /* Marker KHO — ghim teardrop màu chàm + biểu tượng nhà kho. Anchor ở mũi (đáy). */
 const WAREHOUSE_PIN = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" width="34" height="42" viewBox="0 0 34 42">
@@ -163,6 +173,9 @@ function TrackingApp() {
   const [warehouses, setWarehouses] = useState([]);
   const [whPanel, setWhPanel] = useState(false);     // mở panel quản lý vị trí kho (admin)
   const [placingId, setPlacingId] = useState(null);  // kho đang chờ bấm/đặt điểm
+  const [trafficOn, setTrafficOn] = useState(true);   // lớp giao thông — MẶC ĐỊNH BẬT (chọn tuyến tiện)
+  const [satellite, setSatellite] = useState(false);  // ảnh vệ tinh
+  const trafficRef = useRef(null);
 
   const idOf = (p) => p.provider + ":" + p.plateNorm;
 
@@ -268,7 +281,7 @@ function TrackingApp() {
       mapRef.current = new maps.Map(mapEl.current, {
         center: { lat: 16.5, lng: 106.5 }, zoom: 6,
         mapTypeControl: false, streetViewControl: false, fullscreenControl: true, clickableIcons: false,
-        gestureHandling: "greedy",
+        gestureHandling: "greedy", styles: MAP_STYLE,   // ẩn POI/transit → bản đồ logistics gọn
       });
       infoRef.current = new maps.InfoWindow();
       infoRef.current.addListener("closeclick", () => { infoOpenRef.current = null; });
@@ -363,6 +376,18 @@ function TrackingApp() {
   useEffect(() => {
     if (mapRef.current) mapRef.current.setOptions({ draggableCursor: placingId != null ? "crosshair" : null });
   }, [placingId]);
+
+  // Lớp giao thông (chọn tuyến tiện) — bật/tắt
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !window.google) return;
+    if (trafficOn && !trafficRef.current) trafficRef.current = new window.google.maps.TrafficLayer();
+    if (trafficRef.current) trafficRef.current.setMap(trafficOn ? mapRef.current : null);
+  }, [trafficOn, mapReady]);
+
+  // Ảnh vệ tinh ↔ bản đồ đường
+  useEffect(() => {
+    if (mapRef.current) mapRef.current.setMapTypeId(satellite ? "hybrid" : "roadmap");
+  }, [satellite, mapReady]);
 
   const focusVehicle = (p) => {
     const id = idOf(p); setSelected(id);
@@ -495,6 +520,20 @@ function TrackingApp() {
         {/* map */}
         <div style={{ flex: 1, minHeight: 0, position: "relative", display: isMobile && mobileView !== "map" ? "none" : "block", order: isMobile ? 1 : 0 }}>
           <div ref={mapEl} style={{ position: "absolute", inset: 0, background: "#e9edf1" }} />
+
+          {/* Lớp bản đồ: Giao thông + Vệ tinh (góc dưới-trái) */}
+          {mapReady && (
+            <div style={{ position: "absolute", left: 10, bottom: 22, zIndex: 6, display: "flex", gap: 6 }}>
+              {[["traffic", "Giao thông", "bi-traffic-light", trafficOn, () => setTrafficOn((v) => !v)],
+                ["sat", "Vệ tinh", "bi-globe-asia-australia", satellite, () => setSatellite((v) => !v)]].map(([k, label, ic, on, toggle]) => (
+                <button key={k} type="button" onClick={toggle} title={label}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 11px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", borderRadius: 8,
+                    border: on ? "1px solid var(--accent)" : "1px solid var(--line)", background: on ? "var(--accent)" : "#fff", color: on ? "#fff" : "var(--ink-2)", boxShadow: "0 1px 4px rgba(0,0,0,.2)" }}>
+                  <i className={"bi " + ic} /> {label}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Banner đang đặt kho */}
           {placingId != null && (() => { const w = warehouses.find((x) => x.id === placingId); return (
