@@ -2,58 +2,46 @@
 
 namespace App\Console\Commands;
 
-use App\Models\TruckingChohoItem;
-use App\Models\TruckingContType;
-use App\Models\TruckingCostItem;
+use App\Models\TruckingAttachment;
 use App\Models\TruckingCostLine;
-use App\Models\TruckingCustomer;
-use App\Models\TruckingDriver;
-use App\Models\TruckingLocation;
-use App\Models\TruckingPayer;
 use App\Models\TruckingPayment;
-use App\Models\TruckingPriceRow;
-use App\Models\TruckingRevenueItem;
 use App\Models\TruckingRevenueLine;
-use App\Models\TruckingSetting;
 use App\Models\TruckingShipment;
+use App\Models\TruckingShipmentWarehouse;
 use App\Models\TruckingStatement;
 use App\Models\TruckingStatementLine;
 use App\Models\TruckingStatementPayment;
-use App\Models\TruckingVehicle;
-use App\Models\TruckingWarehouse;
+use App\Models\TruckingTripCostBatch;
+use App\Models\TruckingTripCostLine;
 use Illuminate\Console\Command;
 
 /**
- * Xóa SẠCH toàn bộ dữ liệu Trucking v2 để test lại từ đầu.
- * KHÔNG đụng bảng cũ `trucking_entries` (bản Luckysheet).
+ * Xóa dữ liệu NGHIỆP VỤ Trucking v2 để test lại: LÔ HÀNG + BẢNG KÊ + PHÍ XE.
+ * GIỮ NGUYÊN: danh mục & cấu hình (Cài đặt: địa điểm, khách hàng, đội xe, payers,
+ * lái xe, loại cont, kho, khoản chi/thu, cấu hình…) + BẢNG GIÁ (price rows).
+ * KHÔNG đụng bảng cũ `trucking_entries` (Luckysheet).
  */
 class TruckingClear extends Command
 {
     protected $signature = 'trucking:clear {--force : Xóa luôn, không hỏi xác nhận}';
 
-    protected $description = 'Xóa sạch dữ liệu Trucking v2 (lô hàng, bảng kê, bảng giá, danh mục, cấu hình) để test lại';
+    protected $description = 'Xóa dữ liệu nghiệp vụ Trucking v2 (LÔ HÀNG + BẢNG KÊ + PHÍ XE). GIỮ danh mục/cấu hình (Cài đặt) + bảng giá';
 
-    /** Xóa theo thứ tự con → cha để an toàn khóa ngoại. */
+    /** Xóa theo thứ tự con → cha để an toàn khóa ngoại. CHỈ bảng nghiệp vụ. */
     private array $order = [
+        // Bảng kê
         TruckingStatementPayment::class,
         TruckingStatementLine::class,
         TruckingStatement::class,
+        // Phí xe nội bộ (kỳ/snapshot)
+        TruckingTripCostLine::class,
+        TruckingTripCostBatch::class,
+        // Lô hàng (con → cha)
         TruckingPayment::class,
         TruckingRevenueLine::class,
         TruckingCostLine::class,
+        TruckingShipmentWarehouse::class,
         TruckingShipment::class,
-        TruckingPriceRow::class,
-        TruckingCustomer::class,
-        TruckingVehicle::class,
-        TruckingLocation::class,
-        TruckingPayer::class,
-        TruckingDriver::class,
-        TruckingContType::class,
-        TruckingWarehouse::class,
-        TruckingCostItem::class,
-        TruckingChohoItem::class,
-        TruckingRevenueItem::class,
-        TruckingSetting::class,
     ];
 
     public function handle(): int
@@ -66,18 +54,23 @@ class TruckingClear extends Command
             $counts[class_basename($m)] = $c;
             $total += $c;
         }
+        // Ảnh lô (đính qua bảng attachments polymorphic, owner = lô hàng) — xóa kèm để khỏi mồ côi
+        $shipAtt = TruckingAttachment::where('owner_type', TruckingShipment::class)->count();
+        $counts['Attachment (ảnh lô)'] = $shipAtt;
+        $total += $shipAtt;
 
         if ($total === 0) {
-            $this->info('Dữ liệu Trucking v2 đã trống — không có gì để xóa.');
+            $this->info('Dữ liệu nghiệp vụ Trucking v2 đã trống — không có gì để xóa.');
             return self::SUCCESS;
         }
 
-        $this->warn("Sắp xóa {$total} bản ghi Trucking v2:");
+        $this->warn("Sắp xóa {$total} bản ghi NGHIỆP VỤ (lô hàng + bảng kê + phí xe):");
         foreach ($counts as $name => $c) {
             if ($c > 0) $this->line(sprintf('  %-26s %d', $name, $c));
         }
+        $this->info('GIỮ NGUYÊN: danh mục & cấu hình (Cài đặt) + bảng giá.');
 
-        if (! $this->option('force') && ! $this->confirm('Xóa sạch toàn bộ dữ liệu trên? Không thể hoàn tác.')) {
+        if (! $this->option('force') && ! $this->confirm('Xóa các dữ liệu nghiệp vụ trên? Không thể hoàn tác.')) {
             $this->info('Đã hủy.');
             return self::SUCCESS;
         }
@@ -85,8 +78,9 @@ class TruckingClear extends Command
         foreach ($this->order as $m) {
             $m::query()->delete();
         }
+        TruckingAttachment::where('owner_type', TruckingShipment::class)->delete();
 
-        $this->info("Đã xóa sạch {$total} bản ghi. Dữ liệu Trucking v2 giờ trống.");
+        $this->info("Đã xóa {$total} bản ghi nghiệp vụ. Danh mục/cấu hình + bảng giá được giữ nguyên.");
 
         return self::SUCCESS;
     }

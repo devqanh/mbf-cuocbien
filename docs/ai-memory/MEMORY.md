@@ -1,5 +1,6 @@
 - [Trucking redesign](trucking-redesign.md) — chuyển Trucking từ Luckysheet sang mô hình record+popup; chuẩn hóa quan hệ, khởi tạo mới, cả HPH+ICD
 - [No seed demo](no-seed-demo.md) — đừng tự seed demo Trucking; user tự test thủ công
+- [Trucking clear scope](trucking-clear-scope.md) — trucking:clear CHỈ xóa nghiệp vụ (lô/bảng kê/phí xe), GIỮ danh mục+cấu hình+bảng giá
 - [Trucking perf lazy-load](trucking-perf-lazy-load.md) — user nhạy với số model/query Debugbar; boot tối thiểu + phân trang server-side + lazy-load master data/bảng giá
 - [Trucking Vite architecture](trucking-vite-architecture.md) — React đã build bằng Vite (resources/js/trucking2); sửa .jsx phải `npm run build`, không sửa JSX trong blade nữa
 - [Trucking partial save](trucking-partial-save.md) — lưu lô theo field đã sửa (dirtyFields + $only) để tránh lost-update khi nhiều người sửa

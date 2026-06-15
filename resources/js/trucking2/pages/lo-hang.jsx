@@ -278,7 +278,8 @@ function ShipmentsApp() {
   };
 
   // ---- Import lô hàng từ Excel ----
-  const IMP_COLS = ["Khách hàng", "SỐ BOOKING/BILL", "NHẬP/XUẤT", "SỐ LƯỢNG", "LOẠI", "SỐ CONTAINER", "CẮT MÁNG", "NƠI LẤY", "NƠI HẠ", "NGÀY", "GIỜ", "KHO", "INVOICE"];
+  // (*) = BẮT BUỘC: Khách hàng, Số booking, Số lượng cont. Tên cột ghi rõ nghĩa; NGÀY/GIỜ = giờ đến DỰ KIẾN. (Khớp cột khi import theo từ khóa, không phụ thuộc dấu *.)
+  const IMP_COLS = ["Khách hàng *", "SỐ BOOKING/BILL *", "NHẬP/XUẤT", "SỐ LƯỢNG CONT *", "LOẠI CONT", "SỐ CONTAINER", "CẮT MÁNG", "NƠI LẤY", "NƠI HẠ", "NGÀY ĐẾN DỰ KIẾN", "GIỜ ĐẾN DỰ KIẾN", "KHO", "INVOICE"];
   const downloadTemplate = () => {
     if (typeof XLSX === "undefined") { window.alert("Thư viện Excel chưa tải xong."); return; }
     const c = cfgRef.current || {};
@@ -289,8 +290,8 @@ function ShipmentsApp() {
     const exFrom = locs[0] || "ICD Quế Võ";
     const exTo = locs[1] || locs[0] || "KCN Tiên Sơn";
     const exCust = custs[0] || "Canon Vietnam";
-    const ex1 = { "Khách hàng": exCust, "SỐ BOOKING/BILL": "BL-ICD-0001", "NHẬP/XUẤT": "Nhập", "SỐ LƯỢNG": 3, "LOẠI": "40HC", "SỐ CONTAINER": "TGHU1234567\nMSKU9981122\nCSNU4567788", "CẮT MÁNG": "14/05/2026 10:00", "NƠI LẤY": exFrom, "NƠI HẠ": exTo, "NGÀY": "14/05/2026", "GIỜ": "08:00", "KHO": "Kho A2", "INVOICE": "INV-001" };
-    const ex2 = { "Khách hàng": exCust, "SỐ BOOKING/BILL": "BL-ICD-0002", "NHẬP/XUẤT": "Xuất", "SỐ LƯỢNG": 2, "LOẠI": "20DC", "SỐ CONTAINER": "", "CẮT MÁNG": "15/05/2026 09:00", "NƠI LẤY": codeOf[exFrom] || exFrom, "NƠI HẠ": exTo, "NGÀY": "15/05/2026", "GIỜ": "07:30", "KHO": "Kho B1", "INVOICE": "INV-002" };
+    const ex1 = { "Khách hàng *": exCust, "SỐ BOOKING/BILL *": "BL-ICD-0001", "NHẬP/XUẤT": "Nhập", "SỐ LƯỢNG CONT *": 3, "LOẠI CONT": "40HC", "SỐ CONTAINER": "TGHU1234567\nMSKU9981122\nCSNU4567788", "CẮT MÁNG": "14/05/2026 10:00", "NƠI LẤY": exFrom, "NƠI HẠ": exTo, "NGÀY ĐẾN DỰ KIẾN": "14/05/2026", "GIỜ ĐẾN DỰ KIẾN": "08:00", "KHO": "Kho A2", "INVOICE": "INV-001" };
+    const ex2 = { "Khách hàng *": exCust, "SỐ BOOKING/BILL *": "BL-ICD-0002", "NHẬP/XUẤT": "Xuất", "SỐ LƯỢNG CONT *": 2, "LOẠI CONT": "20DC", "SỐ CONTAINER": "", "CẮT MÁNG": "15/05/2026 09:00", "NƠI LẤY": codeOf[exFrom] || exFrom, "NƠI HẠ": exTo, "NGÀY ĐẾN DỰ KIẾN": "15/05/2026", "GIỜ ĐẾN DỰ KIẾN": "07:30", "KHO": "Kho B1", "INVOICE": "INV-002" };
     const ws = XLSX.utils.json_to_sheet([ex1, ex2], { header: IMP_COLS });
     ws["!cols"] = IMP_COLS.map((col) => ({ wch: Math.max(12, col.length + 2) }));
     const wb = XLSX.utils.book_new();
@@ -307,6 +308,25 @@ function ShipmentsApp() {
       wc["!cols"] = [{ wch: 36 }];
       XLSX.utils.book_append_sheet(wb, wc, "Khách hàng hợp lệ");
     }
+    // Sheet hướng dẫn — giải nghĩa từng cột + cột nào BẮT BUỘC (*)
+    const guide = [
+      { "Cột": "Khách hàng *", "Bắt buộc": "CÓ", "Ý nghĩa": "Tên khách — phải trùng danh mục (xem sheet 'Khách hàng hợp lệ')" },
+      { "Cột": "SỐ BOOKING/BILL *", "Bắt buộc": "CÓ", "Ý nghĩa": "Số booking / số bill" },
+      { "Cột": "SỐ LƯỢNG CONT *", "Bắt buộc": "CÓ", "Ý nghĩa": "Số lượng container (số ≥ 1) — cont để trống sẽ nhân bản theo số này" },
+      { "Cột": "NƠI LẤY", "Bắt buộc": "không", "Ý nghĩa": "Điểm lấy hàng — TÊN hoặc KÝ HIỆU trong danh mục Địa điểm (nếu nhập sai sẽ báo lỗi)" },
+      { "Cột": "NƠI HẠ", "Bắt buộc": "không", "Ý nghĩa": "Điểm hạ hàng — TÊN hoặc KÝ HIỆU trong danh mục Địa điểm (nếu nhập sai sẽ báo lỗi)" },
+      { "Cột": "NGÀY ĐẾN DỰ KIẾN", "Bắt buộc": "không", "Ý nghĩa": "Ngày xe DỰ KIẾN đến (dd/mm/yyyy)" },
+      { "Cột": "GIỜ ĐẾN DỰ KIẾN", "Bắt buộc": "không", "Ý nghĩa": "Giờ xe DỰ KIẾN đến (HH:MM) — ghép với Ngày đến dự kiến" },
+      { "Cột": "CẮT MÁNG", "Bắt buộc": "không", "Ý nghĩa": "Hạn cắt máng/tàu (dd/mm/yyyy HH:MM)" },
+      { "Cột": "NHẬP/XUẤT", "Bắt buộc": "không", "Ý nghĩa": "Nhập hoặc Xuất" },
+      { "Cột": "LOẠI CONT", "Bắt buộc": "không", "Ý nghĩa": "Loại cont: 40HC, 20DC…" },
+      { "Cột": "SỐ CONTAINER", "Bắt buộc": "không", "Ý nghĩa": "Số cont — nhiều cont thì XUỐNG DÒNG trong 1 ô" },
+      { "Cột": "KHO", "Bắt buộc": "không", "Ý nghĩa": "Tuyến kho (vd: TL, TS) — dùng khớp phí xe" },
+      { "Cột": "INVOICE", "Bắt buộc": "không", "Ý nghĩa": "Số invoice (nếu có)" },
+    ];
+    const wg = XLSX.utils.json_to_sheet(guide, { header: ["Cột", "Bắt buộc", "Ý nghĩa"] });
+    wg["!cols"] = [{ wch: 22 }, { wch: 10 }, { wch: 64 }];
+    XLSX.utils.book_append_sheet(wb, wg, "Hướng dẫn");
     XLSX.writeFile(wb, "mau-import-lo-hang.xlsx");
   };
   const onImpFile = (e) => {
@@ -321,6 +341,8 @@ function ShipmentsApp() {
   const normH = (s) => String(s == null ? "" : s).trim().toLowerCase().replace(/\s+/g, " ");
   const toIsoDate = (s) => { const m = /(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/.exec(String(s || "")); if (!m) return ""; let [, d, mo, y] = m; if (y.length === 2) y = "20" + y; return `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`; };
   const toHm = (s) => { const m = /(\d{1,2}):(\d{2})/.exec(String(s || "")); return m ? `${m[1].padStart(2, "0")}:${m[2]}` : ""; };
+  // Đếm số LÔ thực tế sẽ tạo (bung theo số container, hoặc nhân theo số lượng cont) — đúng quy tắc backend.
+  const loCountOf = (rows) => (rows || []).reduce((a, r) => { const cs = String(r.contNo || "").split(/[\r\n;,]+/).map((s) => s.trim()).filter(Boolean); return a + (cs.length || Math.max(1, parseInt(String(r.qty || "").replace(/[^\d]/g, ""), 10) || 1)); }, 0);
   const parseRows = () => {
     const aoa = XLSX.utils.sheet_to_json(impWb.wb.Sheets[impSheet], { header: 1, raw: false, defval: "" });
     let hi = aoa.findIndex((r) => (r || []).some((c) => { const h = normH(c); return h.includes("khách") || h.includes("nhà máy"); }));
@@ -336,7 +358,7 @@ function ShipmentsApp() {
       const gioDenDuKien = ngayIso ? `${ngayIso}T${hm || "00:00"}` : "";
       const cmRaw = g(C.cutOff); const cmDate = toIsoDate(cmRaw); const cmHm = toHm(cmRaw);
       const cutOff = cmDate ? `${cmDate}T${cmHm || "00:00"}` : cmRaw;
-      out.push({ customer: g(C.customer), booking: g(C.booking), io: g(C.io), qty: g(C.qty).replace(/[^\d]/g, ""), contType: g(C.contType), contNo: g(C.contNo), cutOff, from: g(C.from), to: g(C.to), kho: g(C.kho), inv: g(C.inv), gioDenDuKien });
+      out.push({ customer: g(C.customer), booking: g(C.booking), io: g(C.io), qty: g(C.qty).replace(/[^\d]/g, ""), qtyRaw: g(C.qty), contType: g(C.contType), contNo: g(C.contNo), cutOff, cutOffRaw: cmRaw, from: g(C.from), to: g(C.to), kho: g(C.kho), inv: g(C.inv), gioDenDuKien, ngayRaw: g(C.ngay), gioRaw: g(C.gio) });
     }
     return out;
   };
@@ -758,16 +780,16 @@ function ShipmentsApp() {
       {active && modal.type === "info" && <InfoPopup ship={active} isHph={isHph} patch={(np) => patch(active.id, np)} patchOther={(id, np) => patch(id, np)} onSave={() => commitDirty()} isDirty={isDirty} siblings={sibs.filter((x) => x.id !== active.id)} onClose={closeInfo} onDelete={active._new ? null : () => delShip(active.id)} canDelete={T.canDelete} cfg={cfg} addCfg={addCfg} />}
 
       {showImport && (
-        <Modal title="Import lô hàng từ Excel" subtitle="Nơi lấy/hạ nhập theo TÊN hoặc KÝ HIỆU · file mẫu có sẵn danh mục hợp lệ · kiểm tra trước, 1 lỗi là không import gì cả" width={720} icon={<I.truck />}
+        <Modal title="Import lô hàng từ Excel" subtitle="Cột có (*) là BẮT BUỘC: Khách hàng, Số booking, Số lượng cont · Nơi lấy/hạ không bắt buộc nhưng nhập sai danh mục sẽ báo lỗi · file mẫu có sheet Hướng dẫn + danh mục hợp lệ · kiểm tra trước, 1 lỗi là không import gì cả" width={720} icon={<I.truck />}
           onClose={() => setShowImport(false)}
           footer={
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
               <div style={{ fontSize: 12.5, color: impCheck ? (impCheck.valid ? "var(--good)" : "var(--danger)") : "var(--ink-3)", fontWeight: impCheck ? 600 : 400 }}>
-                {impCheck ? (impCheck.valid ? `✓ ${impCheck.total} dòng hợp lệ` : `${impCheck.errors.length} dòng lỗi — chưa import gì`) : (impWb ? "Đã chọn file — bấm Kiểm tra" : "Chọn file Excel để bắt đầu")}
+                {impCheck ? (impCheck.valid ? `✓ ${impCheck.total} dòng Excel → ${loCountOf(impRows)} lô` : `${impCheck.errors.length} dòng lỗi — chưa import gì`) : (impWb ? "Đã chọn file — bấm Kiểm tra" : "Chọn file Excel để bắt đầu")}
               </div>
               <div style={{ display: "flex", gap: 10 }}>
                 <Btn onClick={() => setShowImport(false)}>Đóng</Btn>
-                {impCheck && impCheck.valid && <Btn variant="primary" onClick={doImport}>{impBusy ? "Đang nhập…" : `Bắt đầu import ${impCheck.total} lô`}</Btn>}
+                {impCheck && impCheck.valid && <Btn variant="primary" onClick={doImport}>{impBusy ? "Đang nhập…" : `Bắt đầu import ${loCountOf(impRows)} lô`}</Btn>}
               </div>
             </div>
           }>
@@ -801,34 +823,63 @@ function ShipmentsApp() {
             )}
 
             {impCheck && impCheck.valid && (() => {
-              const expand = (r) => { const cs = String(r.contNo || "").split(/[\r\n;,]+/).map((s) => s.trim()).filter(Boolean); if (cs.length) return cs.length; const q = parseInt(String(r.qty || "").replace(/[^\d]/g, ""), 10); return q > 0 ? q : 1; };
-              const totalLo = impRows.reduce((a, r) => a + expand(r), 0);
-              const cellP = { padding: "7px 12px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" };
+              // Bung TỪNG LÔ thực tế sẽ tạo — đúng quy tắc backend:
+              //  • Có nhiều SỐ CONTAINER (xuống dòng / ; / ,) → mỗi số 1 lô riêng.
+              //  • Không có số cont → nhân bản theo SỐ LƯỢNG CONT (số cont điền sau).
+              const fmtDT = (iso) => { if (!iso) return "—"; const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/.exec(String(iso)); if (!m) return String(iso); const [, y, mo, d, h, mi] = m; return `${d}/${mo}/${y}${h ? ` ${h}:${mi}` : ""}`; };
+              const ioLabel = (v) => { const s = String(v || "").toLowerCase(); if (/nh[âaạ]p|import/.test(s)) return "Nhập"; if (/xu[âaấ]t|export/.test(s)) return "Xuất"; return v || "—"; };
+              const los = [];
+              impRows.forEach((r, ri) => {
+                const cs = String(r.contNo || "").split(/[\r\n;,]+/).map((s) => s.trim()).filter(Boolean);
+                if (cs.length) cs.forEach((cn, k) => los.push({ src: ri + 1, part: cs.length > 1 ? `${k + 1}/${cs.length}` : "", cont: cn, r }));
+                else { const q = Math.max(1, parseInt(String(r.qty || "").replace(/[^\d]/g, ""), 10) || 1); for (let k = 0; k < q; k++) los.push({ src: ri + 1, part: q > 1 ? `${k + 1}/${q}` : "", cont: "", r }); }
+              });
+              const cols = [
+                { h: "Lô", get: (l, i) => i + 1, num: true, al: "center" },
+                { h: "Dòng Excel", get: (l) => l.part ? `${l.src} · cont ${l.part}` : `${l.src}`, al: "center", muted: true },
+                { h: "Khách hàng", get: (l) => l.r.customer || "—" },
+                { h: "Booking/Bill", get: (l) => l.r.booking || "—" },
+                { h: "Nhập/Xuất", get: (l) => ioLabel(l.r.io), al: "center" },
+                { h: "Loại cont", get: (l) => l.r.contType || "—", al: "center" },
+                { h: "Số container", get: (l) => l.cont, contCol: true },
+                { h: "Nơi lấy", get: (l) => l.r.from || "—" },
+                { h: "Nơi hạ", get: (l) => l.r.to || "—" },
+                { h: "Kho (tuyến)", get: (l) => l.r.kho || "—" },
+                { h: "Đến dự kiến", get: (l) => fmtDT(l.r.gioDenDuKien), num: true },
+                { h: "Cắt máng", get: (l) => fmtDT(l.r.cutOff), num: true },
+                { h: "Invoice", get: (l) => l.r.inv || "—" },
+              ];
               return (
                 <div style={{ border: "1px solid #bfe4d1", borderRadius: 10, overflow: "hidden" }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: "var(--good)", padding: "10px 13px", background: "var(--good-weak)", borderBottom: "1px solid #bfe4d1" }}>
-                    <i className="bi bi-check-circle-fill" /> {impCheck.total} dòng hợp lệ → sẽ tạo <b>{totalLo} lô</b>. Xem trước bên dưới rồi bấm <b>Bắt đầu import</b>.
+                    <i className="bi bi-check-circle-fill" /> {impCheck.total} dòng Excel hợp lệ → sẽ tạo <b>{los.length} lô</b>. Mỗi dòng dưới đây là <b>1 lô riêng</b> — kiểm tra giá trị rơi đúng cột chưa rồi bấm <b>Bắt đầu import</b>.
                   </div>
-                  <div style={{ maxHeight: "40vh", overflowY: "auto", overscrollBehavior: "contain" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                  <div style={{ fontSize: 11.5, color: "var(--ink-4)", padding: "7px 13px", background: "#fafbfc", borderBottom: "1px solid var(--line-2)", lineHeight: 1.5 }}>
+                    <i className="bi bi-info-circle" /> 1 dòng Excel có nhiều số container (xuống dòng/dấu <code>;</code>/<code>,</code>) sẽ tách thành nhiều lô. Không có số cont thì nhân theo <b>Số lượng cont</b> — cột <b>Số container</b> hiện <span style={{ color: "var(--ink-4)", fontStyle: "italic" }}>điền sau</span>.
+                  </div>
+                  <div style={{ maxHeight: "44vh", overflow: "auto", overscrollBehavior: "contain" }}>
+                    <table style={{ borderCollapse: "collapse", fontSize: 12.5, minWidth: 1040, width: "100%" }}>
                       <thead>
-                        <tr style={{ background: "#fafbfc" }}>
-                          {["#", "Khách hàng", "Tuyến", "Loại", "Số lô", "Ngày"].map((h, i) => (
-                            <th key={i} style={{ textAlign: i >= 4 ? "center" : "left", padding: "7px 12px", fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "1px solid var(--line)", position: "sticky", top: 0, background: "#fafbfc", whiteSpace: "nowrap" }}>{h}</th>
+                        <tr>
+                          {cols.map((c, i) => (
+                            <th key={i} style={{ textAlign: c.al || "left", padding: "7px 11px", fontSize: 10.5, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.03em", borderBottom: "1px solid var(--line)", position: "sticky", top: 0, background: "#fafbfc", whiteSpace: "nowrap", zIndex: 1 }}>{c.h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {impRows.map((r, i) => (
-                          <tr key={i}>
-                            <td className="tnum" style={cellP}>{i + 1}</td>
-                            <td style={cellP}>{r.customer || "—"}</td>
-                            <td style={cellP}>{(r.from || "?")} <span style={{ color: "var(--accent)" }}>→</span> {(r.to || "?")}</td>
-                            <td style={cellP}>{r.contType || "—"}</td>
-                            <td className="tnum" style={{ ...cellP, textAlign: "center", fontWeight: 600 }}>{expand(r)}</td>
-                            <td className="tnum" style={{ ...cellP, whiteSpace: "nowrap" }}>{(r.gioDenDuKien || "").slice(0, 10) || "—"}</td>
-                          </tr>
-                        ))}
+                        {los.map((l, i) => {
+                          const newGroup = i > 0 && los[i - 1].src !== l.src;
+                          return (
+                            <tr key={i} style={{ borderTop: newGroup ? "2px solid var(--line)" : "none" }}>
+                              {cols.map((c, ci) => {
+                                const v = c.get(l, i);
+                                const base = { padding: "6px 11px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)", textAlign: c.al || "left", whiteSpace: c.num ? "nowrap" : "normal" };
+                                if (c.contCol) return <td key={ci} className="tnum" style={base}>{l.cont ? l.cont : <span style={{ color: "var(--ink-4)", fontStyle: "italic" }}>điền sau</span>}</td>;
+                                return <td key={ci} className={c.num ? "tnum" : undefined} style={base}>{v}</td>;
+                              })}
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

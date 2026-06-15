@@ -255,8 +255,9 @@ trait HandlesPricingAndImport
 
     /**
      * Kiểm tra TRƯỚC toàn bộ dòng import (không ghi DB). Trả danh sách lỗi rõ
-     * ràng theo từng dòng/booking. Quy tắc: khách hàng + NƠI LẤY + NƠI HẠ đều
-     * phải có sẵn trong hệ thống.
+     * ràng theo từng dòng/booking. Quy tắc BẮT BUỘC: khách hàng + SỐ BOOKING
+     * + SỐ LƯỢNG CONT. Nơi lấy/hạ KHÔNG bắt buộc — nhưng nếu có nhập mà sai
+     * danh mục địa điểm thì vẫn báo (tránh sai chính tả lọt vào).
      */
     public function validateShipmentRows(array $rows): array
     {
@@ -270,19 +271,79 @@ trait HandlesPricingAndImport
             if ($name === '')                                     $reasons[] = 'Thiếu khách hàng';
             elseif (! isset($custSet[mb_strtolower($name)]))      $reasons[] = "Khách hàng “{$name}” chưa có trong hệ thống";
 
+            // Số booking/bill — bắt buộc
+            $booking = trim((string) ($row['booking'] ?? ''));
+            if ($booking === '')                                  $reasons[] = 'Thiếu số booking/bill';
+
+            // Số lượng cont — bắt buộc, phải là số ≥ 1
+            $qtyRaw = trim((string) ($row['qtyRaw'] ?? $row['qty'] ?? ''));
+            $qd = preg_replace('/[^\d]/', '', (string) ($row['qty'] ?? $qtyRaw));
+            if ($qtyRaw === '' && $qd === '')                     $reasons[] = 'Thiếu số lượng cont';
+            elseif ($qd === '')                                   $reasons[] = "Số lượng cont “{$qtyRaw}” không phải số";
+            elseif ((int) $qd < 1)                                $reasons[] = 'Số lượng cont phải ≥ 1';
+
+            // Nơi lấy/hạ — KHÔNG bắt buộc; chỉ kiểm tra khi có nhập
             $from = trim((string) ($row['from'] ?? ''));
-            if ($from === '')                                     $reasons[] = 'Thiếu nơi lấy';
-            elseif (! isset($locMap[mb_strtolower($from)]))       $reasons[] = "Nơi lấy “{$from}” chưa có trong danh mục địa điểm";
+            if ($from !== '' && ! isset($locMap[mb_strtolower($from)])) $reasons[] = "Nơi lấy “{$from}” chưa có trong danh mục địa điểm";
 
             $to = trim((string) ($row['to'] ?? ''));
-            if ($to === '')                                       $reasons[] = 'Thiếu nơi hạ';
-            elseif (! isset($locMap[mb_strtolower($to)]))         $reasons[] = "Nơi hạ “{$to}” chưa có trong danh mục địa điểm";
+            if ($to !== '' && ! isset($locMap[mb_strtolower($to)]))     $reasons[] = "Nơi hạ “{$to}” chưa có trong danh mục địa điểm";
+
+            // NHẬP/XUẤT — nếu có nhập, chỉ nhận Nhập / Xuất (BỎ DẤU rồi so, không phụ thuộc dấu/hoa thường)
+            $ioBase = $this->vnAscii((string) ($row['io'] ?? ''));
+            if ($ioBase !== '' && ! preg_match('/nhap|xuat|import|export/', $ioBase))
+                $reasons[] = 'NHẬP/XUẤT “' . trim((string) $row['io']) . '” không hợp lệ (chỉ nhận Nhập hoặc Xuất)';
+
+            // Ngày / giờ đến dự kiến + cắt máng — nếu có nhập phải đúng định dạng
+            $ngayRaw = trim((string) ($row['ngayRaw'] ?? ''));
+            if ($ngayRaw !== '' && ! $this->isValidDateStr($ngayRaw))  $reasons[] = "Ngày đến dự kiến “{$ngayRaw}” sai định dạng (cần dd/mm/yyyy)";
+
+            $gioRaw = trim((string) ($row['gioRaw'] ?? ''));
+            if ($gioRaw !== '' && ! $this->isValidTimeStr($gioRaw))    $reasons[] = "Giờ đến dự kiến “{$gioRaw}” sai định dạng (cần HH:MM)";
+
+            $cutRaw = trim((string) ($row['cutOffRaw'] ?? ''));
+            if ($cutRaw !== '' && ! $this->isValidDateStr($cutRaw))    $reasons[] = "Cắt máng “{$cutRaw}” sai định dạng (cần dd/mm/yyyy [HH:MM])";
 
             if ($reasons) {
                 $errors[] = ['line' => $i + 1, 'customer' => $name, 'booking' => (string) ($row['booking'] ?? ''), 'reasons' => $reasons];
             }
         }
         return $errors;
+    }
+
+    /** Chuẩn hóa chuỗi: lowercase + BỎ DẤU tiếng Việt (để so khớp không phụ thuộc dấu/hoa thường). */
+    private function vnAscii(string $s): string
+    {
+        $s = mb_strtolower(trim($s));
+        $map = [
+            'a' => 'àáạảãâầấậẩẫăằắặẳẵ',
+            'e' => 'èéẹẻẽêềếệểễ',
+            'i' => 'ìíịỉĩ',
+            'o' => 'òóọỏõôồốộổỗơờớợởỡ',
+            'u' => 'ùúụủũưừứựửữ',
+            'y' => 'ỳýỵỷỹ',
+            'd' => 'đ',
+        ];
+        foreach ($map as $rep => $chars) {
+            $s = preg_replace('/[' . $chars . ']/u', $rep, $s);
+        }
+        return $s;
+    }
+
+    /** Có chứa NGÀY hợp lệ (dd/mm/yyyy, chấp nhận - . / và năm 2 số) không. */
+    private function isValidDateStr(string $s): bool
+    {
+        if (! preg_match('#(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})#', $s, $m)) return false;
+        [, $d, $mo, $y] = $m;
+        if (strlen($y) === 2) $y = '20' . $y;
+        return checkdate((int) $mo, (int) $d, (int) $y);
+    }
+
+    /** Có chứa GIỜ hợp lệ (HH:MM, 00–23 : 00–59) không. */
+    private function isValidTimeStr(string $s): bool
+    {
+        if (! preg_match('/(\d{1,2}):(\d{2})/', $s, $m)) return false;
+        return (int) $m[1] <= 23 && (int) $m[2] <= 59;
     }
 
     /** Dry-run: chỉ kiểm tra, không import. */
