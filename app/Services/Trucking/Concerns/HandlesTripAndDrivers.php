@@ -52,6 +52,37 @@ trait HandlesTripAndDrivers
      * Nhờ vậy kho lô "TL, TS, QV" và phí tuyến "TL - TS - QV" khớp nhau dù khác dấu/khoảng trắng/hoa-thường.
      * Vẫn GIỮ thứ tự (TL→TS→QV ≠ TL→QV→TS) vì chiều tuyến có ý nghĩa.
      */
+    /**
+     * Hiển thị TUYẾN KHO: mỗi điểm "tên hiển thị (ký hiệu)" (nếu tên ≠ ký hiệu), nối bằng " → ".
+     * Phí xe khớp theo TUYẾN KHO (cột `kho`) — KHÔNG quan tâm nơi lấy/nơi hạ.
+     */
+    private function khoRouteDisplay(?string $kho): string
+    {
+        $kho = trim((string) $kho);
+        if ($kho === '') return '';
+        static $map = null;
+        if ($map === null) {
+            $map = [];
+            foreach (TruckingWarehouse::get(['name', 'code']) as $w) {
+                if ($w->code) $map[mb_strtoupper(trim((string) $w->code))] = ['name' => $w->name, 'code' => $w->code];
+                if ($w->name) $map[mb_strtoupper(trim((string) $w->name))] = ['name' => $w->name, 'code' => $w->code];
+            }
+        }
+        $segs = preg_split('/\s*(?:,|→|->|–|—|\s-\s)\s*/u', $kho) ?: [];
+        $out = [];
+        foreach ($segs as $seg) {
+            $seg = trim($seg);
+            if ($seg === '') continue;
+            $w = $map[mb_strtoupper($seg)] ?? null;
+            if ($w && $w['name'] && $w['code'] && trim((string) $w['name']) !== trim((string) $w['code'])) {
+                $out[] = $w['name'] . ' (' . $w['code'] . ')';
+            } else {
+                $out[] = $w['name'] ?? $seg;
+            }
+        }
+        return implode(' → ', $out);
+    }
+
     private function routeKey(string $s): string
     {
         $parts = preg_split('/\s*(?:,|→|->|–|—|\s-\s)\s*/u', trim($s)) ?: [];
@@ -292,6 +323,8 @@ trait HandlesTripAndDrivers
                 'booking'    => $s->booking ?? '',
                 'route'      => trim(($s->from_loc ?? '') . ' → ' . ($s->to_loc ?? ''), ' →'),
                 'kho'        => $s->kho ?? '',
+                'khoRoute'   => $this->khoRouteDisplay($s->kho),   // tuyến KHO (tên + ký hiệu) — phí xe khớp theo cái này
+
                 'bks'        => $s->bks_vao ?? '',
                 'axle'       => $sg['axle'],
                 'date'       => $this->outDate($s->gio_xe_ra),
@@ -348,6 +381,8 @@ trait HandlesTripAndDrivers
                 'booking'    => $l->booking ?? '',
                 'route'      => $l->route ?? '',
                 'kho'        => $l->kho ?? '',
+                'khoRoute'   => $this->khoRouteDisplay($l->kho),   // tuyến KHO (tên + ký hiệu)
+
                 'bks'        => $l->bks ?? '',
                 'axle'        => $l->axle ?? '',
                 'date'        => $this->outDate($l->date),

@@ -195,8 +195,7 @@ export function TripEditor({ rows, onRows, routeFees = [], drivers = [], costIte
           <div key={key} style={{ background: "#fff", border: `1px solid ${edge}`, borderRadius: 12, padding: "14px 16px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: issues.length ? 8 : 10, paddingBottom: issues.length ? 8 : 10, borderBottom: "1px solid var(--line-2)" }}>
               <div style={{ fontWeight: 700 }} className="tnum">{x.booking || "—"}</div>
-              <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{x.route || "—"}</span>
-              <span style={{ fontSize: 12, color: "var(--ink-4)" }} className="tnum">Kho: {x.kho || "—"}</span>
+              <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)" }} title="Tuyến đi qua các kho (phí xe khớp theo tuyến này)"><i className="bi bi-geo-alt" style={{ color: "var(--accent)", marginRight: 4 }} />{x.khoRoute || x.kho || "—"}</span>
               <span style={{ fontSize: 12, color: "var(--ink-4)" }} className="tnum">BKS: {x.bks || "—"}{x.axle ? " · " + x.axle + " cầu" : ""}</span>
               <span style={{ fontSize: 12, color: "var(--ink-4)" }} className="tnum">Ra: {x.date || "—"}</span>
               {c.cru && <span style={{ fontSize: 11, fontWeight: 700, color: "#b45309", background: "#fef3c7", padding: "2px 8px", borderRadius: 999 }}>CRU</span>}
