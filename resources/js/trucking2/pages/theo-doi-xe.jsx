@@ -171,6 +171,7 @@ function TrackingApp() {
   const setMobileView = (v) => { try { sessionStorage.setItem("trk_track_view", v); } catch (e) {} _setMobileView(v); };
   const [mapReady, setMapReady] = useState(false);
   const [mapErr, setMapErr] = useState("");
+  const [booted, setBooted] = useState(false);   // đã dựng map + có dữ liệu + zoom ra xong → tắt overlay loading
   // ---- Kho (ghim vị trí trên bản đồ) ----
   const [warehouses, setWarehouses] = useState([]);
   const [whPanel, setWhPanel] = useState(false);     // mở panel quản lý vị trí kho (admin)
@@ -391,6 +392,12 @@ function TrackingApp() {
     if (mapRef.current) mapRef.current.setMapTypeId(satellite ? "hybrid" : "roadmap");
   }, [satellite, mapReady]);
 
+  // Tắt overlay loading khi map đã sẵn sàng + có dữ liệu lần đầu (chờ fitBounds zoom ra xong).
+  useEffect(() => {
+    if (booted || mapErr) return;
+    if (mapReady && lastTs) { const t = setTimeout(() => setBooted(true), 450); return () => clearTimeout(t); }
+  }, [mapReady, lastTs, booted, mapErr]);
+
   const focusVehicle = (p) => {
     const id = idOf(p); setSelected(id);
     if (isMobile) setMobileView("map");
@@ -522,6 +529,17 @@ function TrackingApp() {
         {/* map */}
         <div style={{ flex: 1, minHeight: 0, position: "relative", display: isMobile && mobileView !== "map" ? "none" : "block", order: isMobile ? 1 : 0 }}>
           <div ref={mapEl} style={{ position: "absolute", inset: 0, background: "#e9edf1" }} />
+
+          {/* Overlay loading khi mới vào — tắt sau khi map dựng xong + zoom ra */}
+          {!booted && !mapErr && (
+            <div style={{ position: "absolute", inset: 0, zIndex: 7, display: "grid", placeItems: "center", background: "rgba(247,249,251,0.94)", backdropFilter: "blur(2px)" }}>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ width: 46, height: 46, margin: "0 auto 14px", border: "4px solid var(--line)", borderTopColor: "var(--accent)", borderRadius: "50%", animation: "trk-spin .8s linear infinite" }} />
+                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--ink-2)" }}>Đang tải bản đồ theo dõi…</div>
+                <div style={{ fontSize: 12, color: "var(--ink-4)", marginTop: 4 }}>Đang lấy vị trí xe &amp; dựng bản đồ</div>
+              </div>
+            </div>
+          )}
 
           {/* Lớp bản đồ: Giao thông + Vệ tinh (góc dưới-trái) */}
           {mapReady && (
