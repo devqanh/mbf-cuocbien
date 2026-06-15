@@ -254,6 +254,28 @@ trait HandlesPricingAndImport
     }
 
     /**
+     * Map lower(name|code) ⇒ KÝ HIỆU kho chuẩn (để validate + chuẩn hóa cột KHO).
+     * Tuyến kho dùng ký hiệu (phí xe khớp theo `routeKey` không phân biệt hoa thường),
+     * nên chuẩn hóa mọi đoạn về ký hiệu (kho không có ký hiệu thì giữ tên).
+     */
+    private function warehouseCodeMap(): array
+    {
+        $map = [];
+        foreach (TruckingWarehouse::get(['name', 'code']) as $w) {
+            $canon = $w->code ?: $w->name;
+            if ($w->name) $map[mb_strtolower(trim($w->name))] = $canon;
+            if ($w->code) $map[mb_strtolower(trim($w->code))] = $canon;
+        }
+        return $map;
+    }
+
+    /** Tách 1 chuỗi tuyến kho thành các đoạn (cùng dấu phân tách với routeKey/khoRouteDisplay). */
+    private function khoSegments(string $kho): array
+    {
+        return array_values(array_filter(array_map('trim', preg_split('/\s*(?:,|→|->|–|—|\s-\s)\s*/u', trim($kho)) ?: []), fn ($s) => $s !== ''));
+    }
+
+    /**
      * Kiểm tra TRƯỚC toàn bộ dòng import (không ghi DB). Trả danh sách lỗi rõ
      * ràng theo từng dòng/booking. Quy tắc BẮT BUỘC: khách hàng + SỐ BOOKING
      * + SỐ LƯỢNG CONT. Nơi lấy/hạ KHÔNG bắt buộc — nhưng nếu có nhập mà sai
@@ -263,6 +285,7 @@ trait HandlesPricingAndImport
     {
         $custSet = array_flip(TruckingCustomer::pluck('name')->map(fn ($n) => mb_strtolower(trim($n)))->all());
         $locMap = $this->locationNameMap();
+        $whMap = $this->warehouseCodeMap();
         $errors = [];
 
         foreach ($rows as $i => $row) {
@@ -289,9 +312,15 @@ trait HandlesPricingAndImport
             $to = trim((string) ($row['to'] ?? ''));
             if ($to !== '' && ! isset($locMap[mb_strtolower($to)]))     $reasons[] = "Nơi hạ “{$to}” chưa có trong danh mục địa điểm";
 
-            // NHẬP/XUẤT — nếu có nhập, chỉ nhận Nhập / Xuất (BỎ DẤU rồi so, không phụ thuộc dấu/hoa thường)
-            $ioBase = $this->vnAscii((string) ($row['io'] ?? ''));
-            if ($ioBase !== '' && ! preg_match('/nhap|xuat|import|export/', $ioBase))
+            // KHO — KHÔNG bắt buộc; tuyến nhiều đoạn → kiểm tra TỪNG đoạn theo danh mục Kho (tên hoặc ký hiệu)
+            $kho = trim((string) ($row['kho'] ?? ''));
+            if ($kho !== '') foreach ($this->khoSegments($kho) as $seg) {
+                if (! isset($whMap[mb_strtolower($seg)])) $reasons[] = "Kho “{$seg}” chưa có trong danh mục kho";
+            }
+
+            // NHẬP/XUẤT — nếu có nhập, chỉ nhận Nhập / Xuất (chuẩn hóa hoa→thường, GIỮ dấu)
+            $io = mb_strtolower(trim((string) ($row['io'] ?? '')));
+            if ($io !== '' && ! (str_contains($io, 'nhập') || str_contains($io, 'xuất') || str_contains($io, 'import') || str_contains($io, 'export')))
                 $reasons[] = 'NHẬP/XUẤT “' . trim((string) $row['io']) . '” không hợp lệ (chỉ nhận Nhập hoặc Xuất)';
 
             // Ngày / giờ đến dự kiến + cắt máng — nếu có nhập phải đúng định dạng
@@ -309,25 +338,6 @@ trait HandlesPricingAndImport
             }
         }
         return $errors;
-    }
-
-    /** Chuẩn hóa chuỗi: lowercase + BỎ DẤU tiếng Việt (để so khớp không phụ thuộc dấu/hoa thường). */
-    private function vnAscii(string $s): string
-    {
-        $s = mb_strtolower(trim($s));
-        $map = [
-            'a' => 'àáạảãâầấậẩẫăằắặẳẵ',
-            'e' => 'èéẹẻẽêềếệểễ',
-            'i' => 'ìíịỉĩ',
-            'o' => 'òóọỏõôồốộổỗơờớợởỡ',
-            'u' => 'ùúụủũưừứựửữ',
-            'y' => 'ỳýỵỷỹ',
-            'd' => 'đ',
-        ];
-        foreach ($map as $rep => $chars) {
-            $s = preg_replace('/[' . $chars . ']/u', $rep, $s);
-        }
-        return $s;
     }
 
     /** Có chứa NGÀY hợp lệ (dd/mm/yyyy, chấp nhận - . / và năm 2 số) không. */
@@ -367,8 +377,15 @@ trait HandlesPricingAndImport
         $vat = (string) TruckingSetting::get($sheet === 'hph' ? 'vat_default_hph' : 'vat_default_icd', '0');
         $locMap = $this->locationNameMap();
         $norm = fn ($v) => $locMap[mb_strtolower(trim((string) $v))] ?? $v;
+        // Chuẩn hóa cột KHO: mỗi đoạn về ký hiệu chuẩn của danh mục Kho, nối " → " (giữ tuyến).
+        $whMap = $this->warehouseCodeMap();
+        $normKho = function ($v) use ($whMap) {
+            $segs = $this->khoSegments((string) $v);
+            if (! $segs) return $this->str($v);
+            return implode(' → ', array_map(fn ($s) => $whMap[mb_strtolower($s)] ?? $s, $segs));
+        };
 
-        return DB::transaction(function () use ($sheet, $rows, $vat, $norm) {
+        return DB::transaction(function () use ($sheet, $rows, $vat, $norm, $normKho) {
             $ships = [];
             foreach ($rows as $row) {
                 $base = [
@@ -381,7 +398,7 @@ trait HandlesPricingAndImport
                     'cutOff'       => $row['cutOff'] ?? null,
                     'from'         => $norm($row['from'] ?? null),
                     'to'           => $norm($row['to'] ?? null),
-                    'kho'          => $row['kho'] ?? null,
+                    'kho'          => $normKho($row['kho'] ?? null),
                     'gioDenDuKien' => $row['gioDenDuKien'] ?? null,
                     'cost'         => ['items' => []],
                     'rev'          => ['vatRate' => $vat, 'doanhThu' => [], 'choHo' => [], 'payments' => []],

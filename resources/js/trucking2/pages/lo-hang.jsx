@@ -280,18 +280,24 @@ function ShipmentsApp() {
   // ---- Import lô hàng từ Excel ----
   // (*) = BẮT BUỘC: Khách hàng, Số booking, Số lượng cont. Tên cột ghi rõ nghĩa; NGÀY/GIỜ = giờ đến DỰ KIẾN. (Khớp cột khi import theo từ khóa, không phụ thuộc dấu *.)
   const IMP_COLS = ["Khách hàng *", "SỐ BOOKING/BILL *", "NHẬP/XUẤT", "SỐ LƯỢNG CONT *", "LOẠI CONT", "SỐ CONTAINER", "CẮT MÁNG", "NƠI LẤY", "NƠI HẠ", "NGÀY ĐẾN DỰ KIẾN", "GIỜ ĐẾN DỰ KIẾN", "KHO", "INVOICE"];
-  const downloadTemplate = () => {
+  const downloadTemplate = async () => {
     if (typeof XLSX === "undefined") { window.alert("Thư viện Excel chưa tải xong."); return; }
-    const c = cfgRef.current || {};
+    const c = (await ensureCfg()) || cfgRef.current || {};   // đảm bảo danh mục (địa điểm/kho/khách) đã nạp trước khi dựng file mẫu
     const locs = c.locations || [];
     const codeOf = c.locationCode || {};
     const custs = c.customers || [];
+    const whs = c.warehouses || [];
+    const whCodeOf = c.warehouseCode || {};
     // Ví dụ dùng đúng dữ liệu đang có (nếu chưa nạp thì dùng mẫu mặc định)
     const exFrom = locs[0] || "ICD Quế Võ";
     const exTo = locs[1] || locs[0] || "KCN Tiên Sơn";
     const exCust = custs[0] || "Canon Vietnam";
-    const ex1 = { "Khách hàng *": exCust, "SỐ BOOKING/BILL *": "BL-ICD-0001", "NHẬP/XUẤT": "Nhập", "SỐ LƯỢNG CONT *": 3, "LOẠI CONT": "40HC", "SỐ CONTAINER": "TGHU1234567\nMSKU9981122\nCSNU4567788", "CẮT MÁNG": "14/05/2026 10:00", "NƠI LẤY": exFrom, "NƠI HẠ": exTo, "NGÀY ĐẾN DỰ KIẾN": "14/05/2026", "GIỜ ĐẾN DỰ KIẾN": "08:00", "KHO": "Kho A2", "INVOICE": "INV-001" };
-    const ex2 = { "Khách hàng *": exCust, "SỐ BOOKING/BILL *": "BL-ICD-0002", "NHẬP/XUẤT": "Xuất", "SỐ LƯỢNG CONT *": 2, "LOẠI CONT": "20DC", "SỐ CONTAINER": "", "CẮT MÁNG": "15/05/2026 09:00", "NƠI LẤY": codeOf[exFrom] || exFrom, "NƠI HẠ": exTo, "NGÀY ĐẾN DỰ KIẾN": "15/05/2026", "GIỜ ĐẾN DỰ KIẾN": "07:30", "KHO": "Kho B1", "INVOICE": "INV-002" };
+    // KHO ví dụ = ký hiệu kho CÓ THẬT (tránh import mẫu bị lỗi "chưa có trong danh mục kho")
+    const whTok = (n) => whCodeOf[n] || n;
+    const exKho1 = whs.length >= 2 ? `${whTok(whs[0])} → ${whTok(whs[1])}` : (whs[0] ? whTok(whs[0]) : "");
+    const exKho2 = whs[0] ? whTok(whs[0]) : "";
+    const ex1 = { "Khách hàng *": exCust, "SỐ BOOKING/BILL *": "BL-ICD-0001", "NHẬP/XUẤT": "Nhập", "SỐ LƯỢNG CONT *": 3, "LOẠI CONT": "40HC", "SỐ CONTAINER": "TGHU1234567\nMSKU9981122\nCSNU4567788", "CẮT MÁNG": "14/05/2026 10:00", "NƠI LẤY": exFrom, "NƠI HẠ": exTo, "NGÀY ĐẾN DỰ KIẾN": "14/05/2026", "GIỜ ĐẾN DỰ KIẾN": "08:00", "KHO": exKho1, "INVOICE": "INV-001" };
+    const ex2 = { "Khách hàng *": exCust, "SỐ BOOKING/BILL *": "BL-ICD-0002", "NHẬP/XUẤT": "Xuất", "SỐ LƯỢNG CONT *": 2, "LOẠI CONT": "20DC", "SỐ CONTAINER": "", "CẮT MÁNG": "15/05/2026 09:00", "NƠI LẤY": codeOf[exFrom] || exFrom, "NƠI HẠ": exTo, "NGÀY ĐẾN DỰ KIẾN": "15/05/2026", "GIỜ ĐẾN DỰ KIẾN": "07:30", "KHO": exKho2, "INVOICE": "INV-002" };
     const ws = XLSX.utils.json_to_sheet([ex1, ex2], { header: IMP_COLS });
     ws["!cols"] = IMP_COLS.map((col) => ({ wch: Math.max(12, col.length + 2) }));
     const wb = XLSX.utils.book_new();
@@ -308,6 +314,13 @@ function ShipmentsApp() {
       wc["!cols"] = [{ wch: 36 }];
       XLSX.utils.book_append_sheet(wb, wc, "Khách hàng hợp lệ");
     }
+    // Sheet tham chiếu KHO — KHO khi import phải trùng TÊN hoặc KÝ HIỆU ở đây
+    if (whs.length) {
+      const whRows = whs.map((n) => ({ "Tên kho": n, "Ký hiệu": whCodeOf[n] || "" }));
+      const ww = XLSX.utils.json_to_sheet(whRows, { header: ["Tên kho", "Ký hiệu"] });
+      ww["!cols"] = [{ wch: 28 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ww, "Kho hợp lệ");
+    }
     // Sheet hướng dẫn — giải nghĩa từng cột + cột nào BẮT BUỘC (*)
     const guide = [
       { "Cột": "Khách hàng *", "Bắt buộc": "CÓ", "Ý nghĩa": "Tên khách — phải trùng danh mục (xem sheet 'Khách hàng hợp lệ')" },
@@ -321,7 +334,7 @@ function ShipmentsApp() {
       { "Cột": "NHẬP/XUẤT", "Bắt buộc": "không", "Ý nghĩa": "Nhập hoặc Xuất" },
       { "Cột": "LOẠI CONT", "Bắt buộc": "không", "Ý nghĩa": "Loại cont: 40HC, 20DC…" },
       { "Cột": "SỐ CONTAINER", "Bắt buộc": "không", "Ý nghĩa": "Số cont — nhiều cont thì XUỐNG DÒNG trong 1 ô" },
-      { "Cột": "KHO", "Bắt buộc": "không", "Ý nghĩa": "Tuyến kho (vd: TL, TS) — dùng khớp phí xe" },
+      { "Cột": "KHO", "Bắt buộc": "không", "Ý nghĩa": "Tuyến kho — TÊN hoặc KÝ HIỆU trong danh mục Kho (xem sheet 'Kho hợp lệ'); nhiều đoạn nối bằng → hoặc dấu phẩy (vd TL → TS); dùng khớp phí xe; nhập sai sẽ báo lỗi" },
       { "Cột": "INVOICE", "Bắt buộc": "không", "Ý nghĩa": "Số invoice (nếu có)" },
     ];
     const wg = XLSX.utils.json_to_sheet(guide, { header: ["Cột", "Bắt buộc", "Ý nghĩa"] });
@@ -780,7 +793,7 @@ function ShipmentsApp() {
       {active && modal.type === "info" && <InfoPopup ship={active} isHph={isHph} patch={(np) => patch(active.id, np)} patchOther={(id, np) => patch(id, np)} onSave={() => commitDirty()} isDirty={isDirty} siblings={sibs.filter((x) => x.id !== active.id)} onClose={closeInfo} onDelete={active._new ? null : () => delShip(active.id)} canDelete={T.canDelete} cfg={cfg} addCfg={addCfg} />}
 
       {showImport && (
-        <Modal title="Import lô hàng từ Excel" subtitle="Cột có (*) là BẮT BUỘC: Khách hàng, Số booking, Số lượng cont · Nơi lấy/hạ không bắt buộc nhưng nhập sai danh mục sẽ báo lỗi · file mẫu có sheet Hướng dẫn + danh mục hợp lệ · kiểm tra trước, 1 lỗi là không import gì cả" width={720} icon={<I.truck />}
+        <Modal title="Import lô hàng từ Excel" subtitle="Cột có (*) là BẮT BUỘC: Khách hàng, Số booking, Số lượng cont · Nơi lấy/hạ + Kho không bắt buộc nhưng nhập sai danh mục sẽ báo lỗi · file mẫu có sheet Hướng dẫn + danh mục hợp lệ · kiểm tra trước, 1 lỗi là không import gì cả" width={720} icon={<I.truck />}
           onClose={() => setShowImport(false)}
           footer={
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
