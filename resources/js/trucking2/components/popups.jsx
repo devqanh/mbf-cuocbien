@@ -289,10 +289,13 @@ function SpendPopup({ ship, patch, onSave, isDirty, onClose, cfg = {}, addCfg })
   const delLine = (id) => setSpends(spends.filter((l) => l.id !== id));
   const setAllDate = (v) => setSpends(spends.map((l) => ({ ...l, spendDate: v })));
   const setSalaryDriver = (v) => setSpends(spends.map((l) => (l.kind === "salary" ? { ...l, driver: v } : l)));
-  const addOther = () => setSpends([...spends, { id: Date.now(), source: "other", kind: "company", name: "", amount: "", driver, spendDate: spendDate || todayStr(), paid: true, bks: ship.bksVao || "", vehicleId: null }]);
+  const addOther = () => setSpends([...spends, { id: Date.now(), source: "other", kind: "company", name: "", amount: "", driver, spendDate: spendDate || todayStr(), paid: false, bks: ship.bksVao || "", vehicleId: null }]);
+  const setAllPaid = (v) => setSpends(spends.map((l) => ({ ...l, paid: v })));
 
   const sum = (k) => spends.filter((l) => l.kind === k).reduce((a, l) => a + toNum(l.amount), 0);
   const salaryTotal = sum("salary"), companyTotal = sum("company"), total = salaryTotal + companyTotal;
+  const paidTotal = spends.filter((l) => l.paid).reduce((a, l) => a + toNum(l.amount), 0);
+  const allPaid = spends.length > 0 && spends.every((l) => l.paid);
 
   const dirty = !!(isDirty && isDirty(ship.id));
   const [saving, setSaving] = useState(false);
@@ -303,7 +306,8 @@ function SpendPopup({ ship, patch, onSave, isDirty, onClose, cfg = {}, addCfg })
       <div style={{ display: "flex", gap: 22 }}>
         <div><div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 2 }}>Lương tài xế</div><div className="tnum" style={{ fontSize: 17, fontWeight: 700, color: "#b45309" }}>{fmtVND(salaryTotal)}</div></div>
         <div style={{ borderLeft: "1px solid var(--line)", paddingLeft: 22 }}><div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 2 }}>Chi phí công ty</div><div className="tnum" style={{ fontSize: 17, fontWeight: 700 }}>{fmtVND(companyTotal)}</div></div>
-        <div style={{ borderLeft: "1px solid var(--line)", paddingLeft: 22 }}><div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 2 }}>Tổng chi</div><div className="tnum" style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em" }}>{fmtVND(total)}</div></div>
+        <div style={{ borderLeft: "1px solid var(--line)", paddingLeft: 22 }}><div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 2 }}>Tổng ghi nhận</div><div className="tnum" style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em" }}>{fmtVND(total)}</div></div>
+        <div style={{ borderLeft: "1px solid var(--line)", paddingLeft: 22 }}><div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 2 }}>Đã chi (đã tick)</div><div className="tnum" style={{ fontSize: 17, fontWeight: 700, color: "var(--good)" }}>{fmtVND(paidTotal)}</div></div>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         {dirty && <span style={{ fontSize: 12, color: "var(--warn)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--warn)" }} />Có thay đổi chưa lưu</span>}
@@ -323,7 +327,7 @@ function SpendPopup({ ship, patch, onSave, isDirty, onClose, cfg = {}, addCfg })
     </div>
   );
 
-  const colTmpl = isMobile ? "1fr" : "1fr 154px 150px 36px";
+  const colTmpl = isMobile ? "1fr" : "1fr 132px 130px 108px 34px";
   return (
     <Modal title="Duyệt chi theo biển kiểm soát" subtitle={<>Lô <b style={{ color: "var(--ink-2)" }}>{ship.booking}</b> · {ship.customer}{ship.bksVao ? <> · BKS <b style={{ color: "var(--ink-2)" }}>{ship.bksVao}</b></> : null}</>} onClose={onClose} footer={footer} width={860}>
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr auto", gap: 12, alignItems: "end", marginBottom: 14 }}>
@@ -340,7 +344,13 @@ function SpendPopup({ ship, patch, onSave, isDirty, onClose, cfg = {}, addCfg })
       <div style={{ border: "1px solid var(--line)", borderRadius: 11, overflow: "hidden" }}>
         {!isMobile && (
           <div style={{ display: "grid", gridTemplateColumns: colTmpl, gap: 10, background: "#fafbfc", borderBottom: "1px solid var(--line)", padding: "8px 12px", fontSize: 10.5, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.03em" }}>
-            <div>Khoản chi</div><div>Phân loại</div><div style={{ textAlign: "right" }}>Số tiền</div><div />
+            <div>Khoản chi</div><div>Phân loại</div><div style={{ textAlign: "right" }}>Số tiền</div>
+            <div style={{ textAlign: "center" }}>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer", color: "var(--good)" }} title="Tích tất cả Đã chi">
+                <input type="checkbox" checked={allPaid} onChange={(e) => setAllPaid(e.target.checked)} style={{ accentColor: "var(--good)", width: 14, height: 14, cursor: "pointer", margin: 0 }} /> Đã chi
+              </label>
+            </div>
+            <div />
           </div>
         )}
         {spends.length === 0 && !loading && <div style={{ padding: "16px 12px", fontSize: 12.5, color: "var(--ink-4)", textAlign: "center" }}>Chưa có khoản chi — bấm <b>Tải từ phí tuyến</b> hoặc <b>+ Chi khác</b>.</div>}
@@ -349,6 +359,10 @@ function SpendPopup({ ship, patch, onSave, isDirty, onClose, cfg = {}, addCfg })
             <Txt value={l.name} onChange={(x) => setLine(l.id, { name: x })} placeholder="Tên khoản chi…" />
             <div>{kindBtn(l)}</div>
             <div><Money value={l.amount} onChange={(x) => setLine(l.id, { amount: x })} dim /></div>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 5, cursor: "pointer", justifySelf: isMobile ? "start" : "center", fontSize: 12, fontWeight: 600, color: l.paid ? "var(--good)" : "var(--ink-4)" }} title={l.paid ? ("Đã chi" + (l.paidDate ? " ngày " + l.paidDate : "")) : "Chưa chi — tích để ghi nhận đã chi"}>
+              <input type="checkbox" checked={!!l.paid} onChange={(e) => setLine(l.id, { paid: e.target.checked })} style={{ accentColor: "var(--good)", width: 16, height: 16, cursor: "pointer", margin: 0 }} />
+              {l.paid ? "Đã chi" : "Chưa"}
+            </label>
             <button type="button" onClick={() => delLine(l.id)} title="Xóa khoản" style={{ width: 32, height: 32, display: "grid", placeItems: "center", border: "1px solid var(--line)", borderRadius: 8, background: "#fff", color: "var(--ink-4)", cursor: "pointer", justifySelf: isMobile ? "start" : "center" }}><I.trash /></button>
           </div>
         ))}
@@ -357,7 +371,7 @@ function SpendPopup({ ship, patch, onSave, isDirty, onClose, cfg = {}, addCfg })
         </div>
       </div>
       <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 10, lineHeight: 1.5 }}>
-        Khoản <b style={{ color: "#b45309" }}>Lương</b> tính vào lương tài xế (người chọn ở trên); khoản <b style={{ color: "var(--accent)" }}>Công ty</b> là chi phí công ty. Trang <b>Phí xe</b> tổng hợp <b>Kế hoạch / Đã chi / Còn lại</b> theo kỳ + biển số.
+        Khoản <b style={{ color: "#b45309" }}>Lương</b> tính vào lương tài xế (người chọn ở trên); khoản <b style={{ color: "var(--accent)" }}>Công ty</b> là chi phí công ty. Chỉ khoản <b style={{ color: "var(--good)" }}>tích "Đã chi"</b> mới được ghi nhận <b>Đã chi</b> ở Phí xe (theo <b>Ngày chi</b> ở trên); khoản chưa tick = còn phải chi. Trang <b>Phí xe</b> tổng hợp <b>Kế hoạch / Đã chi / Còn lại</b> theo kỳ + biển số.
       </div>
     </Modal>
   );

@@ -11,7 +11,7 @@ class TruckingVehicle extends Model
 {
     use HasHashid;
 
-    protected $fillable = ['plate', 'type', 'kind', 'axle', 'info', 'documents', 'allowances'];
+    protected $fillable = ['plate', 'type', 'kind', 'axle', 'gps_ref', 'info', 'documents', 'allowances'];
 
     protected $casts = [
         'info'       => 'array',

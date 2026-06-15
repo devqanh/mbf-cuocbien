@@ -336,7 +336,7 @@ trait HandlesTripAndDrivers
                 'diag'        => $sg['diag'],
                 'salaryParts' => $sg['salaryParts'],
                 'usedIn'      => $inBatch[$s->id] ?? [],
-                'spent'       => $spent[$s->id] ?? ['salary' => 0, 'company' => 0, 'total' => 0],   // ĐÃ CHI (duyệt chi theo lô)
+                'spent'       => $spent[$s->id] ?? self::EMPTY_SPENT,   // đã chi + chưa chi (duyệt chi theo lô)
                 'cur'        => $sg['sug'],
                 'sug'        => $sg['sug'],
             ];
@@ -346,9 +346,10 @@ trait HandlesTripAndDrivers
     }
 
     /**
-     * Tổng ĐÃ CHI (duyệt chi theo lô) theo shipment_id, tách salary|company.
-     * Dùng để Phí xe hiện Kế hoạch / Đã chi / Còn lại.
-     * @return array<int,array{salary:int,company:int,total:int}>
+     * Tổng duyệt chi theo shipment_id, tách salary|company + theo trạng thái:
+     *  - salary/company/total           = ĐÃ CHI (đã tick paid)
+     *  - unpaidSalary/unpaidCompany/... = CHƯA CHI (đã ghi nhận nhưng chưa tick)
+     * Phí xe: Đã chi cộng dồn; Chưa chi = các khoản đã ghi nhận còn chờ chi.
      */
     private function spendsByShipment(array $shipmentIds): array
     {
@@ -356,18 +357,26 @@ trait HandlesTripAndDrivers
         if (! $ids) return [];
         $out = [];
         $rows = TruckingShipmentSpend::whereIn('shipment_id', $ids)
-            ->selectRaw('shipment_id, kind, SUM(amount) as amt')
-            ->groupBy('shipment_id', 'kind')->get();
+            ->selectRaw('shipment_id, kind, paid, SUM(amount) as amt')
+            ->groupBy('shipment_id', 'kind', 'paid')->get();
         foreach ($rows as $r) {
             $sid = (int) $r->shipment_id;
-            $out[$sid] ??= ['salary' => 0, 'company' => 0, 'total' => 0];
+            $out[$sid] ??= self::EMPTY_SPENT;
             $k = $r->kind === 'salary' ? 'salary' : 'company';
             $amt = (int) round((float) $r->amt);
-            $out[$sid][$k] += $amt;
-            $out[$sid]['total'] += $amt;
+            if ($r->paid) {
+                $out[$sid][$k] += $amt;
+                $out[$sid]['total'] += $amt;
+            } else {
+                $out[$sid]['unpaid' . ucfirst($k)] += $amt;
+                $out[$sid]['unpaidTotal'] += $amt;
+            }
         }
         return $out;
     }
+
+    /** Khung "spent" rỗng (đã chi + chưa chi) — dùng làm mặc định khi lô chưa có duyệt chi. */
+    private const EMPTY_SPENT = ['salary' => 0, 'company' => 0, 'total' => 0, 'unpaidSalary' => 0, 'unpaidCompany' => 0, 'unpaidTotal' => 0];
 
     /** Số kỳ kế tiếp (PX-0001…) nếu người dùng không nhập. */
     private function nextTripNo(): string
@@ -419,7 +428,7 @@ trait HandlesTripAndDrivers
                 'matched'     => true,
                 'salaryParts' => $this->cleanSalaryParts($l->salary_parts),
                 'usedIn'      => [],
-                'spent'       => $spent[$l->shipment_id] ?? ['salary' => 0, 'company' => 0, 'total' => 0],   // ĐÃ CHI theo lô
+                'spent'       => $spent[$l->shipment_id] ?? self::EMPTY_SPENT,   // đã chi + chưa chi theo lô
                 'cur'        => [
                     'driver'     => $l->driver ?? '',
                     'veTram'     => $this->outMoney($l->ve_tram),

@@ -15,6 +15,10 @@ window.__TRK = {
   routes: {
     positions: '{{ route("trucking2.tracking.positions") }}',
     settings:  '{{ route("system.settings") }}',
+    warehouses:   '{{ route("trucking2.tracking.warehouses") }}',
+    warehouseGeo: '{{ route("trucking2.tracking.warehouseGeo") }}',
+    visits:       '{{ route("trucking2.tracking.visits") }}',
+    visitsPage:   '{{ route("trucking2.tracking.visitsPage") }}',
   },
   boot: @json($boot),
 };

@@ -59,6 +59,13 @@ trait HandlesCatalog
                     ->mapWithKeys(fn ($r) => [$r->name => $r->code])->all();
                 // Mảng mã theo CHỈ SỐ dòng (định danh thực = mã; tên được phép trùng)
                 $cfg[$coded . 'Arr'] = $rows->map(fn ($r) => $r->code ?? '')->all();
+                // Mảng ID theo CHỈ SỐ dòng → reconcile khớp theo id, cho SỬA mã mà giữ nguyên id (không đứt link)
+                $cfg[$key . 'IdArr'] = $rows->map(fn ($r) => $r->id)->all();
+            }
+            if ($key === 'warehouses') {   // Kho có thêm Địa chỉ + Tọa độ (mảng theo chỉ số dòng)
+                $cfg['warehouseAddr']    = $rows->filter(fn ($r) => $r->address)->mapWithKeys(fn ($r) => [$r->name => $r->address])->all();
+                $cfg['warehouseAddrArr'] = $rows->map(fn ($r) => $r->address ?? '')->all();
+                $cfg['warehouseGeoArr']  = $rows->map(fn ($r) => ($r->lat !== null && $r->lng !== null) ? ($r->lat . ',' . $r->lng) : '')->all();
             }
             if ($priced) {
                 foreach ($rows as $r) {
@@ -108,6 +115,7 @@ trait HandlesCatalog
         $cfg['vehicles'] = $vehicles->pluck('plate')->all();
         $cfg['vehicleType'] = $vehicles->mapWithKeys(fn ($v) => [$v->plate => $v->type])->all();
         $cfg['vehicleAxle'] = $vehicles->filter(fn ($v) => $v->axle)->mapWithKeys(fn ($v) => [$v->plate => $v->axle])->all();
+        $cfg['vehicleGps']  = $vehicles->filter(fn ($v) => $v->gps_ref)->mapWithKeys(fn ($v) => [$v->plate => $v->gps_ref])->all();
 
         // Settings
         $cfg['vatDefault'] = [
@@ -149,6 +157,11 @@ trait HandlesCatalog
             if ($coded) {
                 $out[$coded] = $rows->filter(fn ($r) => $r->code)->mapWithKeys(fn ($r) => [$r->name => $r->code])->all();
                 $out[$coded . 'Arr'] = $rows->map(fn ($r) => $r->code ?? '')->all();   // mã theo chỉ số dòng
+                if ($key === 'warehouses') {
+                    $out['warehouseAddr']    = $rows->filter(fn ($r) => $r->address)->mapWithKeys(fn ($r) => [$r->name => $r->address])->all();
+                    $out['warehouseAddrArr'] = $rows->map(fn ($r) => $r->address ?? '')->all();
+                    $out['warehouseGeoArr']  = $rows->map(fn ($r) => ($r->lat !== null && $r->lng !== null) ? ($r->lat . ',' . $r->lng) : '')->all();
+                }
                 if ($key === 'locations') {
                     $lockedIds = TruckingPriceRow::query()->whereNotNull('location_id')->distinct()->pluck('location_id');
                     $out['locationLocked'] = TruckingLocation::whereIn('id', $lockedIds)->pluck('name')->all();
@@ -177,10 +190,14 @@ trait HandlesCatalog
         }
         if ($key === 'vehicles') {
             $v = TruckingVehicle::orderBy('plate')->get();
+            $gpsVehicles = [];
+            try { $gpsVehicles = app(\App\Services\Gps\GpsTrackingService::class)->vehicleOptions(); } catch (\Throwable) {}
             return [
                 'vehicles'    => $v->pluck('plate')->all(),
                 'vehicleType' => $v->mapWithKeys(fn ($x) => [$x->plate => $x->type])->all(),
                 'vehicleAxle' => $v->filter(fn ($x) => $x->axle)->mapWithKeys(fn ($x) => [$x->plate => $x->axle])->all(),
+                'vehicleGps'  => $v->filter(fn ($x) => $x->gps_ref)->mapWithKeys(fn ($x) => [$x->plate => $x->gps_ref])->all(),
+                'gpsVehicles' => $gpsVehicles,   // danh sách xe GPS cho dropdown (gộp mọi nguồn)
             ];
         }
         if ($key === '__general') {   // cấu hình chung: VAT mặc định + Free time + cảnh báo hạn (+ mở rộng sau)

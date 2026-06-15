@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Trucking;
 
 use App\Models\TruckingSetting;
+use App\Models\TruckingWarehouse;
 use App\Services\Gps\GpsTrackingService;
 use App\Services\TruckingV2Service;
 use Illuminate\Http\JsonResponse;
@@ -60,6 +61,46 @@ class TrackingController extends BaseTruckingController
         $p->saveConfig(collect($data)->except('provider')->all());
 
         return response()->json(['ok' => true, 'providers' => $this->gps->publicConfig()]);
+    }
+
+    /** Trang Lịch sử đến/rời kho (phân trang). */
+    public function visitsPage()
+    {
+        return view('trucking2.lich-su-kho', $this->pageData([], 'shipments.view', 'shipments.delete'));
+    }
+
+    /** Lịch sử xe đến/rời kho (geofence visit) — JSON phân trang + tìm kiếm. */
+    public function visits(Request $request): JsonResponse
+    {
+        return response()->json(['ok' => true] + $this->gps->visitHistoryPaged(
+            $request->query('q'),
+            (int) $request->query('page', 1),
+            (int) $request->query('perPage', 30),
+        ));
+    }
+
+    /** Danh sách kho (kèm tọa độ) để vẽ marker + ghim trực tiếp trên bản đồ theo dõi. */
+    public function warehouses(): JsonResponse
+    {
+        $rows = TruckingWarehouse::orderBy('sort')->orderBy('name')->get(['id', 'name', 'code', 'address', 'lat', 'lng']);
+        return response()->json(['ok' => true, 'warehouses' => $rows->map(fn ($w) => [
+            'id' => $w->id, 'name' => $w->name, 'code' => $w->code, 'address' => $w->address,
+            'lat' => $w->lat, 'lng' => $w->lng,
+        ])->all()]);
+    }
+
+    /** Ghim/cập nhật tọa độ 1 kho từ bản đồ theo dõi (thả/kéo điểm). */
+    public function saveWarehouseGeo(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'id'  => ['required', 'integer'],
+            'lat' => ['required', 'numeric', 'between:-90,90'],
+            'lng' => ['required', 'numeric', 'between:-180,180'],
+        ]);
+        $w = TruckingWarehouse::find($data['id']);
+        if (! $w) return response()->json(['ok' => false, 'message' => 'Không tìm thấy kho'], 404);
+        $w->update(['lat' => $data['lat'], 'lng' => $data['lng']]);
+        return response()->json(['ok' => true, 'warehouse' => ['id' => $w->id, 'lat' => $w->lat, 'lng' => $w->lng]]);
     }
 
     /** Test kết nối 1 provider (đăng nhập mới + thử lấy dữ liệu). */

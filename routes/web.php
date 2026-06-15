@@ -172,11 +172,15 @@ Route::middleware('auth')->group(function () {
         Route::middleware('permission:shipments.view')->group(function () {
             Route::get('/theo-doi-xe',          [TrackingController::class, 'index'])->name('tracking');
             Route::get('/tracking/positions',   [TrackingController::class, 'positions'])->name('tracking.positions');   // poll ~15s
+            Route::get('/tracking/warehouses',  [TrackingController::class, 'warehouses'])->name('tracking.warehouses'); // marker kho
+            Route::get('/lich-su-kho',          [TrackingController::class, 'visitsPage'])->name('tracking.visitsPage');  // trang lịch sử đến/rời kho
+            Route::get('/tracking/visits',      [TrackingController::class, 'visits'])->name('tracking.visits');         // JSON phân trang
         });
         Route::middleware('permission:settings.update')->group(function () {
             Route::get('/tracking/config',  [TrackingController::class, 'config'])->name('tracking.config');
             Route::post('/tracking/config', [TrackingController::class, 'saveConfig'])->name('tracking.saveConfig');
             Route::post('/tracking/test',   [TrackingController::class, 'test'])->name('tracking.test');
+            Route::post('/tracking/warehouse-geo', [TrackingController::class, 'saveWarehouseGeo'])->name('tracking.warehouseGeo');   // ghim kho từ bản đồ
         });
 
         // --- Bảng giá ---

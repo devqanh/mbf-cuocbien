@@ -379,6 +379,7 @@ trait HandlesShipments
                 'amount'    => $this->outMoney($x->amount),
                 'spendDate' => $this->outDate($x->spend_date),
                 'paid'      => (bool) $x->paid,
+                'paidDate'  => $this->outDate($x->paid_date),
                 'note'      => $x->note ?? '',
             ])->all(),
         ];
@@ -411,7 +412,7 @@ trait HandlesShipments
             'bks'       => $bks,
             'vehicleId' => $vehId,
             'spendDate' => $today,
-            'paid'      => true,
+            'paid'      => false,   // mới gợi ý = CHƯA chi; tick "Đã chi" mới ghi nhận vào Phí xe
         ];
 
         $lines = [];
@@ -556,18 +557,27 @@ trait HandlesShipments
             if ($apply('spends')) {
                 $s->spends()->delete();
                 $uid = auth()->id();
+                // map tên lái xe → id (link cứng driver_id cho báo cáo lương; tên vẫn giữ snapshot)
+                $driverIds = \App\Models\TruckingDriver::pluck('id', 'name');
                 foreach (($data['spends'] ?? []) as $i => $sp) {
                     $kind = ($sp['kind'] ?? 'company') === 'salary' ? 'salary' : 'company';
+                    $paid = ! empty($sp['paid']);
+                    $spendDate = $this->inDate($sp['spendDate'] ?? null);
+                    // paid_date = ngày tick "Đã chi" (paidDate nếu gửi, không thì lấy Ngày chi)
+                    $paidDate = $paid ? ($this->inDate($sp['paidDate'] ?? null) ?: $spendDate) : null;
+                    $driverName = $this->str($sp['driver'] ?? null);
                     $s->spends()->create([
                         'vehicle_id' => is_numeric($sp['vehicleId'] ?? null) ? (int) $sp['vehicleId'] : null,
                         'bks'        => $this->str($sp['bks'] ?? null),
-                        'driver'     => $this->str($sp['driver'] ?? null),
+                        'driver'     => $driverName,
+                        'driver_id'  => $driverName ? ($driverIds[$driverName] ?? null) : null,
                         'source'     => $this->str($sp['source'] ?? null) ?: 'other',
                         'kind'       => $kind,
                         'name'       => $this->str($sp['name'] ?? null) ?: 'Khoản chi',
                         'amount'     => $this->inMoney($sp['amount'] ?? null) ?? 0,
-                        'spend_date' => $this->inDate($sp['spendDate'] ?? null),
-                        'paid'       => array_key_exists('paid', $sp) ? ! empty($sp['paid']) : true,
+                        'spend_date' => $spendDate,
+                        'paid'       => $paid,
+                        'paid_date'  => $paidDate,
                         'note'       => $this->str($sp['note'] ?? null),
                         'created_by' => $uid,
                         'sort'       => $i,

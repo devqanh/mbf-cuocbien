@@ -29,6 +29,16 @@ const timeAgo = (ts) => {
 };
 const fmtClock = (ts) => { if (!ts) return ""; const d = new Date(ts); const z = (n) => String(n).padStart(2, "0"); return `${z(d.getHours())}:${z(d.getMinutes())} ${z(d.getDate())}/${z(d.getMonth() + 1)}`; };
 
+/* Khoảng cách Haversine (km) giữa 2 tọa độ. */
+function haversineKm(a, b) {
+  const R = 6371, rad = (d) => (d * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+const fmtDist = (km) => (km < 1 ? Math.round(km * 1000) + " m" : km.toFixed(km < 10 ? 1 : 0) + " km");
+const AT_WH_KM = 0.3;   // ≤300m coi như "đã ở kho"
+
 function popupHtml(p) {
   const st = STATUS[effStatus(p)] || STATUS.off;
   return `<div style="font-size:12.5px;line-height:1.55;min-width:180px;padding:2px">
@@ -37,6 +47,21 @@ function popupHtml(p) {
     ${p.driver ? `<div>Tài xế: <b>${esc(p.driver)}</b></div>` : ""}
     ${p.address ? `<div style="color:#5b6470">${esc(p.address)}</div>` : ""}
     <div style="color:#8a94a6;margin-top:3px">${esc(p.providerLabel)} · ${esc(fmtClock(p.ts))} (${esc(timeAgo(p.ts))})</div>
+  </div>`;
+}
+
+/* Marker KHO — ghim teardrop màu chàm + biểu tượng nhà kho. Anchor ở mũi (đáy). */
+const WAREHOUSE_PIN = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="34" height="42" viewBox="0 0 34 42">
+    <path d="M17 41C7 28 2 21 2 14a15 15 0 0 1 30 0c0 7-5 14-15 27z" fill="#4f46e5" stroke="#ffffff" stroke-width="2"/>
+    <path d="M8.5 16.5 L17 9 L25.5 16.5 L25.5 24 L8.5 24 Z" fill="#ffffff"/>
+    <rect x="14" y="18" width="6" height="6" fill="#4f46e5"/>
+  </svg>`);
+function whPopup(w) {
+  return `<div style="font-size:12.5px;line-height:1.5;min-width:160px;padding:2px">
+    <div style="font-weight:700;font-size:14px">🏭 ${esc(w.name)}${w.code ? ` <span style="color:#8a94a6">(${esc(w.code)})</span>` : ""}</div>
+    ${w.address ? `<div style="color:#5b6470;margin-top:2px">${esc(w.address)}</div>` : ""}
+    ${(w.lat != null && w.lng != null) ? `<div style="color:#8a94a6;margin-top:3px" class="tnum">${(+w.lat).toFixed(6)}, ${(+w.lng).toFixed(6)}</div>` : ""}
   </div>`;
 }
 
@@ -128,9 +153,16 @@ function TrackingApp() {
   const [fProvider, setFProvider] = useState("all");
   const [matchedOnly, setMatchedOnly] = useState(false);
   const [selected, setSelected] = useState(null);
-  const [mobileView, setMobileView] = useState("map");
+  // Tab mobile (Bản đồ/Danh sách) — LƯU sessionStorage để không bị "nhảy" về Bản đồ
+  // mỗi khi component dựng lại / poll re-render (giữ đúng tab người dùng đang xem).
+  const [mobileView, _setMobileView] = useState(() => { try { return sessionStorage.getItem("trk_track_view") || "map"; } catch (e) { return "map"; } });
+  const setMobileView = (v) => { try { sessionStorage.setItem("trk_track_view", v); } catch (e) {} _setMobileView(v); };
   const [mapReady, setMapReady] = useState(false);
   const [mapErr, setMapErr] = useState("");
+  // ---- Kho (ghim vị trí trên bản đồ) ----
+  const [warehouses, setWarehouses] = useState([]);
+  const [whPanel, setWhPanel] = useState(false);     // mở panel quản lý vị trí kho (admin)
+  const [placingId, setPlacingId] = useState(null);  // kho đang chờ bấm/đặt điểm
 
   const idOf = (p) => p.provider + ":" + p.plateNorm;
 
@@ -191,6 +223,41 @@ function TrackingApp() {
     infoOpenRef.current = id;
   };
 
+  // ---- Kho: refs + tải danh sách + ghim ----
+  const whMarkersRef = useRef({});
+  const whInfoRef = useRef(null);
+  const placingRef = useRef(null);   // = placingId (cho listener đọc giá trị mới nhất)
+  useEffect(() => { placingRef.current = placingId; }, [placingId]);
+  const whListRef = useRef([]);
+  useEffect(() => { whListRef.current = warehouses; }, [warehouses]);
+
+  const loadWarehouses = () => {
+    if (!ROUTES.warehouses) return;
+    api("GET", ROUTES.warehouses).then((r) => { if (r && r.ok) setWarehouses(r.warehouses || []); }).catch(() => {});
+  };
+  useEffect(() => { loadWarehouses(); }, []);
+
+  // Ghim/cập nhật tọa độ 1 kho (luôn dùng bản mới nhất qua ref → tránh stale trong map listener).
+  const placeFnRef = useRef(null);
+  placeFnRef.current = (id, lat, lng) => {
+    setWarehouses((ws) => ws.map((w) => (w.id === id ? { ...w, lat, lng } : w)));
+    setPlacingId(null);
+    const w = whListRef.current.find((x) => x.id === id);
+    if (!ROUTES.warehouseGeo) return;
+    api("POST", ROUTES.warehouseGeo, { id, lat, lng })
+      .then((r) => window.trkToast && window.trkToast(r && r.ok ? `Đã ghim kho ${w ? w.name : ""}` : "Lưu vị trí kho thất bại", r && r.ok ? undefined : "error"))
+      .catch(() => window.trkToast && window.trkToast("Lỗi lưu vị trí kho", "error"));
+  };
+  const whPinned = warehouses.filter((w) => w.lat != null && w.lng != null).length;
+  // Kho đã có tọa độ → tính kho GẦN NHẤT + khoảng cách cho mỗi xe.
+  const whGeo = useMemo(() => warehouses.filter((w) => w.lat != null && w.lng != null).map((w) => ({ ...w, lat: +w.lat, lng: +w.lng })), [warehouses]);
+  const nearestWh = (p) => {
+    if (!whGeo.length || p.lat == null || p.lng == null) return null;
+    let best = null;
+    for (const w of whGeo) { const km = haversineKm({ lat: p.lat, lng: p.lng }, { lat: w.lat, lng: w.lng }); if (!best || km < best.km) best = { w, km }; }
+    return best;
+  };
+
   useEffect(() => {
     const key = B.mapsKey;
     if (!key) { setMapErr("Chưa cấu hình Google Maps API key."); return; }
@@ -205,10 +272,21 @@ function TrackingApp() {
       });
       infoRef.current = new maps.InfoWindow();
       infoRef.current.addListener("closeclick", () => { infoOpenRef.current = null; });
+      whInfoRef.current = new maps.InfoWindow();
+      // Bấm lên bản đồ khi đang "đặt kho" → ghim kho tại điểm đó.
+      mapRef.current.addListener("click", (e) => { if (placingRef.current != null) placeFnRef.current(placingRef.current, e.latLng.lat(), e.latLng.lng()); });
       setMapReady(true);
     }).catch((e) => { if (alive) setMapErr(e.message); });
     return () => { alive = false; };
   }, []);
+
+  // Mobile: chuyển sang tab Bản đồ → container vừa hiện lại, ép Google Map vẽ lại + giữ tâm (tránh map xám).
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !window.google) return;
+    if (isMobile && mobileView !== "map") return;
+    const map = mapRef.current; const c = map.getCenter();
+    setTimeout(() => { window.google.maps.event.trigger(map, "resize"); if (c) map.setCenter(c); }, 180);
+  }, [mobileView, isMobile, mapReady]);
 
   // upsert markers theo filtered
   useEffect(() => {
@@ -229,7 +307,14 @@ function TrackingApp() {
           label: { text: p.plate || "—", className: "trk-plate", color: "#16202e", fontSize: "11px", fontWeight: "700" },
         });
         m.__sig = sig;
-        m.addListener("click", () => { setSelected(id); openInfo(id); });
+        m.addListener("click", () => {
+          if (placingRef.current != null) {   // đang đặt kho → dùng vị trí xe đang đỗ làm vị trí kho
+            const pp = markerData.current[id];
+            if (pp) placeFnRef.current(placingRef.current, pp.lat, pp.lng);
+            return;
+          }
+          setSelected(id); openInfo(id);
+        });
         markersRef.current[id] = m;
       } else {
         if (m.__sig !== sig) { m.setIcon(iconFor(maps, p, sel)); m.__sig = sig; }
@@ -251,6 +336,33 @@ function TrackingApp() {
       infoRef.current.setContent(popupHtml(markerData.current[openId]));
     }
   }, [filtered, selected, mapReady]);
+
+  // ---- marker KHO (vẽ + kéo để chỉnh; bấm xem thông tin) ----
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !window.google) return;
+    const maps = window.google.maps;
+    const seen = new Set();
+    warehouses.forEach((w) => {
+      if (w.lat == null || w.lng == null) return;
+      seen.add(w.id);
+      const pos = { lat: +w.lat, lng: +w.lng };
+      let m = whMarkersRef.current[w.id];
+      if (!m) {
+        m = new maps.Marker({ position: pos, map: mapRef.current, title: "Kho: " + w.name, zIndex: 9999,
+          icon: { url: WAREHOUSE_PIN, scaledSize: new maps.Size(34, 42), anchor: new maps.Point(17, 41) } });
+        m.addListener("click", () => { const cur = whListRef.current.find((x) => x.id === w.id) || w; whInfoRef.current.setContent(whPopup(cur)); whInfoRef.current.open(mapRef.current, m); });
+        m.addListener("dragend", (e) => placeFnRef.current(w.id, e.latLng.lat(), e.latLng.lng()));
+        whMarkersRef.current[w.id] = m;
+      } else { m.setPosition(pos); }
+      m.setDraggable(!!canEdit && whPanel);   // chỉ kéo được khi admin mở panel
+    });
+    Object.keys(whMarkersRef.current).forEach((id) => { if (!seen.has(Number(id))) { whMarkersRef.current[id].setMap(null); delete whMarkersRef.current[id]; } });
+  }, [warehouses, mapReady, whPanel]);
+
+  // Con trỏ chữ thập khi đang đặt kho
+  useEffect(() => {
+    if (mapRef.current) mapRef.current.setOptions({ draggableCursor: placingId != null ? "crosshair" : null });
+  }, [placingId]);
 
   const focusVehicle = (p) => {
     const id = idOf(p); setSelected(id);
@@ -282,45 +394,61 @@ function TrackingApp() {
               ? <><span style={{ width: 8, height: 8, borderRadius: 999, background: "var(--ink-4)" }} /> Đang kết nối…</>
               : <><span style={{ width: 8, height: 8, borderRadius: 999, background: "var(--good)", boxShadow: "0 0 0 3px rgba(31,138,91,.18)" }} /> Trực tuyến · {timeAgo(lastTs)}</>}
           </span>
+          <a href={ROUTES.visitsPage} title="Lịch sử xe đến/rời kho"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "var(--ink-2)", background: "#fff", border: "1px solid var(--line)", borderRadius: 9, textDecoration: "none" }}>
+            <i className="bi bi-clock-history" /> Lịch sử đến kho
+          </a>
+          {canEdit && ROUTES.warehouseGeo && <button type="button" onClick={() => { setWhPanel((v) => !v); if (whPanel) setPlacingId(null); }} title="Ghim vị trí kho trên bản đồ"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", color: whPanel ? "#fff" : "var(--ink-2)", background: whPanel ? "#4f46e5" : "#fff", border: `1px solid ${whPanel ? "#4f46e5" : "var(--line)"}`, borderRadius: 9 }}>
+            <i className="bi bi-geo-alt-fill" /> Vị trí kho
+          </button>}
         </div>
       </header>
 
-      {/* status chips */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#fff", borderBottom: "1px solid var(--line)", padding: isMobile ? "8px 14px" : "8px 22px", flexShrink: 0, flexWrap: "wrap" }}>
+      {/* Mobile: chuyển Bản đồ / Danh sách (dải nút rõ ràng, full-width) */}
+      {isMobile && (
+        <div style={{ background: "#fff", borderBottom: "1px solid var(--line)", padding: "8px 14px", flexShrink: 0 }}>
+          <div style={{ display: "flex", width: "100%", background: "#f1f2f4", borderRadius: 9, padding: 3 }}>
+            {[["map", "Bản đồ", "bi-map"], ["list", `Danh sách (${counts.all})`, "bi-list-ul"]].map(([k, l, ic]) => (
+              <button key={k} type="button" onClick={() => setMobileView(k)}
+                style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, border: "none", cursor: "pointer", fontSize: 13.5, fontWeight: 700, padding: "9px 0", borderRadius: 7, background: mobileView === k ? "#fff" : "transparent", color: mobileView === k ? "var(--accent)" : "var(--ink-3)", boxShadow: mobileView === k ? "0 1px 2px rgba(16,19,23,.14)" : "none" }}>
+                <i className={"bi " + ic} /> {l}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* status chips — mobile: cuộn ngang 1 hàng (không dồn nhiều dòng) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#fff", borderBottom: "1px solid var(--line)", padding: isMobile ? "8px 14px" : "8px 22px", flexShrink: 0, flexWrap: isMobile ? "nowrap" : "wrap", overflowX: isMobile ? "auto" : "visible", WebkitOverflowScrolling: "touch" }}>
         {[["all", "Tất cả", "var(--ink)"], ["run", STATUS.run.label, STATUS.run.color], ["idle", STATUS.idle.label, STATUS.idle.color], ["off", STATUS.off.label, STATUS.off.color], ["lost", STATUS.lost.label, STATUS.lost.color]].map(([k, label, col]) => {
           const on = fStatus === k; const n = k === "all" ? counts.all : counts[k];
           return (
             <button key={k} type="button" onClick={() => setFStatus(k)}
-              style={{ display: "inline-flex", alignItems: "center", gap: 6, border: on ? `1.5px solid ${col}` : "1px solid var(--line)", background: on ? "#fff" : "transparent", borderRadius: 999, padding: "5px 11px", cursor: "pointer", fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)" }}>
+              style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 6, border: on ? `1.5px solid ${col}` : "1px solid var(--line)", background: on ? "#fff" : "transparent", borderRadius: 999, padding: "5px 11px", cursor: "pointer", fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", whiteSpace: "nowrap" }}>
               {k !== "all" && <span style={{ width: 9, height: 9, borderRadius: 999, background: col }} />}{label}
               <span className="tnum" style={{ color: "var(--ink-4)" }}>{n}</span>
             </button>
           );
         })}
-        <span style={{ width: 1, height: 20, background: "var(--line-2)" }} />
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "var(--ink-2)", cursor: "pointer" }}>
-          <input type="checkbox" checked={matchedOnly} onChange={(e) => setMatchedOnly(e.target.checked)} style={{ accentColor: "var(--accent)" }} /> Chỉ xe hệ thống ({counts.matched})
-        </label>
+        <span style={{ flexShrink: 0, width: 1, height: 20, background: "var(--line-2)" }} />
+        <button type="button" onClick={() => setMatchedOnly((v) => !v)}
+          style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 6, border: matchedOnly ? "1.5px solid var(--accent)" : "1px solid var(--line)", background: matchedOnly ? "var(--accent-weak)" : "transparent", color: matchedOnly ? "var(--accent)" : "var(--ink-2)", borderRadius: 999, padding: "5px 11px", cursor: "pointer", fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" }}>
+          <i className="bi bi-check2-circle" /> Xe hệ thống <span className="tnum" style={{ color: "var(--ink-4)" }}>{counts.matched}</span>
+        </button>
         {enabledProviders.length > 1 && (
           <select value={fProvider} onChange={(e) => setFProvider(e.target.value)}
-            style={{ fontSize: 12.5, padding: "5px 9px", border: "1px solid var(--line)", borderRadius: 8, background: "#fff", color: "var(--ink-2)" }}>
+            style={{ flexShrink: 0, fontSize: 12.5, padding: "5px 9px", border: "1px solid var(--line)", borderRadius: 8, background: "#fff", color: "var(--ink-2)" }}>
             <option value="all">Mọi nguồn</option>
             {enabledProviders.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
           </select>
-        )}
-        {isMobile && (
-          <div style={{ marginLeft: "auto", display: "inline-flex", background: "#f1f2f4", borderRadius: 8, padding: 2 }}>
-            {[["map", "Bản đồ"], ["list", "Danh sách"]].map(([k, l]) => (
-              <button key={k} type="button" onClick={() => setMobileView(k)} style={{ border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, padding: "5px 12px", borderRadius: 6, background: mobileView === k ? "#fff" : "transparent", color: mobileView === k ? "var(--accent)" : "var(--ink-3)" }}>{l}</button>
-            ))}
-          </div>
         )}
       </div>
 
       {/* body */}
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: isMobile ? "column" : "row" }}>
         {/* list */}
-        <div style={{ width: isMobile ? "100%" : 340, flexShrink: 0, borderRight: isMobile ? "none" : "1px solid var(--line)", background: "#fff", overflowY: "auto", display: isMobile && mobileView !== "list" ? "none" : "block", order: isMobile ? 2 : 0 }}>
+        <div style={{ width: isMobile ? "100%" : 340, flex: isMobile ? "1 1 auto" : "0 0 auto", minHeight: 0, borderRight: isMobile ? "none" : "1px solid var(--line)", background: "#fff", overflowY: "auto", display: isMobile && mobileView !== "list" ? "none" : "block", order: isMobile ? 2 : 0 }}>
           <div style={{ padding: "10px 12px", borderBottom: "1px solid var(--line-2)", position: "sticky", top: 0, background: "#fff", zIndex: 2 }}>
             <div style={{ position: "relative" }}>
               <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)" }}><I.search /></span>
@@ -329,7 +457,13 @@ function TrackingApp() {
             </div>
           </div>
           {filtered.length === 0 && <div style={{ padding: "30px 16px", textAlign: "center", color: "var(--ink-4)", fontSize: 13 }}>{noData ? "Chưa có dữ liệu xe." : "Không có xe khớp bộ lọc."}</div>}
-          {filtered.slice().sort((a, b) => (b.speed || 0) - (a.speed || 0)).map((p) => {
+          {filtered.slice().sort((a, b) => {
+            // Ưu tiên xe ĐANG CHẠY, trong đó xe GẦN KHO NHẤT lên đầu (dễ thấy xe sắp tới kho).
+            const ra = effStatus(a) === "run", rb = effStatus(b) === "run";
+            if (ra !== rb) return ra ? -1 : 1;
+            if (ra && rb) { const da = nearestWh(a)?.km ?? Infinity, db = nearestWh(b)?.km ?? Infinity; if (da !== db) return da - db; }
+            return (b.speed || 0) - (a.speed || 0);
+          }).map((p) => {
             const id = idOf(p); const st = STATUS[effStatus(p)] || STATUS.off; const on = id === selected;
             return (
               <button key={id} type="button" onClick={() => focusVehicle(p)}
@@ -346,14 +480,64 @@ function TrackingApp() {
                   <span style={{ color: "var(--ink-4)" }}>· {timeAgo(p.ts)}</span>
                 </div>
                 {p.address && <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.address}</div>}
+                {(() => { const n = nearestWh(p); if (!n) return null; const at = n.km <= AT_WH_KM;
+                  return (
+                    <div style={{ fontSize: 11, marginTop: 3, display: "flex", alignItems: "center", gap: 5, fontWeight: 600, color: at ? "var(--good)" : "#4f46e5" }}>
+                      <i className={"bi " + (at ? "bi-house-check-fill" : "bi-geo-alt-fill")} />
+                      {at ? `Đã ở kho ${n.w.name}` : <>Cách kho <b>{n.w.name}</b>: <span className="tnum">{fmtDist(n.km)}</span></>}
+                    </div>
+                  ); })()}
               </button>
             );
           })}
         </div>
 
         {/* map */}
-        <div style={{ flex: 1, minHeight: isMobile ? "52vh" : 0, position: "relative", display: isMobile && mobileView !== "map" ? "none" : "block", order: isMobile ? 1 : 0 }}>
+        <div style={{ flex: 1, minHeight: 0, position: "relative", display: isMobile && mobileView !== "map" ? "none" : "block", order: isMobile ? 1 : 0 }}>
           <div ref={mapEl} style={{ position: "absolute", inset: 0, background: "#e9edf1" }} />
+
+          {/* Banner đang đặt kho */}
+          {placingId != null && (() => { const w = warehouses.find((x) => x.id === placingId); return (
+            <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 6, display: "flex", alignItems: "center", gap: 10, background: "#4f46e5", color: "#fff", borderRadius: 10, padding: "8px 14px", boxShadow: "0 6px 18px rgba(0,0,0,.25)", fontSize: 13, maxWidth: "92%" }}>
+              <i className="bi bi-geo-alt-fill" />
+              <span>Bấm lên bản đồ <b>(hoặc vào xe đang đỗ ở kho)</b> để ghim kho <b>{w ? w.name : ""}</b></span>
+              <button type="button" onClick={() => setPlacingId(null)} style={{ border: "none", background: "rgba(255,255,255,.2)", color: "#fff", borderRadius: 7, padding: "4px 9px", cursor: "pointer", fontWeight: 600, fontSize: 12.5 }}>Hủy</button>
+            </div>
+          ); })()}
+
+          {/* Panel quản lý vị trí kho (admin) */}
+          {whPanel && (
+            <div style={{ position: "absolute", top: 12, left: 12, zIndex: 6, width: 280, maxHeight: "calc(100% - 24px)", display: "flex", flexDirection: "column", background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 8px 24px rgba(16,19,23,.16)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 13px", borderBottom: "1px solid var(--line-2)" }}>
+                <i className="bi bi-geo-alt-fill" style={{ color: "#4f46e5" }} />
+                <div style={{ fontWeight: 700, fontSize: 13.5, flex: 1 }}>Vị trí kho <span style={{ color: "var(--ink-4)", fontWeight: 500 }}>({whPinned}/{warehouses.length})</span></div>
+                <button type="button" onClick={() => { setWhPanel(false); setPlacingId(null); }} style={{ border: "none", background: "transparent", cursor: "pointer", color: "var(--ink-4)" }}><I.x /></button>
+              </div>
+              <div style={{ padding: "8px 10px", fontSize: 11.5, color: "var(--ink-3)", borderBottom: "1px solid var(--line-2)", lineHeight: 1.5 }}>
+                Bấm <b>Đặt</b> rồi <b>bấm lên bản đồ</b> tại vị trí kho — hoặc bấm vào <b>xe đang đỗ</b> ở kho để lấy đúng tọa độ. Đã ghim thì <b>kéo</b> ghim 🏭 để chỉnh.
+              </div>
+              <div style={{ overflowY: "auto", padding: 6 }}>
+                {warehouses.length === 0 && <div style={{ padding: 16, textAlign: "center", color: "var(--ink-4)", fontSize: 12.5 }}>Chưa có kho. Thêm ở Cài đặt → Kho.</div>}
+                {warehouses.map((w) => {
+                  const pinned = w.lat != null && w.lng != null;
+                  const active = placingId === w.id;
+                  return (
+                    <div key={w.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 8px", borderRadius: 8, background: active ? "#eef" : "transparent" }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 999, background: pinned ? "var(--good)" : "var(--ink-4)", flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.name}{w.code ? <span style={{ color: "var(--ink-4)", fontWeight: 400 }}> · {w.code}</span> : null}</div>
+                        <div style={{ fontSize: 11, color: pinned ? "var(--good)" : "var(--ink-4)" }}>{pinned ? "Đã ghim" : "Chưa ghim"}</div>
+                      </div>
+                      <button type="button" onClick={() => { setPlacingId(active ? null : w.id); if (pinned && !active && mapRef.current) { mapRef.current.panTo({ lat: +w.lat, lng: +w.lng }); mapRef.current.setZoom(15); } }}
+                        style={{ flexShrink: 0, border: `1px solid ${active ? "#4f46e5" : "var(--line)"}`, background: active ? "#4f46e5" : "#fff", color: active ? "#fff" : "var(--ink-2)", borderRadius: 8, padding: "5px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+                        {active ? "Đang đặt…" : (pinned ? "Đặt lại" : "Đặt")}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {(mapErr || (noData && enabledProviders.length === 0)) && (
             <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", zIndex: 5, pointerEvents: "none" }}>
               <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "18px 22px", textAlign: "center", maxWidth: 360, pointerEvents: "auto", boxShadow: "0 8px 24px rgba(16,19,23,.12)" }}>
@@ -365,6 +549,7 @@ function TrackingApp() {
           )}
         </div>
       </div>
+
     </div>
   );
 }

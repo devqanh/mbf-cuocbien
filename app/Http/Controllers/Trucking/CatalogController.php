@@ -11,7 +11,10 @@ class CatalogController extends BaseTruckingController
     /** Trang Cài đặt — chỉ nạp ĐẾM cho sidebar; mỗi tab lazy-load khi click. */
     public function index()
     {
-        return view('trucking2.cai-dat', $this->pageData(['counts' => $this->svc->catalogCounts()], 'settings.update', 'settings.update'));
+        return view('trucking2.cai-dat', $this->pageData([
+            'counts'  => $this->svc->catalogCounts(),
+            'mapsKey' => \App\Models\TruckingSetting::get('gps.google_maps_key', ''),   // cho MapPicker ghim tọa độ kho
+        ], 'settings.update', 'settings.update'));
     }
 
     /** Dữ liệu TƯƠI của 1 tab Cài đặt (lazy-load khi click tab). */

@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class TruckingShipmentSpend extends Model
 {
     protected $fillable = [
-        'shipment_id', 'vehicle_id', 'bks', 'driver', 'source', 'kind',
+        'shipment_id', 'vehicle_id', 'bks', 'driver', 'driver_id', 'source', 'kind',
         'name', 'amount', 'spend_date', 'paid', 'paid_date', 'note', 'created_by', 'sort',
     ];
 
@@ -18,6 +18,7 @@ class TruckingShipmentSpend extends Model
         'spend_date' => 'date',
         'paid'       => 'boolean',
         'paid_date'  => 'date',
+        'driver_id'  => 'integer',
         'sort'       => 'integer',
     ];
 
@@ -29,5 +30,10 @@ class TruckingShipmentSpend extends Model
     public function vehicle(): BelongsTo
     {
         return $this->belongsTo(TruckingVehicle::class, 'vehicle_id');
+    }
+
+    public function driverRef(): BelongsTo
+    {
+        return $this->belongsTo(TruckingDriver::class, 'driver_id');
     }
 }

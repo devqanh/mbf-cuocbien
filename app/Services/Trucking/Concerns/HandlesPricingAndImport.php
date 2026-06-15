@@ -158,20 +158,32 @@ trait HandlesPricingAndImport
         if ($coded) {
             $rawNames = $cfg[$key] ?? [];
             $codeArr  = $cfg[$coded . 'Arr'] ?? null;        // mảng mã theo chỉ số dòng (mô hình mới)
+            $idArr    = $cfg[$key . 'IdArr'] ?? null;        // mảng id theo chỉ số dòng → KHỚP THEO ID để giữ id khi đổi mã
             $nameMap  = $cfg[$coded] ?? [];                  // map tên→mã (tương thích bản cũ)
+            $addrArr  = $key === 'warehouses' ? ($cfg['warehouseAddrArr'] ?? null) : null;   // Kho có thêm Địa chỉ
+            $geoArr   = $key === 'warehouses' ? ($cfg['warehouseGeoArr'] ?? null) : null;    // Kho có thêm Tọa độ "lat,lng"
             $keepIds = [];
             $sort = 0;
             foreach ($rawNames as $i => $rawName) {
                 $name = trim((string) $rawName);
                 if ($name === '') continue;
                 $code = $codeArr !== null ? trim((string) ($codeArr[$i] ?? '')) : trim((string) ($nameMap[$name] ?? ''));
-                $row = $code !== ''
-                    ? $cls::where('code', $code)->first()
-                    : ($cls::where('name', $name)->whereRaw("COALESCE(code,'') = ''")->first() ?? null);
+                $attrs = ['name' => $name, 'code' => ($code !== '' ? $code : null), 'sort' => $sort];
+                if ($addrArr !== null) $attrs['address'] = (trim((string) ($addrArr[$i] ?? '')) ?: null);
+                if ($geoArr !== null) { [$lat, $lng] = $this->parseLatLng($geoArr[$i] ?? ''); $attrs['lat'] = $lat; $attrs['lng'] = $lng; }
+                // Ưu tiên KHỚP THEO ID (dòng đã có sẵn) → cho phép SỬA mã mà không đứt link;
+                // không có id → khớp theo mã; mã rỗng → khớp theo tên (mã trống); không có → tạo mới.
+                $id  = $idArr !== null ? ($idArr[$i] ?? null) : null;
+                $row = is_numeric($id) ? $cls::find($id) : null;
+                if (! $row) {
+                    $row = $code !== ''
+                        ? $cls::where('code', $code)->first()
+                        : ($cls::where('name', $name)->whereRaw("COALESCE(code,'') = ''")->first() ?? null);
+                }
                 if ($row) {
-                    $row->update(['name' => $name, 'code' => ($code !== '' ? $code : null), 'sort' => $sort]);
+                    $row->update($attrs);
                 } else {
-                    $row = $cls::create(['name' => $name, 'code' => ($code !== '' ? $code : null), 'sort' => $sort]);
+                    $row = $cls::create($attrs);
                 }
                 $keepIds[] = $row->id;
                 $sort++;
@@ -189,6 +201,17 @@ trait HandlesPricingAndImport
             if ($colored) $attrs['color'] = $cfg['costColors'][$name] ?? null;
             $cls::updateOrCreate(['name' => $name], $attrs);
         }
+    }
+
+    /** Parse "lat,lng" (hoặc "lat lng") → [float,float] hoặc [null,null] nếu rỗng/sai/ngoài phạm vi. */
+    private function parseLatLng($raw): array
+    {
+        $s = trim((string) $raw);
+        if ($s === '') return [null, null];
+        if (! preg_match('/(-?\d+(?:\.\d+)?)\s*[,;\s]\s*(-?\d+(?:\.\d+)?)/', $s, $m)) return [null, null];
+        $lat = (float) $m[1]; $lng = (float) $m[2];
+        if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) return [null, null];
+        return [$lat, $lng];
     }
 
     private function reconcileCustomers(array $cfg): void
@@ -223,11 +246,20 @@ trait HandlesPricingAndImport
     {
         $plates = array_values(array_filter(array_map('trim', $cfg['vehicles'] ?? []), fn ($v) => $v !== ''));
         TruckingVehicle::whereNotIn('plate', $plates ?: [''])->delete();
+        $usedGps = [];   // 1 xe GPS chỉ gán cho 1 xe — giữ xe gán đầu, bỏ gán các xe sau nếu trùng
         foreach ($plates as $plate) {
             $type = $cfg['vehicleType'][$plate] ?? 'MBF';
             // Số cầu chỉ áp dụng cho xe MBF (xe ngoài không cần)
             $axle = $type === 'MBF' ? (($cfg['vehicleAxle'][$plate] ?? null) ?: null) : null;
-            TruckingVehicle::updateOrCreate(['plate' => $plate], ['type' => $type, 'axle' => $axle]);
+            $attrs = ['type' => $type, 'axle' => $axle];
+            // gps_ref (liên kết xe GPS) chỉ áp xe MBF; chỉ ghi khi payload có gửi 'vehicleGps' (tránh xóa nhầm).
+            if (array_key_exists('vehicleGps', $cfg)) {
+                $ref = $type === 'MBF' ? (trim((string) ($cfg['vehicleGps'][$plate] ?? '')) ?: null) : null;
+                if ($ref !== null && isset($usedGps[$ref])) $ref = null;   // đã gán cho xe khác → bỏ qua
+                if ($ref !== null) $usedGps[$ref] = $plate;
+                $attrs['gps_ref'] = $ref;
+            }
+            TruckingVehicle::updateOrCreate(['plate' => $plate], $attrs);
         }
     }
 

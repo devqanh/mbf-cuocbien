@@ -127,8 +127,8 @@ function ShipmentsApp() {
       } else {
         url = ROUTES.catalog + key; partial = { [key]: n[key], prices: n.prices };
         // Gửi đúng map/mảng mã theo danh mục (định danh theo mã) — tránh xoá mã khi thêm nhanh
-        if (key === "locations")  { partial.locationCode = n.locationCode;  partial.locationCodeArr = n.locationCodeArr; }
-        if (key === "warehouses") { partial.warehouseCode = n.warehouseCode; partial.warehouseCodeArr = n.warehouseCodeArr; }
+        if (key === "locations")  { partial.locationCode = n.locationCode;  partial.locationCodeArr = n.locationCodeArr; partial.locationsIdArr = n.locationsIdArr; }
+        if (key === "warehouses") { partial.warehouseCode = n.warehouseCode; partial.warehouseCodeArr = n.warehouseCodeArr; partial.warehousesIdArr = n.warehousesIdArr; }
       }
       if (url) api("PUT", url, { cfg: partial });
     }, 700);
@@ -136,8 +136,8 @@ function ShipmentsApp() {
   const addCfg = (key, v, opts) => setCfgState((c) => {
     if ((c[key] || []).includes(v)) return c;
     const n = { ...c, [key]: [...(c[key] || []), v] };
-    if (key === "locations")  n.locationCodeArr  = [...(c.locationCodeArr  || []), ""];   // giữ mảng mã thẳng hàng
-    if (key === "warehouses") n.warehouseCodeArr = [...(c.warehouseCodeArr || []), ""];
+    if (key === "locations")  { n.locationCodeArr  = [...(c.locationCodeArr  || []), ""]; n.locationsIdArr  = [...(c.locationsIdArr  || []), null]; }   // giữ mảng mã + id thẳng hàng
+    if (key === "warehouses") { n.warehouseCodeArr = [...(c.warehouseCodeArr || []), ""]; n.warehousesIdArr = [...(c.warehousesIdArr || []), null]; }
     // Biển số gõ nhanh ở ô BKS lô hàng → mặc định "Xe ngoài" (không tự lọt vào đội xe MBF)
     if (key === "vehicles" && opts && opts.external) n.vehicleType = { ...(c.vehicleType || {}), [v]: "Ngoài" };
     saveCatalogKey(key, n); return n;
@@ -625,7 +625,7 @@ function ShipmentsApp() {
                 <TH>Tuyến</TH>
                 <TH>Lịch trình</TH>
                 <TH align="right"><SortBtn k="cost" sort={sort} onSort={toggleSort} align="right">Chi phí</SortBtn></TH>
-                <TH w={140} align="center">Chi tài xế</TH>
+                <TH w={172} align="center">Hành động</TH>
               </tr>
             </thead>
             <tbody>
@@ -721,12 +721,20 @@ function ShipmentsApp() {
                       })()}
                     </TD>
                     <TD align="center">
-                      <button type="button" onClick={() => openModal({ id: s.id, type: "spend" })} title="Duyệt chi cho tài xế theo biển kiểm soát"
-                        style={{ display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap", padding: "6px 11px", border: "1px solid var(--accent-weak)", borderRadius: 8, background: "var(--accent-weak)", color: "var(--accent)", cursor: "pointer", fontWeight: 600, fontSize: 12.5 }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = "var(--accent)"; e.currentTarget.style.color = "#fff"; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = "var(--accent-weak)"; e.currentTarget.style.color = "var(--accent)"; }}>
-                        <i className="bi bi-cash-coin" /> Chi cho tài xế
-                      </button>
+                      <div style={{ display: "inline-flex", flexDirection: "column", gap: 5, alignItems: "stretch" }}>
+                        <button type="button" onClick={() => openModal({ id: s.id, type: "spend" })} title="Duyệt chi cho tài xế theo biển kiểm soát (tự điền từ phí tuyến)"
+                          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, whiteSpace: "nowrap", padding: "6px 11px", border: "1px solid var(--accent-weak)", borderRadius: 8, background: "var(--accent-weak)", color: "var(--accent)", cursor: "pointer", fontWeight: 600, fontSize: 12.5 }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = "var(--accent)"; e.currentTarget.style.color = "#fff"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = "var(--accent-weak)"; e.currentTarget.style.color = "var(--accent)"; }}>
+                          <i className="bi bi-cash-coin" /> Chi cho tài xế
+                        </button>
+                        <button type="button" onClick={() => openModal({ id: s.id, type: "cost" })} title="Chi phí lô hàng (chi hộ / công ty)"
+                          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, whiteSpace: "nowrap", padding: "6px 11px", border: "1px solid var(--line)", borderRadius: 8, background: "#fff", color: "var(--ink-2)", cursor: "pointer", fontWeight: 600, fontSize: 12.5 }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = "var(--line-2)"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}>
+                          <i className="bi bi-receipt" /> Chi cho lô hàng
+                        </button>
+                      </div>
                     </TD>
                   </tr>
                 );

@@ -8,15 +8,15 @@ import { ConfigBody } from "@trk/pop.jsx";
 
 // Mỗi tab (danh mục) lưu độc lập — gửi đúng key liên quan của tab đó
 const CAT_KEYS = {
-  locations: ["locations", "locationCodeArr"],
+  locations: ["locations", "locationCodeArr", "locationsIdArr"],
   customers: ["customers", "customerInfo"],
   contTypes: ["contTypes"],
-  warehouses: ["warehouses", "warehouseCodeArr"],
+  warehouses: ["warehouses", "warehouseCodeArr", "warehouseAddrArr", "warehouseGeoArr", "warehousesIdArr"],
   payers: ["payers"],
   costItems: ["costItems", "prices", "costColors"],
   choHoItems: ["choHoItems", "prices"],
   revItems: ["revItems", "prices"],
-  vehicles: ["vehicles", "vehicleType", "vehicleAxle"],
+  vehicles: ["vehicles", "vehicleType", "vehicleAxle", "vehicleGps"],
   drivers: ["drivers"],
   salaryItems: ["salaryItems"],
   vehicleCostTypes: ["vehicleCostTypes"],
@@ -36,7 +36,7 @@ const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&":
 
 function SettingsApp() {
   const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
-  const DEFAULT_CFG = { locations: [], locationCode: {}, locationCodeArr: [], locationLocked: [], customers: [], customerInfo: {}, contTypes: [], warehouses: [], warehouseCode: {}, warehouseCodeArr: [], payers: [], costItems: [], choHoItems: [], revItems: [], vehicles: [], vehicleType: {}, vehicleAxle: {}, drivers: [], salaryItems: [], vehicleCostTypes: [], assetCategories: [], routeFees: [], fuelPrices: [], prices: {}, costColors: {}, vatDefault: { hph: "8", icd: "0" }, freeTimeHours: "4", dueWarnDays: "30" };
+  const DEFAULT_CFG = { locations: [], locationCode: {}, locationCodeArr: [], locationsIdArr: [], locationLocked: [], customers: [], customerInfo: {}, contTypes: [], warehouses: [], warehouseCode: {}, warehouseCodeArr: [], warehousesIdArr: [], warehouseAddr: {}, warehouseAddrArr: [], warehouseGeoArr: [], payers: [], costItems: [], choHoItems: [], revItems: [], vehicles: [], vehicleType: {}, vehicleAxle: {}, vehicleGps: {}, gpsVehicles: [], drivers: [], salaryItems: [], vehicleCostTypes: [], assetCategories: [], routeFees: [], fuelPrices: [], prices: {}, costColors: {}, vatDefault: { hph: "8", icd: "0" }, freeTimeHours: "4", dueWarnDays: "30" };
   const api = (method, url, body) => window.trkApi(method, url, body);
   const [cfg, setCfgState] = useState(DEFAULT_CFG);
   const [counts, setCounts] = useState(B.counts || {});   // badge sidebar (boot, nhẹ)

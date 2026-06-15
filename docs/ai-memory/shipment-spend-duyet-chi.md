@@ -15,6 +15,16 @@ metadata:
 
 **Quyết định:** (1) THAY hẳn Doanh thu&công nợ. (2) Phí xe giữ snapshot route fee làm **Kế hoạch**, cộng spends (đã chi) → **Kế hoạch / Đã chi / Còn lại** theo kỳ+BKS.
 
-**Phase 2 (ĐÃ làm):** `/phi-xe` hiện **Kế hoạch / Đã chi / Còn lại**. Helper `spendsByShipment(ids)` (HandlesTripAndDrivers) gom spends theo shipment_id + kind (salary/company); gắn field `spent{salary,company,total}` vào mỗi row của `computeTripCosts` + `tripBatchToArray`. Frontend `trip-cost.jsx::TripEditor`: card tổng hợp đầu trang (Kế hoạch=splitLine snapshot, Đã chi=Σspent, Còn lại=hiệu, tách lương/công ty) + mỗi lô hiện "Kế hoạch lô · Đã chi". Đã verify round-trip (compute trả spent đúng).
+**Phase 2 (ĐÃ làm):** `/phi-xe` hiện **Kế hoạch / Đã chi / Chưa chi**. Helper `spendsByShipment(ids)` (HandlesTripAndDrivers) gom spends theo shipment_id + kind + paid, trả `spent{salary,company,total, unpaidSalary,unpaidCompany,unpaidTotal}` (đã chi=paid, chưa chi=unpaid ĐÃ ghi nhận); const `EMPTY_SPENT` làm default. Gắn vào mỗi row của `computeTripCosts` + `tripBatchToArray`. `trip-cost.jsx::TripEditor`: card tổng hợp (Kế hoạch=splitLine snapshot · Đã chi=Σpaid · **Chưa chi=Σunpaid đã ghi nhận**, KHÔNG phải Kế hoạch−Đã chi) + mỗi nhóm lái xe header hiện Kế hoạch(tiền nhận)+Đã chi+chưa chi.
+
+**Ngữ nghĩa CHỐT (user):** "Còn lại/Chưa chi" = các khoản duyệt chi ĐÃ ghi nhận nhưng CHƯA tick paid (chờ chi) — KHÔNG phải hiệu với route fee. Đã chi cộng dồn khoản đã tick. (Trước đó từng để Còn lại=Kế hoạch−Đã chi → user thấy sai vì chưa duyệt chi gì mà còn lại = full plan.)
+
+**Tick "Đã chi" (ghi nhận = link):** mỗi dòng trong SpendPopup có ô tick **Đã chi** (cột riêng, có "tích tất cả" ở header). Mặc định gợi ý/“Chi khác” = **chưa chi** (paid=false). Chỉ khoản **paid=true** mới tính vào "Đã chi" ở Phí xe (chưa tick = còn lại). `paid_date` = Ngày chi (popup) khi tick. Footer popup: Lương / Công ty / Tổng ghi nhận / **Đã chi (đã tick)**. Backend: `shipmentSpendSuggest` paid=false; saveShipment lưu paid+paid_date; `spendsByShipment` lọc `where('paid',true)`.
+
+**Cột "Hành động" ở Lô hàng (bảng):** 2 nút — **Chi cho tài xế** (mở SpendPopup type `spend`) + **Chi cho lô hàng** (mở CostPopup type `cost` = Chi phí lô hàng). Card/mobile: nút "Chi cho tài xế".
+
+**Link lương lái xe (ĐÃ làm, KHÔNG làm trang/báo cáo riêng):** thêm `driver_id` FK vào `trucking_shipment_spends` (migration `2026_06_15_000004`), resolve theo TÊN lái xe khi lưu (giữ `driver` tên snapshot). User CHỐT: KHÔNG làm trang/tab "Lương lái xe" riêng — hiển thị **Đã chi cho lái xe NGAY trong /phi-xe/tao**: mỗi nhóm lái xe (TripEditor group by `cur.driver`) header hiện "Kế hoạch (tiền nhận)" + "Đã chi cho lái xe" (Σ row `spent.salary`, từ duyệt chi paid) + còn lại. (Đã gỡ route `tripCost.salaryReport` + method `driverSalaryReport`.)
+
+**Còn để ngỏ (chưa làm):** `cost_item_id` gom chi phí công ty theo hạng mục.
 
 Liên quan [[phi-xe-batch-model]] (route fee + luong/luong_no_cru), [[trucking-architecture]], [[hashid-routes]].

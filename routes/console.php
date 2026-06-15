@@ -14,3 +14,8 @@ Schedule::command('db:backup')
     ->dailyAt('02:00')
     ->withoutOverlapping()
     ->runInBackground();
+
+// Quét GPS ghi lịch sử xe đến/rời kho — mỗi 5 phút (cần cron schedule:run mỗi phút).
+Schedule::command('trucking:scan-warehouse-visits')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();

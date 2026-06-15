@@ -3,11 +3,95 @@ const { useState, useRef, useMemo, useEffect } = React;
 import { I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, fmtVND, fmtNum, fmtShort, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, useIsMobile } from "@trk/lib.jsx";
 import { DTField, Field, DriverSpendRows, VatLine, ItemRows, ChiHoRows, DoanhThuRows, ChkBox, TRACK_COLORS, SWATCHES, colorHex, FlagPicker, CostLineRows, PaymentRows, Seg } from "./shared.jsx";
 
+/* ===== MapPicker: ghim tọa độ kho (Google Maps + Places Autocomplete) ===== */
+let _cfgGmaps = null;
+function loadCfgGmaps(key) {
+  if (window.google && window.google.maps && window.google.maps.places) return Promise.resolve(window.google.maps);
+  if (_cfgGmaps) return _cfgGmaps;
+  _cfgGmaps = new Promise((resolve, reject) => {
+    const cb = "__trkCfgGmapsCb";
+    window[cb] = () => resolve(window.google.maps);
+    const s = document.createElement("script");
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&callback=${cb}&libraries=places&language=vi&region=VN`;
+    s.async = true; s.defer = true;
+    s.onerror = () => reject(new Error("Không tải được Google Maps (kiểm tra API key / mạng)."));
+    document.head.appendChild(s);
+  });
+  return _cfgGmaps;
+}
+function ensurePacStyle() {
+  if (document.getElementById("trk-pac-style")) return;
+  const s = document.createElement("style"); s.id = "trk-pac-style";
+  s.textContent = ".pac-container{z-index:3000 !important}";   // gợi ý địa chỉ nổi trên modal (z-index modal ~1100)
+  document.head.appendChild(s);
+}
+
+function MapPicker({ initial, address, mapsKey, onClose, onPick }) {
+  const elRef = useRef(null), mapRef = useRef(null), mkRef = useRef(null), geoRef = useRef(null), searchRef = useRef(null);
+  const [pos, setPos] = useState(initial || null);
+  const [addr, setAddr] = useState(address || "");
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    if (!mapsKey) { setErr("Chưa cấu hình Google Maps API key (Cài đặt hệ thống → Giám sát hành trình)."); return; }
+    ensurePacStyle();
+    let alive = true;
+    loadCfgGmaps(mapsKey).then((maps) => {
+      if (!alive || !elRef.current) return;
+      const center = initial || { lat: 21.0, lng: 105.84 };
+      const map = new maps.Map(elRef.current, { center, zoom: initial ? 16 : 11, mapTypeControl: false, streetViewControl: false, fullscreenControl: false, clickableIcons: false, gestureHandling: "greedy" });
+      mapRef.current = map; geoRef.current = new maps.Geocoder();
+      const mk = new maps.Marker({ position: center, map, draggable: true });
+      mkRef.current = mk; if (!initial) mk.setVisible(false);
+      const apply = (latLng, doGeocode) => {
+        const p = { lat: latLng.lat(), lng: latLng.lng() };
+        mk.setPosition(p); mk.setVisible(true); setPos(p);
+        if (doGeocode) geoRef.current.geocode({ location: p }, (res, st) => { if (st === "OK" && res[0]) setAddr(res[0].formatted_address); });
+      };
+      map.addListener("click", (e) => apply(e.latLng, true));
+      mk.addListener("dragend", (e) => apply(e.latLng, true));
+      if (searchRef.current && maps.places) {
+        const ac = new maps.places.Autocomplete(searchRef.current, { fields: ["geometry", "formatted_address", "name"], componentRestrictions: { country: "vn" } });
+        ac.bindTo("bounds", map);
+        ac.addListener("place_changed", () => {
+          const pl = ac.getPlace(); if (!pl.geometry) return;
+          map.panTo(pl.geometry.location); map.setZoom(16);
+          apply(pl.geometry.location, false); setAddr(pl.formatted_address || pl.name || "");
+        });
+      }
+    }).catch((e) => { if (alive) setErr(e.message); });
+    return () => { alive = false; };
+  }, []);
+
+  const footer = (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+      <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{pos ? <span className="tnum">📍 {pos.lat.toFixed(6)}, {pos.lng.toFixed(6)}</span> : "Tìm địa chỉ hoặc bấm/ghim trên bản đồ"}</div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <Btn onClick={onClose}>Hủy</Btn>
+        <Btn variant="primary" disabled={!pos} onClick={() => onPick({ lat: pos.lat, lng: pos.lng, address: addr })}>Lưu vị trí</Btn>
+      </div>
+    </div>
+  );
+
+  return (
+    <Modal title="Ghim vị trí kho" subtitle="Tìm địa chỉ hoặc bấm trên bản đồ để lấy tọa độ" onClose={onClose} footer={footer} width={760} icon={<i className="bi bi-geo-alt" />}>
+      {err ? <div style={{ padding: 20, color: "var(--danger)", fontSize: 13.5 }}>{err}</div> : (
+        <div>
+          <input ref={searchRef} placeholder="Tìm địa chỉ / tên địa điểm…"
+            style={{ width: "100%", padding: "9px 12px", fontSize: 13.5, border: "1px solid var(--line)", borderRadius: 9, outline: "none", marginBottom: 10, boxSizing: "border-box" }} />
+          <div ref={elRef} style={{ width: "100%", height: 420, borderRadius: 10, background: "#e9edf1" }} />
+          {addr && <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 8 }}><i className="bi bi-pin-map" /> {addr}</div>}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 const CFG_GROUPS = [
   { key: "locations", label: "Địa điểm", hint: "depot, cảng, ICD, KCN — dùng cho Tuyến · thêm ký hiệu viết tắt; tự thêm khi import bảng giá (cột FROM + TO)", ph: "VD: Cảng Tân Vũ", coded: true, codeKey: "locationCode", codeNameLabel: "Tên địa điểm" },
   { key: "customers", label: "Khách hàng", hint: "quản lý khách hàng — MST, liên hệ, hạn thanh toán, ghi chú…", ph: "VD: Canon Vietnam" },
   { key: "contTypes", label: "Loại container", hint: "dùng cho cột Cont", ph: "VD: 40HC" },
-  { key: "warehouses", label: "Kho", hint: "kho hàng — dùng cho lô (chọn tối đa 3) · thêm ký hiệu viết tắt; tự thêm khi import bảng giá (cột TO)", ph: "VD: Kho A2", coded: true, codeKey: "warehouseCode", codeNameLabel: "Tên kho" },
+  { key: "warehouses", label: "Kho", hint: "kho hàng — dùng cho lô (chọn tối đa 3) · thêm ký hiệu viết tắt + địa chỉ; tự thêm khi import bảng giá (cột TO)", ph: "VD: Kho A2", coded: true, codeKey: "warehouseCode", codeNameLabel: "Tên kho", addressed: true, geo: true },
   { key: "payers", label: "Bên thanh toán", hint: "dùng cho mọi dòng chi phí", ph: "VD: Tài xế" },
   { key: "costItems", label: "Khoản chi phí", hint: "gắn màu “theo dõi” cho khoản cần nhắc khi chưa điền số tiền — dùng chung cho mọi lô", ph: "VD: Phí cân xe", colored: true },
   { key: "choHoItems", label: "Khoản thu/chi hộ", hint: "dùng cho mục Thu chi hộ ở cả Chi phí & Doanh thu · có đơn giá mặc định", ph: "VD: Nâng", priced: true },
@@ -457,11 +541,28 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
   const setVehType = (name, val) => setCfg("vehicleType", { ...vehType, [name]: val });
   const vehAxle = cfg.vehicleAxle || {};   // số cầu xe MBF: "1" | "2" (link Phí tuyến đường)
   const setVehAxle = (name, val) => setCfg("vehicleAxle", { ...vehAxle, [name]: val });
+  const vehGps = cfg.vehicleGps || {};     // liên kết xe GPS: plate => "provider:deviceId"
+  const setVehGps = (name, val) => { const m = { ...vehGps }; if (val) m[name] = val; else delete m[name]; setCfg("vehicleGps", m); };
+  const gpsVehicles = cfg.gpsVehicles || [];   // danh sách xe GPS để chọn (từ catalogData)
   const codeKey = (g && g.codeKey) || "locationCode";
   // Mã (ký hiệu) lưu theo CHỈ SỐ dòng → tên được phép trùng, chỉ mã là định danh duy nhất.
   const codeArrKey = codeKey + "Arr";
   const codeArr = cfg[codeArrKey] || [];
   const setCode = (i, val) => { const a = [...codeArr]; while (a.length < list.length) a.push(""); a[i] = val; setCfg(codeArrKey, a); };
+  // ID dòng theo CHỈ SỐ (để reconcile khớp theo id → SỬA mã giữ nguyên id, không đứt link). Mục tự thêm = null.
+  const idArrKey = sel + "IdArr";
+  const idArr = cfg[idArrKey] || [];
+  // Địa chỉ kho (chỉ danh mục addressed = Kho) — cũng lưu theo CHỈ SỐ dòng như mã.
+  const addrArrKey = "warehouseAddrArr";
+  const addrArr = cfg[addrArrKey] || [];
+  const setAddr = (i, val) => { const a = [...addrArr]; while (a.length < list.length) a.push(""); a[i] = val; setCfg(addrArrKey, a); };
+  // Tọa độ kho "lat,lng" (chỉ danh mục geo = Kho) — lưu theo CHỈ SỐ dòng; ghim qua MapPicker.
+  const geoArrKey = "warehouseGeoArr";
+  const geoArr = cfg[geoArrKey] || [];
+  const setGeo = (i, val) => { const a = [...geoArr]; while (a.length < list.length) a.push(""); a[i] = val; setCfg(geoArrKey, a); };
+  const [pickIdx, setPickIdx] = useState(null);   // dòng đang mở MapPicker
+  const mapsKey = (window.__TRK && window.__TRK.boot && window.__TRK.boot.mapsKey) || "";
+  const parseGeo = (s) => { const m = /(-?\d+(?:\.\d+)?)\s*[,;\s]\s*(-?\d+(?:\.\d+)?)/.exec(s || ""); return m ? { lat: parseFloat(m[1]), lng: parseFloat(m[2]) } : null; };
   // Phát hiện trùng ký hiệu (chuẩn hóa hoa + bỏ khoảng trắng)
   const normCode = (c) => (c || "").toString().trim().toUpperCase();
   const codeCounts = {};
@@ -475,7 +576,12 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
   if (g && g.routefees) rfRows.forEach((r) => { const k = routeKey(r.route); if (k) rfCounts[k] = (rfCounts[k] || 0) + 1; });
   const isDupRoute = (s) => { const k = routeKey(s); return !!k && rfCounts[k] > 1; };
   const hasDupRoute = !!(g && g.routefees) && Object.values(rfCounts).some((n) => n > 1);
-  const blockSave = hasDupCode || hasDupRoute;   // chặn lưu khi còn trùng
+  // Gán xe GPS: 1 xe GPS chỉ được gán cho 1 xe MBF — phát hiện trùng ref.
+  const gpsUsedBy = {};   // ref => [plate...] (xe nào đang gán ref này)
+  if (g && g.fleet) Object.keys(vehGps).forEach((plate) => { const r = vehGps[plate]; if (r && (vehType[plate] || "MBF") === "MBF") (gpsUsedBy[r] = gpsUsedBy[r] || []).push(plate); });
+  const isDupGps = (plate) => { const r = vehGps[plate]; return !!r && (gpsUsedBy[r] || []).length > 1; };
+  const hasDupGps = !!(g && g.fleet) && Object.values(gpsUsedBy).some((a) => a.length > 1);
+  const blockSave = hasDupCode || hasDupRoute || hasDupGps;   // chặn lưu khi còn trùng
   const costColors = cfg.costColors || {};
   const setColor = (name, val) => { const nc = { ...costColors }; if (val) nc[name] = val; else delete nc[name]; setCfg("costColors", nc); };
   const vatDefault = cfg.vatDefault || { hph: "8", icd: "0" };
@@ -487,7 +593,12 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
     // Danh mục CÓ MÃ (địa điểm/kho): cho phép trùng TÊN. Danh mục khác: vẫn chặn trùng tên.
     if (!(g && g.coded) && list.includes(v)) { setDraft(""); return; }
     setCfg(sel, [...list, v]);
-    if (g && g.coded) { const a = [...codeArr]; while (a.length < list.length) a.push(""); a.push(""); setCfg(codeArrKey, a); }
+    if (g && g.coded) {
+      const a = [...codeArr]; while (a.length < list.length) a.push(""); a.push(""); setCfg(codeArrKey, a);
+      const ia = [...idArr]; while (ia.length < list.length) ia.push(null); ia.push(null); setCfg(idArrKey, ia);   // mục mới: chưa có id
+    }
+    if (g && g.addressed) { const a = [...addrArr]; while (a.length < list.length) a.push(""); a.push(""); setCfg(addrArrKey, a); }
+    if (g && g.geo) { const a = [...geoArr]; while (a.length < list.length) a.push(""); a.push(""); setCfg(geoArrKey, a); }
     setDraft("");
   };
   // Đổi tên: các map gắn THEO TÊN (đơn giá/màu/loại xe) phải chuyển sang tên mới, không mất.
@@ -498,15 +609,17 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
     if (v === old) return;
     if (g && g.priced)  rekey("prices", prices, old, v);
     if (g && g.colored) rekey("costColors", costColors, old, v);
-    if (g && g.fleet) { rekey("vehicleType", vehType, old, v); rekey("vehicleAxle", vehAxle, old, v); }
+    if (g && g.fleet) { rekey("vehicleType", vehType, old, v); rekey("vehicleAxle", vehAxle, old, v); rekey("vehicleGps", vehGps, old, v); }
   };
   const remove = (i) => {
     const old = list[i]; setCfg(sel, list.filter((_, j) => j !== i));
-    if (g && g.coded) setCfg(codeArrKey, codeArr.filter((_, j) => j !== i));
+    if (g && g.coded) { setCfg(codeArrKey, codeArr.filter((_, j) => j !== i)); setCfg(idArrKey, idArr.filter((_, j) => j !== i)); }
+    if (g && g.addressed) setCfg(addrArrKey, addrArr.filter((_, j) => j !== i));
+    if (g && g.geo) setCfg(geoArrKey, geoArr.filter((_, j) => j !== i));
     const drop = (mapKey, map) => { if (map[old] === undefined) return; const m = { ...map }; delete m[old]; setCfg(mapKey, m); };
     if (g && g.priced)  drop("prices", prices);
     if (g && g.colored) drop("costColors", costColors);
-    if (g && g.fleet) { drop("vehicleType", vehType); drop("vehicleAxle", vehAxle); }
+    if (g && g.fleet) { drop("vehicleType", vehType); drop("vehicleAxle", vehAxle); drop("vehicleGps", vehGps); }
   };
   return (
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "210px 1fr", gap: isMobile ? 12 : 18, padding: "14px 0 4px", minHeight: isMobile ? 0 : 380 }}>
@@ -555,10 +668,11 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
           <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginBottom: 10 }}>{g.hint}</div>
           {g.coded && <div style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12, color: "var(--ink-2)", background: "#eef4ff", border: "1px solid #d6e3fb", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>
             <i className="bi bi-info-circle-fill" style={{ color: "var(--accent)", marginTop: 1 }} />
-            <span>Ô <b>Ký hiệu</b> được tạo tự động khi <b>import Excel bảng giá</b> (cột FROM/TO) nên đã khóa, không sửa trực tiếp tại đây. Bạn vẫn đổi được <b>tên</b> hiển thị.</span>
+            <span>Sửa được cả <b>tên</b> lẫn <b>ký hiệu</b>. Đổi ký hiệu vẫn giữ liên kết (bảng giá/lô) vì khớp theo dòng. Lưu ý: mỗi <b>ký hiệu</b> phải <b>duy nhất</b>.</span>
           </div>}
           {hasDupCode && <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: "var(--danger)", background: "#fce8e8", border: "1px solid #f3c9c9", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>⚠ Có ký hiệu bị trùng — mỗi ký hiệu phải là duy nhất. Sửa các ô viền đỏ trước khi lưu.</div>}
           {hasDupRoute && <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: "var(--danger)", background: "#fce8e8", border: "1px solid #f3c9c9", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>⚠ Có tuyến bị trùng — mỗi tuyến (đúng thứ tự kho) phải là duy nhất. Sửa các tuyến viền đỏ trước khi lưu. (Kho1→Kho2 khác Kho2→Kho1.)</div>}
+          {hasDupGps && <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: "var(--danger)", background: "#fce8e8", border: "1px solid #f3c9c9", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>⚠ Có xe GPS bị gán cho nhiều xe — mỗi xe GPS chỉ gán cho 1 xe. Sửa các ô viền đỏ trước khi lưu.</div>}
           {loading ? (
             <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "30px 4px", color: "var(--ink-4)", fontSize: 13.5 }}>
               <span style={{ width: 15, height: 15, border: "2px solid var(--line)", borderTopColor: "var(--accent)", borderRadius: "50%", display: "inline-block", animation: "trk-spin .7s linear infinite" }} />
@@ -630,30 +744,31 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                 <Btn variant="primary" onClick={addItem}>Thêm</Btn>
               </div>
               {(() => {
+                const codedGrid = g.geo ? "24px 1fr 86px 1.2fr 124px 28px" : g.addressed ? "24px 1.1fr 110px 1.5fr 28px" : "24px 1fr 130px 28px";
                 const grid = g.priced && g.colored ? "24px 1fr 150px 56px 28px"
                   : g.priced ? "24px 1fr 150px 28px"
                   : g.colored ? "24px 1fr 56px 28px"
-                  : g.coded ? "24px 1fr 130px 28px"
-                  : g.fleet ? "24px 1fr 300px 28px"
+                  : g.coded ? codedGrid
+                  : g.fleet ? "24px 1fr 360px 28px"
                   : "24px 1fr 28px";
                 const head = g.priced && g.colored ? [<span key="i" />, <span key="n">Tên khoản</span>, <span key="p" style={{ textAlign: "right" }}>Đơn giá mặc định</span>, <span key="c" style={{ textAlign: "center" }}>Theo dõi</span>, <span key="x" />]
                   : g.priced ? [<span key="i" />, <span key="n">Tên khoản</span>, <span key="p" style={{ textAlign: "right" }}>Đơn giá mặc định</span>, <span key="x" />]
                   : g.colored ? [<span key="i" />, <span key="n">Tên khoản</span>, <span key="c" style={{ textAlign: "center" }}>Theo dõi</span>, <span key="x" />]
-                  : g.coded ? [<span key="i" />, <span key="n">{g.codeNameLabel || "Tên"}</span>, <span key="p">Ký hiệu</span>, <span key="x" />]
-                  : g.fleet ? [<span key="i" />, <span key="n">Biển số</span>, <span key="p" style={{ textAlign: "center" }}>Loại xe</span>, <span key="x" />]
+                  : g.coded ? [<span key="i" />, <span key="n">{g.codeNameLabel || "Tên"}</span>, <span key="p">Ký hiệu</span>, ...(g.addressed ? [<span key="a">Địa chỉ kho</span>] : []), ...(g.geo ? [<span key="g">Vị trí (GPS)</span>] : []), <span key="x" />]
+                  : g.fleet ? [<span key="i" />, <span key="n">Biển số</span>, <span key="p" style={{ textAlign: "center" }}>Loại xe · số cầu · xe GPS</span>, <span key="x" />]
                   : null;
                 return head && <div style={{ display: "grid", gridTemplateColumns: grid, gap: 8, padding: "0 0 4px", fontSize: 11, fontWeight: 600, color: "var(--ink-4)", textTransform: "uppercase", letterSpacing: "0.04em" }}>{head}</div>;
               })()}
               <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: 300, overflowY: "auto" }}>
                 {list.map((it, i) => {
-                  const codeLocked = !!g.coded;            // Ký hiệu Địa điểm/Kho do import Excel tạo → luôn khóa, không sửa tay
+                  const codeLocked = false;                // Cho SỬA ký hiệu — reconcile khớp theo id nên đổi mã không đứt link
                   const linkedToPrice = locked.has(it);    // đang được bảng giá tham chiếu (hiện icon liên kết)
                   const dupCode = isDupCode(i);
                   const rowGrid = g.priced && g.colored ? "24px 1fr 150px 56px 28px"
                     : g.priced ? "24px 1fr 150px 28px"
                     : g.colored ? "24px 1fr 56px 28px"
-                    : g.coded ? "24px 1fr 130px 28px"
-                    : g.fleet ? "24px 1fr 300px 28px"
+                    : g.coded ? (g.geo ? "24px 1fr 86px 1.2fr 124px 28px" : g.addressed ? "24px 1.1fr 110px 1.5fr 28px" : "24px 1fr 130px 28px")
+                    : g.fleet ? "24px 1fr 360px 28px"
                     : "24px 1fr 28px";
                   return (
                   <div key={i} style={{ display: "grid", gridTemplateColumns: rowGrid, gap: 8, alignItems: "center", padding: "3px 0" }}>
@@ -672,8 +787,18 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                       title={codeLocked ? "Ký hiệu tạo từ import Excel — không sửa trực tiếp" : (dupCode ? "Ký hiệu bị trùng với mục khác" : "")}
                       style={{ width: "100%", padding: "7px 10px", fontSize: 13, fontWeight: 600, border: `1px solid ${dupCode ? "var(--danger)" : "var(--line)"}`, borderRadius: 8, outline: "none", textTransform: "uppercase", background: codeLocked ? "var(--line-2)" : (dupCode ? "#fce8e8" : "#fff"), color: codeLocked ? "var(--ink-3)" : (dupCode ? "var(--danger)" : "var(--ink)"), cursor: codeLocked ? "not-allowed" : "text" }}
                       onFocus={(e) => { if (!codeLocked) e.target.style.borderColor = "var(--accent)"; }} onBlur={(e) => (e.target.style.borderColor = dupCode ? "var(--danger)" : "var(--line)")} />}
+                    {g.addressed && <input value={addrArr[i] || ""} onChange={(e) => setAddr(i, e.target.value)} placeholder="VD: Lô A2, KCN Quế Võ, Bắc Ninh"
+                      style={{ width: "100%", padding: "7px 10px", fontSize: 13, border: "1px solid var(--line)", borderRadius: 8, outline: "none", background: "#fff" }}
+                      onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />}
+                    {g.geo && (() => { const pinned = !!parseGeo(geoArr[i]); return (
+                      <button type="button" onClick={() => setPickIdx(i)} title={pinned ? `Đã ghim: ${geoArr[i]} — bấm để sửa` : "Ghim tọa độ kho trên bản đồ"}
+                        style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "7px 8px", fontSize: 12, fontWeight: 600, cursor: "pointer", borderRadius: 8, whiteSpace: "nowrap",
+                          border: `1px solid ${pinned ? "var(--good)" : "var(--line)"}`, background: pinned ? "var(--good-weak)" : "#fff", color: pinned ? "var(--good)" : "var(--ink-2)" }}>
+                        <i className={"bi " + (pinned ? "bi-geo-alt-fill" : "bi-geo-alt")} /> {pinned ? "Đã ghim" : "Ghim BĐ"}
+                      </button>
+                    ); })()}
                     {g.fleet && (
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                         <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 8, padding: 2 }}>
                           {["MBF", "Ngoài"].map((opt) => {
                             const active = (vehType[it] || "MBF") === opt;
@@ -701,6 +826,21 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                             })}
                           </div>
                         )}
+                        {/* Gán xe GPS — chỉ xe MBF (liên kết provider:deviceId để tracking) */}
+                        {(vehType[it] || "MBF") === "MBF" && (() => {
+                          const dupGps = isDupGps(it);
+                          return (
+                          <select value={vehGps[it] || ""} onChange={(e) => setVehGps(it, e.target.value)} title={dupGps ? "Xe GPS này đã gán cho xe khác — mỗi xe GPS chỉ gán 1 xe" : "Gán xe trong hệ thống GPS để theo dõi vị trí lô hàng"}
+                            style={{ fontSize: 12, padding: "6px 8px", border: `1px solid ${dupGps ? "var(--danger)" : (vehGps[it] ? "var(--accent)" : "var(--line)")}`, borderRadius: 8, background: dupGps ? "#fce8e8" : "#fff", color: dupGps ? "var(--danger)" : (vehGps[it] ? "var(--ink)" : "var(--ink-4)"), maxWidth: 190 }}>
+                            <option value="">🛰 Gán xe GPS…</option>
+                            {gpsVehicles.map((gv) => {
+                              const other = (gpsUsedBy[gv.ref] || []).filter((pl) => pl !== it);   // xe KHÁC đang gán ref này
+                              return <option key={gv.ref} value={gv.ref} disabled={other.length > 0}>{gv.plate} · {gv.providerLabel}{other.length ? ` (đã gán: ${other[0]})` : ""}</option>;
+                            })}
+                            {vehGps[it] && !gpsVehicles.some((gv) => gv.ref === vehGps[it]) && <option value={vehGps[it]}>(đã gán — xe đang offline)</option>}
+                          </select>
+                          );
+                        })()}
                       </div>
                     )}
                     <button type="button" onClick={() => remove(i)} title="Xóa"
@@ -713,6 +853,15 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                 ); })}
                 {!list.length && <div style={{ padding: "20px 4px", fontSize: 13, color: "var(--ink-4)" }}>Chưa có mục nào — thêm ở trên.</div>}
               </div>
+              {pickIdx != null && (
+                <MapPicker initial={parseGeo(geoArr[pickIdx])} address={addrArr[pickIdx] || ""} mapsKey={mapsKey}
+                  onClose={() => setPickIdx(null)}
+                  onPick={({ lat, lng, address }) => {
+                    setGeo(pickIdx, lat.toFixed(7) + "," + lng.toFixed(7));
+                    if (address && !((addrArr[pickIdx] || "").trim())) setAddr(pickIdx, address);
+                    setPickIdx(null);
+                  }} />
+              )}
             </>
           )}
         </div>

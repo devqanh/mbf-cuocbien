@@ -185,7 +185,7 @@ export function TripEditor({ rows, onRows, routeFees = [], drivers = [], costIte
   const labelOf = (val) => { const o = drivers.find((d) => (d && typeof d === "object" ? d.value : d) === val); return o ? (typeof o === "object" ? o.label : o) : val; };
   const gOrder = []; const gMap = {};
   rows.forEach((x) => { const key = (x.cur.driver || "").trim() || "(chưa gán)"; if (!gMap[key]) { gMap[key] = []; gOrder.push(key); } gMap[key].push(x); });
-  const groups = gOrder.map((key) => ({ key, label: key === "(chưa gán)" ? "Chưa gán lái xe" : labelOf(key), rows: gMap[key], total: gMap[key].reduce((a, x) => a + lineSalary(x), 0), cost: gMap[key].reduce((a, x) => a + splitLine(x).costTotal, 0) }));
+  const groups = gOrder.map((key) => ({ key, label: key === "(chưa gán)" ? "Chưa gán lái xe" : labelOf(key), rows: gMap[key], total: gMap[key].reduce((a, x) => a + lineSalary(x), 0), cost: gMap[key].reduce((a, x) => a + splitLine(x).costTotal, 0), spentSalary: gMap[key].reduce((a, x) => a + n((x.spent || {}).salary), 0), unpaidSalary: gMap[key].reduce((a, x) => a + n((x.spent || {}).unpaidSalary), 0) }));
 
   if (!rows.length) return <div style={{ padding: "30px", textAlign: "center", color: "var(--ink-4)", fontSize: 13.5 }}>Không có lô nào trong kỳ.</div>;
 
@@ -260,26 +260,27 @@ export function TripEditor({ rows, onRows, routeFees = [], drivers = [], costIte
         );
   };
 
-  // Tổng hợp KẾ HOẠCH (route fee) vs ĐÃ CHI (duyệt chi theo lô) → CÒN LẠI, tách lương / công ty.
+  // Tổng hợp: KẾ HOẠCH (route fee) · ĐÃ CHI (duyệt chi đã tick) · CHƯA CHI (đã ghi nhận, chưa tick).
   const agg = rows.reduce((a, x) => {
     const sd = splitLine(x); const sp = x.spent || {};
     a.planSalary += sd.salaryTotal; a.planCompany += sd.costTotal;
-    a.spentSalary += n(sp.salary); a.spentCompany += n(sp.company);
+    a.paidSalary += n(sp.salary); a.paidCompany += n(sp.company);
+    a.unpaidSalary += n(sp.unpaidSalary); a.unpaidCompany += n(sp.unpaidCompany);
     return a;
-  }, { planSalary: 0, planCompany: 0, spentSalary: 0, spentCompany: 0 });
+  }, { planSalary: 0, planCompany: 0, paidSalary: 0, paidCompany: 0, unpaidSalary: 0, unpaidCompany: 0 });
   const planTotal = agg.planSalary + agg.planCompany;
-  const spentTotal = agg.spentSalary + agg.spentCompany;
-  const remainTotal = planTotal - spentTotal;
+  const paidTotal = agg.paidSalary + agg.paidCompany;
+  const unpaidTotal = agg.unpaidSalary + agg.unpaidCompany;
   const summaryCols = [
     { label: "Kế hoạch", tot: planTotal, sal: agg.planSalary, comp: agg.planCompany, col: "var(--ink)" },
-    { label: "Đã chi", tot: spentTotal, sal: agg.spentSalary, comp: agg.spentCompany, col: "var(--good)" },
-    { label: "Còn lại", tot: remainTotal, sal: agg.planSalary - agg.spentSalary, comp: agg.planCompany - agg.spentCompany, col: remainTotal > 0 ? "var(--warn)" : "var(--good)" },
+    { label: "Đã chi", tot: paidTotal, sal: agg.paidSalary, comp: agg.paidCompany, col: "var(--good)" },
+    { label: "Chưa chi", tot: unpaidTotal, sal: agg.unpaidSalary, comp: agg.unpaidCompany, col: unpaidTotal > 0 ? "var(--warn)" : "var(--ink-4)" },
   ];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ border: "1px solid var(--line)", borderRadius: 12, background: "#fff", padding: "13px 16px" }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: 10 }}>Tổng hợp kỳ · Kế hoạch / Đã chi / Còn lại</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: 10 }}>Tổng hợp kỳ · Kế hoạch / Đã chi / Chưa chi</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
           {summaryCols.map((s, i) => (
             <div key={i} style={{ borderLeft: i ? "1px solid var(--line-2)" : "none", paddingLeft: i ? 14 : 0 }}>
@@ -289,7 +290,7 @@ export function TripEditor({ rows, onRows, routeFees = [], drivers = [], costIte
             </div>
           ))}
         </div>
-        <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 9, lineHeight: 1.5 }}><b style={{ color: "var(--ink-3)" }}>Kế hoạch</b> = phí tuyến (snapshot kỳ) · <b style={{ color: "var(--ink-3)" }}>Đã chi</b> = duyệt chi theo lô (₫ Duyệt chi ở Lô hàng) · <b style={{ color: "var(--ink-3)" }}>Còn lại</b> = Kế hoạch − Đã chi.</div>
+        <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 9, lineHeight: 1.5 }}><b style={{ color: "var(--ink-3)" }}>Kế hoạch</b> = phí tuyến (snapshot kỳ) · <b style={{ color: "var(--ink-3)" }}>Đã chi</b> = khoản duyệt chi ĐÃ tick · <b style={{ color: "var(--ink-3)" }}>Chưa chi</b> = khoản duyệt chi đã ghi nhận nhưng chưa tick (chờ chi). Cả hai lấy từ ₫ Duyệt chi ở Lô hàng.</div>
       </div>
       {groups.map((g) => {
         const isOpen = !!open[g.key];
@@ -303,9 +304,16 @@ export function TripEditor({ rows, onRows, routeFees = [], drivers = [], costIte
                 <div style={{ fontWeight: 700, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.label}</div>
                 <div style={{ fontSize: 12, color: "var(--ink-4)" }} className="tnum">{g.rows.length} lô · chi phí khác (vận hành) {fmtNum(g.cost)} đ</div>
               </div>
-              <div style={{ textAlign: "right", flexShrink: 0 }}>
-                <div style={{ fontSize: 11, color: "var(--ink-4)" }}>Tổng tiền nhận</div>
-                <div className="tnum" style={{ fontSize: 16, fontWeight: 700, color: "#b45309" }}>{fmtNum(g.total)} đ</div>
+              <div style={{ display: "flex", gap: 18, flexShrink: 0, textAlign: "right" }}>
+                <div>
+                  <div style={{ fontSize: 11, color: "var(--ink-4)" }}>Kế hoạch (tiền nhận)</div>
+                  <div className="tnum" style={{ fontSize: 16, fontWeight: 700, color: "#b45309" }}>{fmtNum(g.total)} đ</div>
+                </div>
+                <div style={{ borderLeft: "1px solid var(--line-2)", paddingLeft: 18 }}>
+                  <div style={{ fontSize: 11, color: "var(--ink-4)" }}>Đã chi cho lái xe</div>
+                  <div className="tnum" style={{ fontSize: 16, fontWeight: 700, color: g.spentSalary > 0 ? "var(--good)" : "var(--ink-4)" }}>{fmtNum(g.spentSalary)} đ</div>
+                  {g.unpaidSalary > 0 && <div style={{ fontSize: 10.5, color: "var(--warn)", fontWeight: 600 }} className="tnum">chưa chi {fmtNum(g.unpaidSalary)} đ</div>}
+                </div>
               </div>
             </button>
             {isOpen && <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "14px" }}>{g.rows.map(renderCard)}</div>}
