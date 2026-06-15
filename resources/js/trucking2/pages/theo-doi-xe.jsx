@@ -53,11 +53,13 @@ function popupHtml(p) {
 /* Style bản đồ TỐI GIẢN cho logistics: ẩn POI (quán ăn/khu vui chơi…), transit, icon biển báo
    → chỉ còn ĐƯỜNG + tên đường + cao tốc, để xe & kho nổi bật, dễ nhìn tuyến. */
 const MAP_STYLE = [
-  { featureType: "poi", stylers: [{ visibility: "off" }] },
+  { featureType: "poi", stylers: [{ visibility: "off" }] },          // ẩn quán ăn/khu vui chơi…
   { featureType: "poi.business", stylers: [{ visibility: "off" }] },
-  { featureType: "transit", stylers: [{ visibility: "off" }] },
-  { featureType: "road", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+  { featureType: "transit", stylers: [{ visibility: "off" }] },      // ẩn xe buýt/ga
   { featureType: "administrative.neighborhood", stylers: [{ visibility: "off" }] },
+  // GIỮ biển số đường (QL/CT) + tên đường để biết tuyến — KHÔNG ẩn road labels.icon.
+  { featureType: "road.highway", elementType: "labels", stylers: [{ visibility: "on" }] },
+  { featureType: "road.highway", elementType: "labels.icon", stylers: [{ visibility: "on" }] },
 ];
 
 /* Marker KHO — ghim teardrop màu chàm + biểu tượng nhà kho. Anchor ở mũi (đáy). */
