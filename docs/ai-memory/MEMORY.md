@@ -21,4 +21,6 @@
 - [Mobile responsive](mobile-responsive.md) — hook useIsMobile (lib.jsx) + foundation CSS (_styles + app.css); bảng→card trên điện thoại, ép input 16px chống iOS zoom; yeu-cau-chi đã mobile-first sẵn
 - [DB backup](db-backup.md) — `php artisan db:backup` (gzip, giữ 15 bản, báo cáo sys.backup_last_run); lịch daily 02:00 ở routes/console.php (CẦN cron schedule:run); card sao lưu ở /system-settings
 - [Date fields](date-fields.md) — input ngày/giờ React dùng DateField/DTField (Flatpickr locale VN, fallback native), KHÔNG dùng type=date native; trừ 2 trang public lái xe
-- [Ra status rule](ra-status-rule.md) — "đã ra" = có Giờ xe ra (gio_xe_ra) HOẶC Biển số ra (bks_ra); xe ngoài không có BKS nên giờ ra là đủ; áp ở badge/tab lọc/ô chọn cont khác ra
+- [Ra status rule](ra-status-rule.md) — "đã ra" = có Giờ xe ra (gio_xe_ra) HOẶC Biển số ra (bks_ra); xe ngoài không có BKS nên giờ ra là đủ; áp ở badge/tab lọc/ô chọn cont khác ra; có ra_mode self/other/none (none→gio_xe_ra_xe cột riêng)
+- [Duyệt chi theo lô](shipment-spend-duyet-chi.md) — popup Duyệt chi (theo BKS) thay Doanh thu&công nợ; bảng trucking_shipment_spends (salary/company), gợi ý từ route fee; Phí xe hiện Kế hoạch/Đã chi/Còn lại
+- [GPS tracking](gps-tracking.md) — Theo dõi xe realtime đa nhà cung cấp (Viettel/dvbk) qua proxy backend + adapter + auto-login (chỉ login lại khi fetch hỏng), map biển số→trucking_vehicles, Google Maps, poll 15s

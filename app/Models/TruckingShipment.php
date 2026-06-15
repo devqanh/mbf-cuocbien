@@ -25,7 +25,7 @@ class TruckingShipment extends Model
         'from_loc', 'to_loc',
         'bks_vao', 'bks_ra', 'driver', 'ra_mode', 'ra_other_id',
         'sail_date', 'cut_off', 'cont_den', 'cont_ra',
-        'gio_den_du_kien', 'gio_xe_den', 'gio_xe_ra',
+        'gio_den_du_kien', 'gio_xe_den', 'gio_xe_ra', 'gio_xe_ra_xe',
         'vat_rate', 'han_tt', 'ghi_chu',
         // tham chiếu + số liệu báo cáo (chốt khi lưu)
         'vehicle_id', 'from_location_id', 'to_location_id',
@@ -45,6 +45,7 @@ class TruckingShipment extends Model
         'gio_den_du_kien' => 'datetime',
         'gio_xe_den'      => 'datetime',
         'gio_xe_ra'       => 'datetime',
+        'gio_xe_ra_xe'    => 'datetime',
         'vat_rate'        => 'decimal:2',
     ];
 
@@ -71,6 +72,11 @@ class TruckingShipment extends Model
     public function warehouses(): HasMany
     {
         return $this->hasMany(TruckingShipmentWarehouse::class, 'shipment_id')->orderBy('sort');
+    }
+
+    public function spends(): HasMany
+    {
+        return $this->hasMany(TruckingShipmentSpend::class, 'shipment_id')->orderBy('sort');
     }
 
     public function scopeOfSheet(Builder $q, string $sheet): Builder

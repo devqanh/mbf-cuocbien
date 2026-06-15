@@ -26,7 +26,7 @@ const CFG_GROUPS = [
 
 function RouteFees({ rows = [], onChange, warehouses = [], isDup = () => false }) {
   const set = (i, np) => onChange(rows.map((r, j) => (j === i ? { ...r, ...np } : r)));
-  const add = () => onChange([...(rows || []), { id: Date.now() + Math.random(), route: "", veTram: "", tienDuong: "", troCap: "", phiKhac: "", cru: false, luong: "", salaryParts: ["troCap", "luong"], km: "", dau2: "", dau1: "" }]);
+  const add = () => onChange([...(rows || []), { id: Date.now() + Math.random(), route: "", veTram: "", tienDuong: "", troCap: "", cru: false, luong: "", luongNoCru: "", salaryParts: ["troCap", "luong"], km: "", dau2: "", dau1: "" }]);
   const del = (i) => onChange(rows.filter((_, j) => j !== i));
   const lbl = (t) => <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>{t}</div>;
   return (
@@ -59,10 +59,10 @@ function RouteFees({ rows = [], onChange, warehouses = [], isDup = () => false }
             <div>{lbl("Vé trạm")}<Money value={r.veTram} onChange={(x) => set(i, { veTram: x })} dim />{salChk("veTram")}</div>
             <div>{lbl("Tiền đường")}<Money value={r.tienDuong} onChange={(x) => set(i, { tienDuong: x })} dim />{salChk("tienDuong")}</div>
             <div>{lbl("Trợ cấp")}<Money value={r.troCap} onChange={(x) => set(i, { troCap: x })} dim />{salChk("troCap")}</div>
-            <div>{lbl("Phí khác")}<Money value={r.phiKhac} onChange={(x) => set(i, { phiKhac: x })} dim />{salChk("phiKhac")}</div>
-            <div>{lbl(<span title="Áp dụng khi lô hàng tích CRU">Lương chạy CRU</span>)}<Money value={r.luong} onChange={(x) => set(i, { luong: x })} dim />{salChk("luong")}</div>
+            <div>{lbl(<span title="Áp dụng khi lô hàng TÍCH CRU">Lương CRU</span>)}<Money value={r.luong} onChange={(x) => set(i, { luong: x })} dim />{salChk("luong")}</div>
+            <div>{lbl(<span title="Áp dụng khi lô hàng KHÔNG tích CRU">Lương không CRU</span>)}<Money value={r.luongNoCru} onChange={(x) => set(i, { luongNoCru: x })} dim /></div>
           </div>
-          <div style={{ fontSize: 11, color: "var(--ink-4)", marginBottom: 10 }}>Tích <b style={{ color: "var(--accent)" }}>lương NS</b> ở khoản nào → khoản đó cộng vào lương nhân sự (lái xe) khi tổng hợp ở Phí xe nội bộ.</div>
+          <div style={{ fontSize: 11, color: "var(--ink-4)", marginBottom: 10 }}>Lô <b>tích CRU</b> tính theo <b>Lương CRU</b>, lô <b>không tích</b> tính theo <b>Lương không CRU</b>. Tích <b style={{ color: "var(--accent)" }}>lương NS</b> ở khoản nào → khoản đó cộng vào lương nhân sự (lái xe); cờ "lương NS" của Lương áp cho cả 2 mức.</div>
           {/* Định mức km & dầu */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
             <div>{lbl("Số km")}<Num value={r.km} onChange={(x) => set(i, { km: x })} suffix="km" /></div>

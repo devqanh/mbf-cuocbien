@@ -18,4 +18,11 @@ Trạng thái **"đã ra"** của lô hàng = **có `gio_xe_ra` (Giờ xe ra) HO
 
 Phân biệt 3 field dễ nhầm: `gio_xe_ra` (Giờ xe ra, tính free time) ≠ `cont_ra` (Ngày cont ra — ĐÃ BỎ khỏi UI) ≠ `bks_ra` (Biển số ra). siblingsList trả kèm gioXeRa+bksRa cho popup lọc. Liên quan [[trucking-report-schema]].
 
+**Trường hợp giờ xe ra (`ra_mode`) — 3 lựa chọn trong popup (mục Free time & kết nối):**
+- `self` (Chính cont này) → `gio_xe_ra` = giờ ra **của cont** (lô này).
+- `other` (Cont khác ra) → ghi `gio_xe_ra`+`bks_ra` vào **cont khác** (`ra_other_id`); lô này để trống.
+- `none` (Không kéo công ra) → xe ra nhưng KHÔNG kéo cont nào; ghi vào **cột RIÊNG `gio_xe_ra_xe`** (giờ ra của XE/đầu kéo) để sau tính phí hạng mục khác. `gio_xe_ra` (cont) GIỮ TRỐNG → lô vẫn "**chưa ra**" (đúng: cont không ra). Migration `2026_06_15_000002`.
+
+**`gio_xe_ra` LUÔN là giờ của CONT; `gio_xe_ra_xe` là giờ của XE (chỉ dùng khi ra_mode='none').** Quy tắc "đã ra" CHỈ xét `gio_xe_ra`+`bks_ra` (KHÔNG xét `gio_xe_ra_xe`) — đừng nhầm. UI: nhãn ô đổi động "Giờ xe ra (của cont)" / "(của XE)"; đổi trường hợp thì tự dọn field còn lại (popups.jsx) để 2 mốc không lẫn.
+
 **Cập nhật:** đã **bỏ field "Ngày cont ra"** khỏi popup Lô hàng (gio_xe_ra là mốc cont rời đi). Cột "Ra:" trong list + badge hiện theo `gio_xe_ra`. **Bảng kê** (trang Tạo) lấy NGÀY KỲ = ngày của `gio_xe_ra` (fallback sail_date/cont_den) — sửa ở `HandlesStatementPricing::candidatesForStatement` + `statementReprice` (đã ghi chú trong code). Trang Tạo bảng kê: **chưa chọn kỳ (ngày ra) thì không tải lô**, hiện ghi chú "Vui lòng chọn ngày ra của lô hàng".

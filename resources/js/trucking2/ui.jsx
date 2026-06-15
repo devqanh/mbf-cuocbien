@@ -626,9 +626,20 @@ function BangGiaPage({ cfg, setCfg, onImported, loadPrices }) {
   );
 }
 
-function KePage({ ke, onNew, onOpen }) {
+/* Chip cảnh báo bảng kê có lô lệch phải thu so với snapshot → cần mở vào bấm "Tính lại". */
+function DriftChip({ n }) {
+  return (
+    <span title={`${n} lô có phải thu khác với bảng kê đã lưu — mở bảng kê và bấm “Tính lại” để cập nhật.`}
+      style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 8, fontSize: 11, fontWeight: 700, color: "#fff", background: "var(--warn)", padding: "2px 8px", borderRadius: 999, whiteSpace: "nowrap", verticalAlign: "middle" }}>
+      <i className="bi bi-exclamation-triangle-fill" style={{ fontSize: 10 }} /> Cần tính lại
+    </span>
+  );
+}
+
+function KePage({ ke, drift = {}, onNew, onOpen }) {
   const isMobile = useIsMobile();
   const cols = "150px 1fr 120px 1fr 150px 150px";
+  const driftOf = (st) => drift[String(st.id)];
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", padding: isMobile ? "16px 14px 24px" : "20px 22px 24px", overflow: "auto" }}>
       <div style={{ maxWidth: 1000, width: "100%", margin: "0 auto" }}>
@@ -656,7 +667,7 @@ function KePage({ ke, onNew, onOpen }) {
                     <span className="tnum" style={{ fontWeight: 700, color: "var(--accent)", fontSize: 14 }}>{st.no}</span>
                     <span className="tnum" style={{ color: "var(--ink-3)", fontSize: 12.5 }}>{fmtDate(st.date)}</span>
                   </div>
-                  <div style={{ fontWeight: 600, fontSize: 14.5, marginTop: 4 }}>{st.customer}</div>
+                  <div style={{ fontWeight: 600, fontSize: 14.5, marginTop: 4 }}>{st.customer}{driftOf(st) ? <DriftChip n={driftOf(st).changed} /> : null}</div>
                   <div className="tnum" style={{ color: "var(--ink-4)", fontSize: 12, marginTop: 2 }}>{(st.from || st.to) ? `Cont ra: ${fmtDate(st.from) || "…"} – ${fmtDate(st.to) || "…"}` : "—"}</div>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 9, paddingTop: 9, borderTop: "1px solid var(--line-2)" }}>
                     <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Tổng: <b className="tnum" style={{ color: "var(--ink)" }}>{fmtVND(st.tongThu)}</b></span>
@@ -680,7 +691,7 @@ function KePage({ ke, onNew, onOpen }) {
               onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent-weak-2)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
               <span className="tnum" style={{ fontWeight: 600, color: "var(--accent)" }}>{st.no}</span>
-              <span style={{ fontWeight: 500 }}>{st.customer}</span>
+              <span style={{ fontWeight: 500 }}>{st.customer}{driftOf(st) ? <DriftChip n={driftOf(st).changed} /> : null}</span>
               <span className="tnum" style={{ color: "var(--ink-2)" }}>{fmtDate(st.date)}</span>
               <span className="tnum" style={{ color: "var(--ink-3)", fontSize: 12.5 }}>{(st.from || st.to) ? `${fmtDate(st.from) || "…"} – ${fmtDate(st.to) || "…"}` : "—"}</span>
               <span className="tnum" style={{ textAlign: "right", fontWeight: 600 }}>{fmtVND(st.tongThu)}</span>

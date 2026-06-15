@@ -6,6 +6,7 @@ use App\Models\TruckingCustomer;
 use App\Models\TruckingLocation;
 use App\Models\TruckingSetting;
 use App\Models\TruckingShipment;
+use App\Models\TruckingStatement;
 use Carbon\Carbon;
 
 /**
@@ -182,5 +183,52 @@ trait HandlesStatementPricing
             $out[(string) $id] = $this->candidateRow($s, $sheet, $date, $this->priceShipment($s, $priceList, $locCode, $threshold));
         }
         return ['repriced' => $out];
+    }
+
+    /**
+     * ĐỐI SOÁT NHANH cả danh sách bảng kê: phát hiện bảng kê nào có lô mà PHẢI THU
+     * định giá theo dữ liệu HIỆN TẠI khác số đã chốt trong snapshot → cần mở vào bấm
+     * "Tính lại". Dùng cho cảnh báo ngoài danh sách (trang Bảng kê).
+     *
+     * Cùng quy tắc lệch với recalcDiff ở trang xem: CHỈ xét lô còn trong hệ thống và
+     * so PHẢI THU (lô đã xóa giữ nguyên số đã lưu → không coi là "phát sinh").
+     *
+     * Tối ưu query: 1 lượt nạp bảng kê (kèm lines) + 1 lượt nạp toàn bộ lô liên quan;
+     * bảng giá nạp 1 lần / khách (cache theo tên). Gọi LAZY sau khi danh sách đã render.
+     *
+     * @return array<string,array{changed:int}> map statementId => số lô bị lệch (chỉ bảng kê có lệch)
+     */
+    public function statementsDrift(): array
+    {
+        $statements = TruckingStatement::with(['lines', 'customer'])->get();
+        if ($statements->isEmpty()) return [];
+
+        // Gom mọi shipment_id qua tất cả bảng kê → nạp lô + costLines 1 lần.
+        $allIds = $statements->flatMap(fn ($st) => $st->lines->pluck('shipment_id'))
+            ->filter()->unique()->values()->all();
+        $ships = empty($allIds)
+            ? collect()
+            : TruckingShipment::whereIn('id', $allIds)->with('costLines')->get()->keyBy('id');
+
+        $locCode   = $this->locationCodeMap();
+        $threshold = TruckingSetting::get('free_time_hours', '4');
+        $priceCache = [];   // tên khách => bảng giá (tránh query lặp khi nhiều bảng kê cùng khách)
+
+        $out = [];
+        foreach ($statements as $st) {
+            $customer = $st->customer_name ?? $st->customer?->name ?? '';
+            $priceList = $priceCache[$customer] ??= $this->customerPriceList($customer);
+
+            $changed = 0;
+            foreach ($st->lines as $l) {
+                $s = $l->shipment_id ? $ships->get($l->shipment_id) : null;
+                if (! $s) continue;   // lô đã xóa → giữ số đã lưu, không phải "phát sinh"
+                $pr = $this->priceShipment($s, $priceList, $locCode, $threshold);
+                if ((int) round((float) $pr['phaiThu']) !== (int) round((float) $l->phai_thu)) $changed++;
+            }
+            if ($changed > 0) $out[(string) $st->id] = ['changed' => $changed];
+        }
+
+        return $out;
     }
 }

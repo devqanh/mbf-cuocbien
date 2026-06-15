@@ -31,6 +31,7 @@ export default defineConfig(({ mode }) => {
                     'resources/js/trucking2/pages/phi-xe-xem.jsx',
                     'resources/js/trucking2/pages/ke-hoach.jsx',
                     'resources/js/trucking2/pages/ke-hoach-public.jsx',
+                    'resources/js/trucking2/pages/theo-doi-xe.jsx',
                 ],
                 refresh: true,
             }),

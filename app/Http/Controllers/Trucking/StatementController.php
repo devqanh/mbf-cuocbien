@@ -69,6 +69,16 @@ class StatementController extends BaseTruckingController
         return response()->json(['ok' => true] + $this->svc->statementReprice($statement));
     }
 
+    /**
+     * Đối soát cả danh sách bảng kê (LAZY, gọi sau khi danh sách render) — trả map
+     * statementId => {changed} cho các bảng kê có lô lệch phải thu so với snapshot.
+     * Dùng để hiện cảnh báo "cần tính lại" ngoài danh sách.
+     */
+    public function drift(): JsonResponse
+    {
+        return response()->json(['ok' => true, 'drift' => $this->svc->statementsDrift()]);
+    }
+
     /** Xuất Excel theo mẫu chính thức (SNAPSHOT đã lưu — không đọc lô realtime). */
     public function export(TruckingStatement $statement, StatementExcelExporter $exporter): StreamedResponse
     {

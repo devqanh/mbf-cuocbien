@@ -6,21 +6,23 @@ export const n = (v) => parseFloat((v ?? "").toString().replace(/[^\d.-]/g, ""))
 const sumExtras = (arr) => (arr || []).reduce((a, e) => a + n(e.amount), 0);
 // tổng phí 1 dòng lô = chi phí vận hành + lương nhân sự (gồm cả khoản lương khác)
 export const rowTotal = (c) => n(c.veTram) + n(c.tienDuong) + n(c.troCap) + n(c.phiKhac)
-  + (c.cru ? n(c.luong) : 0) + Math.round(n(c.fuelLiters) * n(c.fuelPrice))
+  + n(c.luong) + Math.round(n(c.fuelLiters) * n(c.fuelPrice))
   + sumExtras(c.extras) + sumExtras(c.salaryExtras);
 // định danh dòng (view dùng lineId, create dùng shipmentId)
 export const rk = (x) => (x.lineId != null ? "L" + x.lineId : "S" + x.shipmentId);
 
 // nhãn các khoản phí cố định của tuyến
 const FEE_KEYS = ["veTram", "tienDuong", "troCap", "phiKhac", "luong"];
-const FEE_LABEL = { veTram: "Vé trạm", tienDuong: "Tiền đường", troCap: "Trợ cấp", phiKhac: "Phí khác", luong: "Lương CRU" };
-// các khoản phí cố định (đặt vào cột lương/khác theo salaryParts). luong chỉ hiện khi lô CRU.
+const FEE_LABEL = { veTram: "Vé trạm", tienDuong: "Tiền đường", troCap: "Trợ cấp", phiKhac: "Phí khác", luong: "Lương" };
+// các khoản phí cố định (đặt vào cột lương/khác theo salaryParts).
+//  - luong: lương đã áp theo CRU (CRU→Lương CRU, không CRU→Lương không CRU) — LUÔN tính.
+//  - phiKhac: ĐÃ BỎ khỏi cấu hình; legacy → chỉ hiện khi dòng cũ còn giá trị (giữ tổng kỳ cũ đúng).
 const FEE_FIELDS = [
   { k: "veTram", label: "Vé trạm" },
   { k: "tienDuong", label: "Tiền đường" },
   { k: "troCap", label: "Trợ cấp" },
-  { k: "phiKhac", label: "Phí khác (tuyến)" },
-  { k: "luong", label: "Lương chạy CRU", onlyCru: true },
+  { k: "phiKhac", label: "Phí khác (tuyến · đã bỏ)", legacy: true },
+  { k: "luong", label: "Lương" },
 ];
 
 // Tách 1 dòng thành 2 nhóm: chi phí vận hành (công ty) vs lương nhân sự (lái xe).
@@ -28,9 +30,9 @@ export function splitLine(x) {
   const c = x.cur || {}; const sp = Array.isArray(x.salaryParts) ? x.salaryParts : [];
   const cost = [], salary = [];
   FEE_KEYS.forEach((k) => {
-    const v = k === "luong" ? (c.cru ? n(c.luong) : 0) : n(c[k]);
+    const v = n(c[k]);
     const isSal = sp.includes(k);
-    if (isSal) { if (v > 0 || k === "troCap" || (k === "luong" && c.cru)) salary.push({ name: FEE_LABEL[k], amount: v }); }
+    if (isSal) { if (v > 0 || k === "troCap") salary.push({ name: FEE_LABEL[k], amount: v }); }
     else if (v > 0) cost.push({ name: FEE_LABEL[k], amount: v });
   });
   const fuel = Math.round(n(c.fuelLiters) * n(c.fuelPrice));
@@ -173,7 +175,9 @@ export function TripEditor({ rows, onRows, routeFees = [], drivers = [], costIte
     onRows(rows.map((x) => {
       if (rk(x) !== key) return x;
       const liters = x.axle === "2" ? rf.dau2 : rf.dau1;
-      return { ...x, matched: true, salaryParts: rf.salaryParts || x.salaryParts, cur: { ...x.cur, veTram: rf.veTram, tienDuong: rf.tienDuong, troCap: rf.troCap, phiKhac: rf.phiKhac, luong: rf.luong, fuelLiters: liters } };
+      // Lương áp theo CRU của lô: tích CRU → Lương CRU; không tích → Lương không CRU. Không áp lại Phí khác (đã bỏ).
+      const luongAp = x.cur.cru ? rf.luong : (rf.luongNoCru || "0");
+      return { ...x, matched: true, salaryParts: rf.salaryParts || x.salaryParts, cur: { ...x.cur, veTram: rf.veTram, tienDuong: rf.tienDuong, troCap: rf.troCap, phiKhac: "0", luong: luongAp, fuelLiters: liters } };
     }));
   };
 
@@ -221,7 +225,7 @@ export function TripEditor({ rows, onRows, routeFees = [], drivers = [], costIte
             </div>
             {/* NHẬP NGAY TRONG 2 CỘT: Chi phí lương (lái xe) | Chi phí khác — vận hành (công ty) */}
             {(() => {
-              const show = (f) => !f.onlyCru || c.cru;
+              const show = (f) => f.legacy ? n(c[f.k]) > 0 : true;   // phí khác (legacy) chỉ hiện khi dòng cũ còn giá trị
               const salFields = FEE_FIELDS.filter((f) => show(f) && sp.includes(f.k));
               const costFields = FEE_FIELDS.filter((f) => show(f) && !sp.includes(f.k));
               return (
@@ -249,14 +253,44 @@ export function TripEditor({ rows, onRows, routeFees = [], drivers = [], costIte
               );
             })()}
             <div style={{ textAlign: "right", fontSize: 14, fontWeight: 700, marginTop: 8 }} className="tnum">
-              Tổng phí lô: <span style={{ color: "var(--accent)" }}>{fmtVND(rowTotal(c))}</span>
+              Kế hoạch lô: <span style={{ color: "var(--accent)" }}>{fmtVND(rowTotal(c))}</span>
+              {x.spent && x.spent.total > 0 && <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-4)", marginLeft: 12 }}>· Đã chi <span style={{ color: "var(--good)" }}>{fmtVND(x.spent.total)}</span></span>}
             </div>
           </div>
         );
   };
 
+  // Tổng hợp KẾ HOẠCH (route fee) vs ĐÃ CHI (duyệt chi theo lô) → CÒN LẠI, tách lương / công ty.
+  const agg = rows.reduce((a, x) => {
+    const sd = splitLine(x); const sp = x.spent || {};
+    a.planSalary += sd.salaryTotal; a.planCompany += sd.costTotal;
+    a.spentSalary += n(sp.salary); a.spentCompany += n(sp.company);
+    return a;
+  }, { planSalary: 0, planCompany: 0, spentSalary: 0, spentCompany: 0 });
+  const planTotal = agg.planSalary + agg.planCompany;
+  const spentTotal = agg.spentSalary + agg.spentCompany;
+  const remainTotal = planTotal - spentTotal;
+  const summaryCols = [
+    { label: "Kế hoạch", tot: planTotal, sal: agg.planSalary, comp: agg.planCompany, col: "var(--ink)" },
+    { label: "Đã chi", tot: spentTotal, sal: agg.spentSalary, comp: agg.spentCompany, col: "var(--good)" },
+    { label: "Còn lại", tot: remainTotal, sal: agg.planSalary - agg.spentSalary, comp: agg.planCompany - agg.spentCompany, col: remainTotal > 0 ? "var(--warn)" : "var(--good)" },
+  ];
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ border: "1px solid var(--line)", borderRadius: 12, background: "#fff", padding: "13px 16px" }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: 10 }}>Tổng hợp kỳ · Kế hoạch / Đã chi / Còn lại</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+          {summaryCols.map((s, i) => (
+            <div key={i} style={{ borderLeft: i ? "1px solid var(--line-2)" : "none", paddingLeft: i ? 14 : 0 }}>
+              <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginBottom: 2 }}>{s.label}</div>
+              <div className="tnum" style={{ fontSize: 19, fontWeight: 700, color: s.col, letterSpacing: "-0.01em" }}>{fmtVND(s.tot)}</div>
+              <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 3 }} className="tnum"><span style={{ color: "#b45309" }}>Lương</span> {fmtNum(s.sal)} · <span style={{ color: "var(--accent)" }}>Công ty</span> {fmtNum(s.comp)}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 9, lineHeight: 1.5 }}><b style={{ color: "var(--ink-3)" }}>Kế hoạch</b> = phí tuyến (snapshot kỳ) · <b style={{ color: "var(--ink-3)" }}>Đã chi</b> = duyệt chi theo lô (₫ Duyệt chi ở Lô hàng) · <b style={{ color: "var(--ink-3)" }}>Còn lại</b> = Kế hoạch − Đã chi.</div>
+      </div>
       {groups.map((g) => {
         const isOpen = !!open[g.key];
         return (

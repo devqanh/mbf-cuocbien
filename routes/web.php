@@ -19,6 +19,7 @@ use App\Http\Controllers\Trucking\PriceController;
 use App\Http\Controllers\Trucking\ShipmentController as TruckingShipmentController;
 use App\Http\Controllers\Trucking\SpendRequestController;
 use App\Http\Controllers\Trucking\StatementController;
+use App\Http\Controllers\Trucking\TrackingController;
 use App\Http\Controllers\Trucking\TripCostController;
 use App\Http\Controllers\UserController;
 use Illuminate\Http\Request;
@@ -132,6 +133,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/', fn () => redirect()->route('trucking2.shipments'));
             Route::get('/lo-hang',        [TruckingShipmentController::class, 'index'])->name('shipments');
             Route::get('/shipments-page', [TruckingShipmentController::class, 'page'])->name('shipmentsPage');
+            Route::get('/shipments/{shipment}/spend-suggest', [TruckingShipmentController::class, 'spendSuggest'])->name('shipments.spendSuggest');
             Route::get('/config',         [TruckingShipmentController::class, 'configData'])->name('configData');
             Route::get('/bootstrap',      [TruckingShipmentController::class, 'bootstrap'])->name('bootstrap');
             Route::get('/phi-xe',                  [TripCostController::class, 'index'])->name('tripCost');
@@ -166,6 +168,17 @@ Route::middleware('auth')->group(function () {
             Route::delete('/shipments/{shipment}', [TruckingShipmentController::class, 'destroy'])->name('shipments.destroy');
         });
 
+        // --- Theo dõi xe realtime (GPS) ---
+        Route::middleware('permission:shipments.view')->group(function () {
+            Route::get('/theo-doi-xe',          [TrackingController::class, 'index'])->name('tracking');
+            Route::get('/tracking/positions',   [TrackingController::class, 'positions'])->name('tracking.positions');   // poll ~15s
+        });
+        Route::middleware('permission:settings.update')->group(function () {
+            Route::get('/tracking/config',  [TrackingController::class, 'config'])->name('tracking.config');
+            Route::post('/tracking/config', [TrackingController::class, 'saveConfig'])->name('tracking.saveConfig');
+            Route::post('/tracking/test',   [TrackingController::class, 'test'])->name('tracking.test');
+        });
+
         // --- Bảng giá ---
         Route::middleware('permission:prices.view')->group(function () {
             Route::get('/bang-gia',        [PriceController::class, 'index'])->name('prices');
@@ -180,6 +193,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/bang-ke',                     [StatementController::class, 'index'])->name('statements');
             Route::get('/bang-ke/tao',                 [StatementController::class, 'create'])->name('statements.create');
             Route::get('/statement-candidates',        [StatementController::class, 'candidates'])->name('statements.candidates');   // lô đã định giá ở backend cho bảng kê mới
+            Route::get('/statement-drift',             [StatementController::class, 'drift'])->name('statements.drift');   // đối soát cả danh sách → cảnh báo cần tính lại
             Route::get('/bang-ke/{statement}',         [StatementController::class, 'view'])->name('statements.view');
             Route::get('/bang-ke/{statement}/context', [StatementController::class, 'context'])->name('statements.context');
             Route::get('/bang-ke/{statement}/reprice', [StatementController::class, 'reprice'])->name('statements.reprice');   // tính lại ở backend
@@ -299,6 +313,7 @@ Route::middleware('auth')->group(function () {
     Route::middleware('permission:system.settings')->group(function () {
         Route::get ('/system-settings',      [SystemSettingController::class, 'index'])->name('system.settings');
         Route::put ('/system-settings',      [SystemSettingController::class, 'update'])->name('system.settings.update');
+        Route::put ('/system-settings/gps',  [SystemSettingController::class, 'updateGps'])->name('system.settings.gps');
         Route::post('/system-settings/test', [SystemSettingController::class, 'test'])->name('system.settings.test');
         Route::post('/system-settings/backup', [SystemSettingController::class, 'backupNow'])->name('system.settings.backupNow');
         Route::get ('/system-settings/backup/{file}/download', [SystemSettingController::class, 'downloadBackup'])->name('system.settings.backupDownload');

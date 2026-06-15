@@ -24,6 +24,7 @@ use App\Models\TruckingSetting;
 use App\Models\TruckingAttachment;
 use App\Models\TruckingPlanLink;
 use App\Models\TruckingShipment;
+use App\Models\TruckingShipmentSpend;
 use App\Models\TruckingShipmentWarehouse;
 use App\Models\TruckingVehicleCostType;
 use App\Models\TruckingAssetCategory;
@@ -157,9 +158,10 @@ trait HandlesTripAndDrivers
                 'veTram'     => $rf ? $this->outMoney($rf->ve_tram) : '0',
                 'tienDuong'  => $rf ? $this->outMoney($rf->tien_duong) : '0',
                 'troCap'     => $rf ? $this->outMoney($rf->tro_cap) : '0',
-                'phiKhac'    => $rf ? $this->outMoney($rf->phi_khac) : '0',
+                'phiKhac'    => '0',   // Phí khác (tuyến) đã bỏ — không gợi ý cho dòng mới (data cũ vẫn giữ để hiện đúng)
                 'cru'        => (bool) $s->cru,
-                'luong'      => ($s->cru && $rf) ? $this->outMoney($rf->luong) : '0',
+                // Lương theo CRU: tích CRU → `luong`; KHÔNG tích → `luong_no_cru`
+                'luong'      => $rf ? ($s->cru ? $this->outMoney($rf->luong) : $this->outMoney($rf->luong_no_cru)) : '0',
                 'fuelLiters' => $this->outNum($liters),
                 'fuelPrice'  => $this->outMoney($price),
                 'extras'     => [],
@@ -175,7 +177,8 @@ trait HandlesTripAndDrivers
             'route' => $r->route, 'routeKey' => $r->route_key,
             'veTram' => $this->outMoney($r->ve_tram), 'tienDuong' => $this->outMoney($r->tien_duong),
             'troCap' => $this->outMoney($r->tro_cap), 'phiKhac' => $this->outMoney($r->phi_khac),
-            'luong' => $this->outMoney($r->luong), 'dau1' => $this->outNum($r->dau_1cau), 'dau2' => $this->outNum($r->dau_2cau),
+            'luong' => $this->outMoney($r->luong), 'luongNoCru' => $this->outMoney($r->luong_no_cru),
+            'dau1' => $this->outNum($r->dau_1cau), 'dau2' => $this->outNum($r->dau_2cau),
             'salaryParts' => $this->cleanSalaryParts($r->salary_parts),
         ])->all();
     }
@@ -315,6 +318,7 @@ trait HandlesTripAndDrivers
             if ($l->shipment_id) $inBatch[$l->shipment_id][] = $l->batch?->no ?? ('#' . $l->batch_id);
         }
 
+        $spent = $this->spendsByShipment($ships->pluck('id')->all());
         $rows = [];
         foreach ($ships as $s) {
             $sg = $this->tripSuggest($s, $bundle);
@@ -332,12 +336,37 @@ trait HandlesTripAndDrivers
                 'diag'        => $sg['diag'],
                 'salaryParts' => $sg['salaryParts'],
                 'usedIn'      => $inBatch[$s->id] ?? [],
+                'spent'       => $spent[$s->id] ?? ['salary' => 0, 'company' => 0, 'total' => 0],   // ĐÃ CHI (duyệt chi theo lô)
                 'cur'        => $sg['sug'],
                 'sug'        => $sg['sug'],
             ];
         }
 
         return ['rows' => $rows, 'routeFees' => $this->routeFeesOut(), 'drivers' => $this->driversOut()] + $this->tripItemOptions();
+    }
+
+    /**
+     * Tổng ĐÃ CHI (duyệt chi theo lô) theo shipment_id, tách salary|company.
+     * Dùng để Phí xe hiện Kế hoạch / Đã chi / Còn lại.
+     * @return array<int,array{salary:int,company:int,total:int}>
+     */
+    private function spendsByShipment(array $shipmentIds): array
+    {
+        $ids = array_values(array_filter($shipmentIds, fn ($v) => is_numeric($v)));
+        if (! $ids) return [];
+        $out = [];
+        $rows = TruckingShipmentSpend::whereIn('shipment_id', $ids)
+            ->selectRaw('shipment_id, kind, SUM(amount) as amt')
+            ->groupBy('shipment_id', 'kind')->get();
+        foreach ($rows as $r) {
+            $sid = (int) $r->shipment_id;
+            $out[$sid] ??= ['salary' => 0, 'company' => 0, 'total' => 0];
+            $k = $r->kind === 'salary' ? 'salary' : 'company';
+            $amt = (int) round((float) $r->amt);
+            $out[$sid][$k] += $amt;
+            $out[$sid]['total'] += $amt;
+        }
+        return $out;
     }
 
     /** Số kỳ kế tiếp (PX-0001…) nếu người dùng không nhập. */
@@ -365,6 +394,7 @@ trait HandlesTripAndDrivers
     /** Snapshot 1 kỳ (cho trang Xem/Sửa). */
     public function tripBatchToArray(TruckingTripCostBatch $b): array
     {
+        $spent = $this->spendsByShipment($b->lines->pluck('shipment_id')->all());
         return [
             'id'    => $b->id,
             'hashid' => Hashid::encode($b->id),
@@ -389,6 +419,7 @@ trait HandlesTripAndDrivers
                 'matched'     => true,
                 'salaryParts' => $this->cleanSalaryParts($l->salary_parts),
                 'usedIn'      => [],
+                'spent'       => $spent[$l->shipment_id] ?? ['salary' => 0, 'company' => 0, 'total' => 0],   // ĐÃ CHI theo lô
                 'cur'        => [
                     'driver'     => $l->driver ?? '',
                     'veTram'     => $this->outMoney($l->ve_tram),
@@ -469,13 +500,15 @@ trait HandlesTripAndDrivers
                 $extrasSum  = array_sum(array_map(fn ($e) => $e['amount'], $extras));
                 $salExSum   = array_sum(array_map(fn ($e) => $e['amount'], $salaryExtras));
 
-                // Lương nhân sự dòng = các khoản đánh dấu (luong gated CRU) + khoản lương khác
+                // Lương nhân sự dòng = các khoản đánh dấu + khoản lương khác.
+                // `luong` = lương ĐÃ ÁP (CRU→luong, không CRU→luong_no_cru, do gợi ý chọn sẵn) → luôn cộng.
+                // `phiKhac` GIỮ trong công thức để các kỳ CŨ không bị sai tổng (dòng mới phiKhac=0).
                 $parts   = $this->cleanSalaryParts($r['salaryParts'] ?? null);
-                $compVal = ['veTram' => $veTram, 'tienDuong' => $tienDuong, 'troCap' => $troCap, 'phiKhac' => $phiKhac, 'luong' => ($cru ? $luong : 0)];
+                $compVal = ['veTram' => $veTram, 'tienDuong' => $tienDuong, 'troCap' => $troCap, 'phiKhac' => $phiKhac, 'luong' => $luong];
                 $salaryTotal = $salExSum;
                 foreach ($parts as $k) $salaryTotal += $compVal[$k] ?? 0;
 
-                $lineTotal = $veTram + $tienDuong + $troCap + $phiKhac + ($cru ? $luong : 0) + $fuelAmount + $extrasSum + $salExSum;
+                $lineTotal = $veTram + $tienDuong + $troCap + $phiKhac + $luong + $fuelAmount + $extrasSum + $salExSum;
                 $costTotal = $lineTotal - $salaryTotal;     // chi phí vận hành dòng
                 $total += $lineTotal;
 
@@ -591,6 +624,7 @@ trait HandlesTripAndDrivers
                     'phi_khac'   => $this->inMoney($r['phiKhac'] ?? null) ?? 0,
                     'cru'        => ! empty($r['cru']),
                     'luong'      => $this->inMoney($r['luong'] ?? null) ?? 0,
+                    'luong_no_cru' => $this->inMoney($r['luongNoCru'] ?? null) ?? 0,
                     'salary_parts' => $this->cleanSalaryParts($r['salaryParts'] ?? null),
                     'km'         => $this->inNum($r['km'] ?? null) ?? 0,
                     'dau_2cau'   => $this->inNum($r['dau2'] ?? null) ?? 0,

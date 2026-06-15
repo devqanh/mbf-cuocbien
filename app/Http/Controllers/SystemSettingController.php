@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\TruckingSetting;
+use App\Services\Gps\GpsTrackingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -46,7 +47,41 @@ class SystemSettingController extends Controller
             'features'   => [
                 'plan_link' => TruckingSetting::bool('sys.feature_plan_link', true),
             ],
+            'gps'        => collect(app(GpsTrackingService::class)->publicConfig())->keyBy('key')->all(),
+            'mapsKey'    => TruckingSetting::get('gps.google_maps_key', ''),
         ]);
+    }
+
+    /** Lưu cấu hình Giám sát hành trình (GPS): Google Maps key + tài khoản từng nhà cung cấp. */
+    public function updateGps(Request $request, GpsTrackingService $gps): RedirectResponse
+    {
+        $data = $request->validate([
+            'google_maps_key'  => ['nullable', 'string', 'max:255'],
+            'viettel_username' => ['nullable', 'string', 'max:190'],
+            'viettel_password' => ['nullable', 'string', 'max:190'],
+            'viettel_org_ids'  => ['nullable', 'string', 'max:2000'],
+            'dvbk_username'    => ['nullable', 'string', 'max:190'],
+            'dvbk_password'    => ['nullable', 'string', 'max:190'],
+            'dvbk_user_id'     => ['nullable', 'string', 'max:190'],
+        ]);
+
+        TruckingSetting::put('gps.google_maps_key', trim((string) ($data['google_maps_key'] ?? '')));
+
+        // password để trống = giữ nguyên (saveConfig chỉ ghi đè khi non-empty)
+        $gps->provider('viettel')->saveConfig([
+            'enabled'  => $request->boolean('viettel_enabled'),
+            'username' => trim((string) ($data['viettel_username'] ?? '')),
+            'password' => (string) ($data['viettel_password'] ?? ''),
+            'org_ids'  => trim((string) ($data['viettel_org_ids'] ?? '')),
+        ]);
+        $gps->provider('dvbk')->saveConfig([
+            'enabled'  => $request->boolean('dvbk_enabled'),
+            'username' => trim((string) ($data['dvbk_username'] ?? '')),
+            'password' => (string) ($data['dvbk_password'] ?? ''),
+            'user_id'  => trim((string) ($data['dvbk_user_id'] ?? '')),
+        ]);
+
+        return back()->with('tab', 'gps')->with('success', 'Đã lưu cấu hình giám sát hành trình.');
     }
 
     // ===================== Sao lưu CSDL =====================

@@ -26,6 +26,7 @@
     <li><button type="button" data-stab="seller"><i class="bi bi-file-earmark-spreadsheet"></i> Bên bán</button></li>
     <li><button type="button" data-stab="storage"><i class="bi bi-hdd-stack"></i> Lưu trữ file</button></li>
     <li><button type="button" data-stab="features"><i class="bi bi-toggles"></i> Tính năng</button></li>
+    <li><button type="button" data-stab="gps"><i class="bi bi-geo-alt"></i> Giám sát hành trình</button></li>
     <li><button type="button" data-stab="backup"><i class="bi bi-database-down"></i> Sao lưu CSDL</button></li>
   </ul>
 
@@ -202,6 +203,109 @@
 
   <form id="frm-test" method="POST" action="{{ route('system.settings.test') }}" class="d-none">@csrf</form>
 
+  {{-- ===== Tab: Giám sát hành trình (GPS) — form riêng, ngoài form cấu hình chung ===== --}}
+  <div class="settings-pane" data-spane="gps">
+    <form method="POST" action="{{ route('system.settings.gps') }}" autocomplete="off">
+      @csrf
+      @method('PUT')
+
+      {{-- Google Maps --}}
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body p-4">
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <i class="bi bi-map text-primary"></i>
+            <h6 class="mb-0 fw-bold">Bản đồ</h6>
+          </div>
+          <p class="text-muted small mb-3">Google Maps API key dùng để vẽ bản đồ theo dõi xe (trang <b>Theo dõi xe</b>).</p>
+          <label class="form-label small fw-semibold">Google Maps API Key</label>
+          <input type="text" name="google_maps_key" class="form-control" value="{{ old('google_maps_key', $mapsKey) }}" placeholder="AIza…" autocomplete="off">
+          <div class="small text-muted mt-2"><i class="bi bi-info-circle"></i> Bật <b>Maps JavaScript API</b> + nên giới hạn theo HTTP referrer (domain) trong Google Cloud.</div>
+        </div>
+      </div>
+
+      {{-- Các nhà cung cấp GPS --}}
+      @php
+        $viettel = $gps['viettel'] ?? [];
+        $dvbk = $gps['dvbk'] ?? [];
+      @endphp
+
+      {{-- Viettel --}}
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body p-4">
+          <div class="d-flex align-items-center justify-content-between gap-2 mb-1 flex-wrap">
+            <div class="d-flex align-items-center gap-2">
+              <i class="bi bi-broadcast-pin text-primary"></i>
+              <h6 class="mb-0 fw-bold">Viettel vTracking</h6>
+              @if(!empty($viettel['sessionActive']))<span class="badge bg-success-subtle text-success">● phiên OK</span>@endif
+            </div>
+            <div class="form-check form-switch mb-0" style="padding-left:3.2em;">
+              <input type="checkbox" class="form-check-input" role="switch" name="viettel_enabled" value="1" {{ !empty($viettel['enabled']) ? 'checked' : '' }} style="cursor:pointer;">
+              <label class="form-check-label small">Bật</label>
+            </div>
+          </div>
+          <div class="row g-3 mt-1">
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Tài khoản</label>
+              <input type="text" name="viettel_username" class="form-control" value="{{ old('viettel_username', $viettel['username'] ?? '') }}" placeholder="vd: mbf" autocomplete="off">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Mật khẩu</label>
+              <input type="password" name="viettel_password" class="form-control" placeholder="{{ !empty($viettel['hasPassword']) ? '••••••  (đã lưu — để trống nếu không đổi)' : 'Nhập mật khẩu' }}" autocomplete="new-password">
+            </div>
+            <div class="col-12">
+              <label class="form-label small fw-semibold">Org IDs <span class="text-muted fw-normal">(phân tách dấu phẩy)</span></label>
+              <input type="text" name="viettel_org_ids" class="form-control" value="{{ old('viettel_org_ids', $viettel['orgIds'] ?? '') }}" placeholder="bf64fee5-c8c9-41a7-b159-84e0c3c6e795">
+            </div>
+          </div>
+          <div class="mt-3 d-flex align-items-center gap-2">
+            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="trkGpsTest('viettel', this)"><i class="bi bi-plug me-1"></i> Test kết nối</button>
+            <span class="small" data-gps-result="viettel"></span>
+          </div>
+        </div>
+      </div>
+
+      {{-- Bình Anh (dvbk) --}}
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body p-4">
+          <div class="d-flex align-items-center justify-content-between gap-2 mb-1 flex-wrap">
+            <div class="d-flex align-items-center gap-2">
+              <i class="bi bi-broadcast-pin text-primary"></i>
+              <h6 class="mb-0 fw-bold">Bình Anh GPS (dvbk.vn)</h6>
+              @if(!empty($dvbk['sessionActive']))<span class="badge bg-success-subtle text-success">● phiên OK</span>@endif
+            </div>
+            <div class="form-check form-switch mb-0" style="padding-left:3.2em;">
+              <input type="checkbox" class="form-check-input" role="switch" name="dvbk_enabled" value="1" {{ !empty($dvbk['enabled']) ? 'checked' : '' }} style="cursor:pointer;">
+              <label class="form-check-label small">Bật</label>
+            </div>
+          </div>
+          <div class="row g-3 mt-1">
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Tài khoản</label>
+              <input type="text" name="dvbk_username" class="form-control" value="{{ old('dvbk_username', $dvbk['username'] ?? '') }}" placeholder="vd: ctymbf" autocomplete="off">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Mật khẩu</label>
+              <input type="password" name="dvbk_password" class="form-control" placeholder="{{ !empty($dvbk['hasPassword']) ? '••••••  (đã lưu — để trống nếu không đổi)' : 'Nhập mật khẩu' }}" autocomplete="new-password">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">User ID</label>
+              <input type="text" name="dvbk_user_id" class="form-control" value="{{ old('dvbk_user_id', $dvbk['userId'] ?? '') }}" placeholder="vd: 37421">
+            </div>
+          </div>
+          <div class="mt-3 d-flex align-items-center gap-2">
+            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="trkGpsTest('dvbk', this)"><i class="bi bi-plug me-1"></i> Test kết nối</button>
+            <span class="small" data-gps-result="dvbk"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex align-items-center gap-2">
+        <button type="submit" class="btn btn-primary fw-semibold"><i class="bi bi-save me-1"></i> Lưu cấu hình GPS</button>
+        <span class="small text-muted">Mật khẩu được mã hóa khi lưu. Hệ thống tự đăng nhập lại khi phiên hết hạn.</span>
+      </div>
+    </form>
+  </div>
+
   {{-- ===== Tab: Sao lưu cơ sở dữ liệu (ngoài form cấu hình) ===== --}}
   <div class="settings-pane" data-spane="backup">
     <div class="card border-0 shadow-sm">
@@ -312,7 +416,7 @@
   trkToggleS3();
 
   (function(){
-    var TABS = ['company','seller','storage','features','backup'];
+    var TABS = ['company','seller','storage','features','gps','backup'];
     var wrap = document.querySelector('[data-initial-tab]');
     var btns = document.querySelectorAll('.settings-tabs [data-stab]');
     var panes = document.querySelectorAll('.settings-pane');
@@ -322,7 +426,8 @@
       if (TABS.indexOf(key) === -1) key = 'company';
       btns.forEach(function(b){ b.classList.toggle('active', b.dataset.stab === key); });
       panes.forEach(function(p){ p.classList.toggle('active', p.dataset.spane === key); });
-      if (savebar) savebar.classList.toggle('is-hidden', key === 'backup');
+      // 'backup' và 'gps' có form/khu vực riêng → ẩn thanh lưu chung
+      if (savebar) savebar.classList.toggle('is-hidden', key === 'backup' || key === 'gps');
       try { history.replaceState(null, '', '#' + key); } catch(e){}
     }
     btns.forEach(function(b){ b.addEventListener('click', function(){ show(b.dataset.stab); }); });
@@ -330,5 +435,26 @@
     var initial = (location.hash || '').replace('#','') || (wrap && wrap.dataset.initialTab) || 'company';
     show(initial);
   })();
+
+  // Test kết nối GPS (AJAX) — dùng route test của trang Theo dõi xe.
+  var GPS_TEST_URL = '{{ route('trucking2.tracking.test') }}';
+  var GPS_CSRF = '{{ csrf_token() }}';
+  function trkGpsTest(provider, btn){
+    var out = document.querySelector('[data-gps-result="' + provider + '"]');
+    btn.disabled = true; var old = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Đang test…';
+    if (out){ out.textContent = ''; out.className = 'small text-muted'; }
+    fetch(GPS_TEST_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': GPS_CSRF, 'Accept': 'application/json' },
+      body: JSON.stringify({ provider: provider }),
+    }).then(function(r){ return r.json(); }).then(function(d){
+      var res = d && d.result;
+      if (res && res.ok){ out.className = 'small text-success fw-semibold'; out.textContent = '✓ Lấy được ' + res.count + ' xe'; }
+      else { out.className = 'small text-danger fw-semibold'; out.textContent = '✕ ' + ((res && res.error) || 'Thất bại'); }
+    }).catch(function(){ out.className = 'small text-danger fw-semibold'; out.textContent = '✕ Lỗi kết nối'; })
+      .finally(function(){ btn.disabled = false; btn.innerHTML = old; });
+  }
+  window.trkGpsTest = trkGpsTest;
 </script>
 @endsection

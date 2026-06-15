@@ -3,6 +3,9 @@ const { useState, useRef, useMemo, useEffect } = React;
 import { I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, fmtVND, fmtNum, fmtShort, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, useIsMobile } from "@trk/lib.jsx";
 import { DTField, Field, DriverSpendRows, VatLine, ItemRows, ChiHoRows, DoanhThuRows, ChkBox, TRACK_COLORS, SWATCHES, colorHex, FlagPicker, CostLineRows, PaymentRows, Seg } from "./shared.jsx";
 
+// Giờ hiện tại dạng DTField ("YYYY-MM-DDTHH:MM", giờ địa phương) cho nút "Bây giờ".
+const nowLocalDT = () => { const d = new Date(); const p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
+
 // Địa điểm dạng select2: giá trị = tên (giữ nguyên dữ liệu), nhãn = "Tên - Ký hiệu" để dễ nhận diện + tìm theo ký hiệu.
 const locOptions = (cfg) => (cfg.locations || []).map((n) => {
   const c = (cfg.locationCode || {})[n];
@@ -249,6 +252,117 @@ function RevenuePopupICD({ ship, patch, onSave, isDirty, onClose, cfg = {}, addC
   );
 }
 
+/* ===================== DUYỆT CHI THEO LÔ (theo biển kiểm soát) ===================== */
+function SpendPopup({ ship, patch, onSave, isDirty, onClose, cfg = {}, addCfg }) {
+  const isMobile = useIsMobile();
+  const spends = ship.spends || [];
+  const setSpends = (arr) => patch({ spends: arr });
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+  const loadedRef = useRef(false);
+  const isTmp = !ship.id || String(ship.id).startsWith("tmp");
+  const routes = (typeof window !== "undefined" && window.__TRK && window.__TRK.routes) || {};
+  const todayStr = () => nowLocalDT().slice(0, 10);
+
+  const fetchSuggest = () => {
+    if (isTmp) { setErr("Lưu thông tin lô trước khi duyệt chi."); return; }
+    setLoading(true); setErr("");
+    const url = (routes.shipment || "/trucking-v2/shipments/") + (ship.hashid || ship.id) + "/spend-suggest";
+    window.trkApi("GET", url).then((r) => {
+      if (r && r.ok) {
+        const lines = (r.lines || []).map((l, i) => ({ id: Date.now() + i, ...l }));
+        setSpends(lines);
+        if (!lines.length) setErr(r.matched ? "Tuyến không có khoản phí — thêm thủ công bên dưới." : "Lô chưa khớp tuyến trong Phí tuyến đường — thêm thủ công, hoặc cấu hình tuyến rồi tải lại.");
+      } else setErr((r && r.message) || "Không tải được gợi ý.");
+    }).catch(() => setErr("Lỗi kết nối khi tải gợi ý.")).finally(() => setLoading(false));
+  };
+
+  // Tự tải gợi ý lần đầu nếu lô chưa có khoản chi nào.
+  useEffect(() => {
+    if (loadedRef.current) return; loadedRef.current = true;
+    if (!spends.length && !isTmp) fetchSuggest();
+  }, []);
+
+  const spendDate = (spends[0] && spends[0].spendDate) || "";
+  const driver = (spends.find((s) => s.kind === "salary" && s.driver) || {}).driver || "";
+  const setLine = (id, np) => setSpends(spends.map((l) => (l.id === id ? { ...l, ...np } : l)));
+  const delLine = (id) => setSpends(spends.filter((l) => l.id !== id));
+  const setAllDate = (v) => setSpends(spends.map((l) => ({ ...l, spendDate: v })));
+  const setSalaryDriver = (v) => setSpends(spends.map((l) => (l.kind === "salary" ? { ...l, driver: v } : l)));
+  const addOther = () => setSpends([...spends, { id: Date.now(), source: "other", kind: "company", name: "", amount: "", driver, spendDate: spendDate || todayStr(), paid: true, bks: ship.bksVao || "", vehicleId: null }]);
+
+  const sum = (k) => spends.filter((l) => l.kind === k).reduce((a, l) => a + toNum(l.amount), 0);
+  const salaryTotal = sum("salary"), companyTotal = sum("company"), total = salaryTotal + companyTotal;
+
+  const dirty = !!(isDirty && isDirty(ship.id));
+  const [saving, setSaving] = useState(false);
+  const handleSave = () => { if (saving) return; setSaving(true); Promise.resolve(onSave && onSave()).then(() => onClose()).catch(() => setSaving(false)); };
+
+  const footer = (
+    <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 22 }}>
+        <div><div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 2 }}>Lương tài xế</div><div className="tnum" style={{ fontSize: 17, fontWeight: 700, color: "#b45309" }}>{fmtVND(salaryTotal)}</div></div>
+        <div style={{ borderLeft: "1px solid var(--line)", paddingLeft: 22 }}><div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 2 }}>Chi phí công ty</div><div className="tnum" style={{ fontSize: 17, fontWeight: 700 }}>{fmtVND(companyTotal)}</div></div>
+        <div style={{ borderLeft: "1px solid var(--line)", paddingLeft: 22 }}><div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 2 }}>Tổng chi</div><div className="tnum" style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em" }}>{fmtVND(total)}</div></div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {dirty && <span style={{ fontSize: 12, color: "var(--warn)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--warn)" }} />Có thay đổi chưa lưu</span>}
+        <Btn onClick={onClose}>Đóng</Btn>
+        <Btn variant="primary" onClick={handleSave} disabled={!dirty || saving}>{saving ? "Đang lưu…" : "Lưu duyệt chi"}</Btn>
+      </div>
+    </div>
+  );
+
+  const kindBtn = (l) => (
+    <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 7, padding: 2 }}>
+      {[["salary", "Lương"], ["company", "Công ty"]].map(([k, lb]) => {
+        const on = l.kind === k;
+        return <button key={k} type="button" onClick={() => setLine(l.id, { kind: k, driver: k === "salary" ? (l.driver || driver) : "" })}
+          style={{ border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 600, padding: "4px 9px", borderRadius: 5, whiteSpace: "nowrap", background: on ? "#fff" : "transparent", color: on ? (k === "salary" ? "#b45309" : "var(--accent)") : "var(--ink-4)", boxShadow: on ? "0 1px 2px rgba(16,19,23,.12)" : "none" }}>{lb}</button>;
+      })}
+    </div>
+  );
+
+  const colTmpl = isMobile ? "1fr" : "1fr 154px 150px 36px";
+  return (
+    <Modal title="Duyệt chi theo biển kiểm soát" subtitle={<>Lô <b style={{ color: "var(--ink-2)" }}>{ship.booking}</b> · {ship.customer}{ship.bksVao ? <> · BKS <b style={{ color: "var(--ink-2)" }}>{ship.bksVao}</b></> : null}</>} onClose={onClose} footer={footer} width={860}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr auto", gap: 12, alignItems: "end", marginBottom: 14 }}>
+        <Field label="Tài xế (nhận lương)"><Combo value={driver} onChange={setSalaryDriver} options={cfg.drivers || []} onCreate={(x) => addCfg && addCfg("drivers", x)} placeholder="Chọn lái xe…" /></Field>
+        <Field label="Ngày chi"><DateField value={spendDate} onChange={setAllDate} /></Field>
+        <button type="button" onClick={fetchSuggest} disabled={loading || isTmp} title="Tải lại các khoản từ Phí tuyến đường (ghi đè danh sách dưới)"
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "0 14px", height: 38, fontSize: 13, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--ink-2)", cursor: loading || isTmp ? "default" : "pointer", opacity: loading || isTmp ? 0.55 : 1, whiteSpace: "nowrap" }}>
+          <I.fx /> {loading ? "Đang tải…" : "Tải từ phí tuyến"}
+        </button>
+      </div>
+
+      {err && <div style={{ fontSize: 12, color: "#92600a", background: "var(--warn-weak)", border: "1px solid #f3e1ad", borderRadius: 9, padding: "8px 11px", marginBottom: 12, lineHeight: 1.5 }}>{err}</div>}
+
+      <div style={{ border: "1px solid var(--line)", borderRadius: 11, overflow: "hidden" }}>
+        {!isMobile && (
+          <div style={{ display: "grid", gridTemplateColumns: colTmpl, gap: 10, background: "#fafbfc", borderBottom: "1px solid var(--line)", padding: "8px 12px", fontSize: 10.5, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+            <div>Khoản chi</div><div>Phân loại</div><div style={{ textAlign: "right" }}>Số tiền</div><div />
+          </div>
+        )}
+        {spends.length === 0 && !loading && <div style={{ padding: "16px 12px", fontSize: 12.5, color: "var(--ink-4)", textAlign: "center" }}>Chưa có khoản chi — bấm <b>Tải từ phí tuyến</b> hoặc <b>+ Chi khác</b>.</div>}
+        {spends.map((l) => (
+          <div key={l.id} style={{ display: "grid", gridTemplateColumns: colTmpl, gap: isMobile ? 8 : 10, alignItems: "center", padding: "9px 12px", borderBottom: "1px solid var(--line-2)" }}>
+            <Txt value={l.name} onChange={(x) => setLine(l.id, { name: x })} placeholder="Tên khoản chi…" />
+            <div>{kindBtn(l)}</div>
+            <div><Money value={l.amount} onChange={(x) => setLine(l.id, { amount: x })} dim /></div>
+            <button type="button" onClick={() => delLine(l.id)} title="Xóa khoản" style={{ width: 32, height: 32, display: "grid", placeItems: "center", border: "1px solid var(--line)", borderRadius: 8, background: "#fff", color: "var(--ink-4)", cursor: "pointer", justifySelf: isMobile ? "start" : "center" }}><I.trash /></button>
+          </div>
+        ))}
+        <div style={{ padding: "10px 12px" }}>
+          <button type="button" onClick={addOther} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", fontSize: 12.5, fontWeight: 600, border: "1px dashed var(--accent)", borderRadius: 8, background: "var(--accent-weak-2)", color: "var(--accent)", cursor: "pointer" }}><I.plus /> Chi khác</button>
+        </div>
+      </div>
+      <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 10, lineHeight: 1.5 }}>
+        Khoản <b style={{ color: "#b45309" }}>Lương</b> tính vào lương tài xế (người chọn ở trên); khoản <b style={{ color: "var(--accent)" }}>Công ty</b> là chi phí công ty. Trang <b>Phí xe</b> tổng hợp <b>Kế hoạch / Đã chi / Còn lại</b> theo kỳ + biển số.
+      </div>
+    </Modal>
+  );
+}
+
 /* ===================== INFO EDIT POPUP (khách / cont / tuyến / lịch) ===================== */
 
 function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], onClose, onDelete, canDelete, isHph, cfg = {}, addCfg }) {
@@ -455,18 +569,24 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr", gap: 12, padding: "4px 0 6px" }}>
               <Field label="Giờ đến kế hoạch"><DTField value={ship.gioDenDuKien} onChange={(x) => set({ gioDenDuKien: x })} /></Field>
               <Field label="Giờ xe đến"><DTField value={ship.gioXeDen} onChange={(x) => set({ gioXeDen: x })} /></Field>
-              <Field label="Giờ xe ra">{raMode === "other"
-                ? <div style={{ padding: "9px 11px", fontSize: 13, border: "1px dashed var(--line)", borderRadius: 9, background: "#fafbfc", color: "var(--ink-4)" }} title="Cont này không tự ra — giờ xe ra ghi vào cont đã chọn ở dưới">{otherGioXeRa ? new Date(otherGioXeRa).toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "Cont này không tự ra"}</div>
-                : <DTField value={ship.gioXeRa} onChange={(x) => setRa(x)} />}</Field>
+              <Field label="Giờ xe ra (của cont)">{raMode === "self"
+                ? <DTField value={ship.gioXeRa} onChange={(x) => setRa(x)} />
+                : <div style={{ padding: "9px 11px", fontSize: 13, border: "1px dashed var(--line)", borderRadius: 9, background: "#fafbfc", color: "var(--ink-4)" }} title={raMode === "other" ? "Cont này không tự ra — giờ ghi vào cont đã chọn ở dưới" : "Xe không kéo cont — nhập giờ XE ra ở khung dưới"}>{raMode === "other" ? (otherGioXeRa ? new Date(otherGioXeRa).toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "Cont này không tự ra") : "Cont không ra — nhập ở dưới"}</div>}</Field>
             </div>
             <div style={{ background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", borderRadius: 10, padding: "10px 12px", margin: "2px 0 12px" }}>
               <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 7, fontWeight: 500 }}>Giờ xe ra này là của:</div>
               <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 8, padding: 2 }}>
-                  {[["self", "Chính cont này"], ["other", "Cont khác ra"]].map(([k, lbl]) => {
+                <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 8, padding: 2, flexWrap: "wrap" }}>
+                  {[["self", "Chính cont này"], ["other", "Cont khác ra"], ["none", "Không kéo công ra"]].map(([k, lbl]) => {
                     const on = raMode === k;
+                    // Đổi trường hợp → dọn field không liên quan để 2 mốc giờ KHÔNG lẫn nhau:
+                    //  none: giờ ghi vào gioXeRaXe (của xe) → xóa gioXeRa (cont) + bỏ liên kết cont khác.
+                    //  self/other: giờ là của cont → xóa gioXeRaXe (của xe). self/none bỏ luôn raOtherId.
+                    const onPick = k === "none" ? { raMode: "none", raOtherId: null, gioXeRa: "" }
+                      : k === "self" ? { raMode: "self", raOtherId: null, gioXeRaXe: "" }
+                      : { raMode: "other", gioXeRaXe: "" };
                     return (
-                      <button key={k} type="button" onClick={() => set({ raMode: k })}
+                      <button key={k} type="button" onClick={() => set(onPick)}
                         style={{ border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, padding: "6px 13px", borderRadius: 6, whiteSpace: "nowrap",
                           background: on ? "#fff" : "transparent", color: on ? "var(--accent)" : "var(--ink-3)", boxShadow: on ? "0 1px 2px rgba(16,19,23,.12)" : "none", transition: "all .12s" }}>
                         {lbl}
@@ -501,6 +621,21 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
                   <div style={{ fontSize: 11.5, color: "var(--warn)", marginTop: 8, fontWeight: 500 }}>Chọn cont ra cùng chuyến để nhập giờ ra cập nhật cho cont đó.</div>
                 )
               )}
+              {raMode === "none" && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>Giờ xe ra <b style={{ color: "var(--ink-2)" }}>(của XE — đầu kéo)</b></div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <div style={{ width: 220 }}><DTField value={ship.gioXeRaXe} onChange={(x) => set({ gioXeRaXe: x })} /></div>
+                    <button type="button" onClick={() => set({ gioXeRaXe: nowLocalDT() })}
+                      style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", borderRadius: 8, padding: "8px 12px", cursor: "pointer", whiteSpace: "nowrap" }}>
+                      Bây giờ
+                    </button>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 7, lineHeight: 1.5 }}>
+                    Xe ra nhưng <b style={{ color: "var(--ink-3)" }}>không kéo cont nào ra</b> — mốc này là <b style={{ color: "var(--ink-3)" }}>giờ XE rời đi</b> (không phải giờ cont), để sau tính phí hạng mục khác. Cont vẫn tính <b style={{ color: "var(--ink-3)" }}>"chưa ra"</b>.
+                  </div>
+                </div>
+              )}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "4px 0 4px" }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
@@ -527,4 +662,4 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
 /* ===================== CONFIG (master data) POPUP ===================== */
 
 
-export { CostPopup, RevenuePopup, CostPopupICD, RevenuePopupICD, InfoPopup };
+export { CostPopup, RevenuePopup, CostPopupICD, RevenuePopupICD, SpendPopup, InfoPopup };

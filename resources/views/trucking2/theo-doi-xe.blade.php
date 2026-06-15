@@ -1,5 +1,5 @@
 @extends('layouts.app')
-@section('title', 'Bảng kê — Trucking')
+@section('title', 'Theo dõi xe — Trucking')
 
 @push('styles')
 @include('trucking2.partials._styles')
@@ -13,10 +13,8 @@ window.__TRK = {
   canEdit: {{ $canEdit ? 'true' : 'false' }},
   canDelete: {{ $canDelete ? 'true' : 'false' }},
   routes: {
-    create: '{{ route("trucking2.statements.create") }}',
-    view: '{{ url("trucking-v2/bang-ke") }}/',
-    statement: '{{ url("trucking-v2/statements") }}/',
-    drift: '{{ route("trucking2.statements.drift") }}',
+    positions: '{{ route("trucking2.tracking.positions") }}',
+    settings:  '{{ route("system.settings") }}',
   },
   boot: @json($boot),
 };
@@ -24,5 +22,5 @@ window.__TRK = {
 @endsection
 
 @push('scripts')
-@vite('resources/js/trucking2/pages/bang-ke.jsx')
+@vite('resources/js/trucking2/pages/theo-doi-xe.jsx')
 @endpush
