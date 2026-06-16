@@ -85,16 +85,13 @@ function popupHtml(p) {
   </div>`;
 }
 
-/* Style bản đồ TỐI GIẢN cho logistics: ẩn POI (quán ăn/khu vui chơi…), transit, icon biển báo
-   → chỉ còn ĐƯỜNG + tên đường + cao tốc, để xe & kho nổi bật, dễ nhìn tuyến. */
+/* Ẩn POI dịch vụ (KS/nhà nghỉ/cafe/quán ăn — đều là poi.business; Google không tách lẻ được)
+   + khu vui chơi + transit → bản đồ gọn. Kho đích (Canon…) KHÔNG dựa nhãn Google nữa mà dùng
+   chính marker 🏭 có gắn TÊN của mình (xem warehouse marker). Giữ tên tỉnh/huyện/xã + đường. */
 const MAP_STYLE = [
-  { featureType: "poi", stylers: [{ visibility: "off" }] },          // ẩn quán ăn/khu vui chơi…
   { featureType: "poi.business", stylers: [{ visibility: "off" }] },
-  { featureType: "transit", stylers: [{ visibility: "off" }] },      // ẩn xe buýt/ga
-  { featureType: "administrative.neighborhood", stylers: [{ visibility: "off" }] },
-  // GIỮ biển số đường (QL/CT) + tên đường để biết tuyến — KHÔNG ẩn road labels.icon.
-  { featureType: "road.highway", elementType: "labels", stylers: [{ visibility: "on" }] },
-  { featureType: "road.highway", elementType: "labels.icon", stylers: [{ visibility: "on" }] },
+  { featureType: "poi.attraction", stylers: [{ visibility: "off" }] },
+  { featureType: "transit", stylers: [{ visibility: "off" }] },
 ];
 
 /* Marker KHO — ghim teardrop màu chàm + biểu tượng nhà kho. Anchor ở mũi (đáy). */
@@ -164,7 +161,8 @@ function ensurePlateStyle() {
   if (document.getElementById("trk-plate-style")) return;
   const s = document.createElement("style");
   s.id = "trk-plate-style";
-  s.textContent = ".trk-plate{margin-top:30px;background:#fff;border:1px solid rgba(0,0,0,.2);border-radius:6px;padding:1px 6px;box-shadow:0 1px 3px rgba(0,0,0,.3);white-space:nowrap}";
+  s.textContent = ".trk-plate{margin-top:30px;background:#fff;border:1px solid rgba(0,0,0,.2);border-radius:6px;padding:1px 6px;box-shadow:0 1px 3px rgba(0,0,0,.3);white-space:nowrap}"
+    + ".trk-wh-label{margin-top:8px;background:#eef2ff;border:1px solid #c7d2fe;color:#3730a3;border-radius:6px;padding:1px 7px;box-shadow:0 1px 3px rgba(0,0,0,.25);white-space:nowrap}";
   document.head.appendChild(s);
 }
 
@@ -213,6 +211,7 @@ function TrackingApp() {
   const [placingId, setPlacingId] = useState(null);  // kho đang chờ bấm/đặt điểm
   const [trafficOn, setTrafficOn] = useState(true);   // lớp giao thông — MẶC ĐỊNH BẬT (chọn tuyến tiện)
   const [satellite, setSatellite] = useState(false);  // ảnh vệ tinh
+  const [showPoi, setShowPoi] = useState(false);       // hiện địa điểm (POI) — MẶC ĐỊNH TẮT; bật khi cần ghim kho chính xác
   const trafficRef = useRef(null);
 
   const idOf = (p) => p.provider + ":" + p.plateNorm;
@@ -434,7 +433,8 @@ function TrackingApp() {
       let m = whMarkersRef.current[w.id];
       if (!m) {
         m = new maps.Marker({ position: pos, map: mapRef.current, title: "Kho: " + w.name, zIndex: 9999,
-          icon: { url: WAREHOUSE_PIN, scaledSize: new maps.Size(34, 42), anchor: new maps.Point(17, 41) } });
+          icon: { url: WAREHOUSE_PIN, scaledSize: new maps.Size(34, 42), anchor: new maps.Point(17, 41) },
+          label: { text: w.name, className: "trk-wh-label", color: "#3730a3", fontSize: "11px", fontWeight: "700" } });
         m.addListener("click", () => { const cur = whListRef.current.find((x) => x.id === w.id) || w; whInfoRef.current.setContent(whPopup(cur)); whInfoRef.current.open(mapRef.current, m); });
         m.addListener("dragend", (e) => placeFnRef.current(w.id, e.latLng.lat(), e.latLng.lng()));
         whMarkersRef.current[w.id] = m;
@@ -460,6 +460,11 @@ function TrackingApp() {
   useEffect(() => {
     if (mapRef.current) mapRef.current.setMapTypeId(satellite ? "hybrid" : "roadmap");
   }, [satellite, mapReady]);
+
+  // Bật/tắt hiển thị địa điểm (POI). Tắt = dùng MAP_STYLE (ẩn dịch vụ); Bật = bản đồ đầy đủ (thấy Canon… để ghim kho).
+  useEffect(() => {
+    if (mapRef.current) mapRef.current.setOptions({ styles: showPoi ? [] : MAP_STYLE });
+  }, [showPoi, mapReady]);
 
   // Tắt overlay loading khi map đã sẵn sàng + có dữ liệu lần đầu (chờ fitBounds zoom ra xong).
   useEffect(() => {
@@ -621,6 +626,7 @@ function TrackingApp() {
           {mapReady && (
             <div style={{ position: "absolute", left: 10, bottom: 22, zIndex: 6, display: "flex", gap: 6 }}>
               {[["traffic", "Giao thông", "bi-traffic-light", trafficOn, () => setTrafficOn((v) => !v)],
+                ["poi", "Địa điểm", "bi-shop", showPoi, () => setShowPoi((v) => !v)],
                 ["sat", "Vệ tinh", "bi-globe-asia-australia", satellite, () => setSatellite((v) => !v)]].map(([k, label, ic, on, toggle]) => (
                 <button key={k} type="button" onClick={toggle} title={label}
                   style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 11px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", borderRadius: 8,
