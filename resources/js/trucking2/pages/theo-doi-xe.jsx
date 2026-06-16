@@ -38,6 +38,39 @@ function haversineKm(a, b) {
 }
 const fmtDist = (km) => (km < 1 ? Math.round(km * 1000) + " m" : km.toFixed(km < 10 ? 1 : 0) + " km");
 const AT_WH_KM = 0.3;   // ≤300m coi như "đã ở kho"
+const ETA_MIN_KMH = 5;          // dưới tốc độ TB này coi như đang dừng → không ước tính ETA
+const SPEED_WINDOW_MS = 5 * 60 * 1000;   // cửa sổ trượt tính vận tốc trung bình: 5 phút
+const vehKey = (p) => p.provider + ":" + (p.deviceId || p.plateNorm || "");
+
+/**
+ * Vận tốc TRUNG BÌNH theo THỜI GIAN trong cửa sổ 5' (mỗi đơn vị thời gian như nhau):
+ * tích phân tốc độ theo thời gian ÷ tổng thời gian → đèn đỏ/đứng ở phút nào cũng kéo TB xuống đủ.
+ * hist = [{ts, speed}] tăng dần theo ts. Trả null nếu chưa đủ dữ liệu.
+ */
+function avgSpeedKmh(hist, now) {
+  if (!hist || !hist.length) return null;
+  const cutoff = now - SPEED_WINDOW_MS;
+  let sum = 0, dur = 0;
+  for (let i = 0; i < hist.length; i++) {
+    const segStart = Math.max(hist[i].ts, cutoff);
+    const segEnd = i + 1 < hist.length ? hist[i + 1].ts : now;
+    const dt = segEnd - segStart;
+    if (dt > 0) { sum += (hist[i].speed || 0) * dt; dur += dt; }
+  }
+  if (dur <= 0) return hist[hist.length - 1].speed || 0;
+  return sum / dur;
+}
+
+// ETA tới kho = khoảng cách (km hiển thị) ÷ vận tốc (km/h) × 60. Null nếu đang dừng.
+function fmtEta(km, speedKmh) {
+  const v = speedKmh || 0;
+  if (v < ETA_MIN_KMH) return null;
+  const mins = Math.round((km / v) * 60);
+  if (mins <= 1) return "sắp đến";
+  if (mins < 60) return "~" + mins + " phút nữa";
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return "~" + h + "h" + (m ? " " + m + "'" : "") + " nữa";
+}
 
 function popupHtml(p) {
   const st = STATUS[effStatus(p)] || STATUS.off;
@@ -189,6 +222,7 @@ function TrackingApp() {
   const reqId = useRef(0);
   const verRef = useRef(null);     // version cuối → gửi ?v= để backend trả "unchanged" (đỡ băng thông + re-render)
   const runRef = useRef(true);     // có xe đang chạy? → nhịp poll nhanh/chậm
+  const histRef = useRef({});      // vehKey → [{ts,speed}] lịch sử tốc độ (cửa sổ trượt 5' tính ETA)
   useEffect(() => {
     if (window.AppLoading && window.AppLoading.addSilentPattern) window.AppLoading.addSilentPattern(/tracking\/positions/i);
     let timer = null, stopped = false, fails = 0;
@@ -211,6 +245,16 @@ function TrackingApp() {
             setProviders(r.providers || []);
             const next = r.positions || [];
             runRef.current = next.some((p) => p.status === "run");
+            // Lưu lịch sử tốc độ (theo ts GPS, bỏ trùng) + cắt cửa sổ 5' → tính vận tốc TB trượt cho ETA.
+            const nowMs = r.ts || Date.now();
+            const H = histRef.current;
+            next.forEach((p) => {
+              const k = vehKey(p); const ts = p.ts || nowMs;
+              const arr = H[k] || (H[k] = []);
+              if (!arr.length || ts > arr[arr.length - 1].ts) arr.push({ ts, speed: p.speed || 0 });
+              const cutoff = nowMs - SPEED_WINDOW_MS;   // giữ 1 mẫu trước cutoff làm "giá trị đầu cửa sổ"
+              while (arr.length > 1 && arr[1].ts <= cutoff) arr.shift();
+            });
             setPositions(next);
           }
         }
@@ -522,6 +566,11 @@ function TrackingApp() {
             return (b.speed || 0) - (a.speed || 0);
           }).map((p) => {
             const id = idOf(p); const st = STATUS[effStatus(p)] || STATUS.off; const on = id === selected;
+            const n = nearestWh(p); const at = !!(n && n.km <= AT_WH_KM);
+            // ETA tới kho gần nhất — dùng VẬN TỐC TB TRƯỢT 5' (đèn đỏ/đứng được tính đủ) → thực tế hơn tốc độ tức thời.
+            const avgV = avgSpeedKmh(histRef.current[vehKey(p)], Date.now());
+            const effV = avgV != null ? avgV : (p.speed || 0);
+            const eta = (n && !at && effV >= ETA_MIN_KMH) ? fmtEta(n.km, effV) : null;
             return (
               <button key={id} type="button" onClick={() => focusVehicle(p)}
                 style={{ width: "100%", textAlign: "left", display: "block", border: "none", borderLeft: `3px solid ${on ? st.color : "transparent"}`, borderBottom: "1px solid var(--line-2)", background: on ? "var(--accent-weak-2)" : "#fff", cursor: "pointer", padding: "9px 13px" }}>
@@ -532,18 +581,18 @@ function TrackingApp() {
                   <span style={{ flex: 1 }} />
                   <span className="tnum" style={{ fontSize: 12.5, fontWeight: 600, color: st.color }}>{Math.round(p.speed || 0)} km/h</span>
                 </div>
-                <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 3, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {p.driver && <span>{p.driver}</span>}
-                  <span style={{ color: "var(--ink-4)" }}>· {timeAgo(p.ts)}</span>
+                <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 3, display: "flex", alignItems: "center", gap: 6 }}>
+                  {p.driver && <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.driver}</span>}
+                  <span style={{ color: "var(--ink-4)", whiteSpace: "nowrap" }}>· {timeAgo(p.ts)}</span>
+                  {eta && <span style={{ marginLeft: "auto", whiteSpace: "nowrap", fontWeight: 600, color: "var(--good)" }}><i className="bi bi-clock-history" /> {eta}</span>}
                 </div>
                 {p.address && <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.address}</div>}
-                {(() => { const n = nearestWh(p); if (!n) return null; const at = n.km <= AT_WH_KM;
-                  return (
-                    <div style={{ fontSize: 11, marginTop: 3, display: "flex", alignItems: "center", gap: 5, fontWeight: 600, color: at ? "var(--good)" : "#4f46e5" }}>
-                      <i className={"bi " + (at ? "bi-house-check-fill" : "bi-geo-alt-fill")} />
-                      {at ? `Đã ở kho ${n.w.name}` : <>Cách kho <b>{n.w.name}</b>: <span className="tnum">{fmtDist(n.km)}</span></>}
-                    </div>
-                  ); })()}
+                {n && (
+                  <div style={{ fontSize: 11, marginTop: 3, display: "flex", alignItems: "center", gap: 5, fontWeight: 600, color: at ? "var(--good)" : "#4f46e5", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    <i className={"bi " + (at ? "bi-house-check-fill" : "bi-geo-alt-fill")} />
+                    {at ? `Đã ở kho ${n.w.name}` : <>Cách kho <b>{n.w.name}</b>: <span className="tnum">{fmtDist(n.km)}</span></>}
+                  </div>
+                )}
               </button>
             );
           })}
