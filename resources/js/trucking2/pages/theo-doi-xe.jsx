@@ -17,6 +17,8 @@ const STATUS = {
 };
 const effStatus = (p) => (p.ts && Date.now() - p.ts > STALE_MS ? "lost" : (p.status || "off"));
 const statusColor = (p) => (STATUS[effStatus(p)] || STATUS.off).color;
+// Thứ tự ưu tiên xếp danh sách: nổ máy → dừng → tắt máy → mất tín hiệu (mất tín hiệu luôn xuống cuối).
+const STATUS_RANK = { run: 0, idle: 1, off: 2, lost: 3 };
 
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const timeAgo = (ts) => {
@@ -559,10 +561,12 @@ function TrackingApp() {
           </div>
           {filtered.length === 0 && <div style={{ padding: "30px 16px", textAlign: "center", color: "var(--ink-4)", fontSize: 13 }}>{noData ? "Chưa có dữ liệu xe." : "Không có xe khớp bộ lọc."}</div>}
           {filtered.slice().sort((a, b) => {
-            // Ưu tiên xe ĐANG CHẠY, trong đó xe GẦN KHO NHẤT lên đầu (dễ thấy xe sắp tới kho).
-            const ra = effStatus(a) === "run", rb = effStatus(b) === "run";
-            if (ra !== rb) return ra ? -1 : 1;
-            if (ra && rb) { const da = nearestWh(a)?.km ?? Infinity, db = nearestWh(b)?.km ?? Infinity; if (da !== db) return da - db; }
+            // Bậc trạng thái trước: nổ máy → dừng → tắt máy → mất tín hiệu (xe mất tín hiệu/5 ngày luôn xuống cuối,
+            // dù gần kho). Cùng bậc → GẦN KHO NHẤT lên đầu (dễ thấy xe sắp tới kho), rồi tới tốc độ.
+            const sa = STATUS_RANK[effStatus(a)] ?? 9, sb = STATUS_RANK[effStatus(b)] ?? 9;
+            if (sa !== sb) return sa - sb;
+            const da = nearestWh(a)?.km ?? Infinity, db = nearestWh(b)?.km ?? Infinity;
+            if (da !== db) return da - db;
             return (b.speed || 0) - (a.speed || 0);
           }).map((p) => {
             const id = idOf(p); const st = STATUS[effStatus(p)] || STATUS.off; const on = id === selected;
