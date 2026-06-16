@@ -131,7 +131,7 @@ function RouteFees({ rows = [], onChange, warehouses = [], isDup = () => false }
           <div style={{ display: "flex", alignItems: "flex-end", gap: 12, marginBottom: 12 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               {lbl(<>Tuyến · chọn kho <span style={{ color: "var(--ink-4)", fontWeight: 400 }}>(theo thứ tự, vd Kho 1 → Kho 2)</span>{dup && <span style={{ color: "var(--danger)", fontWeight: 700, marginLeft: 6 }}>· trùng tuyến</span>}</>)}
-              <MultiCombo values={(r.route || "").split(/\s*-\s*/).filter(Boolean)} onChange={(arr) => set(i, { route: arr.join(" - ") })} options={warehouses} max={6} placeholder="Chọn kho cho tuyến…" />
+              <MultiCombo values={(r.route || "").split(/\s*-\s*/).filter(Boolean)} onChange={(arr) => set(i, { route: arr.join(" - ") })} options={warehouses} max={Infinity} placeholder="Chọn kho cho tuyến…" />
             </div>
             <button type="button" onClick={() => del(i)} title="Xóa tuyến"
               style={{ flexShrink: 0, width: 36, height: 36, display: "grid", placeItems: "center", border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--ink-4)", cursor: "pointer" }}

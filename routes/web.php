@@ -14,6 +14,7 @@ use App\Http\Controllers\Trucking\AttachmentController;
 use App\Http\Controllers\Trucking\CatalogController;
 use App\Http\Controllers\Trucking\DriverController;
 use App\Http\Controllers\Trucking\FleetController;
+use App\Http\Controllers\Trucking\LoTrinhController;
 use App\Http\Controllers\Trucking\PlanLinkController;
 use App\Http\Controllers\Trucking\PriceController;
 use App\Http\Controllers\Trucking\ShipmentController as TruckingShipmentController;
@@ -137,6 +138,8 @@ Route::middleware('auth')->group(function () {
             Route::get('/config',         [TruckingShipmentController::class, 'configData'])->name('configData');
             Route::get('/bootstrap',      [TruckingShipmentController::class, 'bootstrap'])->name('bootstrap');
             Route::get('/ke-hoach',                [PlanLinkController::class, 'index'])->name('plan');   // quản lý link kế hoạch
+            Route::get('/lo-trinh',                [LoTrinhController::class, 'index'])->name('loTrinh');      // lộ trình lái xe theo chuyến
+            Route::get('/lo-trinh/data',           [LoTrinhController::class, 'data'])->name('loTrinh.data');
         });
         // --- Phí xe & lương lái xe (quyền riêng tripCost.*) ---
         Route::middleware('permission:tripCost.view')->group(function () {

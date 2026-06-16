@@ -33,6 +33,7 @@ export default defineConfig(({ mode }) => {
                     'resources/js/trucking2/pages/ke-hoach-public.jsx',
                     'resources/js/trucking2/pages/theo-doi-xe.jsx',
                     'resources/js/trucking2/pages/lich-su-kho.jsx',
+                    'resources/js/trucking2/pages/lo-trinh.jsx',
                 ],
                 refresh: true,
             }),

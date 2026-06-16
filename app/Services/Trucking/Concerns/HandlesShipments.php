@@ -227,6 +227,116 @@ trait HandlesShipments
     }
 
     /**
+     * LỘ TRÌNH 1 NGÀY VẬN HÀNH (08:00 ngày $date → 08:00 hôm sau, tức 07:59 hôm sau là hết),
+     * gom theo biển số XE VÀO (bks_vao) — mỗi xe 1 lộ trình liền mạch trong ngày.
+     * Mỗi lô = 1 hoạt động dưới bks_vao, xếp theo GIỜ XE RA:
+     *  - self  : "Lấy cont [X] ra" tại gio_xe_ra.
+     *  - none  : "Ra xe (không kéo cont)" tại gio_xe_ra_xe.
+     *  - other : "Kéo cont khác ([Y]) ra" tại gio_xe_ra của lô ra_other_id (cont X chờ).
+     * Chỉ tính hoạt động có giờ ra TRONG khung [08:00, 08:00 hôm sau).
+     */
+    public function routeTripByDate(string $date): array
+    {
+        try { $start = Carbon::parse($date . ' 08:00:00'); }
+        catch (\Throwable) { $start = Carbon::today()->setTime(8, 0); }
+        $end = (clone $start)->addDay();   // 08:00 sáng hôm sau (07:59 là hết khung)
+        $inWin = fn ($dt) => $dt && $dt->gte($start) && $dt->lt($end);
+
+        // Lô có giờ ra cont HOẶC giờ ra xe trong khung (self + none) — nới biên 1 ngày 2 đầu cho chắc.
+        $cand = TruckingShipment::with('customer')
+            ->where(function ($q) use ($start, $end) {
+                $q->whereBetween('gio_xe_ra', [$start, $end])
+                  ->orWhereBetween('gio_xe_ra_xe', [$start, $end]);
+            })->get();
+
+        // Lô "kéo cont khác ra" (other) — lấy giờ từ lô ra_other_id.
+        $others = TruckingShipment::with('customer')->where('ra_mode', 'other')->whereNotNull('ra_other_id')->get();
+        $targetIds = $others->pluck('ra_other_id')->filter()->unique()->values()->all();
+        $targets = $targetIds ? TruckingShipment::whereIn('id', $targetIds)->get()->keyBy('id') : collect();
+
+        $legs = [];
+        // $rs = lô có TUYẾN mà xe THỰC SỰ chạy (self/none = chính nó; other = lô bị kéo ra hộ).
+        $mk = function (TruckingShipment $s, Carbon $t, string $mode, ?TruckingShipment $rs = null, array $extra = []) {
+            $rs = $rs ?: $s;
+            // Chuỗi điểm hành trình: Nơi lấy → các Kho → Nơi hạ (bỏ điểm trùng liền kề).
+            $pts = [];
+            $add = function ($label, $kind) use (&$pts) {
+                $label = trim((string) $label);
+                if ($label === '' || ($pts && end($pts)['label'] === $label)) return;
+                $pts[] = ['label' => $label, 'kind' => $kind];
+            };
+            $add($rs->from_loc, 'pickup');
+            foreach ($this->khoPoints($rs->kho) as $kp) $add($kp, 'kho');
+            $add($rs->to_loc, 'drop');
+
+            return array_merge([
+                'bks'        => trim((string) $s->bks_vao),
+                'sortTs'     => $t->getTimestamp(),
+                'time'       => (int) ($t->getTimestamp() * 1000),
+                'timeLabel'  => $t->format('H:i'),                  // giờ ra (format sẵn — tránh lệch tz trình duyệt)
+                'gioDen'     => $s->gio_xe_den ? (int) ($s->gio_xe_den->getTimestamp() * 1000) : null,   // giờ xe đến (vào kho lấy/giao)
+                'gioDenLabel'=> $s->gio_xe_den ? $s->gio_xe_den->format('H:i') : null,
+                'mode'     => $mode,                              // self | none | other
+                'cont'     => $s->cont_no ?? '',
+                'bksRa'    => $s->bks_ra ?? '',
+                'points'   => $pts,                               // hành trình điểm
+                'route'    => $this->khoRouteDisplay($rs->kho) ?: ($rs->kho ?? ''),
+                'from'     => $rs->from_loc ?? '', 'to' => $rs->to_loc ?? '',
+                'customer' => $s->customer?->name ?? '',
+                'booking'  => $s->booking ?? '',
+                'hashid'   => \App\Support\Hashid::encode($s->id),
+            ], $extra);
+        };
+
+        // Cont bị "kéo khác ra" (là target của 1 lô other): EXIT của nó thuộc XE KÉO (qua leg other),
+        // KHÔNG phải xe vào nó → BỎ self-leg để khỏi gắn nhầm xe / đếm 2 lần.
+        $targetSet = array_flip(array_map('intval', $targetIds));
+        foreach ($cand as $s) {
+            if (trim((string) $s->bks_vao) === '') continue;
+            $mode = $s->ra_mode ?? 'self';
+            $isSelf = ! in_array($mode, ['none', 'other'], true);   // self + null/'' (legacy)
+            if ($isSelf && ! isset($targetSet[(int) $s->id]) && $inWin($s->gio_xe_ra)) {
+                $legs[] = $mk($s, $s->gio_xe_ra, 'self');
+            }
+            if ($mode === 'none' && $inWin($s->gio_xe_ra_xe)) $legs[] = $mk($s, $s->gio_xe_ra_xe, 'none');
+        }
+        foreach ($others as $s) {
+            if (trim((string) $s->bks_vao) === '') continue;
+            $t = $targets->get($s->ra_other_id);
+            if ($t && $inWin($t->gio_xe_ra)) {
+                // refCont = cont KHÁC bị kéo ra; refBksVao = xe đã đưa cont đó VÀO trước đó; refBksRa = xe kéo cont đó ra (= xe hiện tại).
+                $legs[] = $mk($s, $t->gio_xe_ra, 'other', $t, [
+                    'refCont'    => $t->cont_no ?? '',
+                    'refBksVao'  => trim((string) $t->bks_vao),
+                    'refBksRa'   => trim((string) ($t->bks_ra ?: $s->bks_vao)),
+                ]);
+            }
+        }
+
+        // Gom theo bks_vao + map xe hệ thống.
+        $plates = array_values(array_unique(array_map(fn ($l) => $l['bks'], $legs)));
+        $vehMap = $plates ? TruckingVehicle::whereIn('plate', $plates)->pluck('type', 'plate')->all() : [];
+        $byBks = [];
+        foreach ($legs as $l) { $byBks[$l['bks']][] = $l; }
+        $trucks = [];
+        foreach ($byBks as $bks => $ls) {
+            usort($ls, fn ($a, $b) => $a['sortTs'] <=> $b['sortTs']);
+            $trucks[] = ['bks' => $bks, 'matched' => isset($vehMap[$bks]), 'type' => $vehMap[$bks] ?? null, 'legs' => $ls];
+        }
+        usort($trucks, fn ($a, $b) => count($b['legs']) <=> count($a['legs']) ?: strcmp($a['bks'], $b['bks']));
+
+        return [
+            'date'  => $start->format('Y-m-d'),
+            'start' => (int) ($start->getTimestamp() * 1000),
+            'end'   => (int) ($end->getTimestamp() * 1000),
+            'startLabel' => $start->format('d/m'),   // format sẵn theo tz ứng dụng (tránh lệch ngày trên trình duyệt)
+            'endLabel'   => $end->format('d/m'),
+            'trucks' => $trucks,
+            'totalLegs' => count($legs),
+        ];
+    }
+
+    /**
      * Thống kê cờ theo dõi trên tập lô (builder) — gom theo màu, đếm lô có cờ &
      * lô có cờ nhưng CHƯA điền tiền. Chỉ nạp đúng các dòng chi phí thuộc khoản
      * "theo dõi" (không nạp toàn bộ dòng con) → nhẹ.
@@ -654,10 +764,11 @@ trait HandlesShipments
             'to_location_id'   => $this->resolveLocationId($s->to_loc),
         ])->save();
 
-        // Tier 3 — kho theo lô (mỗi kho 1 dòng)
+        // Tier 3 — kho theo lô (mỗi kho 1 dòng). Tách theo cùng bộ ngăn cách với
+        // khoPoints/khoRouteDisplay ( , → -> – — " - " ) để khớp warehouse_id dù tuyến dùng mũi tên.
         $whMap = $this->warehouseIdMap();
         $s->warehouses()->delete();
-        $parts = array_values(array_filter(array_map('trim', preg_split('/\s*,\s*/', (string) $s->kho)), fn ($x) => $x !== ''));
+        $parts = array_values(array_filter(array_map('trim', preg_split('/\s*(?:,|→|->|–|—|\s-\s)\s*/u', (string) $s->kho) ?: []), fn ($x) => $x !== ''));
         foreach ($parts as $i => $name) {
             $s->warehouses()->create(['warehouse_id' => $whMap[mb_strtolower($name)] ?? null, 'name' => $name, 'sort' => $i]);
         }

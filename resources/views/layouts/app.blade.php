@@ -40,29 +40,29 @@
 
             <div class="collapse navbar-collapse app-nav" id="mainNav">
                 <ul class="navbar-nav me-auto">
-                    {{-- Trucking (record + popup) — 4 trang riêng, gating theo quyền từng tính năng --}}
-                    @can('shipments.view')
-                    <li class="nav-item">
-                        <a class="nav-link {{ request()->routeIs('trucking2.shipments') ? 'active' : '' }}"
-                           href="{{ route('trucking2.shipments') }}">
+                    {{-- Lô hàng = dropdown gom: Lô hàng · Lộ trình · Bảng kê (rút gọn menu chính) --}}
+                    @canany(['shipments.view', 'statements.view'])
+                    @php $loActive = request()->routeIs('trucking2.shipments') || request()->routeIs('trucking2.loTrinh') || request()->routeIs('trucking2.statements'); @endphp
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle {{ $loActive ? 'active' : '' }}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                             <i class="bi bi-box-seam"></i> Lô hàng
                         </a>
+                        <ul class="dropdown-menu">
+                            @can('shipments.view')
+                            <li><a class="dropdown-item {{ request()->routeIs('trucking2.shipments') ? 'active' : '' }}" href="{{ route('trucking2.shipments') }}"><i class="bi bi-box-seam me-2"></i> Lô hàng</a></li>
+                            <li><a class="dropdown-item {{ request()->routeIs('trucking2.loTrinh') ? 'active' : '' }}" href="{{ route('trucking2.loTrinh') }}"><i class="bi bi-signpost-split me-2"></i> Lộ trình</a></li>
+                            @endcan
+                            @can('statements.view')
+                            <li><a class="dropdown-item {{ request()->routeIs('trucking2.statements') ? 'active' : '' }}" href="{{ route('trucking2.statements') }}"><i class="bi bi-receipt me-2"></i> Bảng kê</a></li>
+                            @endcan
+                        </ul>
                     </li>
-                    @endcan
-                    {{-- Bảng giá đã bỏ khỏi menu tổng (ít dùng) — truy cập qua nút trong trang Cài đặt --}}
-                    @can('statements.view')
-                    <li class="nav-item">
-                        <a class="nav-link {{ request()->routeIs('trucking2.statements') ? 'active' : '' }}"
-                           href="{{ route('trucking2.statements') }}">
-                            <i class="bi bi-receipt"></i> Bảng kê
-                        </a>
-                    </li>
-                    @endcan
+                    @endcanany
                     @can('tripCost.view')
                     <li class="nav-item">
                         <a class="nav-link {{ request()->routeIs('trucking2.tripCost') ? 'active' : '' }}"
                            href="{{ route('trucking2.tripCost') }}">
-                            <i class="bi bi-cash-stack"></i> Chi phí & lương lái xe
+                            <i class="bi bi-cash-stack"></i> Lương lái xe
                         </a>
                     </li>
                     @endcan

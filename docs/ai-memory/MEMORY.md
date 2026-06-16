@@ -26,4 +26,5 @@
 - [Duyệt chi theo lô](shipment-spend-duyet-chi.md) — popup Duyệt chi (theo BKS) thay Doanh thu&công nợ; bảng trucking_shipment_spends (salary/company), gợi ý từ route fee; Phí xe hiện Kế hoạch/Đã chi/Còn lại
 - [Verify không phá data](verify-no-destructive-save.md) — đừng gọi saveCatalog/reconcile thật khi test (nó xóa dòng thiếu trong payload); dùng transaction rollback / chỉ test hàm đọc
 - [Phân quyền hệ thống](permissions-system.md) — Spatie; /roles liệt kê Permission DB + config/permissions.php; KHÔNG có Gate::before nên thêm quyền phải gán tường minh (migration); đã tách tripCost/fleet/tracking/tasks.update+delete
+- [Lộ trình chuyến](route-trips.md) — trang /lo-trinh: lộ trình xe theo chuyến đêm 20:00→08:00, gom theo bks_vao, dựng từ giờ xe ra + ra_mode (self/none/other); command trucking:seed-routes test
 - [GPS tracking](gps-tracking.md) — Theo dõi xe realtime đa nhà cung cấp (Viettel/dvbk) qua proxy backend + adapter + auto-login (chỉ login lại khi fetch hỏng), map biển số→trucking_vehicles, Google Maps, poll 15s
