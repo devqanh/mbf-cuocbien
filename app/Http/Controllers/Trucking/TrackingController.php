@@ -27,13 +27,18 @@ class TrackingController extends BaseTruckingController
         return view('trucking2.theo-doi-xe', $this->pageData([
             'providers' => $this->gps->publicConfig(),
             'mapsKey'   => TruckingSetting::get('gps.google_maps_key', ''),
-        ], 'settings.update', 'settings.update'));
+        ], 'tracking.manage', 'tracking.manage'));
     }
 
     /** Endpoint poll: vị trí + trạng thái provider (cache 10s ở service). */
-    public function positions(): JsonResponse
+    public function positions(Request $request): JsonResponse
     {
-        return response()->json(['ok' => true] + $this->gps->snapshot());
+        $snap = $this->gps->snapshot();
+        // Client gửi ?v=<version> — nếu trùng (không có gì đổi) → trả gói RỖNG (tiết kiệm băng thông + re-render).
+        if ($request->query('v') !== null && $request->query('v') === ($snap['version'] ?? null)) {
+            return response()->json(['ok' => true, 'unchanged' => true, 'version' => $snap['version'], 'ts' => $snap['ts']]);
+        }
+        return response()->json(['ok' => true] + $snap);
     }
 
     /** Cấu hình các provider (đã ẩn password). */

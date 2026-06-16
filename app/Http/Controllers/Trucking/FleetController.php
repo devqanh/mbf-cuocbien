@@ -20,7 +20,7 @@ class FleetController extends BaseTruckingController
             'pendingCosts'    => $this->svc->pendingVehicleCosts(),
             'costItems'       => $this->svc->costItemNames(),
             'dueWarnDays'     => (int) TruckingSetting::get('due_warn_days', '30'),
-        ], 'settings.update', 'settings.update'));
+        ], 'fleet.manage', 'fleet.manage'));
     }
 
     /** Danh sách tài sản — lazy-load khi mở tab Tài sản. */

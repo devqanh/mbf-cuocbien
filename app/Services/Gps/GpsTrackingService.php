@@ -55,7 +55,22 @@ class GpsTrackingService
 
             $this->matchVehicles($positions);
 
-            return ['positions' => $positions, 'providers' => $status, 'ts' => (int) (microtime(true) * 1000)];
+            // version = chữ ký vị trí + trạng thái provider → client gửi ?v= để bỏ qua khi KHÔNG đổi.
+            // (KHÔNG đưa ts vào version để dữ liệu y hệt vẫn cùng version qua các chu kỳ cache.)
+            $sig = '';
+            foreach ($positions as $p) {
+                $sig .= ($p['provider'] ?? '') . ':' . ($p['plateNorm'] ?? '') . ':' . ($p['lat'] ?? '') . ',' . ($p['lng'] ?? '') . ':' . ($p['status'] ?? '') . ';';
+            }
+            foreach ($status as $st) {
+                $sig .= 'P' . ($st['key'] ?? '') . ':' . (! empty($st['ok']) ? 1 : 0) . ':' . ($st['count'] ?? 0) . ';';
+            }
+
+            return [
+                'positions' => $positions,
+                'providers' => $status,
+                'ts'        => (int) (microtime(true) * 1000),
+                'version'   => substr(md5($sig), 0, 16),
+            ];
         });
     }
 

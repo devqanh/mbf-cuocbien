@@ -58,13 +58,15 @@
                         </a>
                     </li>
                     @endcan
-                    @can('shipments.view')
+                    @can('tripCost.view')
                     <li class="nav-item">
                         <a class="nav-link {{ request()->routeIs('trucking2.tripCost') ? 'active' : '' }}"
                            href="{{ route('trucking2.tripCost') }}">
                             <i class="bi bi-cash-stack"></i> Chi phí & lương lái xe
                         </a>
                     </li>
+                    @endcan
+                    @can('tracking.view')
                     <li class="nav-item">
                         <a class="nav-link {{ request()->routeIs('trucking2.tracking') ? 'active' : '' }}"
                            href="{{ route('trucking2.tracking') }}">
@@ -72,13 +74,15 @@
                         </a>
                     </li>
                     @endcan
-                    @can('settings.view')
+                    @can('fleet.view')
                     <li class="nav-item">
                         <a class="nav-link {{ request()->routeIs('trucking2.fleet') ? 'active' : '' }}"
                            href="{{ route('trucking2.fleet') }}">
                             <i class="bi bi-truck-front"></i> Quản lý tài sản
                         </a>
                     </li>
+                    @endcan
+                    @can('settings.view')
                     <li class="nav-item">
                         <a class="nav-link {{ request()->routeIs('trucking2.settings') ? 'active' : '' }}"
                            href="{{ route('trucking2.settings') }}">

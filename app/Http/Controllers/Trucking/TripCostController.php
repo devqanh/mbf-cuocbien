@@ -14,13 +14,13 @@ class TripCostController extends BaseTruckingController
     {
         return view('trucking2.phi-xe', $this->pageData([
             'batches' => $this->svc->tripBatchesForList(),
-        ]));
+        ], 'tripCost.create', 'tripCost.delete'));
     }
 
     /** Trang Tạo kỳ phí xe mới. */
     public function create()
     {
-        return view('trucking2.phi-xe-tao', $this->pageData([], 'shipments.create'));
+        return view('trucking2.phi-xe-tao', $this->pageData([], 'tripCost.create'));
     }
 
     /** Tính (AJAX): gom lô có giờ xe ra trong kỳ + gợi ý phí. */
@@ -36,7 +36,7 @@ class TripCostController extends BaseTruckingController
     {
         return view('trucking2.phi-xe-xem', $this->pageData([
             'batch' => $this->svc->tripBatchToArray($tripCost),
-        ]));
+        ], 'tripCost.update', 'tripCost.delete'));
     }
 
     /** Ngữ cảnh "Tính lại" cho kỳ đã lưu (tải lazy khi bấm). */

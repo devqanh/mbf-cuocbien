@@ -136,25 +136,31 @@ Route::middleware('auth')->group(function () {
             Route::get('/shipments/{shipment}/spend-suggest', [TruckingShipmentController::class, 'spendSuggest'])->name('shipments.spendSuggest');
             Route::get('/config',         [TruckingShipmentController::class, 'configData'])->name('configData');
             Route::get('/bootstrap',      [TruckingShipmentController::class, 'bootstrap'])->name('bootstrap');
-            Route::get('/phi-xe',                  [TripCostController::class, 'index'])->name('tripCost');
-            Route::get('/phi-xe/tao',              [TripCostController::class, 'create'])->name('tripCost.create');
-            Route::get('/phi-xe/compute',          [TripCostController::class, 'compute'])->name('tripCost.compute');
-            Route::get('/phi-xe/{tripCost}',       [TripCostController::class, 'view'])->name('tripCost.view');
-            Route::get('/phi-xe/{tripCost}/context', [TripCostController::class, 'context'])->name('tripCost.context');
             Route::get('/ke-hoach',                [PlanLinkController::class, 'index'])->name('plan');   // quản lý link kế hoạch
         });
-        Route::middleware('permission:shipments.create')->group(function () {
+        // --- Phí xe & lương lái xe (quyền riêng tripCost.*) ---
+        Route::middleware('permission:tripCost.view')->group(function () {
+            Route::get('/phi-xe',                    [TripCostController::class, 'index'])->name('tripCost');
+            Route::get('/phi-xe/tao',                [TripCostController::class, 'create'])->name('tripCost.create');
+            Route::get('/phi-xe/compute',            [TripCostController::class, 'compute'])->name('tripCost.compute');
+            Route::get('/phi-xe/{tripCost}',         [TripCostController::class, 'view'])->name('tripCost.view');
+            Route::get('/phi-xe/{tripCost}/context', [TripCostController::class, 'context'])->name('tripCost.context');
+        });
+        Route::middleware('permission:tripCost.create')->group(function () {
             Route::post('/trip-costs', [TripCostController::class, 'store'])->name('tripCost.store');
         });
-        Route::middleware('permission:shipments.update')->group(function () {
+        Route::middleware('permission:tripCost.update')->group(function () {
             Route::put('/trip-costs/{tripCost}', [TripCostController::class, 'update'])->name('tripCost.update');
+        });
+        Route::middleware('permission:tripCost.delete')->group(function () {
+            Route::delete('/trip-costs/{tripCost}', [TripCostController::class, 'destroy'])->name('tripCost.destroy');
+        });
+        // Link kế hoạch (admin) — vẫn dùng quyền lô hàng
+        Route::middleware('permission:shipments.update')->group(function () {
             Route::post('/plan-links',                       [PlanLinkController::class, 'create'])->name('plan.create');
             Route::put('/plan-links/{planLink}',             [PlanLinkController::class, 'update'])->name('plan.update')->whereNumber('planLink');
             Route::put('/plan-links/{planLink}/toggle',      [PlanLinkController::class, 'toggle'])->name('plan.toggle')->whereNumber('planLink');
             Route::delete('/plan-links/{planLink}',          [PlanLinkController::class, 'destroy'])->name('plan.destroy')->whereNumber('planLink');
-        });
-        Route::middleware('permission:shipments.delete')->group(function () {
-            Route::delete('/trip-costs/{tripCost}', [TripCostController::class, 'destroy'])->name('tripCost.destroy');
         });
         Route::middleware('permission:shipments.create')->group(function () {
             Route::post('/shipments',             [TruckingShipmentController::class, 'store'])->name('shipments.store');
@@ -169,14 +175,14 @@ Route::middleware('auth')->group(function () {
         });
 
         // --- Theo dõi xe realtime (GPS) ---
-        Route::middleware('permission:shipments.view')->group(function () {
+        Route::middleware('permission:tracking.view')->group(function () {
             Route::get('/theo-doi-xe',          [TrackingController::class, 'index'])->name('tracking');
             Route::get('/tracking/positions',   [TrackingController::class, 'positions'])->name('tracking.positions');   // poll ~15s
             Route::get('/tracking/warehouses',  [TrackingController::class, 'warehouses'])->name('tracking.warehouses'); // marker kho
             Route::get('/lich-su-kho',          [TrackingController::class, 'visitsPage'])->name('tracking.visitsPage');  // trang lịch sử đến/rời kho
             Route::get('/tracking/visits',      [TrackingController::class, 'visits'])->name('tracking.visits');         // JSON phân trang
         });
-        Route::middleware('permission:settings.update')->group(function () {
+        Route::middleware('permission:tracking.manage')->group(function () {
             Route::get('/tracking/config',  [TrackingController::class, 'config'])->name('tracking.config');
             Route::post('/tracking/config', [TrackingController::class, 'saveConfig'])->name('tracking.saveConfig');
             Route::post('/tracking/test',   [TrackingController::class, 'test'])->name('tracking.test');
@@ -213,15 +219,10 @@ Route::middleware('auth')->group(function () {
             Route::delete('/statements/{statement}', [StatementController::class, 'destroy'])->name('statements.destroy');
         });
 
-        // --- Cài đặt Trucking (danh mục, khách hàng, đội xe, cấu hình) ---
+        // --- Cài đặt Trucking (danh mục, khách hàng, cấu hình) ---
         Route::middleware('permission:settings.view')->group(function () {
             Route::get('/cai-dat',        [CatalogController::class, 'index'])->name('settings');
             Route::get('/catalog/{type}', [CatalogController::class, 'data'])->name('catalogData');   // lazy-load 1 tab
-            // Quản lý xe (xe MBF nội bộ)
-            Route::get('/quan-ly-xe',                 [FleetController::class, 'index'])->name('fleet');
-            Route::get('/quan-ly-tai-san-list',       [FleetController::class, 'assetList'])->name('asset.list');   // lazy-load khi mở tab Tài sản
-            Route::get('/quan-ly-xe/{vehicle}/data',  [FleetController::class, 'vehicleData'])->name('fleet.data');
-            Route::get('/quan-ly-xe/{vehicle}/section/{section}', [FleetController::class, 'vehicleSection'])->name('fleet.section');
         });
         // Stream file tập trung (disk-agnostic local/S3) — chỉ cần đăng nhập, phân quyền theo owner trong controller
         Route::get('/attachment/{attachment}', [AttachmentController::class, 'show'])->name('attachment');
@@ -236,13 +237,23 @@ Route::middleware('auth')->group(function () {
             Route::put('/drivers',           [DriverController::class, 'save'])->name('drivers.save');
             Route::post('/drivers/{driver}/docs', [DriverController::class, 'uploadDocs'])->name('drivers.docs.upload');
             Route::delete('/drivers/{driver}/docs/{idx}', [DriverController::class, 'deleteDoc'])->name('drivers.docs.delete')->whereNumber('idx');
+        });
+
+        // --- Quản lý tài sản & đội xe (quyền riêng fleet.*) ---
+        Route::middleware('permission:fleet.view')->group(function () {
+            Route::get('/quan-ly-xe',                 [FleetController::class, 'index'])->name('fleet');
+            Route::get('/quan-ly-tai-san-list',       [FleetController::class, 'assetList'])->name('asset.list');   // lazy-load tab Tài sản
+            Route::get('/quan-ly-xe/{vehicle}/data',  [FleetController::class, 'vehicleData'])->name('fleet.data');
+            Route::get('/quan-ly-xe/{vehicle}/section/{section}', [FleetController::class, 'vehicleSection'])->name('fleet.section');
+        });
+        Route::middleware('permission:fleet.manage')->group(function () {
             Route::put('/quan-ly-xe/{vehicle}', [FleetController::class, 'saveVehicle'])->name('fleet.save');
             Route::put('/quan-ly-xe/cost/{cost}/cancel', [FleetController::class, 'adminCancelCost'])->name('fleet.cancelCost');
             Route::post('/quan-ly-xe-cost-item', [FleetController::class, 'addCostItem'])->name('fleet.costItem');
             Route::post('/quan-ly-xe/{vehicle}/cost-photo', [FleetController::class, 'uploadCostPhotos'])->name('fleet.costPhoto.upload');
             Route::post('/quan-ly-xe/{vehicle}/docs', [FleetController::class, 'uploadDocs'])->name('fleet.docs.upload');
             Route::delete('/quan-ly-xe/{vehicle}/docs/{idx}', [FleetController::class, 'deleteDoc'])->name('fleet.docs.delete')->whereNumber('idx');
-            // Quản lý tài sản (kind='asset' — dùng chung route data/section/save/docs/cost ở trên)
+            // Tài sản (kind='asset')
             Route::post('/quan-ly-tai-san',          [FleetController::class, 'createAsset'])->name('asset.create');
             Route::post('/quan-ly-tai-san-category', [FleetController::class, 'addAssetCategory'])->name('asset.category');
             Route::delete('/quan-ly-tai-san/{vehicle}', [FleetController::class, 'destroyAsset'])->name('asset.destroy');
@@ -272,14 +283,17 @@ Route::middleware('auth')->group(function () {
         Route::get('/tasks/{task}',    [TaskController::class, 'show'])->name('tasks.show');
     });
     Route::middleware('permission:tasks.create')->group(function () {
-        Route::post('/tasks',                  [TaskController::class, 'store'])->name('tasks.store');
-        Route::put ('/tasks/{task}',           [TaskController::class, 'update'])->name('tasks.update');
-        Route::put ('/tasks/{task}/status',    [TaskController::class, 'toggleStatus'])->name('tasks.toggleStatus');
-        Route::delete('/tasks/{task}',         [TaskController::class, 'destroy'])->name('tasks.destroy');
-
-        // Comments
-        Route::post  ('/tasks/{task}/comments',                   [TaskCommentController::class, 'store'])->name('tasks.comments.store');
-        Route::delete('/tasks/{task}/comments/{comment}',         [TaskCommentController::class, 'destroy'])->name('tasks.comments.destroy');
+        Route::post('/tasks', [TaskController::class, 'store'])->name('tasks.store');
+    });
+    Route::middleware('permission:tasks.update')->group(function () {
+        Route::put ('/tasks/{task}',        [TaskController::class, 'update'])->name('tasks.update');
+        Route::put ('/tasks/{task}/status', [TaskController::class, 'toggleStatus'])->name('tasks.toggleStatus');
+        // Comments (ghi) — coi là cập nhật task
+        Route::post  ('/tasks/{task}/comments',           [TaskCommentController::class, 'store'])->name('tasks.comments.store');
+        Route::delete('/tasks/{task}/comments/{comment}', [TaskCommentController::class, 'destroy'])->name('tasks.comments.destroy');
+    });
+    Route::middleware('permission:tasks.delete')->group(function () {
+        Route::delete('/tasks/{task}', [TaskController::class, 'destroy'])->name('tasks.destroy');
     });
 
     // Endpoint cho mention picker (search users) — chỉ cần đã login

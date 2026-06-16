@@ -28,7 +28,12 @@ class DatabaseSeeder extends Seeder
             'prices.view',     'prices.update',
             'statements.view', 'statements.create', 'statements.update', 'statements.delete',
             'settings.view',   'settings.update',
-            'tasks.view',      'tasks.create',      'tasks.assign_others', 'tasks.manage_all',
+            'tracking.view',   'tracking.manage',
+            'tripCost.view',   'tripCost.create',   'tripCost.update',   'tripCost.delete',
+            'fleet.view',      'fleet.manage',
+            'system.settings',
+            'spend.request',
+            'tasks.view',      'tasks.create',      'tasks.update', 'tasks.delete', 'tasks.assign_others', 'tasks.manage_all',
         ];
         foreach ($permissions as $p) {
             Permission::firstOrCreate(['name' => $p, 'guard_name' => 'web']);
@@ -49,7 +54,11 @@ class DatabaseSeeder extends Seeder
             'prices.view', 'prices.update',
             'statements.view', 'statements.create', 'statements.update', 'statements.delete',
             'settings.view', 'settings.update',
-            'tasks.view', 'tasks.create', 'tasks.assign_others', 'tasks.manage_all',
+            'tracking.view', 'tracking.manage',
+            'tripCost.view', 'tripCost.create', 'tripCost.update', 'tripCost.delete',
+            'fleet.view', 'fleet.manage',
+            'system.settings',
+            'tasks.view', 'tasks.create', 'tasks.update', 'tasks.delete', 'tasks.assign_others', 'tasks.manage_all',
         ]);
         $editor->syncPermissions([
             'dashboard.view',
@@ -57,12 +66,17 @@ class DatabaseSeeder extends Seeder
             'prices.view',
             'statements.view', 'statements.create', 'statements.update',
             'settings.view',
-            'tasks.view', 'tasks.create', 'tasks.assign_others',
+            'tracking.view',
+            'tripCost.view', 'tripCost.create', 'tripCost.update',
+            'fleet.view',
+            'tasks.view', 'tasks.create', 'tasks.update', 'tasks.delete', 'tasks.assign_others',
         ]);
         $user->syncPermissions([
             'dashboard.view',
             'shipments.view', 'prices.view', 'statements.view', 'settings.view',
-            'tasks.view', 'tasks.create',
+            'tracking.view',
+            'tripCost.view', 'fleet.view',
+            'tasks.view', 'tasks.create', 'tasks.update', 'tasks.delete',
         ]);
 
         // --- Super admin user ---

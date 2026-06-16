@@ -5,7 +5,9 @@ metadata:
   type: project
 ---
 
-Trang **Theo dõi xe realtime** `/trucking-v2/theo-doi-xe` (`trucking2.tracking`, nav "Theo dõi xe", icon geo-alt). Gộp nhiều nhà cung cấp GPS, vẽ trên **Google Maps**, frontend poll **15s** (`tracking.positions`), tab ẩn thì ngừng poll.
+Trang **Theo dõi xe realtime** `/trucking-v2/theo-doi-xe` (`trucking2.tracking`, nav "Theo dõi xe", icon geo-alt). Gộp nhiều nhà cung cấp GPS, vẽ trên **Google Maps**, frontend poll (`tracking.positions`). Chốt: **polling** (không WebSocket/Reverb) vì độ tươi bị chặn trần bởi tốc độ backend poll provider — WebSocket không tươi hơn; để dành Reverb cho cảnh báo/sự kiện (geofence/quá tốc) nếu làm.
+
+**Poll đã tối ưu (theo-doi-xe.jsx):** đệ quy `setTimeout` (KHÔNG setInterval → không chồng request khi mạng chậm); **nhịp thích ứng** `nextDelay()` = có xe `status==='run'` → 15s, không xe nào chạy → 30s; **backoff** lỗi ×2 cap 60s (reset khi OK); **chạy LIÊN TỤC kể cả tab ẩn** (user muốn quay lại thấy ngay) + `visibilitychange` → refresh tức thì khi quay lại; reqId guard (bỏ response cũ); CHỈ tick mới nhất mới đặt lịch (tránh nhân đôi timer). **304/unchanged**: client gửi `?v=<version>`, `GpsTrackingService::snapshot()` trả `version` (md5 chữ ký vị trí+trạng thái provider, KHÔNG gồm ts), `TrackingController::positions(Request)` so khớp → trả `{ok,unchanged:true,version,ts}` rỗng → client bỏ qua re-render/vẽ lại marker, chỉ cập nhật lastTs.
 
 **Kiến trúc backend = proxy + adapter** (ẩn credential + tránh CORS):
 - `app/Services/Gps/AbstractGpsProvider.php`: login()/fetchRaw()/normalizeRaw() + quản phiên. **Cache token LÂU DÀI (30 ngày) — CHỈ login lại khi `fetchRaw()` trả NULL** (token hỏng) → relogin 1 lần rồi fetch lại. KHÔNG login theo lịch. Config lưu ở `TruckingSetting` key `gps.<key>` (JSON, **password mã hóa Crypt**). Phiên (cookie) ở Cache key `gps.session.<key>`.
@@ -23,7 +25,7 @@ Trang **Theo dõi xe realtime** `/trucking-v2/theo-doi-xe` (`trucking2.tracking`
 
 **Tab mobile (Bản đồ/Danh sách)** lưu ở `sessionStorage["trk_track_view"]` + init từ đó → KHÔNG nhảy về "Bản đồ" mỗi 15s khi re-render/dựng lại. Card xe hiện **khoảng cách Haversine tới kho gần nhất** (whGeo) — "Cách kho X: 1.2km" / "Đã ở kho X" (≤300m, AT_WH_KM).
 
-**Poll IM LẶNG:** sau 15s chỉ cập nhật, KHÔNG hiện spinner/loading; header chỉ chấm xanh "Trực tuyến · cập nhật Xs". InfoWindow chỉ refresh nội dung khi đang mở (không tự mở lại mỗi poll). Tab ẩn → ngừng poll. Marker chỉ `setIcon` khi đổi hướng(làm tròn 6°)/trạng thái (chữ ký `m.__sig`) → KHÔNG nạp lại ảnh = hết nháy.
+**Poll IM LẶNG:** sau 15s chỉ cập nhật, KHÔNG hiện spinner/loading; header chỉ chấm xanh "Trực tuyến · cập nhật Xs". InfoWindow chỉ refresh nội dung khi đang mở (không tự mở lại mỗi poll). Poll vẫn chạy khi tab ẩn (quay lại refresh ngay). Marker chỉ `setIcon` khi đổi hướng(làm tròn 6°)/trạng thái (chữ ký `m.__sig`) → KHÔNG nạp lại ảnh = hết nháy.
 
 **GOTCHA loading overlay:** `public/js/loading.js` MONKEY-PATCH `window.fetch` → mọi fetch (kể cả `trkApi`) bật overlay "Đang xử lý…" sau 600ms. Poll 15s bị dính → phải `window.AppLoading.addSilentPattern(/tracking\/positions/i)` (cơ chế có sẵn: SILENT_URL_PATTERNS / `silent:true` / header `X-Silent-Request:1`). Trang realtime nào poll ngầm đều phải đăng ký silent.
 

@@ -66,6 +66,24 @@ return [
             'color'       => '#64748b',
             'description' => 'Cấu hình chung toàn hệ thống — nơi lưu file (local/S3) và các cấu hình khác',
         ],
+        'tracking' => [
+            'label'       => 'Theo dõi xe (GPS)',
+            'icon'        => 'geo-alt-fill',
+            'color'       => '#4f46e5',
+            'description' => 'Theo dõi xe realtime trên bản đồ, lịch sử đến/rời kho, ghim vị trí kho',
+        ],
+        'tripCost' => [
+            'label'       => 'Phí xe & lương lái xe',
+            'icon'        => 'cash-stack',
+            'color'       => '#0ea5e9',
+            'description' => 'Kỳ tính phí chuyến & lương lái xe (theo lô hàng đã ra)',
+        ],
+        'fleet' => [
+            'label'       => 'Quản lý tài sản & đội xe',
+            'icon'        => 'truck-front',
+            'color'       => '#f97316',
+            'description' => 'Hồ sơ xe MBF & tài sản: chi phí, khấu hao, tài liệu',
+        ],
         'tasks' => [
             'label'       => 'Ghi chú & công việc',
             'icon'        => 'check2-square',
@@ -106,7 +124,21 @@ return [
 
         'spend.request' => ['label' => 'Gửi yêu cầu chi', 'desc' => 'Đăng nhập trang mobile để gửi yêu cầu chi (phiếu chi xe) + xem/hủy phiếu của mình'],
 
-        'system.settings' => ['label' => 'Cài đặt hệ thống', 'desc' => 'Cấu hình chung: nơi lưu file (local/S3) và các cấu hình toàn hệ thống khác'],
+        'system.settings' => ['label' => 'Cài đặt hệ thống', 'desc' => 'Cấu hình chung: nơi lưu file (local/S3) và các cấu hình toàn hệ thống khác (gồm tài khoản GPS)'],
+
+        'tracking.view'   => ['label' => 'Xem theo dõi xe',   'desc' => 'Xem bản đồ theo dõi xe realtime, danh sách xe và lịch sử đến/rời kho'],
+        'tracking.manage' => ['label' => 'Quản lý theo dõi xe', 'desc' => 'Ghim/sửa vị trí (tọa độ) kho trên bản đồ + cấu hình kết nối GPS'],
+
+        'tripCost.view'   => ['label' => 'Xem phí xe & lương',  'desc' => 'Xem danh sách & chi tiết các kỳ phí xe / lương lái xe'],
+        'tripCost.create' => ['label' => 'Tạo kỳ phí xe',       'desc' => 'Tạo kỳ tính phí chuyến & lương lái xe mới'],
+        'tripCost.update' => ['label' => 'Sửa kỳ phí xe',       'desc' => 'Cập nhật / tính lại kỳ phí xe đã lưu'],
+        'tripCost.delete' => ['label' => 'Xoá kỳ phí xe',       'desc' => 'Xoá kỳ phí xe khỏi hệ thống'],
+
+        'fleet.view'   => ['label' => 'Xem tài sản & đội xe', 'desc' => 'Xem hồ sơ xe MBF & tài sản: chi phí, khấu hao, tài liệu'],
+        'fleet.manage' => ['label' => 'Quản lý tài sản & đội xe', 'desc' => 'Thêm/sửa/xoá xe & tài sản, chi phí, tài liệu; hủy phiếu chi xe'],
+
+        'tasks.update' => ['label' => 'Sửa công việc',  'desc' => 'Sửa task, đổi trạng thái, thêm/xoá bình luận'],
+        'tasks.delete' => ['label' => 'Xoá công việc',  'desc' => 'Xoá task khỏi hệ thống'],
 
         'tasks.view'           => ['label' => 'Xem ghi chú & công việc',  'desc' => 'Xem danh sách ghi chú và task được giao'],
         'tasks.create'         => ['label' => 'Tạo ghi chú & công việc',  'desc' => 'Tạo task / ghi chú mới, đặt hạn nhắc'],

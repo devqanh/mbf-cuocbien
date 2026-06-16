@@ -16,6 +16,9 @@ Schedule::command('db:backup')
     ->runInBackground();
 
 // Quét GPS ghi lịch sử xe đến/rời kho — mỗi 5 phút (cần cron schedule:run mỗi phút).
+// runInBackground: command gọi HTTP provider (có thể chậm) → chạy nền, KHÔNG chặn các task khác trong tick.
+// withoutOverlapping(10): hạn khóa 10' (mặc định 24h) → nếu 1 lần treo thì tự nhả, không kẹt lịch.
 Schedule::command('trucking:scan-warehouse-visits')
     ->everyFiveMinutes()
-    ->withoutOverlapping();
+    ->withoutOverlapping(10)
+    ->runInBackground();

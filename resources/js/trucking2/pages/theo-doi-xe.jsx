@@ -183,25 +183,48 @@ function TrackingApp() {
   const idOf = (p) => p.provider + ":" + p.plateNorm;
 
   // ---- poll positions ----
+  // Đệ quy setTimeout (KHÔNG setInterval): không chồng request khi mạng chậm — lịch poll
+  // kế tiếp chỉ đặt SAU khi request hiện tại xong. Tab ẩn → ngừng hẳn, hiện lại → poll ngay.
+  // Bỏ qua setState khi dữ liệu không đổi (chữ ký) → tránh vẽ lại marker/re-render vô ích.
   const reqId = useRef(0);
-  const fetchPos = async () => {
-    if (document.hidden) return;
-    const my = ++reqId.current;
-    try {
-      const r = await api("GET", ROUTES.positions);
-      if (my !== reqId.current) return;
-      if (r && r.ok) { setPositions(r.positions || []); setProviders(r.providers || []); setLastTs(r.ts || Date.now()); }
-    } catch (e) { /* giữ dữ liệu cũ */ }
-    finally { if (my === reqId.current) setLoading(false); }
-  };
+  const verRef = useRef(null);     // version cuối → gửi ?v= để backend trả "unchanged" (đỡ băng thông + re-render)
+  const runRef = useRef(true);     // có xe đang chạy? → nhịp poll nhanh/chậm
   useEffect(() => {
-    // Poll chạy ngầm: bỏ overlay loading toàn cục ("Đang xử lý…") cho request này.
     if (window.AppLoading && window.AppLoading.addSilentPattern) window.AppLoading.addSilentPattern(/tracking\/positions/i);
-    fetchPos();
-    const t = setInterval(fetchPos, POLL_MS);
-    const onVis = () => { if (!document.hidden) fetchPos(); };
+    let timer = null, stopped = false, fails = 0;
+    // Poll LIÊN TỤC kể cả tab ẩn. Nhịp thích ứng: có xe chạy → 15s; không xe nào chạy → 30s (đỡ tải).
+    // Lỗi liên tiếp → backoff ×2 (cap 60s).
+    const nextDelay = () => Math.min((runRef.current ? POLL_MS : POLL_MS * 2) * 2 ** fails, 60000);
+    const schedule = () => { if (!stopped) { clearTimeout(timer); timer = setTimeout(tick, nextDelay()); } };
+    async function tick() {
+      if (stopped) return;
+      const my = ++reqId.current;
+      let ok = false;
+      try {
+        const r = await api("GET", ROUTES.positions + (verRef.current ? "?v=" + encodeURIComponent(verRef.current) : ""));
+        if (my !== reqId.current || stopped) return;   // response cũ / đã hủy → để tick mới lo
+        if (r && r.ok) {
+          ok = true;
+          if (r.version) verRef.current = r.version;
+          if (r.ts) setLastTs(r.ts);
+          if (!r.unchanged) {   // backend báo có đổi → mới cập nhật + vẽ lại
+            setProviders(r.providers || []);
+            const next = r.positions || [];
+            runRef.current = next.some((p) => p.status === "run");
+            setPositions(next);
+          }
+        }
+      } catch (e) { /* giữ dữ liệu cũ */ }
+      finally {
+        // CHỈ tick mới nhất mới đặt lịch kế tiếp → tránh nhân đôi timer
+        if (my === reqId.current) { setLoading(false); fails = ok ? 0 : Math.min(fails + 1, 2); schedule(); }
+      }
+    }
+    // Quay lại tab → refresh NGAY (không chờ hết chu kỳ); poll nền vẫn chạy nên data đã sẵn sàng.
+    const onVis = () => { if (!document.hidden && !stopped) { clearTimeout(timer); tick(); } };
+    tick();
     document.addEventListener("visibilitychange", onVis);
-    return () => { clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
+    return () => { stopped = true; clearTimeout(timer); document.removeEventListener("visibilitychange", onVis); };
   }, []);
 
   // ---- lọc ----
