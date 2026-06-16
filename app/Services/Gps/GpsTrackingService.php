@@ -122,6 +122,13 @@ class GpsTrackingService
         return 2 * $R * asin(sqrt($a));
     }
 
+    /** Thời gian QUAN SÁT THỰC trong kho (giây) = last_inside − arrived, tính bằng timestamp (an toàn dấu). */
+    private function dwellSeconds(TruckingWarehouseVisit $v): int
+    {
+        if (! $v->arrived_at || ! $v->last_inside_at) return 0;
+        return max(0, $v->last_inside_at->getTimestamp() - $v->arrived_at->getTimestamp());
+    }
+
     /**
      * Quét vị trí GPS → ghi lịch sử ghé kho (geofence visit). Gọi định kỳ qua cron.
      * Máy trạng thái: VÀO ≤ enter mở visit; còn trong vùng đệm thì cập nhật; RA > exit đóng.
@@ -157,12 +164,19 @@ class GpsTrackingService
                     $open->update(['departed_at' => $open->last_inside_at ?? $ts]); $closed++; continue;
                 }
                 $dist = $this->haversineKm((float) $p['lat'], (float) $p['lng'], (float) $w->lat, (float) $w->lng);
-                if ($dist > $exitKm) {
-                    if ($open->confirmed) { $open->update(['departed_at' => $open->last_inside_at ?? $ts]); $closed++; }
-                    else { $open->delete(); $dropped++; }   // chưa đủ dwell → tạt ngang
+                // RỜI: xe ĐANG CHẠY ra xa → đóng sớm (bán kính chặt = parked 1000m, tránh "đã rời mà vẫn ở kho");
+                //       xe ĐỖ → giữ rộng (exit 1500m, có thể đỗ trong khuôn viên kho cách điểm ghim).
+                $leaveR = ((float) ($p['speed'] ?? 0) > 5) ? $parkedKm : $exitKm;
+                if ($dist > $leaveR) {
+                    // RỜI: đủ dwell (thời gian quan sát thực ≥ ngưỡng) → đóng & GIỮ; chưa đủ → tạt ngang, xóa.
+                    if ($open->confirmed || $this->dwellSeconds($open) >= $dwellMin * 60) {
+                        $open->update(['departed_at' => $open->last_inside_at ?? $ts, 'confirmed' => true]); $closed++;
+                    } else { $open->delete(); $dropped++; }
                 } else {
                     $attrs = ['last_inside_at' => $ts, 'min_dist_m' => min($open->min_dist_m ?? PHP_INT_MAX, (int) round($dist * 1000))];
-                    if (! $open->confirmed && $open->created_at && Carbon::now()->diffInMinutes($open->created_at) >= $dwellMin) $attrs['confirmed'] = true;
+                    // XÁC NHẬN theo THỜI GIAN QUAN SÁT THỰC (last_inside − arrived) ≥ dwell — dùng timestamp (an toàn dấu,
+                    // KHÔNG dùng Carbon diffInMinutes vì Carbon 3 trả số ÂM khi so now→quá khứ) & không phụ thuộc nhịp quét.
+                    if (! $open->confirmed && $open->arrived_at && ($ts->getTimestamp() - $open->arrived_at->getTimestamp()) >= $dwellMin * 60) $attrs['confirmed'] = true;
                     if (! $open->vehicle_id && ! empty($p['vehicleId'])) { $attrs['vehicle_id'] = $p['vehicleId']; $attrs['vehicle_plate'] = $p['vehiclePlate'] ?? null; }
                     $open->update($attrs); $updated++;
                 }
@@ -181,6 +195,20 @@ class GpsTrackingService
                     ]);
                     $opened++;
                 }
+            }
+        }
+
+        // TỰ ĐÓNG VISIT TREO: xe mất tín hiệu/tắt máy khi đang mở visit sẽ KHÔNG còn trong snapshot
+        // → vòng lặp trên không chạm tới → departed_at mãi null ("Đang ở kho" vĩnh viễn). Quét riêng:
+        // visit còn mở mà last_inside_at quá cũ (không xác nhận trong kho > ngưỡng) → coi như đã rời.
+        $autoCloseMin = (int) TruckingSetting::get('gps.visit_autoclose_min', 120);
+        if ($autoCloseMin > 0) {
+            $cutoff = Carbon::now()->subMinutes($autoCloseMin);
+            foreach (TruckingWarehouseVisit::whereNull('departed_at')->where('last_inside_at', '<', $cutoff)->get() as $v) {
+                // Đủ thời gian quan sát thực ≥ dwell → đóng & GIỮ (đừng xóa visit thật); chỉ xóa tạt-ngang treo.
+                if ($v->confirmed || $this->dwellSeconds($v) >= $dwellMin * 60) {
+                    $v->update(['departed_at' => $v->last_inside_at ?? $v->arrived_at, 'confirmed' => true]); $closed++;
+                } else { $v->delete(); $dropped++; }
             }
         }
 
@@ -205,11 +233,11 @@ class GpsTrackingService
     }
 
     /** Lịch sử ghé kho (đã xác nhận dwell) — PHÂN TRANG + tìm kiếm (biển số/tài xế/kho). */
-    public function visitHistoryPaged(?string $q, int $page = 1, int $perPage = 30): array
+    /** Áp bộ lọc chung (xác nhận/đang mở + tìm kiếm + khoảng ngày theo arrived_at) cho cả list & stats. */
+    private function visitFilter(?string $q, ?string $from, ?string $to)
     {
-        // Hiện visit ĐÃ xác nhận (đủ dwell) HOẶC đang mở (xe đang ở kho) — để thấy ngay khi xe vừa đến.
         $query = TruckingWarehouseVisit::where(function ($w) {
-            $w->where('confirmed', true)->orWhereNull('departed_at');
+            $w->where('confirmed', true)->orWhereNull('departed_at');   // đã xác nhận HOẶC đang mở
         });
         $q = trim((string) $q);
         if ($q !== '') {
@@ -220,6 +248,14 @@ class GpsTrackingService
                   ->orWhere('warehouse_name', 'like', "%{$q}%");
             });
         }
+        if ($from = trim((string) $from)) $query->whereDate('arrived_at', '>=', $from);
+        if ($to = trim((string) $to))     $query->whereDate('arrived_at', '<=', $to);
+        return $query;
+    }
+
+    public function visitHistoryPaged(?string $q, int $page = 1, int $perPage = 30, ?string $from = null, ?string $to = null): array
+    {
+        $query = $this->visitFilter($q, $from, $to);
         $perPage = max(5, min(100, $perPage));
         $total = (clone $query)->count();
         $lastPage = max(1, (int) ceil($total / $perPage));
@@ -229,6 +265,45 @@ class GpsTrackingService
         return [
             'visits'   => $rows->map(fn ($v) => $this->visitToArray($v))->all(),
             'page'     => $page, 'perPage' => $perPage, 'total' => $total, 'lastPage' => $lastPage,
+        ];
+    }
+
+    /**
+     * THỐNG KÊ theo XE trong khoảng ngày: mỗi xe = số chuyến (lượt ghé kho), số kho khác nhau,
+     * tổng thời gian ở kho (dwell), lần ghé gần nhất. Gom theo vehicle_id (fallback gps_ref).
+     */
+    public function visitStats(?string $q, ?string $from, ?string $to): array
+    {
+        $visits = $this->visitFilter($q, $from, $to)->orderBy('arrived_at')->get();
+        $g = [];
+        foreach ($visits as $v) {
+            $key = $v->vehicle_id ? ('v' . $v->vehicle_id) : ('g:' . $v->gps_ref);
+            if (! isset($g[$key])) {
+                $g[$key] = ['plate' => $v->vehicle_plate ?: $v->gps_plate, 'driver' => $v->driver, 'matched' => (bool) $v->vehicle_id,
+                            'trips' => 0, 'wh' => [], 'dwellMs' => 0, 'last' => null];
+            }
+            $g[$key]['trips']++;
+            if ($v->warehouse_id) $g[$key]['wh'][$v->warehouse_id] = true;
+            if ($v->driver) $g[$key]['driver'] = $v->driver;            // giữ tài xế gần nhất
+            $end = $v->departed_at ?? $v->last_inside_at;               // visit đang mở → tính tới lần thấy cuối
+            if ($v->arrived_at && $end) $g[$key]['dwellMs'] += max(0, $end->getTimestampMs() - $v->arrived_at->getTimestampMs());
+            $am = $v->arrived_at ? $v->arrived_at->getTimestampMs() : null;
+            if ($am && (! $g[$key]['last'] || $am > $g[$key]['last'])) $g[$key]['last'] = $am;
+        }
+        $rows = array_values(array_map(fn ($x) => [
+            'plate'      => $x['plate'] ?: '(không rõ)',
+            'driver'     => $x['driver'],
+            'matched'    => $x['matched'],
+            'trips'      => $x['trips'],
+            'warehouses' => count($x['wh']),
+            'dwellMin'   => (int) round($x['dwellMs'] / 60000),
+            'lastVisit'  => $x['last'],
+        ], $g));
+        usort($rows, fn ($a, $b) => $b['trips'] <=> $a['trips']);       // nhiều chuyến nhất lên đầu
+
+        return [
+            'rows'   => $rows,
+            'totals' => ['vehicles' => count($rows), 'trips' => array_sum(array_column($rows, 'trips'))],
         ];
     }
 }

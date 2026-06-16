@@ -181,6 +181,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/tracking/warehouses',  [TrackingController::class, 'warehouses'])->name('tracking.warehouses'); // marker kho
             Route::get('/lich-su-kho',          [TrackingController::class, 'visitsPage'])->name('tracking.visitsPage');  // trang lịch sử đến/rời kho
             Route::get('/tracking/visits',      [TrackingController::class, 'visits'])->name('tracking.visits');         // JSON phân trang
+            Route::get('/tracking/visit-stats', [TrackingController::class, 'visitStats'])->name('tracking.visitStats'); // thống kê chuyến/xe
         });
         Route::middleware('permission:tracking.manage')->group(function () {
             Route::get('/tracking/config',  [TrackingController::class, 'config'])->name('tracking.config');

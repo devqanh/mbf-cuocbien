@@ -13,6 +13,7 @@ window.__TRK = {
   canEdit: {{ $canEdit ? 'true' : 'false' }},
   routes: {
     visits: '{{ route("trucking2.tracking.visits") }}',
+    visitStats: '{{ route("trucking2.tracking.visitStats") }}',
     back:   '{{ route("trucking2.tracking") }}',
   },
   boot: @json($boot),

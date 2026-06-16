@@ -74,13 +74,25 @@ class TrackingController extends BaseTruckingController
         return view('trucking2.lich-su-kho', $this->pageData([], 'shipments.view', 'shipments.delete'));
     }
 
-    /** Lịch sử xe đến/rời kho (geofence visit) — JSON phân trang + tìm kiếm. */
+    /** Lịch sử xe đến/rời kho (geofence visit) — JSON phân trang + tìm kiếm + lọc khoảng ngày. */
     public function visits(Request $request): JsonResponse
     {
         return response()->json(['ok' => true] + $this->gps->visitHistoryPaged(
             $request->query('q'),
             (int) $request->query('page', 1),
             (int) $request->query('perPage', 30),
+            $request->query('from'),
+            $request->query('to'),
+        ));
+    }
+
+    /** Thống kê chuyến/xe trong khoảng ngày (số lượt ghé kho, số kho, giờ ở kho, lần cuối). */
+    public function visitStats(Request $request): JsonResponse
+    {
+        return response()->json(['ok' => true] + $this->gps->visitStats(
+            $request->query('q'),
+            $request->query('from'),
+            $request->query('to'),
         ));
     }
 
