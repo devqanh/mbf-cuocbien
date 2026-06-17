@@ -58,7 +58,7 @@ trait HandlesStatements
      */
     public function statementsForList(): array
     {
-        return TruckingStatement::with(['payments', 'customer'])->orderBy('id')->get()
+        return TruckingStatement::with(['payments', 'customer'])->withSum('lines as lines_total', 'phai_thu')->orderBy('id')->get()
             ->map(fn ($st) => [
                 'id'       => $st->id,
                 'hashid'   => Hashid::encode($st->id),
@@ -67,7 +67,8 @@ trait HandlesStatements
                 'date'     => $this->outDate($st->date),
                 'from'     => $this->outDate($st->period_from),
                 'to'       => $this->outDate($st->period_to),
-                'tongThu'  => (int) round((float) $st->total),
+                // Tổng = TỔNG dòng (luôn đúng, không phụ thuộc cột total có thể cũ).
+                'tongThu'  => (int) round((float) ($st->lines_total ?? $st->total)),
                 'payments' => $st->payments->map(fn ($p) => [
                     'id'     => $p->id,
                     'date'   => $this->outDate($p->date),
@@ -88,7 +89,7 @@ trait HandlesStatements
             'date'      => $this->outDate($st->date),
             'from'      => $this->outDate($st->period_from),
             'to'        => $this->outDate($st->period_to),
-            'tongThu'   => (int) round((float) $st->total),
+            'tongThu'   => (int) round((float) $st->lines->sum('phai_thu')),   // = tổng dòng (chân lý)
             'lines'     => $st->lines->map(fn ($l) => [
                 'id'        => $l->shipment_id ?? $l->id,
                 'booking'   => $l->booking ?? '',
@@ -135,7 +136,8 @@ trait HandlesStatements
                 'date'          => $this->inDate($data['date'] ?? null),
                 'period_from'   => $this->inDate($data['from'] ?? null),
                 'period_to'     => $this->inDate($data['to'] ?? null),
-                'total'         => $this->inMoney($data['tongThu'] ?? null) ?? 0,
+                // total = TỔNG dòng (chân lý, server tự cộng) — không tin tongThu client để khỏi lệch.
+                'total'         => collect($data['lines'] ?? [])->sum(fn ($l) => $this->inMoney($l['phaiThu'] ?? null) ?? 0),
             ]);
             $st->save();
 
