@@ -410,7 +410,7 @@ function TrackingApp() {
       ensurePlateStyle();
       mapRef.current = new maps.Map(mapEl.current, {
         center: { lat: 16.5, lng: 106.5 }, zoom: 6,
-        mapTypeControl: false, streetViewControl: false, fullscreenControl: true, clickableIcons: false,
+        mapTypeControl: false, streetViewControl: false, fullscreenControl: true, clickableIcons: false, zoomControl: false,
         gestureHandling: "greedy", styles: MAP_STYLE,   // ẩn POI/transit → bản đồ logistics gọn
       });
       infoRef.current = new maps.InfoWindow();
@@ -650,6 +650,7 @@ function TrackingApp() {
     if (arr.length === 1) mapRef.current.setZoom(15);
   };
   const closeInfo = () => { if (infoRef.current) infoRef.current.close(); infoOpenRef.current = null; };
+  const zoomBy = (d) => { if (mapRef.current) mapRef.current.setZoom((mapRef.current.getZoom() || 6) + d); };
   // "Toàn cảnh": bỏ chọn xe + đóng popup + khít lại về toàn bộ xe đang lọc.
   const overview = () => { setSelected(null); setFollow(false); closeInfo(); fitAll(); };
   // "Xóa lọc": gỡ MỌI bộ lọc + ô tìm + chọn → tự khít về toàn bộ xe.
@@ -916,6 +917,19 @@ function TrackingApp() {
                   style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: isMobile ? "10px 14px" : "7px 11px", fontSize: isMobile ? 13.5 : 12.5, fontWeight: 600, cursor: "pointer", borderRadius: 8,
                     border: on ? "1px solid var(--accent)" : "1px solid var(--line)", background: on ? "var(--accent)" : "#fff", color: on ? "#fff" : "var(--ink-2)", boxShadow: "0 1px 4px rgba(0,0,0,.2)" }}>
                   <i className={"bi " + ic} /> {label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Nút Zoom + / − (góc dưới-phải) */}
+          {mapReady && (
+            <div style={{ position: "absolute", right: 10, bottom: 22, zIndex: 6, display: "flex", flexDirection: "column", borderRadius: 9, overflow: "hidden", boxShadow: "0 1px 5px rgba(0,0,0,.28)", border: "1px solid var(--line)" }}>
+              {[["bi-plus-lg", 1, "Phóng to"], ["bi-dash-lg", -1, "Thu nhỏ"]].map(([ic, d, label], i) => (
+                <button key={ic} type="button" onClick={() => zoomBy(d)} title={label} aria-label={label}
+                  style={{ width: isMobile ? 44 : 38, height: isMobile ? 44 : 38, display: "grid", placeItems: "center", border: "none", borderTop: i ? "1px solid var(--line-2)" : "none", background: "#fff", color: "var(--ink-1)", cursor: "pointer", fontSize: isMobile ? 18 : 16 }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
+                  <i className={"bi " + ic} />
                 </button>
               ))}
             </div>
