@@ -175,7 +175,7 @@ function loadGoogleMaps(key) {
     const cb = "__trkGmapsCb";
     window[cb] = () => resolve(window.google.maps);
     const s = document.createElement("script");
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&callback=${cb}&loading=async&language=vi&region=VN`;
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&callback=${cb}&loading=async&libraries=places&language=vi&region=VN`;
     s.async = true; s.defer = true;
     s.onerror = () => reject(new Error("Không tải được Google Maps (kiểm tra API key / mạng)."));
     document.head.appendChild(s);
@@ -298,6 +298,17 @@ function TrackingApp() {
   const markerData = useRef({});
   const didFit = useRef(false);
 
+  // ---- Tìm địa điểm (Google Places autocomplete) ----
+  const acSvcRef = useRef(null);      // AutocompleteService (lấy gợi ý)
+  const placesSvcRef = useRef(null);  // PlacesService (lấy chi tiết tọa độ)
+  const acTokenRef = useRef(null);    // session token (gộp gợi ý + chi tiết → 1 phiên, rẻ hơn)
+  const acTimerRef = useRef(null);    // debounce gõ phím
+  const searchMkRef = useRef(null);   // marker điểm tìm thấy
+  const [placeQ, setPlaceQ] = useState("");
+  const [placePreds, setPlacePreds] = useState([]);
+  const [placeOpen, setPlaceOpen] = useState(false);
+  const [placeActive, setPlaceActive] = useState(-1);  // index đang chọn bằng phím
+
   const infoOpenRef = useRef(null);   // id của popup đang mở (để chỉ refresh nội dung, không tự mở lại)
   const openInfo = (id) => {
     const p = markerData.current[id]; const m = markersRef.current[id];
@@ -359,10 +370,76 @@ function TrackingApp() {
       whInfoRef.current = new maps.InfoWindow();
       // Bấm lên bản đồ khi đang "đặt kho" → ghim kho tại điểm đó.
       mapRef.current.addListener("click", (e) => { if (placingRef.current != null) placeFnRef.current(placingRef.current, e.latLng.lat(), e.latLng.lng()); });
+      // Tìm địa điểm: AutocompleteService (gợi ý) + PlacesService (chi tiết).
+      try {
+        if (maps.places) {
+          acSvcRef.current = new maps.places.AutocompleteService();
+          placesSvcRef.current = new maps.places.PlacesService(mapRef.current);
+        }
+      } catch (e) {}
       setMapReady(true);
     }).catch((e) => { if (alive) setMapErr(e.message); });
     return () => { alive = false; };
   }, []);
+
+  // ---- Tìm địa điểm: gõ → gợi ý (debounce) ; chọn → bay tới + ghim ----
+  const onPlaceInput = (val) => {
+    setPlaceQ(val); setPlaceActive(-1);
+    const kw = val.trim();
+    if (acTimerRef.current) clearTimeout(acTimerRef.current);
+    if (!kw || !acSvcRef.current || !window.google) { setPlacePreds([]); setPlaceOpen(false); return; }
+    acTimerRef.current = setTimeout(() => {
+      const maps = window.google.maps;
+      if (!acTokenRef.current) acTokenRef.current = new maps.places.AutocompleteSessionToken();
+      const req = { input: kw, sessionToken: acTokenRef.current, componentRestrictions: { country: "vn" }, language: "vi" };
+      // Ưu tiên gợi ý quanh vùng đang xem.
+      const b = mapRef.current && mapRef.current.getBounds();
+      if (b) { req.locationBias = b; } else { req.location = new maps.LatLng(16.5, 106.5); req.radius = 800000; }
+      acSvcRef.current.getPlacePredictions(req, (preds, status) => {
+        if (status !== maps.places.PlacesServiceStatus.OK || !preds) { setPlacePreds([]); setPlaceOpen(true); return; }
+        setPlacePreds(preds.slice(0, 6)); setPlaceOpen(true);
+      });
+    }, 220);
+  };
+
+  const flyToPlace = (pred) => {
+    const maps = window.google && window.google.maps;
+    if (!maps || !placesSvcRef.current || !pred) return;
+    setPlaceOpen(false); setPlaceQ(pred.description); setPlacePreds([]);
+    placesSvcRef.current.getDetails(
+      { placeId: pred.place_id, fields: ["geometry", "name", "formatted_address"], sessionToken: acTokenRef.current },
+      (place, status) => {
+        acTokenRef.current = null;  // hết phiên → token mới cho lần tìm sau
+        if (status !== maps.places.PlacesServiceStatus.OK || !place || !place.geometry) {
+          window.trkToast && window.trkToast("Không lấy được vị trí địa điểm", "error"); return;
+        }
+        const loc = place.geometry.location;
+        if (place.geometry.viewport) mapRef.current.fitBounds(place.geometry.viewport);
+        else { mapRef.current.panTo(loc); mapRef.current.setZoom(16); }
+        if (!searchMkRef.current) {
+          searchMkRef.current = new maps.Marker({ map: mapRef.current, zIndex: 9999,
+            icon: { path: maps.SymbolPath.CIRCLE, scale: 9, fillColor: "#4f46e5", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2.5 } });
+        }
+        searchMkRef.current.setPosition(loc);
+        searchMkRef.current.setMap(mapRef.current);
+        whInfoRef.current.setContent(`<div style="font:600 13px/1.4 system-ui;max-width:240px"><div style="color:#4f46e5">${place.name || ""}</div><div style="font-weight:400;color:#555;margin-top:2px">${place.formatted_address || ""}</div></div>`);
+        whInfoRef.current.open(mapRef.current, searchMkRef.current);
+      }
+    );
+  };
+
+  const clearPlace = () => {
+    setPlaceQ(""); setPlacePreds([]); setPlaceOpen(false); setPlaceActive(-1);
+    if (searchMkRef.current) searchMkRef.current.setMap(null);
+  };
+
+  const onPlaceKey = (e) => {
+    if (!placeOpen || !placePreds.length) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); setPlaceActive((i) => Math.min(i + 1, placePreds.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setPlaceActive((i) => Math.max(i - 1, 0)); }
+    else if (e.key === "Enter") { e.preventDefault(); flyToPlace(placePreds[placeActive >= 0 ? placeActive : 0]); }
+    else if (e.key === "Escape") { setPlaceOpen(false); }
+  };
 
   // Mobile: chuyển sang tab Bản đồ → container vừa hiện lại, ép Google Map vẽ lại + giữ tâm (tránh map xám).
   useEffect(() => {
@@ -610,6 +687,43 @@ function TrackingApp() {
         {/* map */}
         <div style={{ flex: 1, minHeight: 0, position: "relative", display: isMobile && mobileView !== "map" ? "none" : "block", order: isMobile ? 1 : 0 }}>
           <div ref={mapEl} style={{ position: "absolute", inset: 0, background: "#e9edf1" }} />
+
+          {/* Ô tìm địa điểm (Google Places autocomplete) → bay tới điểm chọn */}
+          {mapReady && acSvcRef.current && (
+            <div style={{ position: "absolute", top: 12, left: 10, zIndex: 8, width: isMobile ? "calc(100% - 20px)" : 320 }}>
+              <div style={{ position: "relative" }}>
+                <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)", pointerEvents: "none" }}><I.search /></span>
+                <input value={placeQ} onChange={(e) => onPlaceInput(e.target.value)} onKeyDown={onPlaceKey}
+                  onFocus={() => { if (placePreds.length) setPlaceOpen(true); }}
+                  onBlur={() => setTimeout(() => setPlaceOpen(false), 160)}
+                  placeholder="Tìm địa điểm, địa chỉ trên bản đồ…"
+                  style={{ width: "100%", padding: "10px 34px 10px 34px", fontSize: 13.5, border: "1px solid var(--line)", borderRadius: 10, outline: "none", background: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,.18)", boxSizing: "border-box" }} />
+                {placeQ && (
+                  <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={clearPlace} title="Xóa"
+                    style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", border: "none", background: "transparent", cursor: "pointer", color: "var(--ink-4)", display: "inline-flex" }}><I.x /></button>
+                )}
+              </div>
+              {placeOpen && (
+                <div style={{ marginTop: 4, background: "#fff", border: "1px solid var(--line)", borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,.18)", overflow: "hidden" }}>
+                  {placePreds.length === 0 ? (
+                    <div style={{ padding: "10px 12px", fontSize: 13, color: "var(--ink-4)" }}>Không tìm thấy địa điểm</div>
+                  ) : placePreds.map((p, i) => {
+                    const m = p.structured_formatting || {};
+                    return (
+                      <div key={p.place_id} onMouseDown={(e) => e.preventDefault()} onClick={() => flyToPlace(p)} onMouseEnter={() => setPlaceActive(i)}
+                        style={{ display: "flex", alignItems: "flex-start", gap: 9, padding: "9px 12px", cursor: "pointer", background: i === placeActive ? "var(--accent-soft, #eef2ff)" : "#fff", borderTop: i ? "1px solid var(--line)" : "none" }}>
+                        <i className="bi bi-geo-alt" style={{ color: "#4f46e5", marginTop: 2, fontSize: 14 }} />
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.main_text || p.description}</div>
+                          {m.secondary_text && <div style={{ fontSize: 11.5, color: "var(--ink-4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.secondary_text}</div>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Overlay loading khi mới vào — tắt sau khi map dựng xong + zoom ra */}
           {!booted && !mapErr && (
