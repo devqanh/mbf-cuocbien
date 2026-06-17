@@ -105,7 +105,7 @@ trait HandlesStatements
             ->withSum('lines as lines_total', 'phai_thu');
         $cust = trim((string) ($filters['customer'] ?? ''));
         if ($cust !== '') {
-            $custId = TruckingCustomer::where('name', $cust)->value('id');
+            $custId = $this->customerIdByName($cust);
             if ($custId) $q->where('customer_id', $custId);
             else $q->where('customer_name', $cust);
         }
@@ -167,7 +167,7 @@ trait HandlesStatements
         return DB::transaction(function () use ($data, $st) {
             $customerId = null;
             if (! empty($data['customer'])) {
-                $customerId = TruckingCustomer::where('name', trim($data['customer']))->value('id');
+                $customerId = $this->customerIdByName($data['customer']);
             }
 
             $st ??= new TruckingStatement();

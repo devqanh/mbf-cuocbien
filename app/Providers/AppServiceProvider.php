@@ -2,6 +2,14 @@
 
 namespace App\Providers;
 
+use App\Models\TruckingCustomer;
+use App\Models\TruckingDriver;
+use App\Models\TruckingLocation;
+use App\Models\TruckingWarehouse;
+use App\Observers\TruckingCustomerObserver;
+use App\Observers\TruckingDriverObserver;
+use App\Observers\TruckingLocationObserver;
+use App\Observers\TruckingWarehouseObserver;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Broadcast;
@@ -32,6 +40,13 @@ class AppServiceProvider extends ServiceProvider
 
         // Đăng ký route /broadcasting/auth cho private channel auth (Laravel 11/12 cần khai báo thủ công)
         Broadcast::routes(['middleware' => ['web', 'auth']]);
+
+        // Chuẩn hóa whitespace name danh mục ở mọi write path (safety net cho 4 bảng
+        // dùng name/code làm khóa match — tránh "Cty  ABC" vs "Cty ABC" tạo dup).
+        TruckingCustomer::observe(TruckingCustomerObserver::class);
+        TruckingDriver::observe(TruckingDriverObserver::class);
+        TruckingLocation::observe(TruckingLocationObserver::class);
+        TruckingWarehouse::observe(TruckingWarehouseObserver::class);
 
         // Blade directive @assetVer('css/app.css') — emit asset URL với cache-busting version
         // Dùng filemtime nếu file tồn tại (cache hợp lý — bust khi file đổi),

@@ -507,8 +507,10 @@ trait HandlesTripAndDrivers
             $b->save();
 
             $b->lines()->delete();
-            $driverIds = TruckingDriver::pluck('id', 'name');     // map tên→id (best-effort, group báo cáo bền)
-            $vehIds    = TruckingVehicle::pluck('id', 'plate');
+            // map tên lái xe → id qua cache request-scoped (cùng rule lowercase+trim với
+            // shipment.driver_id / spend.driver_id → 4 cột driver_id nhất quán cho báo cáo lương).
+            $driverIds = $this->driverIdMap();
+            $vehIds    = $this->vehicleIdMap();   // plate lowercase+trim+collapse (same rule với shipment.vehicle_id)
             $total = 0;
             foreach (($data['rows'] ?? []) as $i => $r) {
                 $c = $r['cur'] ?? $r;
@@ -544,17 +546,21 @@ trait HandlesTripAndDrivers
                 $costTotal = $lineTotal - $salaryTotal;     // chi phí vận hành dòng
                 $total += $lineTotal;
 
+                $dname = $this->str($c['driver'] ?? null);
+                $dkey  = $dname ? mb_strtolower(preg_replace('/\s+/u', ' ', trim((string) $dname)) ?? '') : '';
+                $bks   = $this->str($r['bks'] ?? null);
+                $bksKey = $bks ? mb_strtolower(preg_replace('/\s+/u', ' ', trim((string) $bks)) ?? '') : '';
                 $b->lines()->create([
                     'shipment_id' => is_numeric($r['shipmentId'] ?? null) ? $r['shipmentId'] : null,
                     'booking'     => $this->str($r['booking'] ?? null),
                     'route'       => $this->str($r['route'] ?? null),
                     'kho'         => $this->str($r['kho'] ?? null),
-                    'bks'         => $this->str($r['bks'] ?? null),
-                    'vehicle_id'  => $vehIds[$this->str($r['bks'] ?? null)] ?? null,
+                    'bks'         => $bks,
+                    'vehicle_id'  => $bksKey !== '' ? ($vehIds[$bksKey] ?? null) : null,
                     'axle'        => $this->str($r['axle'] ?? null),
                     'date'        => $this->inDate($r['date'] ?? null),
-                    'driver'      => $this->str($c['driver'] ?? null),
-                    'driver_id'   => $driverIds[$this->str($c['driver'] ?? null)] ?? null,
+                    'driver'      => $dname,
+                    'driver_id'   => $dkey !== '' ? ($driverIds[$dkey] ?? null) : null,
                     've_tram'     => $veTram,
                     'tien_duong'  => $tienDuong,
                     'tro_cap'     => $troCap,

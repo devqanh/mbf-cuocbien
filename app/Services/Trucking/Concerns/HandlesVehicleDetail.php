@@ -289,13 +289,15 @@ trait HandlesVehicleDetail
                 $v->save();
             }
             if (array_key_exists('usages', $data)) {
-                $driverId = TruckingDriver::pluck('id', 'name');
+                // map tên → id qua cache request-scoped (cùng rule lowercase+trim với driver_id ở các cột khác).
+                $driverId = $this->driverIdMap();
                 $v->vehicleUsages()->delete();
                 foreach (array_values($data['usages'] ?? []) as $i => $u) {
-                    $dn = $this->str($u['driver'] ?? null);
+                    $dn   = $this->str($u['driver'] ?? null);
+                    $dkey = $dn ? mb_strtolower(preg_replace('/\s+/u', ' ', trim((string) $dn)) ?? '') : '';
                     $v->vehicleUsages()->create([
                         'driver' => $dn,
-                        'driver_id' => $dn !== null ? ($driverId[$dn] ?? null) : null,
+                        'driver_id' => $dkey !== '' ? ($driverId[$dkey] ?? null) : null,
                         'from_date' => $this->inDate($u['from'] ?? null),
                         'to_date' => $this->inDate($u['to'] ?? null),
                         'note' => $this->str($u['note'] ?? null),

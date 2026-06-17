@@ -45,6 +45,15 @@ trait HandlesShipments
     /** @var array<string,int>|null  lowercase(code|name) => warehouse_id — memoize / request. */
     private ?array $whIdMapCache = null;
 
+    /** @var array<string,int>|null  lowercase(name) => driver_id — memoize / request. */
+    private ?array $driverIdMapCache = null;
+
+    /** @var array<string,int>|null  lowercase(plate) => vehicle_id — memoize / request. */
+    private ?array $vehicleIdMapCache = null;
+
+    /** @var array<string,int>|null  lowercase(name) => customer_id — memoize / request. */
+    private ?array $customerIdMapCache = null;
+
     /**
      * Mỗi danh mục = 1 bảng riêng. Map: cfgKey => [modelClass, priced?, coded?, colored?].
      * priced  = có đơn giá mặc định;
@@ -252,10 +261,14 @@ trait HandlesShipments
                   ->orWhereBetween('gio_xe_ra_xe', [$start, $end]);
             })->get();
 
-        // Lô "kéo cont khác ra" (other) — lấy giờ từ lô ra_other_id.
-        $others = TruckingShipment::with('customer')->where('ra_mode', 'other')->whereNotNull('ra_other_id')->get();
+        // Lô "kéo cont khác ra" (other) — CHỈ load lô có target nằm TRONG cand (giờ ra trong khung).
+        // Tránh load toàn bảng ra_mode='other' khi data lớn (10k–50k lô).
+        $candIds = $cand->pluck('id')->all();
+        $others  = $candIds
+            ? TruckingShipment::with('customer')->where('ra_mode', 'other')->whereIn('ra_other_id', $candIds)->get()
+            : collect();
+        $targets = $cand->keyBy('id');   // target chắc chắn nằm trong cand (gio_xe_ra ∈ window)
         $targetIds = $others->pluck('ra_other_id')->filter()->unique()->values()->all();
-        $targets = $targetIds ? TruckingShipment::whereIn('id', $targetIds)->get()->keyBy('id') : collect();
 
         $legs = [];
         // $rs = lô có TUYẾN mà xe THỰC SỰ chạy (self/none = chính nó; other = lô bị kéo ra hộ).
@@ -274,6 +287,7 @@ trait HandlesShipments
 
             return array_merge([
                 'bks'        => trim((string) $s->bks_vao),
+                'vehicleId'  => $s->vehicle_id ?: null,            // ưu tiên id để map xe (bền hơn match plate string)
                 'sortTs'     => $t->getTimestamp(),
                 'time'       => (int) ($t->getTimestamp() * 1000),
                 'timeLabel'  => $t->format('H:i'),                  // giờ ra (format sẵn — tránh lệch tz trình duyệt)
@@ -316,15 +330,27 @@ trait HandlesShipments
             }
         }
 
-        // Gom theo bks_vao + map xe hệ thống.
-        $plates = array_values(array_unique(array_map(fn ($l) => $l['bks'], $legs)));
-        $vehMap = $plates ? TruckingVehicle::whereIn('plate', $plates)->pluck('type', 'plate')->all() : [];
+        // Gom theo bks_vao + map xe hệ thống QUA vehicle_id (Tier-2 ref đã chốt khi lưu) —
+        // bền hơn so với match plate string (khử rủi ro typo/whitespace). Fallback theo plate
+        // cho lô legacy chưa có vehicle_id.
+        $vehIds = array_values(array_unique(array_filter(array_map(fn ($l) => $l['vehicleId'] ?? null, $legs))));
+        $vehById = $vehIds ? TruckingVehicle::whereIn('id', $vehIds)->get(['id', 'plate', 'type'])->keyBy('id') : collect();
+        $legacyPlates = array_values(array_unique(array_map(fn ($l) => $l['bks'], array_filter($legs, fn ($l) => empty($l['vehicleId'])))));
+        $vehByPlate = $legacyPlates ? TruckingVehicle::whereIn('plate', $legacyPlates)->pluck('type', 'plate')->all() : [];
         $byBks = [];
         foreach ($legs as $l) { $byBks[$l['bks']][] = $l; }
         $trucks = [];
         foreach ($byBks as $bks => $ls) {
             usort($ls, fn ($a, $b) => $a['sortTs'] <=> $b['sortTs']);
-            $trucks[] = ['bks' => $bks, 'matched' => isset($vehMap[$bks]), 'type' => $vehMap[$bks] ?? null, 'legs' => $ls];
+            $vid = $ls[0]['vehicleId'] ?? null;
+            if ($vid && $vehById->has($vid)) {
+                $type = $vehById[$vid]->type ?? null;
+                $matched = true;
+            } else {
+                $type = $vehByPlate[$bks] ?? null;
+                $matched = isset($vehByPlate[$bks]);
+            }
+            $trucks[] = ['bks' => $bks, 'matched' => $matched, 'type' => $type, 'legs' => $ls];
         }
         usort($trucks, fn ($a, $b) => count($b['legs']) <=> count($a['legs']) ?: strcmp($a['bks'], $b['bks']));
 
@@ -679,8 +705,9 @@ trait HandlesShipments
             if ($apply('spends')) {
                 $s->spends()->delete();
                 $uid = auth()->id();
-                // map tên lái xe → id (link cứng driver_id cho báo cáo lương; tên vẫn giữ snapshot)
-                $driverIds = \App\Models\TruckingDriver::pluck('id', 'name');
+                // map tên lái xe → id qua driverIdMap() (request-scoped cache, cùng rule
+                // lowercase+trim với shipment.driver_id → 2 cột nhất quán cho báo cáo lương).
+                $dmap = $this->driverIdMap();
                 foreach (($data['spends'] ?? []) as $i => $sp) {
                     $kind = ($sp['kind'] ?? 'company') === 'salary' ? 'salary' : 'company';
                     $paid = ! empty($sp['paid']);
@@ -688,11 +715,12 @@ trait HandlesShipments
                     // paid_date = ngày tick "Đã chi" (paidDate nếu gửi, không thì lấy Ngày chi)
                     $paidDate = $paid ? ($this->inDate($sp['paidDate'] ?? null) ?: $spendDate) : null;
                     $driverName = $this->str($sp['driver'] ?? null);
+                    $dkey = $driverName ? mb_strtolower(preg_replace('/\s+/u', ' ', trim($driverName)) ?? '') : '';
                     $s->spends()->create([
                         'vehicle_id' => is_numeric($sp['vehicleId'] ?? null) ? (int) $sp['vehicleId'] : null,
                         'bks'        => $this->str($sp['bks'] ?? null),
                         'driver'     => $driverName,
-                        'driver_id'  => $driverName ? ($driverIds[$driverName] ?? null) : null,
+                        'driver_id'  => $dkey !== '' ? ($dmap[$dkey] ?? null) : null,
                         'source'     => $this->str($sp['source'] ?? null) ?: 'other',
                         'kind'       => $kind,
                         'name'       => $this->str($sp['name'] ?? null) ?: 'Khoản chi',
@@ -724,6 +752,51 @@ trait HandlesShipments
         return $this->whIdMapCache = $map;
     }
 
+    /** Bản đồ tên lái xe → id (lowercase). Memoize / request. */
+    private function driverIdMap(): array
+    {
+        if ($this->driverIdMapCache !== null) return $this->driverIdMapCache;
+        $map = [];
+        foreach (TruckingDriver::toBase()->get(['id', 'name']) as $d) {
+            $k = mb_strtolower(trim((string) $d->name));
+            if ($k !== '') $map[$k] = (int) $d->id;
+        }
+        return $this->driverIdMapCache = $map;
+    }
+
+    /** Bản đồ plate → vehicle_id (lowercase+trim+collapse). Memoize / request. */
+    private function vehicleIdMap(): array
+    {
+        if ($this->vehicleIdMapCache !== null) return $this->vehicleIdMapCache;
+        $map = [];
+        foreach (TruckingVehicle::toBase()->get(['id', 'plate']) as $v) {
+            $k = mb_strtolower(preg_replace('/\s+/u', ' ', trim((string) $v->plate)) ?? '');
+            if ($k !== '') $map[$k] = (int) $v->id;
+        }
+        return $this->vehicleIdMapCache = $map;
+    }
+
+    /** Bản đồ tên khách → id (lowercase+trim+collapse). Memoize / request. */
+    private function customerIdMap(): array
+    {
+        if ($this->customerIdMapCache !== null) return $this->customerIdMapCache;
+        $map = [];
+        foreach (TruckingCustomer::toBase()->get(['id', 'name']) as $c) {
+            $k = mb_strtolower(preg_replace('/\s+/u', ' ', trim((string) $c->name)) ?? '');
+            if ($k !== '') $map[$k] = (int) $c->id;
+        }
+        return $this->customerIdMapCache = $map;
+    }
+
+    /** Lookup customer_id theo tên — qua cache memoized (same rule với observer). */
+    private function customerIdByName(?string $name): ?int
+    {
+        $n = trim((string) $name);
+        if ($n === '') return null;
+        $k = mb_strtolower(preg_replace('/\s+/u', ' ', $n) ?? '');
+        return $this->customerIdMap()[$k] ?? null;
+    }
+
     /**
      * Chốt số liệu + tham chiếu BÁO CÁO cho 1 lô (gọi sau khi lưu / để backfill):
      * - Tier 2: gán cost_item_id/payer_id (cost), item_id (revenue) theo tên hiện tại.
@@ -742,10 +815,11 @@ trait HandlesShipments
         $needTier2   = $touches(['cost', 'rev']);
         $needTotals  = $touches(['cost', 'rev']);
         $needVehicle = $touches(['bksVao']);
+        $needDriver  = $touches(['driver']);
         $needLoc     = $touches(['from', 'to']);
         $needWh      = $touches(['kho']);
 
-        if (! $needTier2 && ! $needTotals && ! $needVehicle && ! $needLoc && ! $needWh) return;
+        if (! $needTier2 && ! $needTotals && ! $needVehicle && ! $needDriver && ! $needLoc && ! $needWh) return;
 
         if ($needTier2 || $needTotals) {
             $s->load(['costLines', 'revenueLines', 'payments']);   // nạp TƯƠI khi cần totals/tier2
@@ -791,6 +865,10 @@ trait HandlesShipments
         }
         if ($needVehicle) {
             $updates['vehicle_id'] = $s->bks_vao ? TruckingVehicle::where('plate', $s->bks_vao)->value('id') : null;
+        }
+        if ($needDriver) {
+            $dname = preg_replace('/\s+/u', ' ', trim((string) ($s->driver ?? ''))) ?? '';
+            $updates['driver_id'] = $dname !== '' ? ($this->driverIdMap()[mb_strtolower($dname)] ?? null) : null;
         }
         if ($needLoc) {
             $updates['from_location_id'] = $this->resolveLocationId($s->from_loc);

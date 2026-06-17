@@ -28,7 +28,7 @@ class TruckingShipment extends Model
         'gio_den_du_kien', 'gio_xe_den', 'gio_xe_ra', 'gio_xe_ra_xe',
         'vat_rate', 'han_tt', 'ghi_chu',
         // tham chiếu + số liệu báo cáo (chốt khi lưu)
-        'vehicle_id', 'from_location_id', 'to_location_id',
+        'vehicle_id', 'driver_id', 'from_location_id', 'to_location_id',
         'rev_base', 'vat_amount', 'choho_revenue', 'phai_thu', 'da_thu', 'con_no',
         'cost_total', 'cost_billable', 'cost_company', 'profit',
     ];

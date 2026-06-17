@@ -222,7 +222,7 @@ trait HandlesStatementPricing
     {
         $cust = trim($customer);
         if ($cust === '') return ['candidates' => []];
-        $custId = TruckingCustomer::where('name', $cust)->value('id');
+        $custId = $this->customerIdByName($cust);
         if (! $custId) return ['candidates' => []];
 
         $ctx = $this->pricingContext((int) $custId, $cust);

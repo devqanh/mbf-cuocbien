@@ -145,7 +145,10 @@ trait HandlesPricingAndImport
     /** Đổi TÊN khách hàng (update theo id — giữ nguyên liên kết lô hàng & bảng giá). */
     public function renameCustomer(string $old, string $new): array
     {
-        $old = trim($old); $new = trim($new);
+        // Chuẩn hóa input theo same rule với observer (trim + collapse whitespace) → check trùng
+        // không miss khi user gõ "Cty  X" (double space) mà DB lưu "Cty X".
+        $collapse = fn ($s) => preg_replace('/\s+/u', ' ', trim((string) $s)) ?? '';
+        $old = $collapse($old); $new = $collapse($new);
         if ($new === '') return ['ok' => false, 'message' => 'Tên mới không được trống'];
         $cust = TruckingCustomer::where('name', $old)->first();
         if (! $cust) return ['ok' => false, 'message' => 'Không tìm thấy khách hàng'];
@@ -232,9 +235,15 @@ trait HandlesPricingAndImport
 
     private function reconcileCustomers(array $cfg): void
     {
-        $names = array_values(array_filter(array_map('trim', $cfg['customers'] ?? []), fn ($v) => $v !== ''));
+        // Collapse whitespace để khớp với observer (DB lưu "Cty X"); nếu chỉ trim, payload "Cty  X"
+        // sẽ KHÔNG match DB → whereNotIn xóa nhầm khách + cascade. Backfill migration đã chuẩn hóa DB,
+        // ở đây chuẩn hóa thêm payload là chốt chặn cuối.
+        $collapse = fn ($v) => preg_replace('/\s+/u', ' ', trim((string) $v)) ?? '';
+        $names = array_values(array_filter(array_map($collapse, $cfg['customers'] ?? []), fn ($v) => $v !== ''));
         TruckingCustomer::whereNotIn('name', $names ?: [''])->delete();
-        $info = $cfg['customerInfo'] ?? [];
+        // Re-key customerInfo theo tên đã collapse — tránh miss contact/priceList khi key payload còn raw.
+        $info = [];
+        foreach (($cfg['customerInfo'] ?? []) as $k => $v) $info[$collapse($k)] = $v;
         foreach ($names as $name) {
             $d = $info[$name] ?? [];
             $cust = TruckingCustomer::updateOrCreate(['name' => $name], [
@@ -331,7 +340,12 @@ trait HandlesPricingAndImport
      */
     public function validateShipmentRows(array $rows): array
     {
-        $custSet = array_flip(TruckingCustomer::pluck('name')->map(fn ($n) => mb_strtolower(trim($n)))->all());
+        // toBase() để bỏ hydrate Eloquent — chỉ cần list tên cho dry-run; collapse whitespace y rule observer
+        // để khớp được cả khi user paste "Cty  ABC" (double space) trên Excel.
+        $custSet = array_flip(array_map(
+            fn ($n) => mb_strtolower(preg_replace('/\s+/u', ' ', trim((string) $n)) ?? ''),
+            TruckingCustomer::toBase()->pluck('name')->all()
+        ));
         $locMap = $this->locationNameMap();
         $whMap = $this->warehouseCodeMap();
         $errors = [];
@@ -339,8 +353,9 @@ trait HandlesPricingAndImport
         foreach ($rows as $i => $row) {
             $reasons = [];
             $name = trim((string) ($row['customer'] ?? ''));
+            $nameKey = mb_strtolower(preg_replace('/\s+/u', ' ', $name) ?? '');
             if ($name === '')                                     $reasons[] = 'Thiếu khách hàng';
-            elseif (! isset($custSet[mb_strtolower($name)]))      $reasons[] = "Khách hàng “{$name}” chưa có trong hệ thống";
+            elseif (! isset($custSet[$nameKey]))                  $reasons[] = "Khách hàng “{$name}” chưa có trong hệ thống";
 
             // Số booking/bill — bắt buộc
             $booking = trim((string) ($row['booking'] ?? ''));
