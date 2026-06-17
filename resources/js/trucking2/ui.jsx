@@ -383,6 +383,13 @@ function StatementDetailBody({ st, onUpdate, detailById = {} }) {
                 <tr>
                   <td style={{ borderBottom: "1px solid var(--line-2)" }}></td>
                   <td colSpan={4} style={{ padding: "0 8px 9px", borderBottom: "1px solid var(--line-2)" }}>
+                    {/* LỘ TRÌNH lô (ĐI → NHÀ MÁY → HẠ, theo ký hiệu) — để kế toán dò bảng giá */}
+                    {(d.loTrinh || l.from || l.to) && (
+                      <div style={{ fontSize: 12, fontWeight: 700, margin: "2px 0 4px", color: "var(--ink-2)" }}>
+                        <i className="bi bi-signpost-2-fill" style={{ color: "var(--accent)" }} /> Lộ trình: <span className="tnum">{d.loTrinh || [l.from, l.to].filter(Boolean).join(" → ")}</span>
+                        <span style={{ fontSize: 10.5, fontWeight: 400, color: "var(--ink-4)" }}> (đi → nhà máy → hạ)</span>
+                      </div>
+                    )}
                     {/* Hàng 1: KẾT NỐI (Connect/Disconnect) + KIND + loại cont + tuyến — ghi rõ nhất */}
                     <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "5px 8px", marginBottom: 3 }}>
                       {d.conn === "Connect"
@@ -396,6 +403,12 @@ function StatementDetailBody({ st, onUpdate, detailById = {} }) {
                       {d.route && <span className="tnum" style={{ fontSize: 11, color: "var(--ink-4)" }}>{d.route}</span>}
                       {!d.matched && <span style={{ fontSize: 11, color: "var(--warn)", fontWeight: 700 }}>⚠ chưa khớp bảng giá</span>}
                     </div>
+                    {/* DÒ: vì sao chưa khớp — tiêu chí đã tìm trong bảng giá (cảng + nhà máy + loại) */}
+                    {!d.matched && d.diag && (
+                      <div style={{ fontSize: 11, color: "var(--ink-4)", marginBottom: 3, lineHeight: 1.6 }}>
+                        <i className="bi bi-search" /> Đã dò bảng giá: đi <b className="tnum" style={{ color: "var(--ink-3)" }}>{d.diag.di}</b> → nhà máy <b className="tnum" style={{ color: "var(--ink-3)" }}>{d.diag.nhaMay}</b> → hạ <b className="tnum" style={{ color: "var(--ink-3)" }}>{d.diag.ha}</b> · loại <b style={{ color: "var(--ink-3)" }}>{/external cru/i.test(d.diag.kind || "") ? "CRU ngoại" : /internal cru/i.test(d.diag.kind || "") ? "CRU nội" : "1 chiều"}</b>{d.diag.conn ? <> · <b style={{ color: "var(--ink-3)" }}>{d.diag.conn}</b></> : null}{!d.diag.hasPrice ? <span style={{ color: "var(--warn)" }}> — khách CHƯA có bảng giá</span> : <span> — không có dòng giá khớp (kiểm tra ký hiệu đi·nhà máy·hạ trong Bảng giá)</span>}
+                      </div>
+                    )}
                     {/* Hàng 2: tách khoản tiền */}
                     <div style={{ fontSize: 11.5, color: "var(--ink-3)", display: "flex", flexWrap: "wrap", alignItems: "center", gap: "3px 12px", lineHeight: 1.7 }}>
                       <span>Cước <b className="tnum" style={{ color: "var(--ink-2)" }}>{fmtNum(d.cuoc)}</b></span>

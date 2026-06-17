@@ -7,6 +7,7 @@ use App\Models\TruckingLocation;
 use App\Models\TruckingSetting;
 use App\Models\TruckingShipment;
 use App\Models\TruckingStatement;
+use App\Models\TruckingWarehouse;
 use Carbon\Carbon;
 
 /**
@@ -34,14 +35,18 @@ trait HandlesStatementPricing
         return ['hours' => $hours, 'connect' => $hours > $th, 'threshold' => $th, 'basis' => $basis];
     }
 
-    /** Định giá 1 lô theo bảng giá khách (port priceFor). $priceList = customerPriceList(); $locCode = [tên=>ký hiệu]. */
-    private function priceShipment(TruckingShipment $s, array $priceList, array $locCode, $threshold): array
+    /** Định giá 1 lô theo bảng giá khách. $priceList = customerPriceList(); $locCode = [tên=>ký hiệu];
+     *  $codeMap = [chuẩn-hóa(bỏ dấu, hoa) => KÝ HIỆU] gộp địa điểm + kho (xem normalizedCodeMap). */
+    private function priceShipment(TruckingShipment $s, array $priceList, array $locCode, $threshold, array $codeMap = []): array
     {
         $codeOf = function ($name) use ($locCode) { $v = trim((string) $name); return $locCode[$v] ?? $v; };
         $codeToName = [];
         foreach ($locCode as $nm => $c) { $c = trim((string) $c); if ($c !== '') $codeToName[$c] = $nm; }
         $nameOf = function ($v) use ($codeToName) { $v = trim((string) $v); return $codeToName[$v] ?? $v; };
         $nk = fn ($v) => mb_strtolower(trim((string) $v));   // chuẩn hóa: lowercase + trim → KHÔNG phân biệt hoa/thường
+        // Quy MỌI giá trị (tên CÓ/KHÔNG dấu hoặc ký hiệu) về CÙNG KÝ HIỆU chuẩn → "LACH HUYEN" == "LẠCH HUYỆN" == "LHP".
+        $norm = fn ($v) => mb_strtoupper(trim(\Illuminate\Support\Str::ascii((string) $v)));
+        $rc   = fn ($v) => $codeMap[$norm($v)] ?? $norm($v);
 
         $cont20   = str_contains((string) $s->cont_type, '20');
         $isExport = str_contains(mb_strtolower((string) $s->io), 'xu');
@@ -49,27 +54,31 @@ trait HandlesStatementPricing
             ? ($isExport ? 'External CRU transportation' : 'Internal CRU transportation')
             : 'Transportation 1 way of Import/Export';
 
-        $fromRaw = trim((string) $s->from_loc); $dropRaw = trim((string) $s->to_loc);
         $ft = $this->freeTimeOf($s, $threshold);
         $conn = $ft ? ($ft['connect'] ? 'Connect' : 'Disconnect') : null;
-        $fromC = $codeOf($s->from_loc); $dropC = $codeOf($s->to_loc);
 
-        $eq = fn ($a, $b) => $a !== '' && $a !== null && $a === $b;
-        $fromMatch = fn ($p) => $eq($codeOf($p['from'] ?? ''), $fromC) || $eq(trim((string) ($p['from'] ?? '')), $fromRaw);
-        $dropMatch = function ($p) use ($dropRaw, $dropC, $codeOf) {
-            if ($dropRaw === '') return true;
-            $c = [$codeOf($p['to1'] ?? ''), trim((string) ($p['to1'] ?? '')), $codeOf($p['loc'] ?? ''), trim((string) ($p['loc'] ?? ''))];
-            return in_array($dropC, $c, true) || in_array($dropRaw, $c, true);
+        // ========= KHỚP 3 VAI TRÒ + LOẠI + KẾT NỐI (user chốt) =========
+        // Bảng giá: from = điểm ĐI · loc = điểm HẠ · to1..to4 = NHÀ MÁY. Lô: from_loc → KHO → to_loc.
+        // So theo KÝ HIỆU CHUẨN ($rc) → "LACH HUYEN"=="LẠCH HUYỆN"=="LHP". VD lô #2:
+        // from_loc=HN, kho=TL, to_loc=LHP, External CRU, Connect → dòng giá HN/TL/LACH HUYEN.
+        $loFrom = $rc($s->from_loc);   // điểm ĐI
+        $loDrop = $rc($s->to_loc);     // điểm HẠ
+        $khoCodes = [];
+        foreach (preg_split('/\s*(?:,|→|->|–|—|\s-\s)\s*/u', (string) $s->kho) ?: [] as $k) { $c = $rc($k); if ($c !== '') $khoCodes[] = $c; }
+
+        $fromMatch = fn ($p) => $loFrom === '' || $rc($p['from'] ?? '') === $loFrom;   // điểm đi
+        $dropMatch = fn ($p) => $loDrop === '' || $rc($p['loc'] ?? '') === $loDrop;    // điểm hạ (loc)
+        $khoMatch  = function ($p) use ($rc, $khoCodes) {                              // nhà máy (to1..to4)
+            if (empty($khoCodes)) return false;
+            foreach (['to1', 'to2', 'to3', 'to4'] as $f) { $c = $rc($p[$f] ?? ''); if ($c !== '' && in_array($c, $khoCodes, true)) return true; }
+            return false;
         };
-        $kindMatch = fn ($p) => $nk($p['kind'] ?? '') === $nk($kind);
+        $kindMatch = fn ($p) => $nk($p['kind'] ?? '') === '' || $nk($p['kind'] ?? '') === $nk($kind);   // kind rỗng = áp mọi loại
 
+        $base = fn ($row) => $fromMatch($row) && $dropMatch($row) && $khoMatch($row) && $kindMatch($row);
         $p = null;
-        foreach ($priceList as $row) {
-            if ($fromMatch($row) && $dropMatch($row) && $kindMatch($row) && (! $conn || ($row['conn'] ?? 'Connect') === $conn)) { $p = $row; break; }
-        }
-        if (! $p) foreach ($priceList as $row) {
-            if ($fromMatch($row) && $dropMatch($row) && $kindMatch($row)) { $p = $row; break; }
-        }
+        foreach ($priceList as $row) { if ($base($row) && (! $conn || ($row['conn'] ?? 'Connect') === $conn)) { $p = $row; break; } }
+        if (! $p) foreach ($priceList as $row) { if ($base($row)) { $p = $row; break; } }   // fallback bỏ qua kết nối
 
         $is20 = $cont20;
         $cuoc = $p ? (int) ($is20 ? $p['transFee20'] : $p['transFee40']) : 0;
@@ -82,13 +91,25 @@ trait HandlesStatementPricing
             $costItems[] = ['item' => $c->item ?: '(khoản)', 'amount' => $amt, 'billable' => $bill, 'src' => $c->src ?? ''];
         }
         $chiHo = array_sum(array_column($choHoItems, 'amount'));
-        $route = $p ? (($nameOf($p['from'] ?? '') ?: '?') . ' → ' . ($nameOf(($p['to1'] ?? '') ?: ($p['loc'] ?? '')) ?: '?')) : null;
-        $noDrop = $dropRaw === '' && (bool) $p;
+        // Tuyến hiển thị: ĐI → NHÀ MÁY → HẠ (theo tên cho rõ; ký hiệu là khóa link)
+        $route = $p ? (($nameOf($p['from'] ?? '') ?: '?') . ' → ' . ($nameOf($p['to1'] ?? '') ?: '?') . ' → ' . ($nameOf($p['loc'] ?? '') ?: '?')) : null;
+
+        // CHẨN ĐOÁN để kế toán DÒ vì sao chưa khớp (hiện khi matched=false)
+        $diag = [
+            'hasPrice' => count($priceList) > 0,
+            'di'       => $loFrom !== '' ? $loFrom : '(trống)',
+            'nhaMay'   => $khoCodes ? implode(' / ', $khoCodes) : '(lô chưa có kho/nhà máy)',
+            'ha'       => $loDrop !== '' ? $loDrop : '(trống)',
+            'kind'     => $kind, 'conn' => $conn,
+        ];
+
+        // Lộ trình THỰC của lô (ĐI → NHÀ MÁY → HẠ, theo ký hiệu) — luôn hiện để kế toán dò bảng giá.
+        $loTrinh = implode(' → ', array_filter([$loFrom, implode('+', $khoCodes), $loDrop], fn ($x) => $x !== ''));
 
         return [
             'matched' => (bool) $p, 'conn' => $conn, 'kind' => $kind, 'is20' => $is20,
             'cuoc' => $cuoc, 'dau' => $dau, 'chiHo' => $chiHo, 'choHoItems' => $choHoItems, 'costItems' => $costItems,
-            'route' => $route, 'noDrop' => $noDrop,
+            'route' => $route, 'loTrinh' => $loTrinh, 'kho' => trim((string) $s->kho), 'noDrop' => false, 'diag' => $diag,
             'ftHours' => $ft['hours'] ?? null, 'ftThreshold' => $ft['threshold'] ?? null, 'ftBasis' => $ft['basis'] ?? null,
             'phaiThu' => $cuoc + $dau + $chiHo,
         ];
@@ -99,6 +120,24 @@ trait HandlesStatementPricing
     {
         $m = [];
         foreach (TruckingLocation::get(['name', 'code']) as $l) { if ($l->name && $l->code) $m[$l->name] = $l->code; }
+        return $m;
+    }
+
+    /**
+     * [chuẩn-hóa(bỏ dấu + viết hoa) => KÝ HIỆU] gộp ĐỊA ĐIỂM + KHO, khớp cả code lẫn tên.
+     * Để khớp bảng giá theo ký hiệu duy nhất dù dữ liệu ghi tên có/không dấu
+     * (vd "LACH HUYEN" / "LẠCH HUYỆN" / "LHP" → cùng "LHP").
+     */
+    private function normalizedCodeMap(): array
+    {
+        $norm = fn ($v) => mb_strtoupper(trim(\Illuminate\Support\Str::ascii((string) $v)));
+        $m = [];
+        foreach (TruckingLocation::get(['name', 'code']) as $l) {
+            if ($l->code) { $m[$norm($l->code)] = $l->code; if ($l->name) $m[$norm($l->name)] = $l->code; }
+        }
+        foreach (TruckingWarehouse::get(['name', 'code']) as $w) {
+            if ($w->code) { $m[$norm($w->code)] = $w->code; if ($w->name) $m[$norm($w->name)] = $w->code; }
+        }
         return $m;
     }
 
@@ -115,6 +154,7 @@ trait HandlesStatementPricing
 
         $priceList = $this->customerPriceList($cust);
         $locCode   = $this->locationCodeMap();
+        $codeMap   = $this->normalizedCodeMap();
         $threshold = TruckingSetting::get('free_time_hours', '4');
 
         // ============================================================
@@ -134,7 +174,7 @@ trait HandlesStatementPricing
             if (($from || $to) && ! $date) continue;
             if ($from && $date && $date < $from) continue;
             if ($to && $date && $date > $to) continue;
-            $out[] = $this->candidateRow($s, $sheet, $date, $this->priceShipment($s, $priceList, $locCode, $threshold));
+            $out[] = $this->candidateRow($s, $sheet, $date, $this->priceShipment($s, $priceList, $locCode, $threshold, $codeMap));
         }
         return ['candidates' => $out];
     }
@@ -153,7 +193,7 @@ trait HandlesStatementPricing
             'id' => $s->id, 'booking' => $s->booking ?? '', 'io' => $s->io ?? '', 'sheet' => $sheet,
             'declNo' => $s->declaration_no ?? '', 'contType' => $s->cont_type ?? '', 'inv' => $s->inv ?? '',
             'contNo' => $s->cont_no ?? '', 'bks' => $s->bks_vao ?: ($s->bks_ra ?: ''),
-            'from' => $s->from_loc ?? '', 'to' => $s->to_loc ?? '', 'qty' => $s->qty,
+            'from' => $s->from_loc ?? '', 'to' => $s->to_loc ?? '', 'kho' => $s->kho ?? '', 'qty' => $s->qty,
             'cru' => (bool) $s->cru, 'date' => $date, 'contLabel' => $contLabel, 'note' => $note, 'thanhLy' => $thanhLy,
             'pr' => $pr,
         ];
@@ -168,6 +208,7 @@ trait HandlesStatementPricing
         $customer = $st->customer_name ?? $st->customer?->name ?? '';
         $priceList = $this->customerPriceList($customer);
         $locCode   = $this->locationCodeMap();
+        $codeMap   = $this->normalizedCodeMap();
         $threshold = TruckingSetting::get('free_time_hours', '4');
 
         $ids = $st->lines->map(fn ($l) => $l->shipment_id)->filter()->all();
@@ -180,7 +221,7 @@ trait HandlesStatementPricing
             $sheet = strtoupper((string) $s->sheet);
             // Ngày kỳ = ngày "Giờ xe ra" (gio_xe_ra) — đồng bộ với statementCandidates. HPH fallback sail_date.
             $date  = $this->outDate($s->gio_xe_ra) ?: ($sheet === 'HPH' ? $this->outDate($s->sail_date) : '');
-            $out[(string) $id] = $this->candidateRow($s, $sheet, $date, $this->priceShipment($s, $priceList, $locCode, $threshold));
+            $out[(string) $id] = $this->candidateRow($s, $sheet, $date, $this->priceShipment($s, $priceList, $locCode, $threshold, $codeMap));
         }
         return ['repriced' => $out];
     }
@@ -211,6 +252,7 @@ trait HandlesStatementPricing
             : TruckingShipment::whereIn('id', $allIds)->with('costLines')->get()->keyBy('id');
 
         $locCode   = $this->locationCodeMap();
+        $codeMap   = $this->normalizedCodeMap();
         $threshold = TruckingSetting::get('free_time_hours', '4');
         $priceCache = [];   // tên khách => bảng giá (tránh query lặp khi nhiều bảng kê cùng khách)
 
@@ -223,7 +265,7 @@ trait HandlesStatementPricing
             foreach ($st->lines as $l) {
                 $s = $l->shipment_id ? $ships->get($l->shipment_id) : null;
                 if (! $s) continue;   // lô đã xóa → giữ số đã lưu, không phải "phát sinh"
-                $pr = $this->priceShipment($s, $priceList, $locCode, $threshold);
+                $pr = $this->priceShipment($s, $priceList, $locCode, $threshold, $codeMap);
                 if ((int) round((float) $pr['phaiThu']) !== (int) round((float) $l->phai_thu)) $changed++;
             }
             if ($changed > 0) $out[(string) $st->id] = ['changed' => $changed];
