@@ -700,7 +700,7 @@ function TrackingApp() {
     { element: '[data-tour="list"]', title: "Danh sách xe", description: "Bấm 1 xe để xem trên bản đồ (bấm lại để bỏ chọn). Mỗi xe hiện tốc độ, khoảng cách & thời gian dự kiến tới kho gần nhất.", side: "right", align: "start" },
     { element: '[data-tour="placesearch"]', title: "Tìm địa điểm trên bản đồ", description: "Gõ địa chỉ/địa điểm bất kỳ rồi chọn gợi ý — bản đồ sẽ bay tới đó ngay.", side: "bottom", align: "start" },
     { element: '[data-tour="overview"]', title: "Toàn cảnh & lớp bản đồ", description: "Cụm nút này: <b>Toàn cảnh</b> đưa bản đồ về xem tất cả xe (bỏ chọn xe); <b>Giao thông</b> hiện tình trạng kẹt đường; <b>Địa điểm</b> hiện POI (quán, cây xăng…); <b>Vệ tinh</b> đổi sang ảnh vệ tinh. Lựa chọn được ghi nhớ cho lần sau.", side: "top", align: "start" },
-    { title: "Bám theo xe", description: "Khi chọn 1 xe sẽ có nút “Bám xe” — bật để bản đồ tự đi theo khi xe di chuyển. Kéo bản đồ bằng tay sẽ tự dừng bám. Nhấn phím Esc để bỏ chọn nhanh." },
+    { title: "Theo dõi xe", description: "Khi chọn 1 xe sẽ có nút “Theo dõi xe” — bật để bản đồ tự đi theo khi xe di chuyển. Kéo bản đồ bằng tay sẽ tự dừng. Nhấn phím Esc để bỏ chọn nhanh." },
     ...(canEdit && ROUTES.warehouseGeo ? [{ element: '[data-tour="warehouse"]', title: "Vị trí kho", description: "Bạn có quyền ghim vị trí kho lên bản đồ — hệ thống dùng để tính khoảng cách và lịch sử xe ra/vào kho.", side: "bottom", align: "end" }] : []),
     { element: '[data-tour="history"]', title: "Lịch sử đến kho", description: "Xem lại lịch sử xe đến/rời từng kho ở đây.", side: "bottom", align: "end" },
     { element: '[data-tour="help"]', title: "Xong! 🎉", description: "Bạn có thể mở lại hướng dẫn này bất cứ lúc nào bằng nút “Hướng dẫn” ở góc trên. Chúc bạn theo dõi xe hiệu quả!", side: "bottom", align: "end" },
@@ -881,10 +881,10 @@ function TrackingApp() {
               <span style={{ width: 9, height: 9, borderRadius: 999, background: (STATUS[effStatus(selVeh)] || STATUS.off).color, flexShrink: 0 }} />
               <span className="tnum" style={{ fontWeight: 700, fontSize: 13, whiteSpace: "nowrap" }}>{selVeh.plate || "—"}</span>
               <span className="tnum" style={{ fontSize: 12, color: "var(--ink-4)", whiteSpace: "nowrap" }}>{Math.round(selVeh.speed || 0)} km/h</span>
-              <button type="button" onClick={() => setFollow((v) => !v)} title={follow ? "Đang bám xe — bấm để dừng" : "Bám theo xe khi di chuyển"}
+              <button type="button" onClick={() => setFollow((v) => !v)} title={follow ? "Đang theo dõi xe — bấm để dừng" : "Theo dõi xe khi di chuyển"}
                 style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", fontSize: 12, fontWeight: 600, cursor: "pointer", borderRadius: 999, whiteSpace: "nowrap",
                   border: follow ? "1px solid var(--accent)" : "1px solid var(--line)", background: follow ? "var(--accent)" : "#fff", color: follow ? "#fff" : "var(--ink-2)" }}>
-                <i className={"bi " + (follow ? "bi-broadcast-pin" : "bi-pin-map")} /> {follow ? "Đang bám" : "Bám xe"}
+                <i className={"bi " + (follow ? "bi-broadcast-pin" : "bi-pin-map")} /> {follow ? "Đang theo dõi" : "Theo dõi xe"}
               </button>
               <button type="button" onClick={() => { setSelected(null); setFollow(false); closeInfo(); }} title="Bỏ chọn (Esc)"
                 style={{ width: 28, height: 28, flexShrink: 0, display: "grid", placeItems: "center", border: "none", borderRadius: 999, background: "var(--line-2)", color: "var(--ink-3)", cursor: "pointer" }}><I.x /></button>
