@@ -283,6 +283,7 @@ function TrackingApp() {
       return true;
     });
   }, [positions, q, fStatus, fProvider, matchedOnly]);
+  const filteredRef = useRef(filtered); filteredRef.current = filtered;   // handler đọc danh sách lọc mới nhất
 
   const counts = useMemo(() => {
     const c = { all: positions.length, run: 0, idle: 0, off: 0, lost: 0, matched: 0 };
@@ -368,8 +369,13 @@ function TrackingApp() {
       infoRef.current = new maps.InfoWindow();
       infoRef.current.addListener("closeclick", () => { infoOpenRef.current = null; });
       whInfoRef.current = new maps.InfoWindow();
-      // Bấm lên bản đồ khi đang "đặt kho" → ghim kho tại điểm đó.
-      mapRef.current.addListener("click", (e) => { if (placingRef.current != null) placeFnRef.current(placingRef.current, e.latLng.lat(), e.latLng.lng()); });
+      // Bấm lên bản đồ: đang "đặt kho" → ghim kho; ngược lại → bỏ chọn xe + đóng popup (thoát nhanh khỏi lỡ chọn).
+      mapRef.current.addListener("click", (e) => {
+        if (placingRef.current != null) { placeFnRef.current(placingRef.current, e.latLng.lat(), e.latLng.lng()); return; }
+        setSelected(null);
+        if (infoRef.current) infoRef.current.close();
+        infoOpenRef.current = null;
+      });
       // Tìm địa điểm: AutocompleteService (gợi ý) + PlacesService (chi tiết).
       try {
         if (maps.places) {
@@ -560,6 +566,40 @@ function TrackingApp() {
     }, isMobile ? 250 : 0);
   };
 
+  // Khít bản đồ về toàn bộ xe đang hiển thị (mặc định: danh sách đang lọc).
+  const fitAll = (pts) => {
+    if (!mapRef.current || !window.google) return;
+    const arr = (pts || filteredRef.current || []).filter((p) => p.lat != null && p.lng != null);
+    if (!arr.length) return;
+    const b = new window.google.maps.LatLngBounds();
+    arr.forEach((p) => b.extend({ lat: p.lat, lng: p.lng }));
+    mapRef.current.fitBounds(b);
+    if (arr.length === 1) mapRef.current.setZoom(15);
+  };
+  const closeInfo = () => { if (infoRef.current) infoRef.current.close(); infoOpenRef.current = null; };
+  // "Toàn cảnh": bỏ chọn xe + đóng popup + khít lại về toàn bộ xe đang lọc.
+  const overview = () => { setSelected(null); closeInfo(); fitAll(); };
+  // "Xóa lọc": gỡ MỌI bộ lọc + ô tìm + chọn → tự khít về toàn bộ xe.
+  const clearFilters = () => {
+    setQ(""); setFStatus("all"); setFProvider("all"); setMatchedOnly(false); setSelected(null);
+    closeInfo();
+    if (searchMkRef.current) searchMkRef.current.setMap(null);
+    setPlaceQ(""); setPlacePreds([]); setPlaceOpen(false);
+    setTimeout(() => fitAll(positions), 40);
+  };
+  const hasFilter = fStatus !== "all" || fProvider !== "all" || matchedOnly || !!q.trim() || !!selected;
+
+  // Đổi bộ lọc (trạng thái/nguồn/xe hệ thống) → tự khít lại bản đồ theo nhóm xe khớp.
+  const filterSig = fStatus + "|" + fProvider + "|" + (matchedOnly ? 1 : 0);
+  const prevFilterSig = useRef(null);
+  useEffect(() => {
+    if (!mapReady) return;
+    if (prevFilterSig.current === null) { prevFilterSig.current = filterSig; return; }   // bỏ qua lần đầu (đã có fitBounds khởi tạo)
+    if (prevFilterSig.current === filterSig) return;
+    prevFilterSig.current = filterSig;
+    setTimeout(() => fitAll(filteredRef.current), 40);
+  }, [filterSig, mapReady]);
+
   const enabledProviders = providers.filter((p) => p.enabled);
   const noData = !loading && positions.length === 0;
 
@@ -627,6 +667,12 @@ function TrackingApp() {
             <option value="all">Mọi nguồn</option>
             {enabledProviders.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
           </select>
+        )}
+        {hasFilter && (
+          <button type="button" onClick={clearFilters} title="Bỏ mọi bộ lọc & về toàn cảnh bản đồ"
+            style={{ flexShrink: 0, marginLeft: isMobile ? 0 : "auto", display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid var(--danger)", background: "var(--danger-weak, #fdecec)", color: "var(--danger)", borderRadius: 999, padding: "5px 11px", cursor: "pointer", fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" }}>
+            <i className="bi bi-x-circle" /> Xóa lọc
+          </button>
         )}
       </div>
 
@@ -736,9 +782,14 @@ function TrackingApp() {
             </div>
           )}
 
-          {/* Lớp bản đồ: Giao thông + Vệ tinh (góc dưới-trái) */}
+          {/* Lớp bản đồ: Toàn cảnh + Giao thông + Vệ tinh (góc dưới-trái) */}
           {mapReady && (
-            <div style={{ position: "absolute", left: 10, bottom: 22, zIndex: 6, display: "flex", gap: 6 }}>
+            <div style={{ position: "absolute", left: 10, bottom: 22, zIndex: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <button type="button" onClick={overview} title="Thu toàn cảnh — bỏ chọn xe & xem tất cả"
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 11px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", borderRadius: 8,
+                  border: "1px solid var(--line)", background: "#fff", color: "var(--ink-2)", boxShadow: "0 1px 4px rgba(0,0,0,.2)" }}>
+                <i className="bi bi-arrows-fullscreen" /> Toàn cảnh
+              </button>
               {[["traffic", "Giao thông", "bi-traffic-light", trafficOn, () => setTrafficOn((v) => !v)],
                 ["poi", "Địa điểm", "bi-shop", showPoi, () => setShowPoi((v) => !v)],
                 ["sat", "Vệ tinh", "bi-globe-asia-australia", satellite, () => setSatellite((v) => !v)]].map(([k, label, ic, on, toggle]) => (
