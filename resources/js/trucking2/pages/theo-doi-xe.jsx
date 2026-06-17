@@ -209,10 +209,14 @@ function TrackingApp() {
   const [warehouses, setWarehouses] = useState([]);
   const [whPanel, setWhPanel] = useState(false);     // mở panel quản lý vị trí kho (admin)
   const [placingId, setPlacingId] = useState(null);  // kho đang chờ bấm/đặt điểm
-  const [trafficOn, setTrafficOn] = useState(true);   // lớp giao thông — MẶC ĐỊNH BẬT (chọn tuyến tiện)
-  const [satellite, setSatellite] = useState(false);  // ảnh vệ tinh
-  const [showPoi, setShowPoi] = useState(false);       // hiện địa điểm (POI) — MẶC ĐỊNH TẮT; bật khi cần ghim kho chính xác
+  // Lớp bản đồ — NHỚ lựa chọn qua localStorage (lần sau vào giữ nguyên).
+  const lsBool = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : v === "1"; } catch (e) { return d; } };
+  const [trafficOn, setTrafficOn] = useState(() => lsBool("trk_traffic", true));   // lớp giao thông — mặc định BẬT
+  const [satellite, setSatellite] = useState(() => lsBool("trk_sat", false));      // ảnh vệ tinh
+  const [showPoi, setShowPoi] = useState(() => lsBool("trk_poi", false));          // hiện địa điểm (POI)
+  const [follow, setFollow] = useState(false);   // bám xe đang chọn (map tự đi theo khi xe chạy)
   const trafficRef = useRef(null);
+  useEffect(() => { try { localStorage.setItem("trk_traffic", trafficOn ? "1" : "0"); localStorage.setItem("trk_sat", satellite ? "1" : "0"); localStorage.setItem("trk_poi", showPoi ? "1" : "0"); } catch (e) {} }, [trafficOn, satellite, showPoi]);
 
   const idOf = (p) => p.provider + ":" + p.plateNorm;
 
@@ -372,10 +376,12 @@ function TrackingApp() {
       // Bấm lên bản đồ: đang "đặt kho" → ghim kho; ngược lại → bỏ chọn xe + đóng popup (thoát nhanh khỏi lỡ chọn).
       mapRef.current.addListener("click", (e) => {
         if (placingRef.current != null) { placeFnRef.current(placingRef.current, e.latLng.lat(), e.latLng.lng()); return; }
-        setSelected(null);
+        setSelected(null); setFollow(false);
         if (infoRef.current) infoRef.current.close();
         infoOpenRef.current = null;
       });
+      // Kéo bản đồ bằng tay → tự tắt "bám xe" (trả quyền điều khiển cho người dùng).
+      mapRef.current.addListener("dragstart", () => setFollow(false));
       // Tìm địa điểm: AutocompleteService (gợi ý) + PlacesService (chi tiết).
       try {
         if (maps.places) {
@@ -487,6 +493,7 @@ function TrackingApp() {
         if (m.__sig !== sig) { m.setIcon(iconFor(maps, p, sel)); m.__sig = sig; }
         tweenMarker(m, pos);   // trượt mượt tới vị trí mới (cảm giác xe chạy realtime)
       }
+      if (follow && sel && mapRef.current) { mapRef.current.panTo(pos); if (mapRef.current.getZoom() < 14) mapRef.current.setZoom(15); }   // bám xe: map đi theo xe đang chọn
     });
     Object.keys(markersRef.current).forEach((id) => { if (!seen.has(id)) { const m = markersRef.current[id]; if (m.__anim) cancelAnimationFrame(m.__anim); m.setMap(null); delete markersRef.current[id]; } });
 
@@ -502,7 +509,7 @@ function TrackingApp() {
     if (openId && markerData.current[openId] && infoRef.current) {
       infoRef.current.setContent(popupHtml(markerData.current[openId]));
     }
-  }, [filtered, selected, mapReady]);
+  }, [filtered, selected, mapReady, follow]);
 
   // ---- marker KHO (vẽ + kéo để chỉnh; bấm xem thông tin) ----
   useEffect(() => {
@@ -578,10 +585,10 @@ function TrackingApp() {
   };
   const closeInfo = () => { if (infoRef.current) infoRef.current.close(); infoOpenRef.current = null; };
   // "Toàn cảnh": bỏ chọn xe + đóng popup + khít lại về toàn bộ xe đang lọc.
-  const overview = () => { setSelected(null); closeInfo(); fitAll(); };
+  const overview = () => { setSelected(null); setFollow(false); closeInfo(); fitAll(); };
   // "Xóa lọc": gỡ MỌI bộ lọc + ô tìm + chọn → tự khít về toàn bộ xe.
   const clearFilters = () => {
-    setQ(""); setFStatus("all"); setFProvider("all"); setMatchedOnly(false); setSelected(null);
+    setQ(""); setFStatus("all"); setFProvider("all"); setMatchedOnly(false); setSelected(null); setFollow(false);
     closeInfo();
     if (searchMkRef.current) searchMkRef.current.setMap(null);
     setPlaceQ(""); setPlacePreds([]); setPlaceOpen(false);
@@ -600,8 +607,21 @@ function TrackingApp() {
     setTimeout(() => fitAll(filteredRef.current), 40);
   }, [filterSig, mapReady]);
 
+  // Phím Esc: đang đặt kho → hủy; đang mở gợi ý địa điểm → đóng; đang chọn xe → bỏ chọn.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      if (placingId != null) { setPlacingId(null); return; }
+      if (placeOpen) { setPlaceOpen(false); return; }
+      if (selected) { setSelected(null); setFollow(false); closeInfo(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [placingId, placeOpen, selected]);
+
   const enabledProviders = providers.filter((p) => p.enabled);
   const noData = !loading && positions.length === 0;
+  const selVeh = selected ? positions.find((p) => idOf(p) === selected) : null;   // xe đang chọn (cho chip điều khiển + bám xe)
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
@@ -704,7 +724,7 @@ function TrackingApp() {
             const effV = avgV != null ? avgV : (p.speed || 0);
             const eta = (n && !at && effV >= ETA_MIN_KMH) ? fmtEta(n.km, effV) : null;
             return (
-              <button key={id} type="button" onClick={() => focusVehicle(p)}
+              <button key={id} type="button" onClick={() => { if (on) { setSelected(null); setFollow(false); closeInfo(); } else focusVehicle(p); }}
                 style={{ width: "100%", textAlign: "left", display: "block", border: "none", borderLeft: `3px solid ${on ? st.color : "transparent"}`, borderBottom: "1px solid var(--line-2)", background: on ? "var(--accent-weak-2)" : "#fff", cursor: "pointer", padding: "9px 13px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ width: 9, height: 9, borderRadius: 999, background: st.color, flexShrink: 0 }} />
@@ -771,6 +791,22 @@ function TrackingApp() {
             </div>
           )}
 
+          {/* Chip điều khiển xe đang chọn: bám xe / bỏ chọn (ẩn khi đang đặt kho) */}
+          {mapReady && selVeh && placingId == null && (
+            <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 7, display: "flex", alignItems: "center", gap: 8, background: "#fff", border: "1px solid var(--line)", borderRadius: 999, padding: "5px 6px 5px 13px", boxShadow: "0 4px 16px rgba(0,0,0,.2)", maxWidth: "92%" }}>
+              <span style={{ width: 9, height: 9, borderRadius: 999, background: (STATUS[effStatus(selVeh)] || STATUS.off).color, flexShrink: 0 }} />
+              <span className="tnum" style={{ fontWeight: 700, fontSize: 13, whiteSpace: "nowrap" }}>{selVeh.plate || "—"}</span>
+              <span className="tnum" style={{ fontSize: 12, color: "var(--ink-4)", whiteSpace: "nowrap" }}>{Math.round(selVeh.speed || 0)} km/h</span>
+              <button type="button" onClick={() => setFollow((v) => !v)} title={follow ? "Đang bám xe — bấm để dừng" : "Bám theo xe khi di chuyển"}
+                style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", fontSize: 12, fontWeight: 600, cursor: "pointer", borderRadius: 999, whiteSpace: "nowrap",
+                  border: follow ? "1px solid var(--accent)" : "1px solid var(--line)", background: follow ? "var(--accent)" : "#fff", color: follow ? "#fff" : "var(--ink-2)" }}>
+                <i className={"bi " + (follow ? "bi-broadcast-pin" : "bi-pin-map")} /> {follow ? "Đang bám" : "Bám xe"}
+              </button>
+              <button type="button" onClick={() => { setSelected(null); setFollow(false); closeInfo(); }} title="Bỏ chọn (Esc)"
+                style={{ width: 28, height: 28, flexShrink: 0, display: "grid", placeItems: "center", border: "none", borderRadius: 999, background: "var(--line-2)", color: "var(--ink-3)", cursor: "pointer" }}><I.x /></button>
+            </div>
+          )}
+
           {/* Overlay loading khi mới vào — tắt sau khi map dựng xong + zoom ra */}
           {!booted && !mapErr && (
             <div style={{ position: "absolute", inset: 0, zIndex: 7, display: "grid", placeItems: "center", background: "rgba(247,249,251,0.94)", backdropFilter: "blur(2px)" }}>
@@ -786,7 +822,7 @@ function TrackingApp() {
           {mapReady && (
             <div style={{ position: "absolute", left: 10, bottom: 22, zIndex: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
               <button type="button" onClick={overview} title="Thu toàn cảnh — bỏ chọn xe & xem tất cả"
-                style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 11px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", borderRadius: 8,
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: isMobile ? "10px 14px" : "7px 11px", fontSize: isMobile ? 13.5 : 12.5, fontWeight: 600, cursor: "pointer", borderRadius: 8,
                   border: "1px solid var(--line)", background: "#fff", color: "var(--ink-2)", boxShadow: "0 1px 4px rgba(0,0,0,.2)" }}>
                 <i className="bi bi-arrows-fullscreen" /> Toàn cảnh
               </button>
@@ -794,7 +830,7 @@ function TrackingApp() {
                 ["poi", "Địa điểm", "bi-shop", showPoi, () => setShowPoi((v) => !v)],
                 ["sat", "Vệ tinh", "bi-globe-asia-australia", satellite, () => setSatellite((v) => !v)]].map(([k, label, ic, on, toggle]) => (
                 <button key={k} type="button" onClick={toggle} title={label}
-                  style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 11px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", borderRadius: 8,
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: isMobile ? "10px 14px" : "7px 11px", fontSize: isMobile ? 13.5 : 12.5, fontWeight: 600, cursor: "pointer", borderRadius: 8,
                     border: on ? "1px solid var(--accent)" : "1px solid var(--line)", background: on ? "var(--accent)" : "#fff", color: on ? "#fff" : "var(--ink-2)", boxShadow: "0 1px 4px rgba(0,0,0,.2)" }}>
                   <i className={"bi " + ic} /> {label}
                 </button>
