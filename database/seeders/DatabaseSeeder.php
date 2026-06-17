@@ -75,7 +75,9 @@ class DatabaseSeeder extends Seeder
         }
 
         // --- Super admin user ---
-        $sa = User::updateOrCreate(
+        // firstOrCreate: chỉ tạo nếu CHƯA có; KHÔNG reset mật khẩu/tên khi deploy lại.
+        // Vẫn đảm bảo gán đúng vai trò super_admin (syncRoles không đụng mật khẩu).
+        $sa = User::firstOrCreate(
             ['email' => 'devqanh@gmail.com'],
             [
                 'name'              => 'Super Admin',
