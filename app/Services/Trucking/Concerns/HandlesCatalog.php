@@ -157,6 +157,9 @@ trait HandlesCatalog
             if ($coded) {
                 $out[$coded] = $rows->filter(fn ($r) => $r->code)->mapWithKeys(fn ($r) => [$r->name => $r->code])->all();
                 $out[$coded . 'Arr'] = $rows->map(fn ($r) => $r->code ?? '')->all();   // mã theo chỉ số dòng
+                // Mảng ID theo chỉ số dòng — BẮT BUỘC để reconcileLookup khớp theo id (giữ id, không
+                // xóa+tạo lại khi lưu). Phải ĐỒNG BỘ với config() full; thiếu là save sẽ churn id/đứt link.
+                $out[$key . 'IdArr'] = $rows->map(fn ($r) => $r->id)->all();
                 if ($key === 'warehouses') {
                     $out['warehouseAddr']    = $rows->filter(fn ($r) => $r->address)->mapWithKeys(fn ($r) => [$r->name => $r->address])->all();
                     $out['warehouseAddrArr'] = $rows->map(fn ($r) => $r->address ?? '')->all();
