@@ -497,12 +497,12 @@ function TrackingApp() {
     });
     Object.keys(markersRef.current).forEach((id) => { if (!seen.has(id)) { const m = markersRef.current[id]; if (m.__anim) cancelAnimationFrame(m.__anim); m.setMap(null); delete markersRef.current[id]; } });
 
-    if (!didFit.current && filtered.length) {
-      didFit.current = true;
+    // Fit lần đầu — CHỈ khi container đã có kích thước thật (tránh fitBounds sai lúc layout chưa xong
+    // → "đôi khi không thấy xe, reload mới hiện"). Chưa có size thì để ResizeObserver fit lại sau.
+    if (!didFit.current && filtered.length && mapEl.current && mapEl.current.offsetHeight > 0) {
       const b = new maps.LatLngBounds();
-      filtered.forEach((p) => b.extend({ lat: p.lat, lng: p.lng }));
-      mapRef.current.fitBounds(b);
-      if (filtered.length === 1) mapRef.current.setZoom(15);
+      filtered.forEach((p) => { if (p.lat != null && p.lng != null) b.extend({ lat: p.lat, lng: p.lng }); });
+      if (!b.isEmpty()) { didFit.current = true; mapRef.current.fitBounds(b); if (filtered.length === 1) mapRef.current.setZoom(15); }
     }
     // Chỉ REFRESH nội dung popup ĐANG mở (không tự mở lại mỗi poll → đỡ nháy).
     const openId = infoOpenRef.current;
@@ -510,6 +510,25 @@ function TrackingApp() {
       infoRef.current.setContent(popupHtml(markerData.current[openId]));
     }
   }, [filtered, selected, mapReady, follow]);
+
+  // Theo dõi kích thước container map: lúc mới vào layout có thể chưa xong (container 0px) → markers
+  // vẽ nhưng map ở vùng sai/xám → "đôi khi không thấy xe". Khi container có/đổi size: ép map resize +
+  // fit lại về đàn xe nếu chưa fit lần nào. (Sau khi đã fit thì chỉ resize, không tự đổi khung của user.)
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !mapEl.current || !window.google || typeof ResizeObserver === "undefined") return;
+    const el = mapEl.current;
+    const ro = new ResizeObserver(() => {
+      if (!mapRef.current) return;
+      window.google.maps.event.trigger(mapRef.current, "resize");
+      if (!didFit.current && el.offsetHeight > 0 && filteredRef.current.length) {
+        const b = new window.google.maps.LatLngBounds();
+        filteredRef.current.forEach((p) => { if (p.lat != null && p.lng != null) b.extend({ lat: p.lat, lng: p.lng }); });
+        if (!b.isEmpty()) { didFit.current = true; mapRef.current.fitBounds(b); if (filteredRef.current.length === 1) mapRef.current.setZoom(15); }
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [mapReady]);
 
   // ---- marker KHO (vẽ + kéo để chỉnh; bấm xem thông tin) ----
   useEffect(() => {
