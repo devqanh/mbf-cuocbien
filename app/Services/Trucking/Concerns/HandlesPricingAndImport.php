@@ -138,7 +138,10 @@ trait HandlesPricingAndImport
         if ($new === '') return ['ok' => false, 'message' => 'Tên mới không được trống'];
         $cust = TruckingCustomer::where('name', $old)->first();
         if (! $cust) return ['ok' => false, 'message' => 'Không tìm thấy khách hàng'];
-        if ($new !== $old && TruckingCustomer::where('name', $new)->exists()) {
+        // LOẠI TRỪ chính khách đang sửa (theo id): MySQL collation không phân biệt hoa/thường nên
+        // đổi mỗi kiểu hoa/thường (CANON QUẾ VÕ → Canon Quế Võ) where('name',$new) sẽ khớp lại chính
+        // nó → báo trùng nhầm. Chỉ chặn khi trùng với KHÁCH KHÁC.
+        if (TruckingCustomer::where('name', $new)->where('id', '!=', $cust->id)->exists()) {
             return ['ok' => false, 'message' => 'Tên khách hàng đã tồn tại'];
         }
         $cust->update(['name' => $new]);
