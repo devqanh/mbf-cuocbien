@@ -793,7 +793,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                             const linkedToPrice = locked.has(list[i]);
                             return (
                               <div key={i} style={{ display: "grid", gridTemplateColumns: "22px 1fr 28px", gap: 8, alignItems: "center", padding: "2px 0" }}>
-                                <span style={{ color: linkedToPrice ? "var(--accent)" : "var(--ink-4)" }} title={linkedToPrice ? "Đang dùng trong bảng giá" : ""}><I.link /></span>
+                                <span style={{ color: linkedToPrice ? "var(--accent)" : "var(--ink-4)", display: "inline-flex" }} title={linkedToPrice ? "Địa điểm — đang dùng trong bảng giá" : "Địa điểm"}><i className="bi bi-geo-alt-fill" style={{ fontSize: 14 }} /></span>
                                 <input value={list[i]} onChange={(e) => rename(i, e.target.value)} placeholder="Tên địa điểm"
                                   style={{ width: "100%", padding: "7px 10px", fontSize: 13.5, border: "1px solid transparent", borderRadius: 8, outline: "none", background: "transparent" }}
                                   onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.background = "#fff"; }}
