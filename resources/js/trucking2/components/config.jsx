@@ -773,14 +773,18 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                   <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: 430, overflowY: "auto", paddingRight: 2 }}>
                     {groups.map((grp) => {
                       const noCode = grp.key === "";
+                      // Ký hiệu đã LƯU (nhóm có dòng mang id thật) → khóa, không cho sửa (giữ khớp import/bảng giá).
+                      // Nhóm mới thêm (chưa có id) thì còn sửa được ký hiệu trước khi lưu.
+                      const codeSaved = !noCode && grp.idxs.some((i) => { const id = idArr[i]; return id != null && id !== "" && !isNaN(+id); });
                       return (
                       <div key={grp.idxs[0]} style={{ flexShrink: 0, border: "1px solid var(--line)", borderRadius: 11, overflow: "hidden", background: "#fff" }}>
-                        {/* Header nhóm: ký hiệu — sửa ở đây áp cho CẢ nhóm */}
+                        {/* Header nhóm: ký hiệu — sửa ở đây áp cho CẢ nhóm (đã lưu thì khóa) */}
                         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: noCode ? "var(--line-2)" : "var(--accent-weak)", borderBottom: "1px solid var(--line)" }}>
-                          <i className="bi bi-tag-fill" style={{ color: noCode ? "var(--ink-4)" : "var(--accent)", fontSize: 13 }} />
-                          <input value={grp.code} onChange={(e) => setGroupCode(grp.idxs, e.target.value)} placeholder="Ký hiệu…"
-                            style={{ width: 130, padding: "5px 9px", fontSize: 13, fontWeight: 700, textTransform: "uppercase", border: "1px solid var(--line)", borderRadius: 7, outline: "none", background: "#fff" }}
-                            onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
+                          <i className={"bi " + (codeSaved ? "bi-lock-fill" : "bi-tag-fill")} style={{ color: noCode ? "var(--ink-4)" : "var(--accent)", fontSize: 13 }} title={codeSaved ? "Ký hiệu đã lưu — không sửa được" : ""} />
+                          <input value={grp.code} readOnly={codeSaved} onChange={(e) => { if (!codeSaved) setGroupCode(grp.idxs, e.target.value); }} placeholder="Ký hiệu…"
+                            title={codeSaved ? "Ký hiệu đã lưu — không sửa để giữ khớp import/bảng giá" : ""}
+                            style={{ width: 130, padding: "5px 9px", fontSize: 13, fontWeight: 700, textTransform: "uppercase", border: "1px solid var(--line)", borderRadius: 7, outline: "none", background: codeSaved ? "var(--line-2)" : "#fff", color: codeSaved ? "var(--ink-3)" : "var(--ink)", cursor: codeSaved ? "not-allowed" : "text" }}
+                            onFocus={(e) => { if (!codeSaved) e.target.style.borderColor = "var(--accent)"; }} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
                           <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--ink-4)" }}>{grp.idxs.length} địa điểm</span>
                           <button type="button" onClick={() => addRow(grp.code, "")} title="Thêm 1 tên địa điểm vào nhóm này"
                             style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer", borderRadius: 7, border: "1px solid var(--accent)", background: "#fff", color: "var(--accent)" }}>
