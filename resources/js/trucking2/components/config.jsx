@@ -842,7 +842,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                 <Btn variant="primary" onClick={addItem}>Thêm</Btn>
               </div>
               {(() => {
-                const codedGrid = g.geo ? "24px 1fr 86px 1.2fr 124px 28px" : g.addressed ? "24px 1.1fr 110px 1.5fr 28px" : "24px 1fr 130px 28px";
+                const codedGrid = g.geo ? "24px 0.8fr 130px 1.4fr 118px 28px" : g.addressed ? "24px 1.1fr 110px 1.5fr 28px" : "24px 1fr 130px 28px";
                 const grid = g.priced && g.colored ? "24px 1fr 150px 56px 28px"
                   : g.priced ? "24px 1fr 150px 28px"
                   : g.colored ? "24px 1fr 56px 28px"
@@ -867,7 +867,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                   const rowGrid = g.priced && g.colored ? "24px 1fr 150px 56px 28px"
                     : g.priced ? "24px 1fr 150px 28px"
                     : g.colored ? "24px 1fr 56px 28px"
-                    : g.coded ? (g.geo ? "24px 1fr 86px 1.2fr 124px 28px" : g.addressed ? "24px 1.1fr 110px 1.5fr 28px" : "24px 1fr 130px 28px")
+                    : g.coded ? (g.geo ? "24px 0.8fr 130px 1.4fr 118px 28px" : g.addressed ? "24px 1.1fr 110px 1.5fr 28px" : "24px 1fr 130px 28px")
                     : g.fleet ? "24px 1fr 360px 28px"
                     : "24px 1fr 28px";
                   return (
