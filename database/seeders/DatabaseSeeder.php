@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\Shipment;
+use App\Models\TruckingSetting;
 use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
@@ -40,44 +41,38 @@ class DatabaseSeeder extends Seeder
         }
 
         // --- Roles ---
+        // super_admin + admin: toàn quyền. ke_toan: tài chính. chung_tu: lô hàng + theo dõi xe.
         $superAdmin = Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web'], ['display_name' => 'Quản trị toàn quyền']);
         $admin      = Role::firstOrCreate(['name' => 'admin',       'guard_name' => 'web'], ['display_name' => 'Quản trị viên']);
-        $editor     = Role::firstOrCreate(['name' => 'editor',      'guard_name' => 'web'], ['display_name' => 'Biên tập viên']);
-        $user       = Role::firstOrCreate(['name' => 'user',        'guard_name' => 'web'], ['display_name' => 'Nhân viên xem']);
+        $keToan     = Role::firstOrCreate(['name' => 'ke_toan',     'guard_name' => 'web'], ['display_name' => 'Kế toán']);
+        $chungTu    = Role::firstOrCreate(['name' => 'chung_tu',    'guard_name' => 'web'], ['display_name' => 'Chứng từ']);
 
+        // super_admin LUÔN đủ quyền: vai trò hệ thống, tự nhận quyền mới khi thêm tính năng,
+        // không bao giờ bị khoá (vì không có Gate::before cho super_admin).
         $superAdmin->syncPermissions(Permission::all());
-        $admin->syncPermissions([
-            'dashboard.view',
-            'users.view', 'users.create', 'users.update',
-            'roles.view',
-            'shipments.view', 'shipments.create', 'shipments.update', 'shipments.delete',
-            'prices.view', 'prices.update',
-            'statements.view', 'statements.create', 'statements.update', 'statements.delete',
-            'settings.view', 'settings.update',
-            'tracking.view', 'tracking.manage',
-            'tripCost.view', 'tripCost.create', 'tripCost.update', 'tripCost.delete',
-            'fleet.view', 'fleet.manage',
-            'system.settings',
-            'tasks.view', 'tasks.create', 'tasks.update', 'tasks.delete', 'tasks.assign_others', 'tasks.manage_all',
-        ]);
-        $editor->syncPermissions([
-            'dashboard.view',
-            'shipments.view', 'shipments.create', 'shipments.update',
-            'prices.view',
-            'statements.view', 'statements.create', 'statements.update',
-            'settings.view',
-            'tracking.view',
-            'tripCost.view', 'tripCost.create', 'tripCost.update',
-            'fleet.view',
-            'tasks.view', 'tasks.create', 'tasks.update', 'tasks.delete', 'tasks.assign_others',
-        ]);
-        $user->syncPermissions([
-            'dashboard.view',
-            'shipments.view', 'prices.view', 'statements.view', 'settings.view',
-            'tracking.view',
-            'tripCost.view', 'fleet.view',
-            'tasks.view', 'tasks.create', 'tasks.update', 'tasks.delete',
-        ]);
+
+        // Gán quyền MẶC ĐỊNH cho admin/ke_toan/chung_tu CHỈ MỘT LẦN DUY NHẤT.
+        // Sau lần đầu, admin tự bật/tắt quyền ở /roles — deploy lại (migrate --seed)
+        // KHÔNG ghi đè lựa chọn đó (cờ sys.roles_initialized).
+        if (! TruckingSetting::bool('sys.roles_initialized', false)) {
+            $admin->syncPermissions(Permission::all());    // admin ngang super_admin
+            $keToan->syncPermissions([
+                'dashboard.view',
+                'prices.view', 'prices.update',
+                'statements.view', 'statements.create', 'statements.update', 'statements.delete',
+                'tripCost.view', 'tripCost.create', 'tripCost.update', 'tripCost.delete',
+                'spend.request',
+                'fleet.view', 'fleet.manage',
+            ]);
+            $chungTu->syncPermissions([
+                'dashboard.view',
+                'shipments.view', 'shipments.create', 'shipments.update', 'shipments.delete',
+                'tracking.view', 'tracking.manage',
+                'settings.view',
+                'tasks.view', 'tasks.create', 'tasks.update',
+            ]);
+            TruckingSetting::put('sys.roles_initialized', '1');
+        }
 
         // --- Super admin user ---
         $sa = User::updateOrCreate(
@@ -91,11 +86,17 @@ class DatabaseSeeder extends Seeder
         );
         $sa->syncRoles(['super_admin']);
 
+        // --- Dữ liệu DEMO (user mẫu + lô hàng mẫu): CHỈ ở local/testing ---
+        // Tránh tạo tài khoản test (mật khẩu 'password') trên production khi deploy `migrate --seed`.
+        if (! app()->environment('local', 'testing')) {
+            return;
+        }
+
         // --- Users mẫu ---
         $samples = [
-            ['name' => 'Nguyễn Văn A', 'email' => 'admin@cuocbien.test',  'role' => 'admin'],
-            ['name' => 'Trần Thị B',   'email' => 'editor@cuocbien.test', 'role' => 'editor'],
-            ['name' => 'Lê Văn C',     'email' => 'user@cuocbien.test',   'role' => 'user'],
+            ['name' => 'Nguyễn Văn A', 'email' => 'admin@cuocbien.test',   'role' => 'admin'],
+            ['name' => 'Trần Thị B',   'email' => 'ketoan@cuocbien.test',  'role' => 'ke_toan'],
+            ['name' => 'Lê Văn C',     'email' => 'chungtu@cuocbien.test', 'role' => 'chung_tu'],
         ];
         foreach ($samples as $s) {
             $u = User::updateOrCreate(
