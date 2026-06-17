@@ -229,6 +229,7 @@ function TrackingApp() {
   const [warehouses, setWarehouses] = useState([]);
   const [whPanel, setWhPanel] = useState(false);     // mở panel quản lý vị trí kho (admin)
   const [placingId, setPlacingId] = useState(null);  // kho đang chờ bấm/đặt điểm
+  const [hintHidden, setHintHidden] = useState(false); // ẩn dòng hướng dẫn ghim kho
   // Lớp bản đồ — NHỚ lựa chọn qua localStorage (lần sau vào giữ nguyên).
   const lsBool = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : v === "1"; } catch (e) { return d; } };
   const [trafficOn, setTrafficOn] = useState(() => lsBool("trk_traffic", true));   // lớp giao thông — mặc định BẬT
@@ -964,9 +965,13 @@ function TrackingApp() {
                 <div style={{ fontWeight: 700, fontSize: 13.5, flex: 1 }}>Vị trí kho <span style={{ color: "var(--ink-4)", fontWeight: 500 }}>({whPinned}/{warehouses.length})</span></div>
                 <button type="button" onClick={() => { setWhPanel(false); setPlacingId(null); }} style={{ border: "none", background: "transparent", cursor: "pointer", color: "var(--ink-4)" }}><I.x /></button>
               </div>
-              <div style={{ padding: "8px 10px", fontSize: 11.5, color: "var(--ink-3)", borderBottom: "1px solid var(--line-2)", lineHeight: 1.5 }}>
-                Bấm <b>Đặt</b> rồi <b>bấm lên bản đồ</b> tại vị trí kho — hoặc bấm vào <b>xe đang đỗ</b> ở kho để lấy đúng tọa độ. Đã ghim thì <b>kéo</b> ghim 🏭 để chỉnh.
-              </div>
+              {!hintHidden && (
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "8px 10px", fontSize: 11.5, color: "var(--ink-3)", borderBottom: "1px solid var(--line-2)", lineHeight: 1.5 }}>
+                  <div style={{ flex: 1 }}>Bấm <b>Đặt</b> rồi <b>bấm lên bản đồ</b> tại vị trí kho — hoặc bấm vào <b>xe đang đỗ</b> ở kho để lấy đúng tọa độ. Đã ghim thì <b>kéo</b> ghim 🏭 để chỉnh.</div>
+                  <button type="button" onClick={() => setHintHidden(true)} title="Ẩn hướng dẫn"
+                    style={{ flexShrink: 0, border: "none", background: "transparent", cursor: "pointer", color: "var(--ink-4)", padding: 0, lineHeight: 1, marginTop: -1 }}><I.x /></button>
+                </div>
+              )}
               <div style={{ overflowY: "auto", padding: 6 }}>
                 {warehouses.length === 0 && <div style={{ padding: 16, textAlign: "center", color: "var(--ink-4)", fontSize: 12.5 }}>Chưa có kho. Thêm ở Cài đặt → Kho.</div>}
                 {warehouses.map((w) => {
