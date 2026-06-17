@@ -372,6 +372,18 @@ function TrackingApp() {
       .then((r) => window.trkToast && window.trkToast(r && r.ok ? `Đã ghim kho ${w ? w.name : ""}` : "Lưu vị trí kho thất bại", r && r.ok ? undefined : "error"))
       .catch(() => window.trkToast && window.trkToast("Lỗi lưu vị trí kho", "error"));
   };
+  // GỠ ghim 1 kho (xóa tọa độ) — hỏi xác nhận.
+  const removePin = async (id) => {
+    const w = warehouses.find((x) => x.id === id);
+    const ok = await window.confirmAction({ title: "Gỡ ghim kho?", text: `Xóa tọa độ đã ghim của kho <b>${(w && w.name) || ""}</b>? Kho sẽ không còn vị trí trên bản đồ.`, confirmText: "Gỡ ghim", cancelText: "Huỷ" });
+    if (!ok) return;
+    setWarehouses((ws) => ws.map((x) => (x.id === id ? { ...x, lat: null, lng: null } : x)));
+    if (placingId === id) setPlacingId(null);
+    if (!ROUTES.warehouseGeo) return;
+    api("POST", ROUTES.warehouseGeo, { id, lat: null, lng: null })
+      .then((r) => window.trkToast && window.trkToast(r && r.ok ? `Đã gỡ ghim kho ${w ? w.name : ""}` : "Gỡ vị trí thất bại", r && r.ok ? undefined : "error"))
+      .catch(() => window.trkToast && window.trkToast("Lỗi kết nối khi gỡ", "error"));
+  };
   const whPinned = warehouses.filter((w) => w.lat != null && w.lng != null).length;
   // Kho đã có tọa độ → tính kho GẦN NHẤT + khoảng cách cho mỗi xe.
   const whGeo = useMemo(() => warehouses.filter((w) => w.lat != null && w.lng != null).map((w) => ({ ...w, lat: +w.lat, lng: +w.lng })), [warehouses]);
@@ -971,6 +983,14 @@ function TrackingApp() {
                         style={{ flexShrink: 0, border: `1px solid ${active ? "#4f46e5" : "var(--line)"}`, background: active ? "#4f46e5" : "#fff", color: active ? "#fff" : "var(--ink-2)", borderRadius: 8, padding: "5px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
                         {active ? "Đang đặt…" : (pinned ? "Đặt lại" : "Đặt")}
                       </button>
+                      {pinned && !active && (
+                        <button type="button" onClick={() => removePin(w.id)} title="Gỡ ghim (xóa tọa độ kho)"
+                          style={{ flexShrink: 0, border: "1px solid var(--line)", background: "#fff", color: "var(--ink-4)", borderRadius: 8, padding: "5px 9px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = "#fce8e8"; e.currentTarget.style.color = "var(--danger)"; e.currentTarget.style.borderColor = "#f3c9c9"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "var(--ink-4)"; e.currentTarget.style.borderColor = "var(--line)"; }}>
+                          Gỡ
+                        </button>
+                      )}
                     </div>
                   );
                 })}

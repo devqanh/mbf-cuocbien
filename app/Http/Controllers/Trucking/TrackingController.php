@@ -111,12 +111,12 @@ class TrackingController extends BaseTruckingController
     {
         $data = $request->validate([
             'id'  => ['required', 'integer'],
-            'lat' => ['required', 'numeric', 'between:-90,90'],
-            'lng' => ['required', 'numeric', 'between:-180,180'],
+            'lat' => ['nullable', 'numeric', 'between:-90,90'],   // null = GỠ ghim
+            'lng' => ['nullable', 'numeric', 'between:-180,180'],
         ]);
         $w = TruckingWarehouse::find($data['id']);
         if (! $w) return response()->json(['ok' => false, 'message' => 'Không tìm thấy kho'], 404);
-        $w->update(['lat' => $data['lat'], 'lng' => $data['lng']]);
+        $w->update(['lat' => $data['lat'] ?? null, 'lng' => $data['lng'] ?? null]);
         return response()->json(['ok' => true, 'warehouse' => ['id' => $w->id, 'lat' => $w->lat, 'lng' => $w->lng]]);
     }
 
