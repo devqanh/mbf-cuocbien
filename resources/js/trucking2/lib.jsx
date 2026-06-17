@@ -193,7 +193,7 @@ function Combo({ value, onChange, options = [], onCreate, placeholder = "Chọn�
   );
 }
 /* Multi-select (chips) — chọn nhiều giá trị từ danh mục, giới hạn max. */
-function MultiCombo({ values = [], onChange, options = [], onCreate, max = 3, placeholder = "Chọn…" }) {
+function MultiCombo({ values = [], onChange, options = [], onCreate, max = 3, placeholder = "Chọn…", strict }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const wrapRef = useRef(null);
@@ -237,8 +237,8 @@ function MultiCombo({ values = [], onChange, options = [], onCreate, max = 3, pl
         <div style={{ position: "absolute", zIndex: 80, top: "calc(100% + 4px)", left: 0, right: 0, background: "#fff", border: "1px solid var(--line)", borderRadius: 11, boxShadow: "0 12px 32px -8px rgba(16,19,23,.24), 0 2px 8px rgba(16,19,23,.08)", overflow: "hidden" }}>
           <div style={{ padding: 7, borderBottom: "1px solid var(--line-2)", position: "relative" }}>
             <span style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)" }}><I.search /></span>
-            <input ref={searchRef} autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm hoặc thêm mới…"
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (avail.length === 1) addVal(avail[0]); else if (!exact && q.trim()) create(); } }}
+            <input ref={searchRef} autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={strict ? "Tìm trong danh mục…" : "Tìm hoặc thêm mới…"}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (avail.length === 1) addVal(avail[0]); else if (!strict && !exact && q.trim()) create(); } }}
               style={{ width: "100%", padding: "7px 10px 7px 30px", fontSize: 13, border: "1px solid var(--line)", borderRadius: 8, outline: "none" }} />
           </div>
           <div style={{ maxHeight: 196, overflowY: "auto", padding: 4 }}>
@@ -247,14 +247,15 @@ function MultiCombo({ values = [], onChange, options = [], onCreate, max = 3, pl
                 style={{ width: "100%", textAlign: "left", padding: "8px 10px", fontSize: 13.5, border: "none", borderRadius: 7, cursor: "pointer", background: "transparent", color: "var(--ink-2)" }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>{o}</button>
             ))}
-            {ql && !exact && (
+            {ql && !exact && !strict && (
               <button type="button" onClick={create}
                 style={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", fontSize: 13.5, border: "none", borderRadius: 7, cursor: "pointer", background: "transparent", color: "var(--accent)", fontWeight: 600 }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent-weak-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
                 <span style={{ width: 17, height: 17, borderRadius: 5, background: "var(--accent-weak)", display: "grid", placeItems: "center" }}><I.plus /></span>Thêm “{q.trim()}”
               </button>
             )}
-            {!avail.length && !ql && <div style={{ padding: "12px 10px", fontSize: 12.5, color: "var(--ink-4)" }}>Hết mục để chọn — gõ để thêm mới.</div>}
+            {strict && ql && !avail.length && <div style={{ padding: "12px 10px", fontSize: 12.5, color: "var(--ink-4)" }}>Không có mục khớp. Thêm kho mới ở <b>Cài đặt → Kho</b>.</div>}
+            {!avail.length && !ql && <div style={{ padding: "12px 10px", fontSize: 12.5, color: "var(--ink-4)" }}>{strict ? "Hết mục để chọn." : "Hết mục để chọn — gõ để thêm mới."}</div>}
           </div>
         </div>
       )}

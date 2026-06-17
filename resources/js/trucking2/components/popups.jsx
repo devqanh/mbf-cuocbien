@@ -489,7 +489,7 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.2fr 1fr 1fr", gap: 12, padding: "10px 0 0" }}>
               <Field label="Số container"><Txt value={ship.contNo} onChange={(x) => set({ contNo: x })} placeholder="TGHU 123 4567" /></Field>
               <Field label="Loại cont" hint="danh mục"><Combo value={ship.contType} onChange={(x) => set({ contType: x })} options={cfg.contTypes || []} onCreate={(v) => add("contTypes", v)} placeholder="40HC…" /></Field>
-              <Field label="Kho (nhà máy)" hint="theo ký hiệu"><MultiCombo values={(ship.kho || "").split(/\s*,\s*/).filter(Boolean)} onChange={(arr) => set({ kho: arr.join(", ") })} options={whCodes(cfg)} onCreate={(v) => add("warehouses", v)} max={Infinity} placeholder="Chọn kho (nhà máy) theo thứ tự đi qua…" /></Field>
+              <Field label="Kho (nhà máy)" hint="chọn trong Cài đặt"><MultiCombo values={(ship.kho || "").split(/\s*,\s*/).filter(Boolean)} onChange={(arr) => set({ kho: arr.join(", ") })} options={whCodes(cfg)} max={Infinity} strict placeholder="Chọn kho (nhà máy) theo thứ tự đi qua…" /></Field>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: "12px 0 0" }}>
               <Field label="BKS vào"><Combo value={ship.bksVao} onChange={(x) => set({ bksVao: x })} options={cfg.vehicles || []} onCreate={addVehExt} placeholder="15C-123.45…" /></Field>
@@ -554,9 +554,9 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
       <Section title="Tuyến" >
         <div style={{ fontSize: 11.5, color: "var(--ink-4)", padding: "6px 0 0" }}>Hiển thị <b style={{ color: "var(--ink-3)" }}>Tên - Ký hiệu</b> — gõ tên hoặc ký hiệu để tìm, chưa có thì gõ để thêm mới.</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 36px 1fr", gap: 10, alignItems: "end", padding: "8px 0 10px" }}>
-          <Field label="Nơi lấy (cảng)"><Combo value={ship.from} onChange={(x) => set({ from: x })} options={locOptions(cfg)} onCreate={(v) => add("locations", v)} placeholder="Cảng/điểm lấy cont…" clearable /></Field>
+          <Field label="Nơi lấy (cảng)"><Combo value={ship.from} onChange={(x) => set({ from: x })} options={locOptions(cfg)} placeholder="Chọn cảng/điểm lấy (trong Cài đặt)…" clearable strict /></Field>
           <div style={{ display: "grid", placeItems: "center", color: "var(--accent)", paddingBottom: 9 }}><I.arrow /></div>
-          <Field label="Nơi hạ"><Combo value={ship.to} onChange={(x) => set({ to: x })} options={locOptions(cfg)} onCreate={(v) => add("locations", v)} placeholder="Điểm hạ cont…" clearable /></Field>
+          <Field label="Nơi hạ"><Combo value={ship.to} onChange={(x) => set({ to: x })} options={locOptions(cfg)} placeholder="Chọn điểm hạ (trong Cài đặt)…" clearable strict /></Field>
         </div>
       </Section>
 
