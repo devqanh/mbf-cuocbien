@@ -846,7 +846,9 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
               })()}
               <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: 300, overflowY: "auto" }}>
                 {list.map((it, i) => {
-                  const codeLocked = false;                // Cho SỬA ký hiệu — reconcile khớp theo id nên đổi mã không đứt link
+                  // Ký hiệu ĐÃ LƯU (dòng có id thật) → khóa, không cho sửa (giữ khớp import/bảng giá);
+                  // dòng mới thêm (chưa có id) thì còn sửa ký hiệu được trước khi lưu.
+                  const codeLocked = (() => { const id = idArr[i]; return id != null && id !== "" && !isNaN(+id); })();
                   const linkedToPrice = locked.has(it);    // đang được bảng giá tham chiếu (hiện icon liên kết)
                   const dupCode = isDupCode(i);
                   const rowGrid = g.priced && g.colored ? "24px 1fr 150px 56px 28px"
@@ -869,7 +871,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                       </div>
                     )}
                     {g.coded && <input value={codeArr[i] || ""} readOnly={codeLocked} onChange={(e) => { if (!codeLocked) setCode(i, e.target.value); }} placeholder="VD: TV"
-                      title={codeLocked ? "Ký hiệu tạo từ import Excel — không sửa trực tiếp" : (dupCode ? "Ký hiệu bị trùng với mục khác" : "")}
+                      title={codeLocked ? "Ký hiệu đã lưu — không sửa để giữ khớp import/bảng giá" : (dupCode ? "Ký hiệu bị trùng với mục khác" : "")}
                       style={{ width: "100%", padding: "7px 10px", fontSize: 13, fontWeight: 600, border: `1px solid ${dupCode ? "var(--danger)" : "var(--line)"}`, borderRadius: 8, outline: "none", textTransform: "uppercase", background: codeLocked ? "var(--line-2)" : (dupCode ? "#fce8e8" : "#fff"), color: codeLocked ? "var(--ink-3)" : (dupCode ? "var(--danger)" : "var(--ink)"), cursor: codeLocked ? "not-allowed" : "text" }}
                       onFocus={(e) => { if (!codeLocked) e.target.style.borderColor = "var(--accent)"; }} onBlur={(e) => (e.target.style.borderColor = dupCode ? "var(--danger)" : "var(--line)")} />}
                     {g.addressed && <input value={addrArr[i] || ""} onChange={(e) => setAddr(i, e.target.value)} placeholder="VD: Lô A2, KCN Quế Võ, Bắc Ninh"
