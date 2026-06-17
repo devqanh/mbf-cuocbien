@@ -164,7 +164,24 @@ trait HandlesStatementPricing
         // ICD: CHỈ tính theo gio_xe_ra → lô chưa có giờ ra KHÔNG vào bảng kê.
         // HPH: fallback sail_date (HPH không có khái niệm giờ xe ra).
         // ============================================================
-        $rows = TruckingShipment::where('customer_id', $custId)->with('costLines')->orderBy('gio_xe_ra')->get();
+        // SCALE: đẩy lọc kỳ vào SQL (dùng index gio_xe_ra / sail_date) — KHÔNG nạp toàn bộ lô của khách.
+        // ICD lọc gio_xe_ra trong [from 00:00, to 23:59]; HPH fallback sail_date. Lọc PHP bên dưới giữ làm chốt chặn.
+        $q = TruckingShipment::where('customer_id', $custId)->with('costLines');
+        if ($from || $to) {
+            $lo = $from ? $from . ' 00:00:00' : null; $hi = $to ? $to . ' 23:59:59' : null;
+            $q->where(function ($w) use ($lo, $hi, $from, $to) {
+                $w->where(function ($a) use ($lo, $hi) {
+                    $a->whereNotNull('gio_xe_ra');
+                    if ($lo) $a->where('gio_xe_ra', '>=', $lo);
+                    if ($hi) $a->where('gio_xe_ra', '<=', $hi);
+                })->orWhere(function ($a) use ($from, $to) {
+                    $a->where('sheet', 'HPH')->whereNotNull('sail_date');
+                    if ($from) $a->whereDate('sail_date', '>=', $from);
+                    if ($to) $a->whereDate('sail_date', '<=', $to);
+                });
+            });
+        }
+        $rows = $q->orderBy('gio_xe_ra')->get();
         $out = [];
         foreach ($rows as $s) {
             $sheet = strtoupper((string) $s->sheet);
