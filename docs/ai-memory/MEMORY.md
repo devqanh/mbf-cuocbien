@@ -30,3 +30,4 @@
 - [Lộ trình chuyến](route-trips.md) — trang /lo-trinh: 1 lộ trình/xe/ngày vận hành 08:00→08:00, timeline xe vào/ra+số cont, gom theo bks_vao + ra_mode (self/none/other), dedup cont kéo khác ra; command trucking:seed-routes test
 - [MBF import](mbf-import.md) — import lô hàng từ file kế toán thật dev/mbf.xlsx (command trucking:import-mbf {THÁNG} --clear); map B nhà máy→kho QV/TS/TL, M POL→cảng, H→nơi hạ, R→biển số; tự tạo danh mục thiếu
 - [GPS tracking](gps-tracking.md) — Theo dõi xe realtime đa nhà cung cấp (Viettel/dvbk) qua proxy backend + adapter + auto-login (chỉ login lại khi fetch hỏng), map biển số→trucking_vehicles, Google Maps, poll 15s
+- [Product tour](product-tour.md) — tour onboarding tái dùng bằng driver.js (helper @trk/tour.js + data-tour + steps); áp cho mọi trang, lazy-load, có nút Bỏ qua toàn bộ
