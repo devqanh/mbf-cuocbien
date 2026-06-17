@@ -26,6 +26,38 @@ function ensurePacStyle() {
   document.head.appendChild(s);
 }
 
+/* Ô địa chỉ có GỢI Ý Google Places — chọn xong tự điền địa chỉ + trả về tọa độ (onPlace). */
+function AddrInput({ value, onChange, onPlace, mapsKey, placeholder }) {
+  const ref = React.useRef(null);
+  const acRef = React.useRef(null);
+  const cb = React.useRef({ onChange, onPlace });
+  cb.current = { onChange, onPlace };
+  const attach = () => {
+    if (acRef.current || !mapsKey || !ref.current) return;
+    ensurePacStyle();
+    loadCfgGmaps(mapsKey).then((maps) => {
+      if (acRef.current || !ref.current || !maps.places) return;
+      const ac = new maps.places.Autocomplete(ref.current, { fields: ["geometry", "formatted_address", "name"], componentRestrictions: { country: "vn" } });
+      acRef.current = ac;
+      ac.addListener("place_changed", () => {
+        const pl = ac.getPlace();
+        const addr = (pl && (pl.formatted_address || pl.name)) || "";
+        if (addr) cb.current.onChange(addr);
+        const loc = pl && pl.geometry && pl.geometry.location;
+        if (loc) cb.current.onPlace(loc.lat(), loc.lng());
+      });
+    }).catch(() => {});
+  };
+  return (
+    <input ref={ref} value={value || ""} placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
+      onFocus={(e) => { attach(); e.target.style.borderColor = "var(--accent)"; }}
+      onBlur={(e) => (e.target.style.borderColor = "var(--line)")}
+      style={{ width: "100%", padding: "7px 10px", fontSize: 13, border: "1px solid var(--line)", borderRadius: 8, outline: "none", background: "#fff" }} />
+  );
+}
+
 function MapPicker({ initial, address, mapsKey, onClose, onPick }) {
   const elRef = useRef(null), mapRef = useRef(null), mkRef = useRef(null), geoRef = useRef(null), searchRef = useRef(null);
   const [pos, setPos] = useState(initial || null);
@@ -887,9 +919,9 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                       title={codeLocked ? "Ký hiệu đã lưu — không sửa để giữ khớp import/bảng giá" : (dupCode ? "Ký hiệu bị trùng với mục khác" : "")}
                       style={{ width: "100%", padding: "7px 10px", fontSize: 13, fontWeight: 600, border: `1px solid ${dupCode ? "var(--danger)" : "var(--line)"}`, borderRadius: 8, outline: "none", textTransform: "uppercase", background: codeLocked ? "var(--line-2)" : (dupCode ? "#fce8e8" : "#fff"), color: codeLocked ? "var(--ink-3)" : (dupCode ? "var(--danger)" : "var(--ink)"), cursor: codeLocked ? "not-allowed" : "text" }}
                       onFocus={(e) => { if (!codeLocked) e.target.style.borderColor = "var(--accent)"; }} onBlur={(e) => (e.target.style.borderColor = dupCode ? "var(--danger)" : "var(--line)")} />}
-                    {g.addressed && <input value={addrArr[i] || ""} onChange={(e) => setAddr(i, e.target.value)} placeholder="VD: Lô A2, KCN Quế Võ, Bắc Ninh"
-                      style={{ width: "100%", padding: "7px 10px", fontSize: 13, border: "1px solid var(--line)", borderRadius: 8, outline: "none", background: "#fff" }}
-                      onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />}
+                    {g.addressed && <AddrInput value={addrArr[i] || ""} onChange={(v) => setAddr(i, v)}
+                      onPlace={g.geo ? (lat, lng) => setGeo(i, lat.toFixed(7) + "," + lng.toFixed(7)) : () => {}}
+                      mapsKey={mapsKey} placeholder="Gõ địa chỉ — gợi ý Google Maps (tự lấy tọa độ)" />}
                     {g.geo && (() => { const pinned = !!parseGeo(geoArr[i]); return (
                       <button type="button" onClick={() => setPickIdx(i)} title={pinned ? `Đã ghim: ${geoArr[i]} — bấm để sửa` : "Ghim tọa độ kho trên bản đồ"}
                         style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "7px 8px", fontSize: 12, fontWeight: 600, cursor: "pointer", borderRadius: 8, whiteSpace: "nowrap",
