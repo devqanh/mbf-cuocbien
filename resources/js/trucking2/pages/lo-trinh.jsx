@@ -101,6 +101,7 @@ function LoTrinhApp() {
 
   const [date, setDate] = useState(toYmd(new Date()));
   const [data, setData] = useState(null);   // null = đang tải
+  const [showExt, setShowExt] = useState(false);   // mặc định CHỈ xe MBF; bật để xem xe ngoài chạy
   const reqId = useRef(0);
 
   const load = () => {
@@ -113,7 +114,11 @@ function LoTrinhApp() {
   useEffect(() => { load(); }, [date]);
 
   const shiftDay = (n) => { const d = new Date(date + "T12:00:00"); d.setDate(d.getDate() + n); setDate(toYmd(d)); };
-  const trucks = data?.trucks || [];
+  const allTrucks = data?.trucks || [];
+  const isMbf = (t) => t.matched && t.type !== "Ngoài";   // xe MBF = khớp đội xe & không phải "Ngoài"
+  const extCount = allTrucks.length - allTrucks.filter(isMbf).length;
+  const trucks = showExt ? allTrucks : allTrucks.filter(isMbf);   // mặc định chỉ MBF
+  const visLegs = trucks.reduce((a, t) => a + t.legs.length, 0);
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
@@ -123,11 +128,18 @@ function LoTrinhApp() {
           <div>
             <div style={{ fontSize: 15.5, fontWeight: 700 }}>Lộ trình lái xe trong ngày</div>
             <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-              {data ? <>Ngày vận hành <b>{data.startLabel} 08:00</b> → <b>{data.endLabel} 08:00</b> · {trucks.length} xe · {data.totalLegs} hoạt động</> : "Đang tải…"}
+              {data ? <>Ngày vận hành <b>{data.startLabel} 08:00</b> → <b>{data.endLabel} 08:00</b> · {trucks.length} xe{showExt ? "" : " MBF"} · {visLegs} hoạt động</> : "Đang tải…"}
             </div>
           </div>
           <div style={{ flex: 1 }} />
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            {(extCount > 0 || showExt) && (
+              <button type="button" onClick={() => setShowExt((v) => !v)} title={showExt ? "Chỉ hiện xe MBF" : "Hiện cả xe ngoài chạy"}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 32, padding: "0 12px", fontSize: 12.5, fontWeight: 600, borderRadius: 9, cursor: "pointer",
+                  border: "1px solid " + (showExt ? "var(--accent)" : "var(--line)"), background: showExt ? "var(--accent-weak-2)" : "#fff", color: showExt ? "var(--accent)" : "var(--ink-2)" }}>
+                <i className={"bi " + (showExt ? "bi-eye-fill" : "bi-eye")} /> {showExt ? "Đang hiện xe ngoài" : `Xem xe ngoài (${extCount})`}
+              </button>
+            )}
             <button type="button" onClick={() => shiftDay(-1)} title="Ngày trước" style={btnIcon}>‹</button>
             <div style={{ width: 150 }}><DateField value={date} onChange={setDate} /></div>
             <button type="button" onClick={() => shiftDay(1)} title="Ngày sau" style={btnIcon}>›</button>
@@ -142,7 +154,9 @@ function LoTrinhApp() {
             <div style={{ padding: "40px", textAlign: "center", color: "var(--ink-4)" }}><i className="bi bi-arrow-repeat" style={{ animation: "trk-spin .7s linear infinite" }} /> Đang tải…</div>
           ) : trucks.length === 0 ? (
             <div style={{ padding: "44px", textAlign: "center", color: "var(--ink-4)", fontSize: 13.5, background: "#fff", border: "1px solid var(--line)", borderRadius: 12 }}>
-              Không có xe nào hoạt động trong ngày này (theo giờ xe ra). Chọn ngày khác hoặc kiểm tra giờ xe ra của lô.
+              {!showExt && extCount > 0
+                ? <>Không có <b>xe MBF</b> chạy trong ngày này — nhưng có <b>{extCount} xe ngoài</b>. Bấm <b>“Xem xe ngoài ({extCount})”</b> ở trên để xem.</>
+                : <>Không có xe nào hoạt động trong ngày này (theo giờ xe ra). Chọn ngày khác hoặc kiểm tra giờ xe ra của lô.</>}
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
