@@ -55,25 +55,34 @@ class ImportMbf extends Command
                 'QUẾ VÕ' => 'QV', 'TIÊN SƠN' => 'TS', 'THĂNG LONG' => 'TL',
             ][$v] ?? $v;
         };
-        // cache danh mục để tạo-nếu-thiếu 1 lần
-        $whByCode = TruckingWarehouse::get()->keyBy(fn ($w) => mb_strtoupper((string) ($w->code ?: $w->name)));
+        // QUAN TRỌNG: khớp/link kho + địa điểm theo KÝ HIỆU (code) — là DUY NHẤT, KHÔNG theo tên
+        // (tên có thể sửa trùng → đứt link). Chỉ index theo code; tạo mới với code = ký hiệu; trả về code chuẩn.
+        $whByCode = TruckingWarehouse::whereNotNull('code')->where('code', '!=', '')->get()
+            ->keyBy(fn ($w) => mb_strtoupper(trim((string) $w->code)));
         $ensureWh = function (string $code) use (&$whByCode) {
+            $code = trim($code); if ($code === '') return '';
             $k = mb_strtoupper($code);
             if (! isset($whByCode[$k])) $whByCode[$k] = TruckingWarehouse::firstOrCreate(['code' => $code], ['name' => $code]);
-            return $code;
+            return $whByCode[$k]->code;   // ký hiệu chuẩn
         };
-        $locByKey = TruckingLocation::get()->keyBy(fn ($l) => mb_strtoupper((string) ($l->code ?: $l->name)));
-        $ensureLoc = function (string $val) use (&$locByKey) {
+        $locByCode = TruckingLocation::whereNotNull('code')->where('code', '!=', '')->get()
+            ->keyBy(fn ($l) => mb_strtoupper(trim((string) $l->code)));
+        $ensureLoc = function (string $val) use (&$locByCode) {
             $val = trim($val);
             if ($val === '') return '';
             $k = mb_strtoupper($val);
-            if (! isset($locByKey[$k])) $locByKey[$k] = TruckingLocation::firstOrCreate(['code' => $val], ['name' => $val]);
-            return $val;
+            if (! isset($locByCode[$k])) $locByCode[$k] = TruckingLocation::firstOrCreate(['code' => $val], ['name' => $val]);
+            return $locByCode[$k]->code;   // luôn lưu KÝ HIỆU vào from_loc/to_loc
         };
-        $ensureCont = function (string $val) {
+        // Loại cont: KHÔNG có ký hiệu (danh mục tên đơn giản) → tham chiếu theo TÊN, tạo nếu thiếu.
+        // Cache + chuẩn hóa hoa/thường để khỏi tạo trùng "40hc"/"40HC" và giảm query (chạy remote).
+        $contByName = TruckingContType::get()->keyBy(fn ($c) => mb_strtoupper(trim((string) $c->name)));
+        $ensureCont = function (string $val) use (&$contByName) {
             $val = trim($val);
-            if ($val !== '') TruckingContType::firstOrCreate(['name' => $val]);
-            return $val;
+            if ($val === '') return '';
+            $k = mb_strtoupper($val);
+            if (! isset($contByName[$k])) $contByName[$k] = TruckingContType::firstOrCreate(['name' => $val]);
+            return $contByName[$k]->name;   // tên chuẩn trong danh mục
         };
 
         $toDt = function ($serial) {

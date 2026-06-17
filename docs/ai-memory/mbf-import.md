@@ -17,6 +17,8 @@ Luồng kế toán THẬT của khách ở **`dev/mbf.xlsx`** — mỗi sheet 1 
 - I NGÀY + N giờ (fraction) → `gio_xe_den`; S NGÀY RA + Q giờ → `gio_xe_ra` (ghép serial+fraction qua `XlDate::excelToDateTimeObject`).
 - R THÔNG TIN XE = "tên + biển + sđt" → tách biển số bằng regex `\d{2}[A-Z]{1,2}\d?-?\d{3}\.?\d{2,3}` → `bks_vao`=`bks_ra` (1 xe). Biển thật là **xe ngoài** (29H-…, 29C-…) nên `vehicle_id`=null (không matched) trừ khi thêm vào cai-dat#vehicles.
 
+**Khớp/link theo KÝ HIỆU (code), KHÔNG theo tên** (user nhấn mạnh: tên có thể sửa trùng, mỗi ký hiệu unique): `$ensureWh`/`$ensureLoc` chỉ index theo `code` (bỏ name), tạo mới với code=ký hiệu, trả về **code chuẩn** để lưu vào `kho`/`from_loc`/`to_loc`. `resolveLocationId` khớp code trước → link đứng vững khi đổi tên location.
+
 **Tự tạo danh mục THIẾU** (user yêu cầu để test): loại cont, location (cảng POL + nơi hạ) qua firstOrCreate; nhà máy map vào warehouse có sẵn. Mỗi lô gọi `recomputeShipmentDerived` → ánh xạ `from/to_location_id` + kho pivot (xem [[route-trips]], [[trucking-report-schema]]).
 
 **Cần reconcile sau** (chưa làm — để user test): location trùng dạng "ICD QUẾ VÕ" (mới) vs "ICDQV" (cũ), "ĐÌNH VŨ" vs "DVU" — gộp trong cai-dat (reconcileLookup theo [[coded-catalog-edit]]). Kết quả JAN: 663 lô, kho QV:441/TS:154/TL:68, from_loc 570/to_loc 623 khớp location, +~20 location mới, contTypes 40HC/40RF.
