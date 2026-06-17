@@ -623,13 +623,35 @@ function TrackingApp() {
   const noData = !loading && positions.length === 0;
   const selVeh = selected ? positions.find((p) => idOf(p) === selected) : null;   // xe đang chọn (cho chip điều khiển + bám xe)
 
+  // ---- Product tour (driver.js, lazy-load qua @trk/tour.js) ----
+  const TOUR_KEY = "trk_tour_track_v1";
+  const tourSteps = [
+    { element: '[data-tour="title"]', title: "Theo dõi xe realtime 👋", description: "Tại đây bạn xem vị trí mọi xe theo thời gian thực, tự cập nhật khoảng 15 giây/lần. Cùng lướt qua vài tính năng chính nhé!", side: "bottom", align: "start" },
+    { element: '[data-tour="status"]', title: "Lọc theo trạng thái", description: "Bấm để lọc nhanh: Đang chạy / Dừng / Tắt máy / Mất tín hiệu. Bản đồ tự khít lại theo nhóm xe; bấm “Tất cả” để xem hết.", side: "bottom", align: "start" },
+    { element: '[data-tour="matched"]', title: "Chỉ xe hệ thống", description: "Bật để chỉ hiện những xe đã khớp với đội xe của bạn (ẩn xe lạ cùng nhà cung cấp GPS).", side: "bottom", align: "start" },
+    { element: '[data-tour="search"]', title: "Tìm xe", description: "Gõ biển số, tên tài xế hoặc địa chỉ để lọc nhanh danh sách xe.", side: "right", align: "start" },
+    { element: '[data-tour="list"]', title: "Danh sách xe", description: "Bấm 1 xe để xem trên bản đồ (bấm lại để bỏ chọn). Mỗi xe hiện tốc độ, khoảng cách & thời gian dự kiến tới kho gần nhất.", side: "right", align: "start" },
+    { element: '[data-tour="placesearch"]', title: "Tìm địa điểm trên bản đồ", description: "Gõ địa chỉ/địa điểm bất kỳ rồi chọn gợi ý — bản đồ sẽ bay tới đó ngay.", side: "bottom", align: "start" },
+    { element: '[data-tour="overview"]', title: "Toàn cảnh & lớp bản đồ", description: "Nút “Toàn cảnh” đưa bản đồ về xem tất cả xe. Cạnh đó bật/tắt Giao thông, Vệ tinh, Địa điểm (hệ thống ghi nhớ cho lần sau).", side: "top", align: "start" },
+    { title: "Bám theo xe", description: "Khi chọn 1 xe sẽ có nút “Bám xe” — bật để bản đồ tự đi theo khi xe di chuyển. Kéo bản đồ bằng tay sẽ tự dừng bám. Nhấn phím Esc để bỏ chọn nhanh." },
+    ...(canEdit && ROUTES.warehouseGeo ? [{ element: '[data-tour="warehouse"]', title: "Vị trí kho", description: "Bạn có quyền ghim vị trí kho lên bản đồ — hệ thống dùng để tính khoảng cách và lịch sử xe ra/vào kho.", side: "bottom", align: "end" }] : []),
+    { element: '[data-tour="history"]', title: "Lịch sử đến kho", description: "Xem lại lịch sử xe đến/rời từng kho ở đây.", side: "bottom", align: "end" },
+    { element: '[data-tour="help"]', title: "Xong! 🎉", description: "Bạn có thể mở lại hướng dẫn này bất cứ lúc nào bằng nút “Hướng dẫn” ở góc trên. Chúc bạn theo dõi xe hiệu quả!", side: "bottom", align: "end" },
+  ];
+  const startTour = () => { import("@trk/tour.js").then(({ runTour }) => runTour(tourSteps, { key: TOUR_KEY })); };
+  // Tự mở lần đầu (sau khi bản đồ + dữ liệu sẵn sàng) nếu chưa từng xem.
+  useEffect(() => {
+    if (!booted) return;
+    import("@trk/tour.js").then(({ runTour, tourSeen }) => { if (!tourSeen(TOUR_KEY)) setTimeout(() => runTour(tourSteps, { key: TOUR_KEY }), 400); });
+  }, [booted]);
+
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
       {/* header */}
       <header style={{ background: "#fff", borderBottom: "1px solid var(--line)", padding: isMobile ? "10px 14px" : "0 22px", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, height: isMobile ? "auto" : 58, flexWrap: "wrap" }}>
           <div style={{ width: 32, height: 32, borderRadius: 9, background: "var(--accent)", color: "#fff", display: "grid", placeItems: "center", flexShrink: 0 }}><i className="bi bi-geo-alt-fill" /></div>
-          <div>
+          <div data-tour="title">
             <div style={{ fontSize: 15.5, fontWeight: 700, letterSpacing: "-0.01em" }}>Theo dõi xe realtime</div>
             <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{enabledProviders.map((p) => `${p.label}: ${p.count}`).join(" · ") || "Chưa bật nguồn GPS nào"}</div>
           </div>
@@ -639,11 +661,15 @@ function TrackingApp() {
               ? <><span style={{ width: 8, height: 8, borderRadius: 999, background: "var(--ink-4)" }} /> Đang kết nối…</>
               : <><span style={{ width: 8, height: 8, borderRadius: 999, background: "var(--good)", boxShadow: "0 0 0 3px rgba(31,138,91,.18)" }} /> Trực tuyến · {timeAgo(lastTs)}</>}
           </span>
-          <a href={ROUTES.visitsPage} title="Lịch sử xe đến/rời kho"
+          <button type="button" data-tour="help" onClick={startTour} title="Xem hướng dẫn các tính năng"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "var(--ink-2)", background: "#fff", border: "1px solid var(--line)", borderRadius: 9 }}>
+            <i className="bi bi-question-circle" /> Hướng dẫn
+          </button>
+          <a href={ROUTES.visitsPage} data-tour="history" title="Lịch sử xe đến/rời kho"
             style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "var(--ink-2)", background: "#fff", border: "1px solid var(--line)", borderRadius: 9, textDecoration: "none" }}>
             <i className="bi bi-clock-history" /> Lịch sử đến kho
           </a>
-          {canEdit && ROUTES.warehouseGeo && <button type="button" onClick={() => { setWhPanel((v) => !v); if (whPanel) setPlacingId(null); }} title="Ghim vị trí kho trên bản đồ"
+          {canEdit && ROUTES.warehouseGeo && <button type="button" data-tour="warehouse" onClick={() => { setWhPanel((v) => !v); if (whPanel) setPlacingId(null); }} title="Ghim vị trí kho trên bản đồ"
             style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", color: whPanel ? "#fff" : "var(--ink-2)", background: whPanel ? "#4f46e5" : "#fff", border: `1px solid ${whPanel ? "#4f46e5" : "var(--line)"}`, borderRadius: 9 }}>
             <i className="bi bi-geo-alt-fill" /> Vị trí kho
           </button>}
@@ -665,7 +691,7 @@ function TrackingApp() {
       )}
 
       {/* status chips — mobile: cuộn ngang 1 hàng (không dồn nhiều dòng) */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#fff", borderBottom: "1px solid var(--line)", padding: isMobile ? "8px 14px" : "8px 22px", flexShrink: 0, flexWrap: isMobile ? "nowrap" : "wrap", overflowX: isMobile ? "auto" : "visible", WebkitOverflowScrolling: "touch" }}>
+      <div data-tour="status" style={{ display: "flex", alignItems: "center", gap: 8, background: "#fff", borderBottom: "1px solid var(--line)", padding: isMobile ? "8px 14px" : "8px 22px", flexShrink: 0, flexWrap: isMobile ? "nowrap" : "wrap", overflowX: isMobile ? "auto" : "visible", WebkitOverflowScrolling: "touch" }}>
         {[["all", "Tất cả", "var(--ink)"], ["run", STATUS.run.label, STATUS.run.color], ["idle", STATUS.idle.label, STATUS.idle.color], ["off", STATUS.off.label, STATUS.off.color], ["lost", STATUS.lost.label, STATUS.lost.color]].map(([k, label, col]) => {
           const on = fStatus === k; const n = k === "all" ? counts.all : counts[k];
           return (
@@ -677,7 +703,7 @@ function TrackingApp() {
           );
         })}
         <span style={{ flexShrink: 0, width: 1, height: 20, background: "var(--line-2)" }} />
-        <button type="button" onClick={() => setMatchedOnly((v) => !v)}
+        <button type="button" data-tour="matched" onClick={() => setMatchedOnly((v) => !v)}
           style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 6, border: matchedOnly ? "1.5px solid var(--accent)" : "1px solid var(--line)", background: matchedOnly ? "var(--accent-weak)" : "transparent", color: matchedOnly ? "var(--accent)" : "var(--ink-2)", borderRadius: 999, padding: "5px 11px", cursor: "pointer", fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" }}>
           <i className="bi bi-check2-circle" /> Xe hệ thống <span className="tnum" style={{ color: "var(--ink-4)" }}>{counts.matched}</span>
         </button>
@@ -699,9 +725,9 @@ function TrackingApp() {
       {/* body */}
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: isMobile ? "column" : "row" }}>
         {/* list */}
-        <div style={{ width: isMobile ? "100%" : 340, flex: isMobile ? "1 1 auto" : "0 0 auto", minHeight: 0, borderRight: isMobile ? "none" : "1px solid var(--line)", background: "#fff", overflowY: "auto", display: isMobile && mobileView !== "list" ? "none" : "block", order: isMobile ? 2 : 0 }}>
+        <div data-tour="list" style={{ width: isMobile ? "100%" : 340, flex: isMobile ? "1 1 auto" : "0 0 auto", minHeight: 0, borderRight: isMobile ? "none" : "1px solid var(--line)", background: "#fff", overflowY: "auto", display: isMobile && mobileView !== "list" ? "none" : "block", order: isMobile ? 2 : 0 }}>
           <div style={{ padding: "10px 12px", borderBottom: "1px solid var(--line-2)", position: "sticky", top: 0, background: "#fff", zIndex: 2 }}>
-            <div style={{ position: "relative" }}>
+            <div data-tour="search" style={{ position: "relative" }}>
               <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)" }}><I.search /></span>
               <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm biển số, tài xế, địa chỉ…"
                 style={{ width: "100%", padding: "8px 10px 8px 32px", fontSize: 13, border: "1px solid var(--line)", borderRadius: 9, outline: "none", background: "#fafbfc", boxSizing: "border-box" }} />
@@ -756,7 +782,7 @@ function TrackingApp() {
 
           {/* Ô tìm địa điểm (Google Places autocomplete) → bay tới điểm chọn */}
           {mapReady && acSvcRef.current && (
-            <div style={{ position: "absolute", top: 12, left: 10, zIndex: 8, width: isMobile ? "calc(100% - 20px)" : 320 }}>
+            <div data-tour="placesearch" style={{ position: "absolute", top: 12, left: 10, zIndex: 8, width: isMobile ? "calc(100% - 20px)" : 320 }}>
               <div style={{ position: "relative" }}>
                 <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)", pointerEvents: "none" }}><I.search /></span>
                 <input value={placeQ} onChange={(e) => onPlaceInput(e.target.value)} onKeyDown={onPlaceKey}
@@ -821,7 +847,7 @@ function TrackingApp() {
           {/* Lớp bản đồ: Toàn cảnh + Giao thông + Vệ tinh (góc dưới-trái) */}
           {mapReady && (
             <div style={{ position: "absolute", left: 10, bottom: 22, zIndex: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
-              <button type="button" onClick={overview} title="Thu toàn cảnh — bỏ chọn xe & xem tất cả"
+              <button type="button" data-tour="overview" onClick={overview} title="Thu toàn cảnh — bỏ chọn xe & xem tất cả"
                 style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: isMobile ? "10px 14px" : "7px 11px", fontSize: isMobile ? 13.5 : 12.5, fontWeight: 600, cursor: "pointer", borderRadius: 8,
                   border: "1px solid var(--line)", background: "#fff", color: "var(--ink-2)", boxShadow: "0 1px 4px rgba(0,0,0,.2)" }}>
                 <i className="bi bi-arrows-fullscreen" /> Toàn cảnh
