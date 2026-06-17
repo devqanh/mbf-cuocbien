@@ -7,10 +7,14 @@ import { DTField, Field, DriverSpendRows, VatLine, ItemRows, ChiHoRows, DoanhThu
 const nowLocalDT = () => { const d = new Date(); const p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
 
 // Địa điểm dạng select2: giá trị = tên (giữ nguyên dữ liệu), nhãn = "Tên - Ký hiệu" để dễ nhận diện + tìm theo ký hiệu.
+// LƯU theo KÝ HIỆU (value=mã) để link/tham chiếu bền; HIỆN "Tên — Mã" cho dễ đọc.
+// Địa điểm chưa có mã → tạm dùng tên làm value.
 const locOptions = (cfg) => (cfg.locations || []).map((n) => {
   const c = (cfg.locationCode || {})[n];
-  return { value: n, label: c ? `${n} - ${c}` : n };
+  return c ? { value: c, label: `${n} — ${c}` } : { value: n, label: n };
 });
+// Kho (nhà máy): danh sách MÃ kho (MultiCombo lưu chuỗi = mã); tên kho chỉ để báo cáo.
+const whCodes = (cfg) => (cfg.warehouses || []).map((n) => (cfg.warehouseCode || {})[n] || n);
 
 function CostPopup({ ship, patch, onSave, isDirty, onClose, cfg = {}, addCfg }) {
   const payerOpts = cfg.payers || [];
@@ -485,7 +489,7 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.2fr 1fr 1fr", gap: 12, padding: "10px 0 0" }}>
               <Field label="Số container"><Txt value={ship.contNo} onChange={(x) => set({ contNo: x })} placeholder="TGHU 123 4567" /></Field>
               <Field label="Loại cont" hint="danh mục"><Combo value={ship.contType} onChange={(x) => set({ contType: x })} options={cfg.contTypes || []} onCreate={(v) => add("contTypes", v)} placeholder="40HC…" /></Field>
-              <Field label="Kho (nhà máy)" hint="tuyến đi qua"><MultiCombo values={(ship.kho || "").split(/\s*,\s*/).filter(Boolean)} onChange={(arr) => set({ kho: arr.join(", ") })} options={cfg.warehouses || []} onCreate={(v) => add("warehouses", v)} max={Infinity} placeholder="Chọn kho (nhà máy) theo thứ tự đi qua…" /></Field>
+              <Field label="Kho (nhà máy)" hint="theo ký hiệu"><MultiCombo values={(ship.kho || "").split(/\s*,\s*/).filter(Boolean)} onChange={(arr) => set({ kho: arr.join(", ") })} options={whCodes(cfg)} onCreate={(v) => add("warehouses", v)} max={Infinity} placeholder="Chọn kho (nhà máy) theo thứ tự đi qua…" /></Field>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: "12px 0 0" }}>
               <Field label="BKS vào"><Combo value={ship.bksVao} onChange={(x) => set({ bksVao: x })} options={cfg.vehicles || []} onCreate={addVehExt} placeholder="15C-123.45…" /></Field>
