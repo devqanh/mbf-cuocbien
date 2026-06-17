@@ -774,7 +774,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                     {groups.map((grp) => {
                       const noCode = grp.key === "";
                       return (
-                      <div key={grp.idxs[0]} style={{ border: "1px solid var(--line)", borderRadius: 11, overflow: "hidden", background: "#fff" }}>
+                      <div key={grp.idxs[0]} style={{ flexShrink: 0, border: "1px solid var(--line)", borderRadius: 11, overflow: "hidden", background: "#fff" }}>
                         {/* Header nhóm: ký hiệu — sửa ở đây áp cho CẢ nhóm */}
                         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: noCode ? "var(--line-2)" : "var(--accent-weak)", borderBottom: "1px solid var(--line)" }}>
                           <i className="bi bi-tag-fill" style={{ color: noCode ? "var(--ink-4)" : "var(--accent)", fontSize: 13 }} />
