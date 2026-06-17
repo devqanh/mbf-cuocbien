@@ -42,6 +42,9 @@ use Illuminate\Support\Facades\Storage;
 /** Tach tu TruckingV2Service - nhom HandlesPricingAndImport. */
 trait HandlesPricingAndImport
 {
+    /** @var array<string,int>|null  trim(code|name) => location_id — memoize / request. */
+    private ?array $locIdMapCache = null;
+
     /**
      * Bảng giá của ĐÚNG 1 khách (lazy-load cho trang Bảng giá). Dùng toBase() để KHÔNG
      * hydrate model Eloquent — chỉ đọc + serialize nên stdClass đủ; bảng giá lớn (hàng
@@ -52,9 +55,17 @@ trait HandlesPricingAndImport
         $name = trim($name);
         if ($name === '') return [];
         $custId = TruckingCustomer::where('name', $name)->value('id');
-        if (! $custId) return [];
+        return $custId ? $this->customerPriceListById((int) $custId) : [];
+    }
 
-        return TruckingPriceRow::where('customer_id', $custId)->orderBy('sort')
+    /**
+     * Bảng giá theo customer_id — bền khi khách đổi tên (dùng cho statement đã lưu có sẵn
+     * customer_id). Caller nên ưu tiên gọi bản này; bản theo name chỉ là fallback.
+     */
+    public function customerPriceListById(int $customerId): array
+    {
+        if ($customerId <= 0) return [];
+        return TruckingPriceRow::where('customer_id', $customerId)->orderBy('sort')
             ->toBase()->get()
             ->map(fn ($p) => $this->priceRowToArray($p))->all();
     }
@@ -507,6 +518,24 @@ trait HandlesPricingAndImport
     }
 
     /**
+     * Bảng [code|name → id] toàn danh mục Địa điểm, memoize / request. Dùng cho mọi lệnh
+     * resolveLocationId trong cùng request (tránh N SELECT khi recompute / import nhiều lô).
+     * Cache bị reset khi registerLocationCode thực sự tạo / cập nhật bản ghi.
+     */
+    private function locationIdMap(): array
+    {
+        if ($this->locIdMapCache !== null) return $this->locIdMapCache;
+        $m = [];
+        foreach (TruckingLocation::toBase()->get(['id', 'name', 'code']) as $l) {
+            $c = trim((string) $l->code);
+            $n = trim((string) $l->name);
+            if ($c !== '') $m[$c] = (int) $l->id;
+            if ($n !== '' && ! isset($m[$n])) $m[$n] = (int) $l->id;
+        }
+        return $this->locIdMapCache = $m;
+    }
+
+    /**
      * "Điểm Hạ" → location_id: CHỈ khớp địa điểm đã có (theo code rồi name),
      * KHÔNG tự tạo địa điểm mới từ điểm hạ. Danh mục Địa điểm được nạp từ
      * cột FROM + TO (xem registerLocationCode). Chưa khớp → null.
@@ -515,17 +544,14 @@ trait HandlesPricingAndImport
     {
         $code = trim((string) $code);
         if ($code === '') return null;
-
-        $loc = TruckingLocation::where('code', $code)->first()
-            ?? TruckingLocation::where('name', $code)->first();
-
-        return $loc?->id;
+        return $this->locationIdMap()[$code] ?? null;
     }
 
     /**
      * Đăng ký 1 KÝ HIỆU (FROM / TO) vào danh mục Địa điểm.
      * Đã có code → giữ; có name trùng nhưng thiếu code → gán code;
      * chưa có → tạo mới (name = code = ký hiệu) để user đặt tên sau.
+     * Khi DB thực sự đổi → reset cache id / code / normalized code map (sibling trait).
      */
     private function registerLocationCode(?string $code): void
     {
@@ -535,10 +561,19 @@ trait HandlesPricingAndImport
         $loc = TruckingLocation::where('code', $code)->first()
             ?? TruckingLocation::where('name', $code)->first();
 
+        $dirty = false;
         if (! $loc) {
             TruckingLocation::create(['name' => $code, 'code' => $code]);
+            $dirty = true;
         } elseif (! $loc->code) {
             $loc->update(['code' => $code]);
+            $dirty = true;
+        }
+        if ($dirty) {
+            $this->locIdMapCache = null;
+            if (property_exists($this, 'locCodeCache')) $this->locCodeCache = null;
+            if (property_exists($this, 'codeMapCache')) $this->codeMapCache = null;
+            if (property_exists($this, 'pricingCtxCache')) $this->pricingCtxCache = [];
         }
     }
 

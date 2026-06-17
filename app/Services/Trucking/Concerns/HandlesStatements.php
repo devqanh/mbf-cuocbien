@@ -55,10 +55,20 @@ trait HandlesStatements
      * Danh sách bảng kê cho trang Bảng kê (KePage) — CHỈ tóm tắt + payments, KHÔNG nạp
      * lines (snapshot từng lô) vì trang danh sách không hiển thị. Tránh hydrate hàng trăm
      * dòng statement_lines vô ích.
+     *
+     * SCALE: hỗ trợ limit/offset + filter (customer, kỳ period_to) để endpoint paginate
+     * trả nhanh khi dữ liệu lớn. Mặc định không filter/limit → backward-compatible (boot
+     * cũ vẫn trả ARRAY phẳng, KePage không phải sửa).
+     *
+     * @param array{customer?:?string,from?:?string,to?:?string} $filters
      */
-    public function statementsForList(): array
+    public function statementsForList(?int $limit = null, int $offset = 0, array $filters = []): array
     {
-        return TruckingStatement::with(['payments', 'customer'])->withSum('lines as lines_total', 'phai_thu')->orderBy('id')->get()
+        $q = $this->statementsListQuery($filters);
+        if ($limit !== null) $q->orderByDesc('id')->limit($limit)->offset(max(0, $offset));
+        else $q->orderBy('id');   // backward-compatible: ASC khi không paginate
+
+        $rows = $q->get()
             ->map(fn ($st) => [
                 'id'       => $st->id,
                 'hashid'   => Hashid::encode($st->id),
@@ -76,6 +86,39 @@ trait HandlesStatements
                     'note'   => $p->note ?? '',
                 ])->all(),
             ])->all();
+
+        // Khi paginate (DESC + limit): đảo chiều để CALLER nhận id-ASC như bản cũ → frontend
+        // .slice().reverse() vẫn hiển thị newest-first đúng như trước.
+        return $limit !== null ? array_reverse($rows) : $rows;
+    }
+
+    /** Meta cho paginate: tổng số bảng kê khớp filter (để KePage biết còn trang hay không). */
+    public function statementsForListMeta(array $filters = []): array
+    {
+        return ['total' => (int) $this->statementsListQuery($filters)->toBase()->count('trucking_statements.id')];
+    }
+
+    /** Query builder dùng chung cho list + meta — đẩy filter vào SQL (dùng FK index). */
+    private function statementsListQuery(array $filters)
+    {
+        $q = TruckingStatement::with(['payments', 'customer'])
+            ->withSum('lines as lines_total', 'phai_thu');
+        $cust = trim((string) ($filters['customer'] ?? ''));
+        if ($cust !== '') {
+            $custId = TruckingCustomer::where('name', $cust)->value('id');
+            if ($custId) $q->where('customer_id', $custId);
+            else $q->where('customer_name', $cust);
+        }
+        // Kỳ = period_to (mốc kết thúc kỳ). Nếu rỗng fallback date (ngày lập) để giữ trùm.
+        if (! empty($filters['from'])) $q->where(function ($w) use ($filters) {
+            $w->where('period_to', '>=', $filters['from'])
+              ->orWhere(function ($a) use ($filters) { $a->whereNull('period_to')->where('date', '>=', $filters['from']); });
+        });
+        if (! empty($filters['to'])) $q->where(function ($w) use ($filters) {
+            $w->where('period_to', '<=', $filters['to'])
+              ->orWhere(function ($a) use ($filters) { $a->whereNull('period_to')->where('date', '<=', $filters['to']); });
+        });
+        return $q;
     }
 
     public function statementToArray(TruckingStatement $st): array
@@ -141,40 +184,54 @@ trait HandlesStatements
             ]);
             $st->save();
 
+            // BULK INSERT: 1 query thay vì N (bảng kê lớn có thể có hàng trăm dòng).
+            // Bypass Eloquent → tự set timestamps + json_encode `detail` (cast 'array').
+            $now = Carbon::now();
             $st->lines()->delete();
+            $linesBatch = [];
             foreach (($data['lines'] ?? []) as $i => $l) {
-                $st->lines()->create([
-                    'shipment_id' => $l['id'] ?? null,
-                    'booking'     => $this->str($l['booking'] ?? null),
-                    'sheet'       => $this->str($l['sheet'] ?? null),
-                    'io'          => $this->str($l['io'] ?? null),
-                    'decl_no'     => $this->str($l['declNo'] ?? null),
-                    'cont_type'   => $this->str($l['contType'] ?? null),
-                    'inv'         => $this->str($l['inv'] ?? null),
-                    'cont_no'     => $this->str($l['contNo'] ?? null),
-                    'bks'         => $this->str($l['bks'] ?? null),
-                    'from_loc'    => $this->str($l['from'] ?? null),
-                    'to_loc'      => $this->str($l['to'] ?? null),
-                    'date'        => $this->inDate($l['date'] ?? null),
-                    'cont_label'  => $this->str($l['contLabel'] ?? null),
-                    'phai_thu'    => $this->inMoney($l['phaiThu'] ?? null) ?? 0,
-                    'cuoc'        => $this->inMoney($l['cuoc'] ?? null) ?? 0,
-                    'thanh_ly'    => $this->inMoney($l['thanhLy'] ?? null) ?? 0,
-                    'note'        => $this->str($l['note'] ?? null),
-                    'detail'      => is_array($l['detail'] ?? null) ? $l['detail'] : null,
-                    'sort'        => $i,
-                ]);
+                $detail = is_array($l['detail'] ?? null) ? $l['detail'] : null;
+                $linesBatch[] = [
+                    'statement_id' => $st->id,
+                    'shipment_id'  => $l['id'] ?? null,
+                    'booking'      => $this->str($l['booking'] ?? null),
+                    'sheet'        => $this->str($l['sheet'] ?? null),
+                    'io'           => $this->str($l['io'] ?? null),
+                    'decl_no'      => $this->str($l['declNo'] ?? null),
+                    'cont_type'    => $this->str($l['contType'] ?? null),
+                    'inv'          => $this->str($l['inv'] ?? null),
+                    'cont_no'      => $this->str($l['contNo'] ?? null),
+                    'bks'          => $this->str($l['bks'] ?? null),
+                    'from_loc'     => $this->str($l['from'] ?? null),
+                    'to_loc'       => $this->str($l['to'] ?? null),
+                    'date'         => $this->inDate($l['date'] ?? null),
+                    'cont_label'   => $this->str($l['contLabel'] ?? null),
+                    'phai_thu'     => $this->inMoney($l['phaiThu'] ?? null) ?? 0,
+                    'cuoc'         => $this->inMoney($l['cuoc'] ?? null) ?? 0,
+                    'thanh_ly'     => $this->inMoney($l['thanhLy'] ?? null) ?? 0,
+                    'note'         => $this->str($l['note'] ?? null),
+                    'detail'       => $detail === null ? null : json_encode($detail, JSON_UNESCAPED_UNICODE),
+                    'sort'         => $i,
+                    'created_at'   => $now,
+                    'updated_at'   => $now,
+                ];
             }
+            if ($linesBatch) \App\Models\TruckingStatementLine::insert($linesBatch);
 
             $st->payments()->delete();
+            $paymentsBatch = [];
             foreach (($data['payments'] ?? []) as $i => $p) {
-                $st->payments()->create([
-                    'date'   => $this->inDate($p['date'] ?? null),
-                    'amount' => $this->inMoney($p['amount'] ?? null),
-                    'note'   => $this->str($p['note'] ?? null),
-                    'sort'   => $i,
-                ]);
+                $paymentsBatch[] = [
+                    'statement_id' => $st->id,
+                    'date'         => $this->inDate($p['date'] ?? null),
+                    'amount'       => $this->inMoney($p['amount'] ?? null),
+                    'note'         => $this->str($p['note'] ?? null),
+                    'sort'         => $i,
+                    'created_at'   => $now,
+                    'updated_at'   => $now,
+                ];
             }
+            if ($paymentsBatch) \App\Models\TruckingStatementPayment::insert($paymentsBatch);
 
             return $st->fresh(['lines', 'payments']);
         });

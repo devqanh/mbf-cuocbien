@@ -32,6 +32,8 @@ class StatementController extends BaseTruckingController
     /** Trang Xem bảng kê đã lưu — chỉ nạp bảng kê (nhẹ). Đối soát/bảng giá tải lazy. */
     public function view(TruckingStatement $statement)
     {
+        // Eager-load tránh 3 lượt lazy query khi statementToArray() truy cập relations.
+        $statement->loadMissing(['lines', 'payments', 'customer']);
         return view('trucking2.bang-ke-xem', $this->pageData([
             'st' => $this->svc->statementToArray($statement),
             'company' => $this->svc->companyInfo(),
@@ -44,6 +46,7 @@ class StatementController extends BaseTruckingController
      */
     public function context(TruckingStatement $statement): JsonResponse
     {
+        $statement->loadMissing(['lines', 'payments', 'customer']);
         $st  = $this->svc->statementToArray($statement);
         $ids = array_filter(array_map(fn ($l) => $l['id'] ?? null, $st['lines'] ?? []));
 
@@ -66,6 +69,7 @@ class StatementController extends BaseTruckingController
     /** Tính lại bảng kê đã lưu — định giá lại ở backend theo dữ liệu hiện tại. */
     public function reprice(TruckingStatement $statement): JsonResponse
     {
+        $statement->loadMissing(['lines', 'customer']);
         return response()->json(['ok' => true] + $this->svc->statementReprice($statement));
     }
 
@@ -79,9 +83,39 @@ class StatementController extends BaseTruckingController
         return response()->json(['ok' => true, 'drift' => $this->svc->statementsDrift()]);
     }
 
+    /**
+     * Danh sách bảng kê dạng paginate + filter (cho frontend tương lai cần "load more"
+     * khi data lớn). Giữ shape per-item như boot.ke → KePage có thể append trực tiếp.
+     * Query params: page (>=1), perPage (1..200), customer, from, to (YYYY-MM-DD theo period_to).
+     */
+    public function list(Request $request): JsonResponse
+    {
+        $page    = max(1, (int) $request->query('page', 1));
+        $perPage = max(1, min(200, (int) $request->query('perPage', 50)));
+        $filters = [
+            'customer' => (string) $request->query('customer', '') ?: null,
+            'from'     => $request->query('from') ?: null,
+            'to'       => $request->query('to') ?: null,
+        ];
+        $offset = ($page - 1) * $perPage;
+        $items  = $this->svc->statementsForList($perPage, $offset, $filters);
+        $meta   = $this->svc->statementsForListMeta($filters);
+        $total  = $meta['total'];
+        return response()->json([
+            'ok' => true,
+            'ke' => $items,
+            'meta' => $meta + [
+                'page'    => $page,
+                'perPage' => $perPage,
+                'hasMore' => ($offset + count($items)) < $total,
+            ],
+        ]);
+    }
+
     /** Xuất Excel theo mẫu chính thức (SNAPSHOT đã lưu — không đọc lô realtime). */
     public function export(TruckingStatement $statement, StatementExcelExporter $exporter): StreamedResponse
     {
+        $statement->loadMissing(['lines', 'payments', 'customer']);
         return $exporter->download($this->svc->statementToArray($statement), $this->svc->sellerInfo());
     }
 

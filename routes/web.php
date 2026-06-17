@@ -209,6 +209,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/bang-ke/tao',                 [StatementController::class, 'create'])->name('statements.create');
             Route::get('/statement-candidates',        [StatementController::class, 'candidates'])->name('statements.candidates');   // lô đã định giá ở backend cho bảng kê mới
             Route::get('/statement-drift',             [StatementController::class, 'drift'])->name('statements.drift');   // đối soát cả danh sách → cảnh báo cần tính lại
+            Route::get('/statement-list',              [StatementController::class, 'list'])->name('statements.list');   // paginate + filter (load-more cho data lớn)
             Route::get('/bang-ke/{statement}',         [StatementController::class, 'view'])->name('statements.view');
             Route::get('/bang-ke/{statement}/context', [StatementController::class, 'context'])->name('statements.context');
             Route::get('/bang-ke/{statement}/reprice', [StatementController::class, 'reprice'])->name('statements.reprice');   // tính lại ở backend

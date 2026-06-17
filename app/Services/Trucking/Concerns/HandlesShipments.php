@@ -42,6 +42,9 @@ use Illuminate\Support\Facades\Storage;
 /** Tách từ TruckingV2Service — nhóm HandlesShipments. */
 trait HandlesShipments
 {
+    /** @var array<string,int>|null  lowercase(code|name) => warehouse_id — memoize / request. */
+    private ?array $whIdMapCache = null;
+
     /**
      * Mỗi danh mục = 1 bảng riêng. Map: cfgKey => [modelClass, priced?, coded?, colored?].
      * priced  = có đơn giá mặc định;
@@ -575,7 +578,12 @@ trait HandlesShipments
             if ($apply('customer')) {
                 $customerId = null;
                 if (! empty($data['customer'])) {
-                    $customerId = TruckingCustomer::firstOrCreate(['name' => trim($data['customer'])])->id;
+                    // Chuẩn hóa: trim + collapse khoảng trắng (kể cả Unicode) — tránh "Cty  ABC"
+                    // và "Cty ABC" tạo 2 customer khác nhau → bảng kê khớp customer_id sai khách.
+                    $cname = preg_replace('/\s+/u', ' ', trim((string) $data['customer'])) ?? '';
+                    if ($cname !== '') {
+                        $customerId = TruckingCustomer::firstOrCreate(['name' => $cname])->id;
+                    }
                 }
                 $s->customer_id = $customerId;
             }
@@ -613,6 +621,10 @@ trait HandlesShipments
             foreach ($cols as $key => [$col, $val]) {
                 if ($apply($key)) $s->{$col} = $val;
             }
+            // Đăng ký KÝ HIỆU địa điểm mới gõ tay vào danh mục — bảng kê khớp giá qua codeMap
+            // (port từ registerLocationCode dùng cho import bảng giá). Idempotent: đã có → no-op.
+            if ($apply('from')) $this->registerLocationCode($data['from'] ?? null);
+            if ($apply('to'))   $this->registerLocationCode($data['to'] ?? null);
             // rev scalars (VAT / hạn TT / ghi chú) đi cùng nhóm 'rev'
             if ($apply('rev')) {
                 $s->vat_rate = $this->inNum($data['rev']['vatRate'] ?? null);
@@ -695,20 +707,21 @@ trait HandlesShipments
                 }
             }
 
-            $this->recomputeShipmentDerived($s);
+            $this->recomputeShipmentDerived($s, $only);
             return $s->fresh(['customer', 'costLines', 'revenueLines', 'payments', 'spends']);
         });
     }
 
-    /** Bản đồ tên/ký hiệu kho → id (cho tách kho theo lô). */
+    /** Bản đồ tên/ký hiệu kho → id (cho tách kho theo lô). Memoize / request. */
     private function warehouseIdMap(): array
     {
+        if ($this->whIdMapCache !== null) return $this->whIdMapCache;
         $map = [];
-        foreach (TruckingWarehouse::get(['id', 'name', 'code']) as $w) {
-            if ($w->name) $map[mb_strtolower(trim($w->name))] = $w->id;
-            if ($w->code) $map[mb_strtolower(trim($w->code))] = $w->id;
+        foreach (TruckingWarehouse::toBase()->get(['id', 'name', 'code']) as $w) {
+            if ($w->name) $map[mb_strtolower(trim($w->name))] = (int) $w->id;
+            if ($w->code) $map[mb_strtolower(trim($w->code))] = (int) $w->id;
         }
-        return $map;
+        return $this->whIdMapCache = $map;
     }
 
     /**
@@ -717,60 +730,85 @@ trait HandlesShipments
      * - Tier 1: tổng doanh thu/VAT/chi hộ/phải thu/đã thu/còn nợ/chi phí/lợi nhuận.
      * - Tier 3: vehicle_id, from/to_location_id + bảng kho theo lô.
      * Giữ nguyên cột chuỗi (lịch sử); id chỉ là khóa join.
+     *
+     * $only = field client vừa sửa (xem saveShipment). null → backfill toàn phần (CLI / import).
+     * Có $only → CHỈ chạy phần liên quan: tránh đụng DB khi user sửa 1 field trung tính
+     * (note / driver / bks*) trong popup.
      */
-    public function recomputeShipmentDerived(TruckingShipment $s): void
+    public function recomputeShipmentDerived(TruckingShipment $s, ?array $only = null): void
     {
-        $s->load(['costLines', 'revenueLines', 'payments']);   // luôn nạp TƯƠI (tránh quan hệ cũ trong RAM)
+        // Field nào kéo theo phần recompute nào (giữ đồng bộ với map $cols ở saveShipment).
+        $touches = fn (array $keys) => $only === null || array_intersect($keys, $only) !== [];
+        $needTier2   = $touches(['cost', 'rev']);
+        $needTotals  = $touches(['cost', 'rev']);
+        $needVehicle = $touches(['bksVao']);
+        $needLoc     = $touches(['from', 'to']);
+        $needWh      = $touches(['kho']);
 
-        // Tier 2 — gán id khoản theo tên hiện tại
-        $costItemId = TruckingCostItem::pluck('id', 'name');
-        $payerId    = TruckingPayer::pluck('id', 'name');
-        $revItemId  = TruckingRevenueItem::pluck('id', 'name');
-        $chohoId    = TruckingChohoItem::pluck('id', 'name');
-        foreach ($s->costLines as $c) {
-            $ci = $c->item !== null ? ($costItemId[$c->item] ?? null) : null;
-            $pi = $c->payer !== null ? ($payerId[$c->payer] ?? null) : null;
-            if ((int) $c->cost_item_id !== (int) $ci || (int) $c->payer_id !== (int) $pi) {
-                $c->cost_item_id = $ci; $c->payer_id = $pi; $c->save();
+        if (! $needTier2 && ! $needTotals && ! $needVehicle && ! $needLoc && ! $needWh) return;
+
+        if ($needTier2 || $needTotals) {
+            $s->load(['costLines', 'revenueLines', 'payments']);   // nạp TƯƠI khi cần totals/tier2
+        }
+
+        if ($needTier2) {
+            $costItemId = TruckingCostItem::pluck('id', 'name');
+            $payerId    = TruckingPayer::pluck('id', 'name');
+            $revItemId  = TruckingRevenueItem::pluck('id', 'name');
+            $chohoId    = TruckingChohoItem::pluck('id', 'name');
+            foreach ($s->costLines as $c) {
+                $ci = $c->item !== null ? ($costItemId[$c->item] ?? null) : null;
+                $pi = $c->payer !== null ? ($payerId[$c->payer] ?? null) : null;
+                if ((int) $c->cost_item_id !== (int) $ci || (int) $c->payer_id !== (int) $pi) {
+                    $c->cost_item_id = $ci; $c->payer_id = $pi; $c->save();
+                }
+            }
+            foreach ($s->revenueLines as $r) {
+                $map = $r->kind === 'choHo' ? $chohoId : $revItemId;
+                $ii = $r->item !== null ? ($map[$r->item] ?? null) : null;
+                if ((int) $r->item_id !== (int) $ii) { $r->item_id = $ii; $r->save(); }
             }
         }
-        foreach ($s->revenueLines as $r) {
-            $map = $r->kind === 'choHo' ? $chohoId : $revItemId;
-            $ii = $r->item !== null ? ($map[$r->item] ?? null) : null;
-            if ((int) $r->item_id !== (int) $ii) { $r->item_id = $ii; $r->save(); }
+
+        $updates = [];
+        if ($needTotals) {
+            // Tier 1 — tổng tiền (khớp calcRev/calcCost ở frontend)
+            $revBase  = (float) $s->revenueLines->where('kind', 'doanhThu')->sum('amount');
+            $chohoRev = (float) $s->revenueLines->where('kind', 'choHo')->sum('amount');
+            $rate     = (float) ($s->vat_rate ?? 0);
+            $vat      = round($revBase * $rate / 100);
+            $phaiThu  = $revBase + $vat + $chohoRev;
+            $daThu    = (float) $s->payments->sum('amount');
+            $costTotal    = (float) $s->costLines->sum('amount');
+            $costBillable = (float) $s->costLines->where('billable', true)->sum('amount');
+            $costCompany  = $costTotal - $costBillable;
+            $updates += [
+                'rev_base' => $revBase, 'vat_amount' => $vat, 'choho_revenue' => $chohoRev,
+                'phai_thu' => $phaiThu, 'da_thu' => $daThu, 'con_no' => $phaiThu - $daThu,
+                'cost_total' => $costTotal, 'cost_billable' => $costBillable, 'cost_company' => $costCompany,
+                'profit' => $revBase - $costCompany,
+            ];
+        }
+        if ($needVehicle) {
+            $updates['vehicle_id'] = $s->bks_vao ? TruckingVehicle::where('plate', $s->bks_vao)->value('id') : null;
+        }
+        if ($needLoc) {
+            $updates['from_location_id'] = $this->resolveLocationId($s->from_loc);
+            $updates['to_location_id']   = $this->resolveLocationId($s->to_loc);
+        }
+        if ($updates) {
+            $s->forceFill($updates)->save();
         }
 
-        // Tier 1 — tổng tiền (khớp calcRev/calcCost ở frontend)
-        $revBase  = (float) $s->revenueLines->where('kind', 'doanhThu')->sum('amount');
-        $chohoRev = (float) $s->revenueLines->where('kind', 'choHo')->sum('amount');
-        $rate     = (float) ($s->vat_rate ?? 0);
-        $vat      = round($revBase * $rate / 100);
-        $phaiThu  = $revBase + $vat + $chohoRev;
-        $daThu    = (float) $s->payments->sum('amount');
-        $costTotal    = (float) $s->costLines->sum('amount');
-        $costBillable = (float) $s->costLines->where('billable', true)->sum('amount');
-        $costCompany  = $costTotal - $costBillable;
-
-        // Tier 3 — khóa xe / địa điểm
-        $vehicleId = $s->bks_vao ? TruckingVehicle::where('plate', $s->bks_vao)->value('id') : null;
-
-        $s->forceFill([
-            'rev_base'      => $revBase, 'vat_amount' => $vat, 'choho_revenue' => $chohoRev,
-            'phai_thu'      => $phaiThu, 'da_thu' => $daThu, 'con_no' => $phaiThu - $daThu,
-            'cost_total'    => $costTotal, 'cost_billable' => $costBillable, 'cost_company' => $costCompany,
-            'profit'        => $revBase - $costCompany,
-            'vehicle_id'    => $vehicleId,
-            'from_location_id' => $this->resolveLocationId($s->from_loc),
-            'to_location_id'   => $this->resolveLocationId($s->to_loc),
-        ])->save();
-
-        // Tier 3 — kho theo lô (mỗi kho 1 dòng). Tách theo cùng bộ ngăn cách với
-        // khoPoints/khoRouteDisplay ( , → -> – — " - " ) để khớp warehouse_id dù tuyến dùng mũi tên.
-        $whMap = $this->warehouseIdMap();
-        $s->warehouses()->delete();
-        $parts = array_values(array_filter(array_map('trim', preg_split('/\s*(?:,|→|->|–|—|\s-\s)\s*/u', (string) $s->kho) ?: []), fn ($x) => $x !== ''));
-        foreach ($parts as $i => $name) {
-            $s->warehouses()->create(['warehouse_id' => $whMap[mb_strtolower($name)] ?? null, 'name' => $name, 'sort' => $i]);
+        if ($needWh) {
+            // Tier 3 — kho theo lô (mỗi kho 1 dòng). Tách theo cùng bộ ngăn cách với
+            // khoPoints/khoRouteDisplay ( , → -> – — " - " ) để khớp warehouse_id dù tuyến dùng mũi tên.
+            $whMap = $this->warehouseIdMap();
+            $s->warehouses()->delete();
+            $parts = array_values(array_filter(array_map('trim', preg_split('/\s*(?:,|→|->|–|—|\s-\s)\s*/u', (string) $s->kho) ?: []), fn ($x) => $x !== ''));
+            foreach ($parts as $i => $name) {
+                $s->warehouses()->create(['warehouse_id' => $whMap[mb_strtolower($name)] ?? null, 'name' => $name, 'sort' => $i]);
+            }
         }
     }
 
