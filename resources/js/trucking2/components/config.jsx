@@ -88,7 +88,7 @@ function MapPicker({ initial, address, mapsKey, onClose, onPick }) {
 }
 
 const CFG_GROUPS = [
-  { key: "locations", label: "Địa điểm", hint: "depot, cảng, ICD, KCN — dùng cho Tuyến · thêm ký hiệu viết tắt; tự thêm khi import bảng giá (cột FROM + TO)", ph: "VD: Cảng Tân Vũ", coded: true, codeKey: "locationCode", codeNameLabel: "Tên địa điểm" },
+  { key: "locations", label: "Địa điểm", hint: "depot, cảng, ICD, KCN — dùng cho Tuyến · thêm ký hiệu viết tắt; tự thêm khi import bảng giá (cột FROM + TO)", ph: "VD: Cảng Tân Vũ", coded: true, codeKey: "locationCode", codeNameLabel: "Tên địa điểm", allowDupCode: true },
   { key: "customers", label: "Khách hàng", hint: "quản lý khách hàng — MST, liên hệ, hạn thanh toán, ghi chú…", ph: "VD: Canon Vietnam" },
   { key: "contTypes", label: "Loại container", hint: "dùng cho cột Cont", ph: "VD: 40HC" },
   { key: "warehouses", label: "Kho", hint: "kho hàng — dùng cho lô (chọn tối đa 3) · thêm ký hiệu viết tắt + địa chỉ; tự thêm khi import bảng giá (cột TO)", ph: "VD: Kho A2", coded: true, codeKey: "warehouseCode", codeNameLabel: "Tên kho", addressed: true, geo: true },
@@ -532,6 +532,7 @@ function DriversManager({ cfg, setCfg }) {
 function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap, counts = {}, loading = false }) {
   const isMobile = useIsMobile();
   const [draft, setDraft] = useState("");
+  const [codeDraft, setCodeDraft] = useState("");   // ô "ký hiệu" cho khu thêm dạng nhóm (Địa điểm)
   const list = cfg[sel] || [];
   const locked = new Set(cfg.locationLocked || []);
   const g = CFG_GROUPS.find((x) => x.key === sel);
@@ -566,9 +567,10 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
   // Phát hiện trùng ký hiệu (chuẩn hóa hoa + bỏ khoảng trắng)
   const normCode = (c) => (c || "").toString().trim().toUpperCase();
   const codeCounts = {};
-  if (g && g.coded) list.forEach((_, i) => { const c = normCode(codeArr[i]); if (c) codeCounts[c] = (codeCounts[c] || 0) + 1; });
-  const isDupCode = (i) => { const c = normCode(codeArr[i]); return !!c && codeCounts[c] > 1; };
-  const hasDupCode = !!(g && g.coded) && Object.values(codeCounts).some((n) => n > 1);
+  const allowDup = !!(g && g.allowDupCode);   // Địa điểm: cho phép nhiều TÊN dùng chung 1 ký hiệu → không chặn trùng mã
+  if (g && g.coded && !allowDup) list.forEach((_, i) => { const c = normCode(codeArr[i]); if (c) codeCounts[c] = (codeCounts[c] || 0) + 1; });
+  const isDupCode = (i) => { if (allowDup) return false; const c = normCode(codeArr[i]); return !!c && codeCounts[c] > 1; };
+  const hasDupCode = !!(g && g.coded) && !allowDup && Object.values(codeCounts).some((n) => n > 1);
   // Phí tuyến đường: phát hiện trùng TUYẾN — THEO CHIỀU (Kho1→Kho2 ≠ Kho2→Kho1, giữ thứ tự kho)
   const routeKey = (s) => (s || "").split(/\s*-\s*/).map((x) => x.trim().toUpperCase()).filter(Boolean).join(" | ");
   const rfRows = cfg.routeFees || [];
@@ -600,6 +602,16 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
     if (g && g.addressed) { const a = [...addrArr]; while (a.length < list.length) a.push(""); a.push(""); setCfg(addrArrKey, a); }
     if (g && g.geo) { const a = [...geoArr]; while (a.length < list.length) a.push(""); a.push(""); setCfg(geoArrKey, a); }
     setDraft("");
+  };
+  // Thêm 1 dòng đã biết KÝ HIỆU (dùng cho giao diện gom nhóm — Địa điểm): mỗi ký hiệu có thể nhiều tên.
+  const addRow = (code, name) => {
+    setCfg(sel, [...list, (name || "").trim()]);
+    const a = [...codeArr]; while (a.length < list.length) a.push(""); a.push((code || "").trim()); setCfg(codeArrKey, a);
+    const ia = [...idArr]; while (ia.length < list.length) ia.push(null); ia.push(null); setCfg(idArrKey, ia);   // dòng mới: chưa có id
+  };
+  // Đổi ký hiệu cho TẤT CẢ dòng trong 1 nhóm (sửa ở header nhóm → áp cho mọi tên cùng nhóm).
+  const setGroupCode = (indices, code) => {
+    const a = [...codeArr]; while (a.length < list.length) a.push(""); indices.forEach((i) => { a[i] = code; }); setCfg(codeArrKey, a);
   };
   // Đổi tên: các map gắn THEO TÊN (đơn giá/màu/loại xe) phải chuyển sang tên mới, không mất.
   // Riêng MÃ (coded) lưu theo chỉ số → đổi tên không ảnh hưởng mã.
@@ -668,7 +680,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
           <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginBottom: 10 }}>{g.hint}</div>
           {g.coded && <div style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12, color: "var(--ink-2)", background: "#eef4ff", border: "1px solid #d6e3fb", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>
             <i className="bi bi-info-circle-fill" style={{ color: "var(--accent)", marginTop: 1 }} />
-            <span>Sửa được cả <b>tên</b> lẫn <b>ký hiệu</b>. Đổi ký hiệu vẫn giữ liên kết (bảng giá/lô) vì khớp theo dòng. Lưu ý: mỗi <b>ký hiệu</b> phải <b>duy nhất</b>.</span>
+            <span>Sửa được cả <b>tên</b> lẫn <b>ký hiệu</b>. Đổi ký hiệu vẫn giữ liên kết (bảng giá/lô) vì khớp theo dòng. {allowDup ? <>Cho phép <b>nhiều tên</b> dùng chung 1 <b>ký hiệu</b>.</> : <>Lưu ý: mỗi <b>ký hiệu</b> phải <b>duy nhất</b>.</>}</span>
           </div>}
           {hasDupCode && <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: "var(--danger)", background: "#fce8e8", border: "1px solid #f3c9c9", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>⚠ Có ký hiệu bị trùng — mỗi ký hiệu phải là duy nhất. Sửa các ô viền đỏ trước khi lưu.</div>}
           {hasDupRoute && <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: "var(--danger)", background: "#fce8e8", border: "1px solid #f3c9c9", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>⚠ Có tuyến bị trùng — mỗi tuyến (đúng thứ tự kho) phải là duy nhất. Sửa các tuyến viền đỏ trước khi lưu. (Kho1→Kho2 khác Kho2→Kho1.)</div>}
@@ -734,6 +746,75 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                 </div>
               </div>
             </div>
+          ) : allowDup ? (
+            <>
+              {/* Khu thêm: KÝ HIỆU trước → TÊN địa điểm → Thêm (đặt TRÊN CÙNG) */}
+              {(() => { const add = () => { if (draft.trim() || codeDraft.trim()) { addRow(codeDraft, draft); setCodeDraft(""); setDraft(""); } };
+                const onKey = (e) => { if (e.key === "Enter") { e.preventDefault(); add(); } };
+                return (
+                <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+                  <input value={codeDraft} onChange={(e) => setCodeDraft(e.target.value)} onKeyDown={onKey} placeholder="Ký hiệu (VD: TV)"
+                    style={{ width: 140, padding: "9px 12px", fontSize: 13.5, fontWeight: 600, textTransform: "uppercase", border: "1px solid var(--line)", borderRadius: 9, outline: "none" }}
+                    onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
+                  <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={onKey} placeholder={g.ph || "Tên địa điểm"}
+                    style={{ flex: 1, minWidth: 160, padding: "9px 12px", fontSize: 13.5, border: "1px solid var(--line)", borderRadius: 9, outline: "none" }}
+                    onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
+                  <Btn variant="primary" onClick={add}>Thêm</Btn>
+                </div>
+                ); })()}
+              {(() => {
+                // Gom theo KÝ HIỆU (chuẩn hóa); nhóm chưa có ký hiệu xuống cuối.
+                const gm = new Map();
+                list.forEach((nm, i) => { const raw = codeArr[i] || ""; const key = normCode(raw); if (!gm.has(key)) gm.set(key, { key, code: raw, idxs: [] }); gm.get(key).idxs.push(i); });
+                let groups = [...gm.values()];
+                groups = groups.filter((x) => x.key !== "").concat(groups.filter((x) => x.key === ""));
+                if (!groups.length) return <div style={{ padding: "20px 4px", fontSize: 13, color: "var(--ink-4)" }}>Chưa có địa điểm nào — thêm ở trên.</div>;
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: 430, overflowY: "auto", paddingRight: 2 }}>
+                    {groups.map((grp) => {
+                      const noCode = grp.key === "";
+                      return (
+                      <div key={grp.idxs[0]} style={{ border: "1px solid var(--line)", borderRadius: 11, overflow: "hidden", background: "#fff" }}>
+                        {/* Header nhóm: ký hiệu — sửa ở đây áp cho CẢ nhóm */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: noCode ? "var(--line-2)" : "var(--accent-weak)", borderBottom: "1px solid var(--line)" }}>
+                          <i className="bi bi-tag-fill" style={{ color: noCode ? "var(--ink-4)" : "var(--accent)", fontSize: 13 }} />
+                          <input value={grp.code} onChange={(e) => setGroupCode(grp.idxs, e.target.value)} placeholder="Ký hiệu…"
+                            style={{ width: 130, padding: "5px 9px", fontSize: 13, fontWeight: 700, textTransform: "uppercase", border: "1px solid var(--line)", borderRadius: 7, outline: "none", background: "#fff" }}
+                            onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
+                          <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--ink-4)" }}>{grp.idxs.length} địa điểm</span>
+                          <button type="button" onClick={() => addRow(grp.code, "")} title="Thêm 1 tên địa điểm vào nhóm này"
+                            style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer", borderRadius: 7, border: "1px solid var(--accent)", background: "#fff", color: "var(--accent)" }}>
+                            <I.plus /> Thêm tên
+                          </button>
+                        </div>
+                        {/* Danh sách tên trong nhóm */}
+                        <div style={{ display: "flex", flexDirection: "column", padding: "4px 8px 8px" }}>
+                          {grp.idxs.map((i) => {
+                            const linkedToPrice = locked.has(list[i]);
+                            return (
+                              <div key={i} style={{ display: "grid", gridTemplateColumns: "22px 1fr 28px", gap: 8, alignItems: "center", padding: "2px 0" }}>
+                                <span style={{ color: linkedToPrice ? "var(--accent)" : "var(--ink-4)" }} title={linkedToPrice ? "Đang dùng trong bảng giá" : ""}><I.link /></span>
+                                <input value={list[i]} onChange={(e) => rename(i, e.target.value)} placeholder="Tên địa điểm"
+                                  style={{ width: "100%", padding: "7px 10px", fontSize: 13.5, border: "1px solid transparent", borderRadius: 8, outline: "none", background: "transparent" }}
+                                  onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.background = "#fff"; }}
+                                  onBlur={(e) => { e.target.style.borderColor = "transparent"; e.target.style.background = "transparent"; }} />
+                                <button type="button" onClick={() => remove(i)} title="Xóa"
+                                  style={{ width: 28, height: 28, display: "grid", placeItems: "center", border: "none", borderRadius: 7, background: "transparent", color: "var(--ink-4)", cursor: "pointer" }}
+                                  onMouseEnter={(e) => { e.currentTarget.style.background = "#fce8e8"; e.currentTarget.style.color = "var(--danger)"; }}
+                                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--ink-4)"; }}>
+                                  <I.trash />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </>
           ) : (
             <>
               <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>

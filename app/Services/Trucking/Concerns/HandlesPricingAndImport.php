@@ -171,11 +171,13 @@ trait HandlesPricingAndImport
                 $attrs = ['name' => $name, 'code' => ($code !== '' ? $code : null), 'sort' => $sort];
                 if ($addrArr !== null) $attrs['address'] = (trim((string) ($addrArr[$i] ?? '')) ?: null);
                 if ($geoArr !== null) { [$lat, $lng] = $this->parseLatLng($geoArr[$i] ?? ''); $attrs['lat'] = $lat; $attrs['lng'] = $lng; }
-                // Ưu tiên KHỚP THEO ID (dòng đã có sẵn) → cho phép SỬA mã mà không đứt link;
-                // không có id → khớp theo mã; mã rỗng → khớp theo tên (mã trống); không có → tạo mới.
+                // Ưu tiên KHỚP THEO ID (dòng đã có sẵn) → cho phép SỬA mã mà không đứt link.
+                // Có idArr (payload mới, authoritative): id rỗng = dòng MỚI → LUÔN tạo mới, KHÔNG gộp theo mã
+                // → cho phép NHIỀU TÊN dùng chung 1 ký hiệu (vd: Địa điểm). Không có idArr (payload cũ):
+                // khớp theo mã rồi tên (mã trống) để giữ link như trước.
                 $id  = $idArr !== null ? ($idArr[$i] ?? null) : null;
                 $row = is_numeric($id) ? $cls::find($id) : null;
-                if (! $row) {
+                if (! $row && $idArr === null) {
                     $row = $code !== ''
                         ? $cls::where('code', $code)->first()
                         : ($cls::where('name', $name)->whereRaw("COALESCE(code,'') = ''")->first() ?? null);
