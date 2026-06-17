@@ -4,6 +4,25 @@ import "@trk/shared.js";
 
 const { useState, useEffect, useRef, useMemo } = React;
 import { I, useIsMobile } from "@trk/lib.jsx";
+import { MarkerClusterer } from "@googlemaps/markerclusterer";
+
+/* Renderer cụm marker — vòng tròn màu accent + số lượng xe (to dần theo số xe). */
+const CLUSTER_RENDERER = {
+  render: ({ count, position }) => {
+    const g = window.google.maps;
+    const size = count < 10 ? 40 : count < 50 ? 48 : 56;
+    const svg = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><circle cx="${size / 2}" cy="${size / 2}" r="${size / 2 - 3}" fill="#2a6fdb" fill-opacity="0.92" stroke="#fff" stroke-width="3"/></svg>`
+    );
+    return new g.Marker({
+      position,
+      icon: { url: svg, scaledSize: new g.Size(size, size), anchor: new g.Point(size / 2, size / 2) },
+      label: { text: String(count), color: "#fff", fontSize: "13px", fontWeight: "700" },
+      zIndex: 1000 + count,
+      title: count + " xe — bấm để phóng to",
+    });
+  },
+};
 
 const POLL_MS = 15000;            // chu kỳ poll
 const STALE_MS = 10 * 60 * 1000;  // > 10 phút không cập nhật = mất tín hiệu
@@ -302,7 +321,11 @@ function TrackingApp() {
   const infoRef = useRef(null);
   const markersRef = useRef({});
   const markerData = useRef({});
+  const clustererRef = useRef(null);   // gom cụm marker xe (MarkerClusterer)
   const didFit = useRef(false);
+  // Đồng hồ "x giây trước" tự đếm giữa 2 lần poll (re-render mỗi giây; effect/memo nặng KHÔNG chạy lại vì deps không đổi).
+  const [, setNowTick] = useState(0);
+  useEffect(() => { const t = setInterval(() => setNowTick((n) => n + 1), 1000); return () => clearInterval(t); }, []);
 
   // ---- Tìm địa điểm (Google Places autocomplete) ----
   const acSvcRef = useRef(null);      // AutocompleteService (lấy gợi ý)
@@ -393,6 +416,7 @@ function TrackingApp() {
       infoRef.current = new maps.InfoWindow();
       infoRef.current.addListener("closeclick", () => { infoOpenRef.current = null; });
       whInfoRef.current = new maps.InfoWindow();
+      clustererRef.current = new MarkerClusterer({ map: mapRef.current, markers: [], renderer: CLUSTER_RENDERER });
       // Bấm lên bản đồ: đang "đặt kho" → ghim kho; ngược lại → bỏ chọn xe + đóng popup (thoát nhanh khỏi lỡ chọn).
       mapRef.current.addListener("click", (e) => {
         if (placingRef.current != null) { placeFnRef.current(placingRef.current, e.latLng.lat(), e.latLng.lng()); return; }
@@ -495,8 +519,9 @@ function TrackingApp() {
       const sig = effStatus(p) + "|" + Math.round((p.angle || 0) / 6) + "|" + (sel ? 1 : 0);
       let m = markersRef.current[id];
       if (!m) {
+        // KHÔNG set map trực tiếp — để MarkerClusterer quản lý hiển thị (gom cụm khi nhiều xe chồng).
         m = new maps.Marker({
-          position: pos, map: mapRef.current, icon: iconFor(maps, p, sel), title: p.plate,
+          position: pos, icon: iconFor(maps, p, sel), title: p.plate,
           label: { text: p.plate || "—", className: "trk-plate", color: "#16202e", fontSize: "11px", fontWeight: "700" },
         });
         m.__sig = sig;
@@ -509,13 +534,15 @@ function TrackingApp() {
           setSelected(id); openInfo(id);
         });
         markersRef.current[id] = m;
+        if (clustererRef.current) clustererRef.current.addMarker(m, true); else m.setMap(mapRef.current);
       } else {
         if (m.__sig !== sig) { m.setIcon(iconFor(maps, p, sel)); m.__sig = sig; }
         tweenMarker(m, pos);   // trượt mượt tới vị trí mới (cảm giác xe chạy realtime)
       }
       if (follow && sel && mapRef.current) { mapRef.current.panTo(pos); if (mapRef.current.getZoom() < 14) mapRef.current.setZoom(15); }   // bám xe: map đi theo xe đang chọn
     });
-    Object.keys(markersRef.current).forEach((id) => { if (!seen.has(id)) { const m = markersRef.current[id]; if (m.__anim) cancelAnimationFrame(m.__anim); m.setMap(null); delete markersRef.current[id]; } });
+    Object.keys(markersRef.current).forEach((id) => { if (!seen.has(id)) { const m = markersRef.current[id]; if (m.__anim) cancelAnimationFrame(m.__anim); if (clustererRef.current) clustererRef.current.removeMarker(m, true); m.setMap(null); delete markersRef.current[id]; } });
+    if (clustererRef.current) clustererRef.current.render();   // gom cụm lại theo vị trí mới (1 lần/poll)
 
     // Fit lần đầu — CHỈ khi container đã có kích thước thật (tránh fitBounds sai lúc layout chưa xong
     // → "đôi khi không thấy xe, reload mới hiện"). Chưa có size thì để ResizeObserver fit lại sau.
