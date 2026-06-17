@@ -3,7 +3,6 @@
 namespace Database\Seeders;
 
 use App\Models\Shipment;
-use App\Models\TruckingSetting;
 use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
@@ -51,28 +50,32 @@ class DatabaseSeeder extends Seeder
         // không bao giờ bị khoá (vì không có Gate::before cho super_admin).
         $superAdmin->syncPermissions(Permission::all());
 
-        // Gán quyền MẶC ĐỊNH cho admin/ke_toan/chung_tu CHỈ MỘT LẦN DUY NHẤT.
-        // Sau lần đầu, admin tự bật/tắt quyền ở /roles — deploy lại (migrate --seed)
-        // KHÔNG ghi đè lựa chọn đó (cờ sys.roles_initialized).
-        if (! TruckingSetting::bool('sys.roles_initialized', false)) {
-            $admin->syncPermissions(Permission::all());    // admin ngang super_admin
-            $keToan->syncPermissions([
-                'dashboard.view',
-                'prices.view', 'prices.update',
-                'statements.view', 'statements.create', 'statements.update', 'statements.delete',
-                'tripCost.view', 'tripCost.create', 'tripCost.update', 'tripCost.delete',
-                'spend.request',
-                'fleet.view', 'fleet.manage',
-            ]);
-            $chungTu->syncPermissions([
-                'dashboard.view',
-                'shipments.view', 'shipments.create', 'shipments.update', 'shipments.delete',
-                'tracking.view', 'tracking.manage',
-                'settings.view',
-                'tasks.view', 'tasks.create', 'tasks.update',
-            ]);
-            TruckingSetting::put('sys.roles_initialized', '1');
-        }
+        // Gán quyền MẶC ĐỊNH cho admin/ke_toan/chung_tu — CHỈ KHI role đang RỖNG quyền.
+        // → Lần đầu (role mới tạo, chưa có quyền): tự gán đủ.
+        // → Deploy lại khi role ĐÃ có quyền: GIỮ NGUYÊN, không ghi đè bật/tắt admin chỉnh ở /roles.
+        // Cách này tự sửa nếu role lỡ bị rỗng, không phụ thuộc cờ toàn cục dễ kẹt.
+        $seedIfEmpty = function (Role $role, array $perms): void {
+            if ($role->permissions()->count() === 0) {
+                $role->syncPermissions($perms);
+            }
+        };
+
+        $seedIfEmpty($admin, Permission::pluck('name')->all());   // admin ngang super_admin
+        $seedIfEmpty($keToan, [
+            'dashboard.view',
+            'prices.view', 'prices.update',
+            'statements.view', 'statements.create', 'statements.update', 'statements.delete',
+            'tripCost.view', 'tripCost.create', 'tripCost.update', 'tripCost.delete',
+            'spend.request',
+            'fleet.view', 'fleet.manage',
+        ]);
+        $seedIfEmpty($chungTu, [
+            'dashboard.view',
+            'shipments.view', 'shipments.create', 'shipments.update', 'shipments.delete',
+            'tracking.view', 'tracking.manage',
+            'settings.view',
+            'tasks.view', 'tasks.create', 'tasks.update',
+        ]);
 
         // --- Super admin user ---
         // firstOrCreate: chỉ tạo nếu CHƯA có; KHÔNG reset mật khẩu/tên khi deploy lại.
