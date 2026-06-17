@@ -193,6 +193,7 @@ function TrackingApp() {
   const [providers, setProviders] = useState(B.providers || []);
   const [lastTs, setLastTs] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [stale, setStale] = useState(false);   // poll lỗi liên tiếp → dữ liệu không còn "live"
   const [q, setQ] = useState("");
   const [fStatus, setFStatus] = useState("all");
   const [fProvider, setFProvider] = useState("all");
@@ -266,7 +267,7 @@ function TrackingApp() {
       } catch (e) { /* giữ dữ liệu cũ */ }
       finally {
         // CHỈ tick mới nhất mới đặt lịch kế tiếp → tránh nhân đôi timer
-        if (my === reqId.current) { setLoading(false); fails = ok ? 0 : Math.min(fails + 1, 2); schedule(); }
+        if (my === reqId.current) { setLoading(false); fails = ok ? 0 : Math.min(fails + 1, 2); setStale(fails >= 2); schedule(); }
       }
     }
     // Quay lại tab → refresh NGAY (không chờ hết chu kỳ); poll nền vẫn chạy nên data đã sẵn sàng.
@@ -357,6 +358,25 @@ function TrackingApp() {
     for (const w of whGeo) { const km = haversineKm({ lat: p.lat, lng: p.lng }, { lat: w.lat, lng: w.lng }); if (!best || km < best.km) best = { w, km }; }
     return best;
   };
+  // Danh sách đã sắp xếp (memo) — tính kho gần nhất + ETA 1 LẦN/xe rồi mới sort, tránh gọi nearestWh
+  // lặp lại trong comparator mỗi lần render (O(N·log N·W) → O(N·W)); refresh mỗi poll khi positions đổi.
+  const sortedRows = useMemo(() => {
+    const now = Date.now();
+    return filtered.map((p) => {
+      const near = nearestWh(p);
+      const at = !!(near && near.km <= AT_WH_KM);
+      const avgV = avgSpeedKmh(histRef.current[vehKey(p)], now);
+      const effV = avgV != null ? avgV : (p.speed || 0);
+      const eta = (near && !at && effV >= ETA_MIN_KMH) ? fmtEta(near.km, effV) : null;
+      return { p, near, at, eta };
+    }).sort((A, B) => {
+      const sa = STATUS_RANK[effStatus(A.p)] ?? 9, sb = STATUS_RANK[effStatus(B.p)] ?? 9;
+      if (sa !== sb) return sa - sb;
+      const da = A.near?.km ?? Infinity, db = B.near?.km ?? Infinity;
+      if (da !== db) return da - db;
+      return (B.p.speed || 0) - (A.p.speed || 0);
+    });
+  }, [filtered, whGeo]);
 
   useEffect(() => {
     const key = B.mapsKey;
@@ -675,9 +695,11 @@ function TrackingApp() {
             <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{enabledProviders.map((p) => `${p.label}: ${p.count}`).join(" · ") || "Chưa bật nguồn GPS nào"}</div>
           </div>
           <div style={{ flex: 1 }} />
-          <span style={{ fontSize: 12, color: "var(--ink-3)", display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 12, color: stale ? "var(--warn)" : "var(--ink-3)", display: "inline-flex", alignItems: "center", gap: 6, fontWeight: stale ? 600 : 400 }}>
             {(loading && !lastTs)
               ? <><span style={{ width: 8, height: 8, borderRadius: 999, background: "var(--ink-4)" }} /> Đang kết nối…</>
+              : stale
+              ? <><span style={{ width: 8, height: 8, borderRadius: 999, background: "var(--warn)" }} /> Mất kết nối · đang thử lại{lastTs ? ` · cập nhật ${timeAgo(lastTs)}` : ""}</>
               : <><span style={{ width: 8, height: 8, borderRadius: 999, background: "var(--good)", boxShadow: "0 0 0 3px rgba(31,138,91,.18)" }} /> Trực tuyến · {timeAgo(lastTs)}</>}
           </span>
           <button type="button" data-tour="help" onClick={startTour} title="Xem hướng dẫn các tính năng"
@@ -753,21 +775,10 @@ function TrackingApp() {
             </div>
           </div>
           {filtered.length === 0 && <div style={{ padding: "30px 16px", textAlign: "center", color: "var(--ink-4)", fontSize: 13 }}>{noData ? "Chưa có dữ liệu xe." : "Không có xe khớp bộ lọc."}</div>}
-          {filtered.slice().sort((a, b) => {
-            // Bậc trạng thái trước: nổ máy → dừng → tắt máy → mất tín hiệu (xe mất tín hiệu/5 ngày luôn xuống cuối,
-            // dù gần kho). Cùng bậc → GẦN KHO NHẤT lên đầu (dễ thấy xe sắp tới kho), rồi tới tốc độ.
-            const sa = STATUS_RANK[effStatus(a)] ?? 9, sb = STATUS_RANK[effStatus(b)] ?? 9;
-            if (sa !== sb) return sa - sb;
-            const da = nearestWh(a)?.km ?? Infinity, db = nearestWh(b)?.km ?? Infinity;
-            if (da !== db) return da - db;
-            return (b.speed || 0) - (a.speed || 0);
-          }).map((p) => {
+          {/* Bậc trạng thái: nổ máy → dừng → tắt máy → mất tín hiệu; cùng bậc → gần kho nhất → tốc độ.
+             (đã tính sẵn trong sortedRows để khỏi tính lại mỗi render) */}
+          {sortedRows.map(({ p, near: n, at, eta }) => {
             const id = idOf(p); const st = STATUS[effStatus(p)] || STATUS.off; const on = id === selected;
-            const n = nearestWh(p); const at = !!(n && n.km <= AT_WH_KM);
-            // ETA tới kho gần nhất — dùng VẬN TỐC TB TRƯỢT 5' (đèn đỏ/đứng được tính đủ) → thực tế hơn tốc độ tức thời.
-            const avgV = avgSpeedKmh(histRef.current[vehKey(p)], Date.now());
-            const effV = avgV != null ? avgV : (p.speed || 0);
-            const eta = (n && !at && effV >= ETA_MIN_KMH) ? fmtEta(n.km, effV) : null;
             return (
               <button key={id} type="button" onClick={() => { if (on) { setSelected(null); setFollow(false); closeInfo(); } else focusVehicle(p); }}
                 style={{ width: "100%", textAlign: "left", display: "block", border: "none", borderLeft: `3px solid ${on ? st.color : "transparent"}`, borderBottom: "1px solid var(--line-2)", background: on ? "var(--accent-weak-2)" : "#fff", cursor: "pointer", padding: "9px 13px" }}>
