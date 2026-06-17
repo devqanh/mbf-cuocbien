@@ -624,7 +624,7 @@ function TrackingApp() {
   const selVeh = selected ? positions.find((p) => idOf(p) === selected) : null;   // xe đang chọn (cho chip điều khiển + bám xe)
 
   // ---- Product tour (driver.js, lazy-load qua @trk/tour.js) ----
-  const TOUR_KEY = "trk_tour_track_v1";
+  const TOUR_KEY = "trk_tour_track_v2";
   const tourSteps = [
     { element: '[data-tour="title"]', title: "Theo dõi xe realtime 👋", description: "Tại đây bạn xem vị trí mọi xe theo thời gian thực, tự cập nhật khoảng 15 giây/lần. Cùng lướt qua vài tính năng chính nhé!", side: "bottom", align: "start" },
     { element: '[data-tour="status"]', title: "Lọc theo trạng thái", description: "Bấm để lọc nhanh: Đang chạy / Dừng / Tắt máy / Mất tín hiệu. Bản đồ tự khít lại theo nhóm xe; bấm “Tất cả” để xem hết.", side: "bottom", align: "start" },
@@ -632,7 +632,7 @@ function TrackingApp() {
     { element: '[data-tour="search"]', title: "Tìm xe", description: "Gõ biển số, tên tài xế hoặc địa chỉ để lọc nhanh danh sách xe.", side: "right", align: "start" },
     { element: '[data-tour="list"]', title: "Danh sách xe", description: "Bấm 1 xe để xem trên bản đồ (bấm lại để bỏ chọn). Mỗi xe hiện tốc độ, khoảng cách & thời gian dự kiến tới kho gần nhất.", side: "right", align: "start" },
     { element: '[data-tour="placesearch"]', title: "Tìm địa điểm trên bản đồ", description: "Gõ địa chỉ/địa điểm bất kỳ rồi chọn gợi ý — bản đồ sẽ bay tới đó ngay.", side: "bottom", align: "start" },
-    { element: '[data-tour="overview"]', title: "Toàn cảnh & lớp bản đồ", description: "Nút “Toàn cảnh” đưa bản đồ về xem tất cả xe. Cạnh đó bật/tắt Giao thông, Vệ tinh, Địa điểm (hệ thống ghi nhớ cho lần sau).", side: "top", align: "start" },
+    { element: '[data-tour="overview"]', title: "Toàn cảnh & lớp bản đồ", description: "Cụm nút này: <b>Toàn cảnh</b> đưa bản đồ về xem tất cả xe (bỏ chọn xe); <b>Giao thông</b> hiện tình trạng kẹt đường; <b>Địa điểm</b> hiện POI (quán, cây xăng…); <b>Vệ tinh</b> đổi sang ảnh vệ tinh. Lựa chọn được ghi nhớ cho lần sau.", side: "top", align: "start" },
     { title: "Bám theo xe", description: "Khi chọn 1 xe sẽ có nút “Bám xe” — bật để bản đồ tự đi theo khi xe di chuyển. Kéo bản đồ bằng tay sẽ tự dừng bám. Nhấn phím Esc để bỏ chọn nhanh." },
     ...(canEdit && ROUTES.warehouseGeo ? [{ element: '[data-tour="warehouse"]', title: "Vị trí kho", description: "Bạn có quyền ghim vị trí kho lên bản đồ — hệ thống dùng để tính khoảng cách và lịch sử xe ra/vào kho.", side: "bottom", align: "end" }] : []),
     { element: '[data-tour="history"]', title: "Lịch sử đến kho", description: "Xem lại lịch sử xe đến/rời từng kho ở đây.", side: "bottom", align: "end" },
@@ -846,8 +846,8 @@ function TrackingApp() {
 
           {/* Lớp bản đồ: Toàn cảnh + Giao thông + Vệ tinh (góc dưới-trái) */}
           {mapReady && (
-            <div style={{ position: "absolute", left: 10, bottom: 22, zIndex: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
-              <button type="button" data-tour="overview" onClick={overview} title="Thu toàn cảnh — bỏ chọn xe & xem tất cả"
+            <div data-tour="overview" style={{ position: "absolute", left: 10, bottom: 22, zIndex: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <button type="button" onClick={overview} title="Thu toàn cảnh — bỏ chọn xe & xem tất cả"
                 style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: isMobile ? "10px 14px" : "7px 11px", fontSize: isMobile ? 13.5 : 12.5, fontWeight: 600, cursor: "pointer", borderRadius: 8,
                   border: "1px solid var(--line)", background: "#fff", color: "var(--ink-2)", boxShadow: "0 1px 4px rgba(0,0,0,.2)" }}>
                 <i className="bi bi-arrows-fullscreen" /> Toàn cảnh
