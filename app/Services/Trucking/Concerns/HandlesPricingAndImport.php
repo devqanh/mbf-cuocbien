@@ -608,4 +608,34 @@ trait HandlesPricingAndImport
         });
     }
 
+    /**
+     * Copy TOÀN BỘ bảng giá từ khách NGUỒN sang khách ĐÍCH (nhân bản dòng, id mới) — cho nhanh.
+     * $replace=true: xóa bảng giá hiện có của đích trước; false: chèn thêm (gộp).
+     */
+    public function copyPriceRows(string $from, string $to, bool $replace = false): array
+    {
+        $fromId = TruckingCustomer::where('name', trim($from))->value('id');
+        $toId   = TruckingCustomer::where('name', trim($to))->value('id');
+        if (! $fromId || ! $toId || $fromId === $toId) {
+            return ['copied' => 0, 'priceList' => $toId ? $this->customerPriceList($to) : []];
+        }
+
+        return DB::transaction(function () use ($fromId, $toId, $to, $replace) {
+            if ($replace) TruckingPriceRow::where('customer_id', $toId)->delete();
+
+            $cols = ['location_id', 'loc', 'conn', 'kind', 'from', 'to1', 'to2', 'to3', 'to4',
+                     'distance', 'trans_fee_40', 'trans_fee_20', 'fuel_fee_40', 'fuel_fee_20', 'sort'];
+            $now  = now();
+            $rows = TruckingPriceRow::where('customer_id', $fromId)->orderBy('sort')->orderBy('id')->get()
+                ->map(function ($r) use ($cols, $toId, $now) {
+                    $a = ['customer_id' => $toId, 'created_at' => $now, 'updated_at' => $now];
+                    foreach ($cols as $c) $a[$c] = $r->$c;
+                    return $a;
+                })->all();
+            foreach (array_chunk($rows, 500) as $chunk) TruckingPriceRow::insert($chunk);
+
+            return ['copied' => count($rows), 'priceList' => $this->customerPriceList($to)];
+        });
+    }
+
 }

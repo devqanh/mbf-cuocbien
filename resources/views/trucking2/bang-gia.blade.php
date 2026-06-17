@@ -15,6 +15,7 @@ window.__TRK = {
   routes: {
     customers: '{{ route("trucking2.customers.save") }}',
     priceImport: '{{ route("trucking2.priceImport") }}',
+    priceCopy: '{{ route("trucking2.priceCopy") }}',
     customerPrices: '{{ route("trucking2.customerPrices") }}',
   },
   boot: @json($boot),

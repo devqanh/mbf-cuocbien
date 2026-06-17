@@ -23,4 +23,6 @@ So khớp giá bảng kê = backend `HandlesStatementPricing::priceShipment` (ng
 
 **Chẩn đoán "dò"** (user: kế toán dò khó): `pr.diag = {hasPrice, cang, nhaMay, kind, conn}`. UI bảng kê (ui.jsx StatementDetailBody) khi `!matched` hiện dòng "🔍 Đã dò bảng giá: cảng X → nhà máy Y · loại Z · conn — không có dòng giá khớp / khách chưa có bảng giá". candidateRow thêm field `kho`.
 
+**Lưu theo KÝ HIỆU:** form lô hàng (popups.jsx) lưu `from_loc/to_loc` = mã (locOptions value=code, hiện "Tên — Mã"), `kho` = mã (whCodes). Migration `2026_06_17_000001_normalize_shipment_codes` chuẩn hóa lô CŨ → mã (bỏ dấu, idempotent; VPS chỉ cần `php artisan migrate`). Báo cáo Excel (`StatementExcelExporter`) tự resolve mã→TÊN nên gửi khách vẫn rõ. Khớp giá robust vì $rc + data đã là mã. `statementCandidates` lọc kỳ ở SQL (index gio_xe_ra) cho scale 50k.
+
 **Lưu ý vận hành:** bảng kê ĐÃ LƯU giữ snapshot cũ (matched/phaiThu lúc tạo); phải bấm **Tính lại** để áp logic khớp mới rồi Lưu. Cảnh báo "⚠ chưa khớp" ở ui.jsx ~L397 (xem) / ~L278 (tạo).

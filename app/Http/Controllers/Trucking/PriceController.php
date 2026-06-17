@@ -34,4 +34,17 @@ class PriceController extends BaseTruckingController
 
         return response()->json(['ok' => true] + $res);
     }
+
+    /** Copy bảng giá từ 1 khách khác sang khách đang chọn (cho nhanh). */
+    public function copy(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'from'    => ['required', 'string'],
+            'to'      => ['required', 'string'],
+            'replace' => ['nullable', 'boolean'],
+        ]);
+        $res = $this->svc->copyPriceRows($data['from'], $data['to'], (bool) ($data['replace'] ?? false));
+
+        return response()->json(['ok' => true] + $res);
+    }
 }

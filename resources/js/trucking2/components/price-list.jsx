@@ -12,7 +12,33 @@ function PriceList({ rows = [], onChange, onImported, cfg = {}, customer }) {
   const [query, setQuery] = useState("");          // ô tra cứu tuyến
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [copySrc, setCopySrc] = useState("");   // khách NGUỒN để copy bảng giá vào khách đang chọn
   const fileRef = React.useRef(null);
+  const otherCustomers = (cfg.customers || []).filter((c) => c && c !== customer);
+
+  // ---- Copy bảng giá từ 1 khách khác sang khách đang chọn ----
+  const doCopy = async () => {
+    if (!customer) { setMsg("Chọn khách đích trước."); return; }
+    if (!copySrc || copySrc === customer) { setMsg("Chọn khách NGUỒN khác."); return; }
+    let replace = false;
+    if (rows.length > 0) {
+      const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+      const ok = await window.confirmAction({
+        title: "Ghi đè bảng giá?",
+        text: `Khách <b>${esc(customer)}</b> đang có <b>${rows.length}</b> dòng. Copy từ <b>${esc(copySrc)}</b> sẽ <b>GHI ĐÈ</b> toàn bộ. Tiếp tục?`,
+        confirmText: "Ghi đè bằng bảng giá nguồn", cancelText: "Huỷ",
+      });
+      if (!ok) return;
+      replace = true;
+    }
+    setBusy(true); setMsg("");
+    try {
+      const res = await fetch(ROUTES.priceCopy, { method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json", "X-CSRF-TOKEN": T.csrf }, body: JSON.stringify({ from: copySrc, to: customer, replace }) }).then((r) => r.json());
+      setBusy(false);
+      if (res && res.ok) { (onImported || onChange)(res.priceList || []); setMsg(`Đã copy ${res.copied} dòng từ ${copySrc}.`); setCopySrc(""); }
+      else { setMsg("Copy lỗi: " + ((res && res.message) || "không rõ")); }
+    } catch (err) { setBusy(false); setMsg("Copy lỗi kết nối."); }
+  };
   // Gộp danh mục địa điểm + mọi "Điểm Hạ" đang có trong bảng giá (kể cả ký hiệu mới import) để select luôn hiển thị
   const locOpts = [...new Set([...(cfg.locations || []), ...rows.map((r) => r.loc).filter(Boolean)])];
   const blank = { distance: "", transFee40: "", transFee20: "", fuelFee40: "", fuelFee20: "" };
@@ -279,6 +305,16 @@ function PriceList({ rows = [], onChange, onImported, cfg = {}, customer }) {
             style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 13px", fontSize: 12.5, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 8, background: "#fff", color: "var(--ink-2)", cursor: "pointer" }}>
             <I.plus /> Thêm nhóm địa điểm hạ
           </button>
+          {/* Copy nhanh bảng giá từ khách khác */}
+          {otherCustomers.length > 0 && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <span style={{ width: 200 }}><Combo value={copySrc} onChange={setCopySrc} options={otherCustomers} placeholder="Copy giá từ khách…" small clearable /></span>
+              <button type="button" onClick={doCopy} disabled={busy || !copySrc}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 13px", fontSize: 12.5, fontWeight: 600, border: "1px solid var(--accent-weak)", borderRadius: 8, background: "var(--accent-weak-2)", color: "var(--accent)", cursor: copySrc ? "pointer" : "default", opacity: copySrc ? 1 : 0.6 }}>
+                <i className="bi bi-files" /> Copy sang khách này
+              </button>
+            </span>
+          )}
           {rows.length > 0 && (
             <button type="button" onClick={clearAll} disabled={busy}
               style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 13px", fontSize: 12.5, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 8, background: "#fff", color: "var(--ink-3)", cursor: "pointer" }}

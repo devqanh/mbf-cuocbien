@@ -200,6 +200,7 @@ Route::middleware('auth')->group(function () {
         });
         Route::middleware('permission:prices.update')->group(function () {
             Route::post('/price-import', [PriceController::class, 'import'])->name('priceImport');
+            Route::post('/price-copy',   [PriceController::class, 'copy'])->name('priceCopy');
         });
 
         // --- Bảng kê ---
