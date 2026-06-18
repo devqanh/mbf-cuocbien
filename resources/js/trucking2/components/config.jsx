@@ -152,9 +152,9 @@ function RouteFees({ rows = [], onChange, warehouses = [], isDup = () => false }
         const dup = isDup(r.route);
         const sal = Array.isArray(r.salaryParts) ? r.salaryParts : [];
         const salChk = (key) => (
-          <label style={{ display: "inline-flex", alignItems: "center", gap: 4, marginTop: 5, fontSize: 11, fontWeight: 600, color: sal.includes(key) ? "var(--accent)" : "var(--ink-4)", cursor: "pointer", userSelect: "none" }} title="Tính khoản này vào lương nhân sự (lái xe)">
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 4, marginTop: 5, fontSize: 11, fontWeight: 600, color: sal.includes(key) ? "var(--accent)" : "var(--ink-4)", cursor: "pointer", userSelect: "none" }} title="Tích = chi khoản này cho lái xe theo NGÀY (tổng hợp ở Lộ trình theo từng chuyến)">
             <input type="checkbox" checked={sal.includes(key)} onChange={() => set(i, { salaryParts: sal.includes(key) ? sal.filter((k) => k !== key) : [...sal, key] })} style={{ accentColor: "var(--accent)", cursor: "pointer", margin: 0 }} />
-            lương NS
+            chi theo ngày
           </label>
         );
         return (
@@ -176,14 +176,14 @@ function RouteFees({ rows = [], onChange, warehouses = [], isDup = () => false }
             <div>{lbl("Tiền đường")}<Money value={r.tienDuong} onChange={(x) => set(i, { tienDuong: x })} dim />{salChk("tienDuong")}</div>
             <div>{lbl("Trợ cấp")}<Money value={r.troCap} onChange={(x) => set(i, { troCap: x })} dim />{salChk("troCap")}</div>
             <div>{lbl(<span title="Áp dụng khi lô hàng TÍCH CRU">Lương CRU</span>)}<Money value={r.luong} onChange={(x) => set(i, { luong: x })} dim />{salChk("luong")}</div>
-            <div>{lbl(<span title="Áp dụng khi lô hàng KHÔNG tích CRU">Lương không CRU</span>)}<Money value={r.luongNoCru} onChange={(x) => set(i, { luongNoCru: x })} dim /></div>
+            <div>{lbl(<span title="Áp dụng khi lô hàng KHÔNG tích CRU">Lương không CRU</span>)}<Money value={r.luongNoCru} onChange={(x) => set(i, { luongNoCru: x })} dim />{salChk("luong")}</div>
           </div>
-          <div style={{ fontSize: 11, color: "var(--ink-4)", marginBottom: 10 }}>Lô <b>tích CRU</b> tính theo <b>Lương CRU</b>, lô <b>không tích</b> tính theo <b>Lương không CRU</b>. Tích <b style={{ color: "var(--accent)" }}>lương NS</b> ở khoản nào → khoản đó cộng vào lương nhân sự (lái xe); cờ "lương NS" của Lương áp cho cả 2 mức.</div>
-          {/* Định mức km & dầu */}
+          <div style={{ fontSize: 11, color: "var(--ink-4)", marginBottom: 10 }}>Lô <b>tích CRU</b> tính theo <b>Lương CRU</b>, lô <b>không tích</b> tính theo <b>Lương không CRU</b>. Tích <b style={{ color: "var(--accent)" }}>chi theo ngày</b> ở khoản nào → khoản đó được tổng hợp trả cho lái xe theo từng chuyến ở <b>Lộ trình</b>. Dầu tính tiền = số lít × <b>giá dầu theo ngày</b> của chuyến.</div>
+          {/* Định mức km & dầu — dầu có thể tích "chi theo ngày" (tính tiền theo Bảng giá dầu theo ngày) */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
             <div>{lbl("Số km")}<Num value={r.km} onChange={(x) => set(i, { km: x })} suffix="km" /></div>
-            <div>{lbl("Dầu 2 cầu")}<Num value={r.dau2} onChange={(x) => set(i, { dau2: x })} suffix="lít" /></div>
-            <div>{lbl("Dầu 1 cầu")}<Num value={r.dau1} onChange={(x) => set(i, { dau1: x })} suffix="lít" /></div>
+            <div>{lbl("Dầu 2 cầu")}<Num value={r.dau2} onChange={(x) => set(i, { dau2: x })} suffix="lít" />{salChk("dau2")}</div>
+            <div>{lbl("Dầu 1 cầu")}<Num value={r.dau1} onChange={(x) => set(i, { dau1: x })} suffix="lít" />{salChk("dau1")}</div>
           </div>
         </div>
         );

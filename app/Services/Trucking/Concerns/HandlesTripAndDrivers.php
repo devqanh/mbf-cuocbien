@@ -637,7 +637,7 @@ trait HandlesTripAndDrivers
     }
 
     /** Các key khoản phí hợp lệ có thể tính vào lương nhân sự. */
-    private const SALARY_KEYS = ['veTram', 'tienDuong', 'troCap', 'phiKhac', 'luong'];
+    private const SALARY_KEYS = ['veTram', 'tienDuong', 'troCap', 'phiKhac', 'luong', 'dau1', 'dau2'];   // 'chi theo ngày' — kèm dầu 1/2 cầu
 
     /** Lọc danh sách khoản lương nhân sự về các key hợp lệ; null → mặc định Trợ cấp + Lương. */
     private function cleanSalaryParts($parts): array
