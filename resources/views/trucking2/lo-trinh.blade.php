@@ -13,7 +13,9 @@ window.__TRK = {
   canEdit: {{ $canEdit ? 'true' : 'false' }},
   routes: {
     data: '{{ route("trucking2.loTrinh.data") }}',
+    savePay: '{{ route("trucking2.loTrinh.savePay") }}',
     shipment: '{{ url("trucking-v2/lo-hang") }}',
+    routeFees: '{{ url("trucking-v2/cai-dat") }}#routeFees',
   },
   boot: @json($boot),
 };

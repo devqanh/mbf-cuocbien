@@ -10,7 +10,8 @@ class LoTrinhController extends BaseTruckingController
 {
     public function index()
     {
-        return view('trucking2.lo-trinh', $this->pageData([], 'shipments.view', 'shipments.delete'));
+        $drivers = \App\Models\TruckingDriver::orderBy('sort')->orderBy('name')->pluck('name')->filter()->values()->all();
+        return view('trucking2.lo-trinh', $this->pageData(['drivers' => $drivers], 'shipments.view', 'shipments.delete'));
     }
 
     /** JSON: lộ trình của 1 chuyến theo ngày (mặc định hôm nay). */
@@ -18,5 +19,19 @@ class LoTrinhController extends BaseTruckingController
     {
         $date = (string) $request->query('date', now()->format('Y-m-d'));
         return response()->json(['ok' => true] + $this->svc->routeTripByDate($date));
+    }
+
+    /** Lưu chi cho lái xe theo ngày + xe (lái nhận + đã chi). */
+    public function savePay(Request $request): JsonResponse
+    {
+        $d = $request->validate([
+            'date'   => ['required', 'string'],
+            'bks'    => ['required', 'string'],
+            'driver' => ['nullable', 'string'],
+            'paid'   => ['nullable', 'boolean'],
+            'paidDate' => ['nullable', 'string'],
+            'note'   => ['nullable', 'string'],
+        ]);
+        return response()->json($this->svc->saveRoutePay($d['date'], $d['bks'], $d));
     }
 }

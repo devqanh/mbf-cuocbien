@@ -294,6 +294,7 @@ trait HandlesShipments
                 'bksRa'    => $s->bks_ra ?? '',
                 'points'   => $pts,                               // hành trình điểm
                 'route'    => $this->khoRouteDisplay($rs->kho) ?: ($rs->kho ?? ''),
+                'kho'      => $rs->kho ?? '', 'cru' => (bool) $rs->cru,   // cho tính "chi theo ngày" (khớp phí tuyến + lương CRU)
                 'from'     => $rs->from_loc ?? '', 'to' => $rs->to_loc ?? '',
                 'customer' => $s->customer?->name ?? '',
                 'booking'  => $s->booking ?? '',
@@ -333,6 +334,13 @@ trait HandlesShipments
         $vehById = $vehIds ? TruckingVehicle::whereIn('id', $vehIds)->get(['id', 'plate', 'type', 'axle'])->keyBy('id') : collect();
         $legacyPlates = array_values(array_unique(array_map(fn ($l) => $l['bks'], array_filter($legs, fn ($l) => empty($l['vehicleId'])))));
         $vehByPlate = $legacyPlates ? TruckingVehicle::whereIn('plate', $legacyPlates)->get(['plate', 'type', 'axle'])->keyBy('plate') : collect();
+        // Phí tuyến (khớp theo TẬP kho — không thứ tự) + giá dầu + chi đã lưu cho ngày này.
+        $dateStr = $start->format('Y-m-d');
+        $rfBySet = [];
+        foreach (\App\Models\TruckingRouteFee::all() as $rf) { $k = $this->routeSetKey((string) $rf->route); if ($k !== '') $rfBySet[$k] = $rf; }
+        $fuels = TruckingFuelPrice::orderByDesc('from_date')->orderByDesc('id')->get();
+        $paysByBks = \App\Models\TruckingRoutePay::whereDate('work_date', $dateStr)->get()->keyBy('bks');
+
         $byBks = [];
         foreach ($legs as $l) { $byBks[$l['bks']][] = $l; }
         $trucks = [];
@@ -348,7 +356,17 @@ trait HandlesShipments
                 $axle = $vehByPlate[$bks]->axle ?? null;
                 $matched = $vehByPlate->has($bks);
             }
-            $trucks[] = ['bks' => $bks, 'matched' => $matched, 'type' => $type, 'axle' => $axle, 'legs' => $ls];
+            // "Chi theo ngày": mỗi chuyến (leg) khớp 1 phí tuyến theo TẬP kho → cộng các khoản tick chi theo ngày.
+            $payItems = []; $payTotal = 0;
+            foreach ($ls as $l) {
+                foreach ($this->legDailyCharge($l, $axle, $rfBySet, $fuels, $dateStr) as $it) {
+                    $payItems[] = $it; $payTotal += $it['amount'];
+                }
+            }
+            $pay = $paysByBks->get($bks);
+            $trucks[] = ['bks' => $bks, 'matched' => $matched, 'type' => $type, 'axle' => $axle, 'legs' => $ls,
+                'payItems' => $payItems, 'payTotal' => $payTotal,
+                'payDriver' => $pay?->driver ?? '', 'paid' => (bool) ($pay?->paid ?? false), 'paidDate' => $pay ? $this->outDate($pay->paid_date) : ''];
         }
         usort($trucks, fn ($a, $b) => count($b['legs']) <=> count($a['legs']) ?: strcmp($a['bks'], $b['bks']));
 
@@ -361,6 +379,66 @@ trait HandlesShipments
             'trucks' => $trucks,
             'totalLegs' => count($legs),
         ];
+    }
+
+    /** Khóa tuyến theo TẬP kho — KHÔNG quan tâm thứ tự + bỏ dấu cách (A→B→C ≡ A→C→B; "ICD QV"=="ICDQV"). */
+    private function routeSetKey(string $s): string
+    {
+        $parts = preg_split('/\s*(?:,|→|->|–|—|\s-\s)\s*/u', trim($s)) ?: [];
+        $parts = array_values(array_filter(array_map(fn ($x) => mb_strtoupper(preg_replace('/\s+/u', '', trim($x)) ?? ''), $parts), fn ($x) => $x !== ''));
+        sort($parts);
+        return implode('|', $parts);
+    }
+
+    /** Các khoản "chi theo ngày" của 1 chuyến (leg): theo Phí tuyến khớp (tập kho) + dầu × giá dầu theo ngày. */
+    private function legDailyCharge(array $leg, ?string $axle, array $rfBySet, $fuels, string $date): array
+    {
+        $rf = $rfBySet[$this->routeSetKey((string) ($leg['kho'] ?? ''))] ?? null;
+        if (! $rf) return [];
+        $parts = $this->cleanSalaryParts($rf->salary_parts);
+        if (! $parts) return [];
+        $route = $this->khoRouteDisplay($leg['kho'] ?? '') ?: ($leg['kho'] ?? '');
+        $items = [];
+        $push = function ($key, $label, $amount) use (&$items, $parts, $route, $leg) {
+            $amount = (int) round((float) $amount);
+            if (! in_array($key, $parts, true) || $amount <= 0) return;
+            $items[] = ['key' => $key, 'label' => $label, 'amount' => $amount, 'route' => $route, 'cont' => $leg['cont'] ?? ''];
+        };
+        $push('veTram', 'Vé trạm', $rf->ve_tram);
+        $push('tienDuong', 'Tiền đường', $rf->tien_duong);
+        $push('troCap', 'Trợ cấp', $rf->tro_cap);
+        $push('luong', 'Lương', ! empty($leg['cru']) ? $rf->luong : $rf->luong_no_cru);
+        $is2 = ($axle === '2');                                  // chọn lít dầu theo SỐ CẦU xe
+        $dauKey = $is2 ? 'dau2' : 'dau1';
+        if (in_array($dauKey, $parts, true)) {
+            $liters = (float) ($is2 ? $rf->dau_2cau : $rf->dau_1cau);
+            $push($dauKey, 'Dầu ' . ($is2 ? '2 cầu' : '1 cầu'), $liters * $this->fuelPriceForDate($fuels, $date));
+        }
+        return $items;
+    }
+
+    /** Lưu chi cho lái xe theo ngày + xe (chỉ lưu lái nhận + đã chi; tiền tự tính từ phí tuyến). */
+    public function saveRoutePay(string $date, string $bks, array $data): array
+    {
+        $bks = trim($bks);
+        if ($bks === '' || trim($date) === '') return ['ok' => false, 'message' => 'Thiếu ngày/biển số'];
+        $driver = $this->str($data['driver'] ?? null);
+        $dkey = $driver ? mb_strtolower(preg_replace('/\s+/u', ' ', trim($driver)) ?? '') : '';
+        $paid = ! empty($data['paid']);
+        $veh = TruckingVehicle::where('plate', $bks)->first();
+        \App\Models\TruckingRoutePay::updateOrCreate(
+            ['work_date' => $date, 'bks' => $bks],
+            [
+                'vehicle_id' => $veh?->id,
+                'driver'     => $driver ?: null,
+                'driver_id'  => $dkey !== '' ? ($this->driverIdMap()[$dkey] ?? null) : null,
+                'paid'       => $paid,
+                'paid_date'  => $paid ? ($this->inDate($data['paidDate'] ?? null) ?: $date) : null,
+                'note'       => $this->str($data['note'] ?? null),
+                'updated_by' => auth()->id(),
+            ]
+        );
+        return ['ok' => true];
     }
 
     /**

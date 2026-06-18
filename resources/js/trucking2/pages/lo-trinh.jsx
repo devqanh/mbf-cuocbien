@@ -3,7 +3,61 @@ import { createRoot } from "react-dom/client";
 import "@trk/shared.js";
 
 const { useState, useEffect, useRef } = React;
-import { I, useIsMobile, DateField } from "@trk/lib.jsx";
+import { I, useIsMobile, DateField, Combo, Modal, Btn, fmtVND } from "@trk/lib.jsx";
+
+/* Popup chi cho lái xe (theo ngày + xe): tổng các khoản "chi theo ngày" từ Phí tuyến + chọn lái nhận. */
+function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
+  const [driver, setDriver] = useState(truck.payDriver || "");
+  const [paid, setPaid] = useState(!!truck.paid);
+  const [saving, setSaving] = useState(false);
+  const items = truck.payItems || [];
+  const total = truck.payTotal || 0;
+  const save = () => {
+    if (saving) return; setSaving(true);
+    window.trkApi("POST", (window.__TRK.routes || {}).savePay, { date, bks: truck.bks, driver, paid })
+      .then((r) => { if (r && r.ok) { window.trkToast && window.trkToast("Đã lưu chi cho lái"); onSaved({ payDriver: driver, paid }); onClose(); } else { window.trkToast && window.trkToast("Lưu thất bại", "error"); setSaving(false); } })
+      .catch(() => { window.trkToast && window.trkToast("Lỗi kết nối", "error"); setSaving(false); });
+  };
+  const footer = (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+      <a href={routeFeesUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, color: "var(--accent)", textDecoration: "none" }}><i className="bi bi-gear" /> Sửa phí tuyến</a>
+      <div style={{ display: "flex", gap: 8 }}><Btn onClick={onClose}>Đóng</Btn><Btn variant="primary" onClick={save} disabled={saving}>{saving ? "Đang lưu…" : "Lưu"}</Btn></div>
+    </div>
+  );
+  return (
+    <Modal title={"Chi cho lái xe · " + truck.bks} subtitle={"Ngày " + date + " · tổng hợp các khoản “chi theo ngày” từ Phí tuyến"} onClose={onClose} footer={footer} width={560} icon={<i className="bi bi-cash-coin" />}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {items.length === 0 ? (
+          <div style={{ padding: "14px", fontSize: 13, color: "var(--ink-4)", background: "#fafbfc", border: "1px dashed var(--line)", borderRadius: 10 }}>Không có khoản "chi theo ngày" nào khớp Phí tuyến cho các chuyến hôm nay. Kiểm tra tuyến (tập kho) + tick "chi theo ngày" trong Cài đặt phí tuyến.</div>
+        ) : (
+          <div style={{ border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
+            {items.map((it, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderTop: i ? "1px solid var(--line-2)" : "none", fontSize: 13 }}>
+                <span style={{ fontWeight: 600 }}>{it.label}</span>
+                <span style={{ fontSize: 11.5, color: "var(--ink-4)" }} className="tnum">{it.route}{it.cont ? " · " + it.cont : ""}</span>
+                <span style={{ flex: 1 }} />
+                <span className="tnum" style={{ fontWeight: 600 }}>{fmtVND(it.amount)}</span>
+              </div>
+            ))}
+            <div style={{ display: "flex", alignItems: "center", padding: "9px 12px", borderTop: "1.5px solid var(--line)", background: "#fafbfc" }}>
+              <span style={{ fontWeight: 700 }}>Tổng chi cho lái</span><span style={{ flex: 1 }} />
+              <span className="tnum" style={{ fontWeight: 800, fontSize: 16, color: "var(--accent)" }}>{fmtVND(total)}</span>
+            </div>
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>Lái xe nhận tiền</div>
+            <Combo value={driver} onChange={setDriver} options={drivers} placeholder="Chọn lái xe…" small />
+          </div>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 600, color: paid ? "var(--good)" : "var(--ink-3)", cursor: "pointer", padding: "9px 0" }}>
+            <input type="checkbox" checked={paid} onChange={() => setPaid((v) => !v)} style={{ accentColor: "var(--good)", cursor: "pointer", margin: 0 }} /> Đã chi cho lái
+          </label>
+        </div>
+      </div>
+    </Modal>
+  );
+}
 
 const z = (n) => String(n).padStart(2, "0");
 const toYmd = (d) => `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`;
@@ -96,13 +150,17 @@ function TripNode({ l, isFirst, isLast, bks, href }) {
 
 function LoTrinhApp() {
   const isMobile = useIsMobile();
-  const T = window.__TRK || {}; const ROUTES = T.routes || {};
+  const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
   const api = (m, u) => window.trkApi(m, u);
+  const drivers = B.drivers || [];
 
   const [date, setDate] = useState(toYmd(new Date()));
   const [data, setData] = useState(null);   // null = đang tải
   const [showExt, setShowExt] = useState(false);   // mặc định CHỈ xe MBF; bật để xem xe ngoài chạy
+  const [payTruck, setPayTruck] = useState(null);   // xe đang mở popup "chi cho lái"
   const reqId = useRef(0);
+  // Cập nhật lái nhận/đã chi vào state cục bộ sau khi lưu (khỏi tải lại cả trang).
+  const applyPay = (bks, np) => setData((d) => d ? { ...d, trucks: (d.trucks || []).map((t) => (t.bks === bks ? { ...t, ...np } : t)) } : d);
 
   const load = () => {
     const my = ++reqId.current; setData(null);
@@ -170,7 +228,17 @@ function LoTrinhApp() {
                       : <span style={{ fontSize: 10.5, color: "var(--ink-4)" }}>(ngoài hệ thống)</span>}
                     {(tr.axle === "1" || tr.axle === "2") && <span title="Số cầu xe" style={{ fontSize: 10.5, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak)", padding: "1px 7px", borderRadius: 999 }}>{tr.axle} cầu</span>}
                     <span style={{ flex: 1 }} />
-                    <span style={{ fontSize: 12, color: "var(--ink-3)", fontWeight: 600 }}>{tr.legs.length} hoạt động</span>
+                    <span style={{ fontSize: 12, color: "var(--ink-3)", fontWeight: 600, marginRight: 4 }}>{tr.legs.length} hoạt động</span>
+                    {/* Chi cho lái: tổng các khoản "chi theo ngày" + lái nhận */}
+                    <button type="button" onClick={() => setPayTruck(tr)} title="Chi cho lái xe (theo phí tuyến)"
+                      style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 11px", fontSize: 12.5, fontWeight: 700, borderRadius: 999, cursor: "pointer", whiteSpace: "nowrap",
+                        border: "1px solid " + (tr.paid ? "var(--good)" : (tr.payTotal > 0 ? "var(--accent)" : "var(--line)")),
+                        background: tr.paid ? "var(--good-weak)" : (tr.payTotal > 0 ? "var(--accent-weak)" : "#fff"),
+                        color: tr.paid ? "var(--good)" : (tr.payTotal > 0 ? "var(--accent)" : "var(--ink-3)") }}>
+                      <i className={"bi " + (tr.paid ? "bi-cash-coin" : "bi-cash")} /> Chi lái: <span className="tnum">{fmtVND(tr.payTotal || 0)}</span>
+                      {tr.payDriver ? <span style={{ fontWeight: 500 }}>· {tr.payDriver}</span> : null}
+                      {tr.paid ? <span title="Đã chi">✓</span> : null}
+                    </button>
                   </div>
                   {/* LỘ TRÌNH 1 NGÀY: timeline dọc nối liền các hoạt động */}
                   <div style={{ padding: "8px 12px 10px" }}>
@@ -184,6 +252,8 @@ function LoTrinhApp() {
           )}
         </div>
       </div>
+      {payTruck && <PayPopup truck={payTruck} date={date} drivers={drivers} routeFeesUrl={ROUTES.routeFees}
+        onClose={() => setPayTruck(null)} onSaved={(np) => applyPay(payTruck.bks, np)} />}
     </div>
   );
 }
