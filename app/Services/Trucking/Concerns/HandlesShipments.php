@@ -94,7 +94,7 @@ trait HandlesShipments
     public function shipments(string $sheet): array
     {
         return TruckingShipment::ofSheet($sheet)
-            ->with(['customer', 'costLines', 'revenueLines', 'payments', 'spends'])
+            ->with(['customer', 'costLines', 'revenueLines', 'payments'])
             ->orderBy('id')
             ->get()
             ->map(fn ($s) => $this->shipmentToArray($s))
@@ -198,7 +198,7 @@ trait HandlesShipments
             $list->orderBy('id', 'desc');   // mặc định: lô MỚI NHẬP lên đầu (id giảm dần)
         }
 
-        $list->with(['customer', 'costLines', 'revenueLines', 'payments', 'spends']);
+        $list->with(['customer', 'costLines', 'revenueLines', 'payments']);
         if (! $all) $list->forPage($page, $perPage);
         $data = $list->get()->map(fn ($s) => $this->shipmentToArray($s))->all();
 
@@ -495,7 +495,7 @@ trait HandlesShipments
         if (! $ids) return [];
 
         return TruckingShipment::whereIn('id', $ids)
-            ->with(['customer', 'costLines', 'revenueLines', 'payments', 'spends'])
+            ->with(['customer', 'costLines', 'revenueLines', 'payments'])
             ->get()
             ->map(fn ($s) => $this->shipmentToArray($s))
             ->all();
@@ -582,73 +582,6 @@ trait HandlesShipments
                 ])->all(),
                 'ghiChu'   => $s->ghi_chu ?? '',
             ],
-            // Duyệt chi theo lô (theo biển kiểm soát) — các khoản THỰC CHI đã lưu.
-            'spends' => $s->spends->map(fn ($x) => [
-                'id'        => $x->id,
-                'vehicleId' => $x->vehicle_id,
-                'bks'       => $x->bks ?? '',
-                'driver'    => $x->driver ?? '',
-                'source'    => $x->source ?? 'other',
-                'kind'      => $x->kind ?? 'company',
-                'name'      => $x->name ?? '',
-                'amount'    => $this->outMoney($x->amount),
-                'spendDate' => $this->outDate($x->spend_date),
-                'paid'      => (bool) $x->paid,
-                'paidDate'  => $this->outDate($x->paid_date),
-                'note'      => $x->note ?? '',
-            ])->all(),
-        ];
-    }
-
-    /**
-     * Gợi ý các khoản DUYỆT CHI cho 1 lô từ Phí tuyến đường — reuse tripSuggest
-     * (khớp route theo kho + CRU + số cầu + lái xe theo lịch). Trả các dòng chi
-     * (vé trạm/tiền đường/trợ cấp/lương/dầu) đã phân loại kind salary|company.
-     */
-    public function shipmentSpendSuggest(TruckingShipment $s): array
-    {
-        $bundle = $this->tripConfigBundle();
-        $sg     = $this->tripSuggest($s, $bundle);   // dùng chung logic với Phí xe
-        $sug    = $sg['sug'];
-        $parts  = is_array($sg['salaryParts']) ? $sg['salaryParts'] : [];
-        $num    = fn ($v) => (float) preg_replace('/[^\d.-]/', '', (string) $v);
-
-        $bks    = (string) ($s->bks_vao ?? '');
-        $vehId  = optional($bundle['vehByPlate'][$bks] ?? null)->id;
-        $driver = (string) ($sug['driver'] ?? '');
-        $today  = now()->format('Y-m-d');
-
-        $mk = fn ($source, $kind, $name, $amount) => [
-            'source'    => $source,
-            'kind'      => $kind,
-            'name'      => $name,
-            'amount'    => $this->outMoney($amount),
-            'driver'    => $kind === 'salary' ? $driver : '',
-            'bks'       => $bks,
-            'vehicleId' => $vehId,
-            'spendDate' => $today,
-            'paid'      => false,   // mới gợi ý = CHƯA chi; tick "Đã chi" mới ghi nhận vào Phí xe
-        ];
-
-        $lines = [];
-        // Các khoản phí cố định của tuyến (lương đã áp theo CRU sẵn trong sug['luong'])
-        foreach (['veTram' => 'Vé trạm', 'tienDuong' => 'Tiền đường', 'troCap' => 'Trợ cấp', 'luong' => 'Lương'] as $key => $label) {
-            $amt = $num($sug[$key] ?? 0);
-            if ($amt <= 0) continue;
-            $kind = in_array($key, $parts, true) ? 'salary' : 'company';
-            $lines[] = $mk($key, $kind, $label, $amt);
-        }
-        // Dầu = lít × đơn giá (chi phí công ty)
-        $fuel = (int) round($num($sug['fuelLiters'] ?? 0) * $num($sug['fuelPrice'] ?? 0));
-        if ($fuel > 0) $lines[] = $mk('dau', 'company', 'Dầu', $fuel);
-
-        return [
-            'matched'   => (bool) $sg['matched'],
-            'driver'    => $driver,
-            'bks'       => $bks,
-            'vehicleId' => $vehId,
-            'spendDate' => $today,
-            'lines'     => $lines,
         ];
     }
 
@@ -793,42 +726,8 @@ trait HandlesShipments
             }
             }   // end if apply('rev')
 
-            // Duyệt chi theo lô — reconcile (xóa & tạo lại) khi nhóm 'spends' được sửa.
-            if ($apply('spends')) {
-                $s->spends()->delete();
-                $uid = auth()->id();
-                // map tên lái xe → id qua driverIdMap() (request-scoped cache, cùng rule
-                // lowercase+trim với shipment.driver_id → 2 cột nhất quán cho báo cáo lương).
-                $dmap = $this->driverIdMap();
-                foreach (($data['spends'] ?? []) as $i => $sp) {
-                    $kind = ($sp['kind'] ?? 'company') === 'salary' ? 'salary' : 'company';
-                    $paid = ! empty($sp['paid']);
-                    $spendDate = $this->inDate($sp['spendDate'] ?? null);
-                    // paid_date = ngày tick "Đã chi" (paidDate nếu gửi, không thì lấy Ngày chi)
-                    $paidDate = $paid ? ($this->inDate($sp['paidDate'] ?? null) ?: $spendDate) : null;
-                    $driverName = $this->str($sp['driver'] ?? null);
-                    $dkey = $driverName ? mb_strtolower(preg_replace('/\s+/u', ' ', trim($driverName)) ?? '') : '';
-                    $s->spends()->create([
-                        'vehicle_id' => is_numeric($sp['vehicleId'] ?? null) ? (int) $sp['vehicleId'] : null,
-                        'bks'        => $this->str($sp['bks'] ?? null),
-                        'driver'     => $driverName,
-                        'driver_id'  => $dkey !== '' ? ($dmap[$dkey] ?? null) : null,
-                        'source'     => $this->str($sp['source'] ?? null) ?: 'other',
-                        'kind'       => $kind,
-                        'name'       => $this->str($sp['name'] ?? null) ?: 'Khoản chi',
-                        'amount'     => $this->inMoney($sp['amount'] ?? null) ?? 0,
-                        'spend_date' => $spendDate,
-                        'paid'       => $paid,
-                        'paid_date'  => $paidDate,
-                        'note'       => $this->str($sp['note'] ?? null),
-                        'created_by' => $uid,
-                        'sort'       => $i,
-                    ]);
-                }
-            }
-
             $this->recomputeShipmentDerived($s, $only);
-            return $s->fresh(['customer', 'costLines', 'revenueLines', 'payments', 'spends']);
+            return $s->fresh(['customer', 'costLines', 'revenueLines', 'payments']);
         });
     }
 

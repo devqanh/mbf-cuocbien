@@ -178,7 +178,6 @@ class ImportMbf extends Command
         TruckingRevenueLine::query()->delete();
         TruckingCostLine::query()->delete();
         TruckingShipmentWarehouse::query()->delete();
-        if (class_exists(\App\Models\TruckingShipmentSpend::class)) \App\Models\TruckingShipmentSpend::query()->delete();
         TruckingShipment::query()->delete();
         DB::statement('SET FOREIGN_KEY_CHECKS=1');
         $this->warn("Đã xóa TOÀN BỘ $n lô hàng (+ chi phí/doanh thu/thanh toán/kho theo lô).");

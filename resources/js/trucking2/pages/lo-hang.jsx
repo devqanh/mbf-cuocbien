@@ -4,7 +4,7 @@ import "@trk/shared.js";
 
 const { useState, useMemo, useEffect, useRef } = React;
 import { I, fmtVND, fmtShort, fmtDate, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, useIsMobile, DateField } from "@trk/lib.jsx";
-import { CostPopup, SpendPopup, InfoPopup, colorHex } from "@trk/pop.jsx";
+import { CostPopup, InfoPopup, colorHex } from "@trk/pop.jsx";
 import { SortBtn, CellBtn, Badge, EditCell, TH, TD } from "@trk/ui.jsx";
 
 // Chip số INV — nổi bật để kế toán dễ dò
@@ -221,7 +221,7 @@ function ShipmentsApp() {
     if (draft || modal) return;   // tránh tạo nhiều lô nháp khi bấm double
     const vat = (cfg.vatDefault || {})[sheet] || (isHph ? "8" : "0");
     const tmpId = "tmp_" + Date.now() + "_" + Math.floor(Math.random() * 1000);
-    const base = { id: tmpId, _new: true, customer: "", booking: "", io: "Nhập", contNo: "", contType: "40HC", kho: "", bksVao: "", bksRa: "", from: "ICD Quế Võ", to: "", contDen: "", contRa: "", cutOff: "", gioDenDuKien: "", gioXeRa: "", gioXeRaXe: "", cost: { items: [] }, rev: { vatRate: vat, doanhThu: [], choHo: [], payments: [] }, spends: [] };
+    const base = { id: tmpId, _new: true, customer: "", booking: "", io: "Nhập", contNo: "", contType: "40HC", kho: "", bksVao: "", bksRa: "", from: "ICD Quế Võ", to: "", contDen: "", contRa: "", cutOff: "", gioDenDuKien: "", gioXeRa: "", gioXeRaXe: "", cost: { items: [] }, rev: { vatRate: vat, doanhThu: [], choHo: [], payments: [] } };
     dirtyIds.current.add(tmpId);
     setDraft(base);   // lô nháp sống trong popup, chưa vào danh sách trang
     ensureCfg();      // cần danh mục dropdown cho popup
@@ -624,10 +624,6 @@ function ShipmentsApp() {
                         <div style={{ fontSize: 10.5, color: "var(--ink-4)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Chi phí</div>
                         <div className="tnum" style={{ fontSize: 14, fontWeight: 700, marginTop: 2 }}>{fmtVND(m.cost)}</div>
                       </button>
-                      <button type="button" onClick={(e) => { e.stopPropagation(); openModal({ id: s.id, type: "spend" }); }}
-                        style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid var(--accent-weak)", borderRadius: 9, background: "var(--accent-weak)", color: "var(--accent)", padding: "8px 14px", cursor: "pointer", fontWeight: 700, fontSize: 13.5 }}>
-                        <i className="bi bi-cash-coin" /> Chi cho tài xế
-                      </button>
                     </div>
                   </div>
                 );
@@ -744,12 +740,6 @@ function ShipmentsApp() {
                     </TD>
                     <TD align="center">
                       <div style={{ display: "inline-flex", flexDirection: "column", gap: 5, alignItems: "stretch" }}>
-                        <button type="button" onClick={() => openModal({ id: s.id, type: "spend" })} title="Duyệt chi cho tài xế theo biển kiểm soát (tự điền từ phí tuyến)"
-                          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, whiteSpace: "nowrap", padding: "6px 11px", border: "1px solid var(--accent-weak)", borderRadius: 8, background: "var(--accent-weak)", color: "var(--accent)", cursor: "pointer", fontWeight: 600, fontSize: 12.5 }}
-                          onMouseEnter={(e) => { e.currentTarget.style.background = "var(--accent)"; e.currentTarget.style.color = "#fff"; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.background = "var(--accent-weak)"; e.currentTarget.style.color = "var(--accent)"; }}>
-                          <i className="bi bi-cash-coin" /> Chi cho tài xế
-                        </button>
                         <button type="button" onClick={() => openModal({ id: s.id, type: "cost" })} title="Chi phí lô hàng (chi hộ / công ty)"
                           style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, whiteSpace: "nowrap", padding: "6px 11px", border: "1px solid var(--line)", borderRadius: 8, background: "#fff", color: "var(--ink-2)", cursor: "pointer", fontWeight: 600, fontSize: 12.5 }}
                           onMouseEnter={(e) => { e.currentTarget.style.background = "var(--line-2)"; }}
@@ -812,12 +802,11 @@ function ShipmentsApp() {
         )}
 
         <div style={{ marginTop: 10, fontSize: 12, color: "var(--ink-4)", display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
-          <I.fx /> Chi phí thống kê theo từng lô. Doanh thu thu theo <b style={{ color: "var(--ink-3)" }}>Bảng kê</b> (gom lô theo ngày cont ra). Bấm ô <b style={{ color: "var(--ink-3)" }}>Chi phí</b> để phân bổ, nút <b style={{ color: "var(--ink-3)" }}>₫ Duyệt chi</b> để duyệt chi theo biển kiểm soát (tự điền từ phí tuyến).
+          <I.fx /> Chi phí thống kê theo từng lô. Doanh thu thu theo <b style={{ color: "var(--ink-3)" }}>Bảng kê</b> (gom lô theo ngày cont ra). Bấm ô <b style={{ color: "var(--ink-3)" }}>Chi phí</b> để phân bổ. Chi cho lái xe xem ở <b style={{ color: "var(--ink-3)" }}>Lộ trình</b>.
         </div>
       </div>
 
       {active && modal.type === "cost" && <CostPopup ship={active} patch={(np) => patch(active.id, np)} onSave={() => commitDirty()} isDirty={isDirty} onClose={() => setModal(null)} cfg={cfg} addCfg={addCfg} />}
-      {active && modal.type === "spend" && <SpendPopup ship={active} patch={(np) => patch(active.id, np)} onSave={() => commitDirty()} isDirty={isDirty} onClose={() => setModal(null)} cfg={cfg} addCfg={addCfg} />}
       {active && modal.type === "info" && <InfoPopup ship={active} isHph={isHph} patch={(np) => patch(active.id, np)} patchOther={(id, np) => patch(id, np)} onSave={() => commitDirty()} isDirty={isDirty} siblings={sibs.filter((x) => x.id !== active.id)} onClose={closeInfo} onDelete={active._new ? null : () => delShip(active.id)} canDelete={T.canDelete} cfg={cfg} addCfg={addCfg} />}
 
       {showImport && (

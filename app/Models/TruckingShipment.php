@@ -74,11 +74,6 @@ class TruckingShipment extends Model
         return $this->hasMany(TruckingShipmentWarehouse::class, 'shipment_id')->orderBy('sort');
     }
 
-    public function spends(): HasMany
-    {
-        return $this->hasMany(TruckingShipmentSpend::class, 'shipment_id')->orderBy('sort');
-    }
-
     public function scopeOfSheet(Builder $q, string $sheet): Builder
     {
         return $q->where('sheet', $sheet);

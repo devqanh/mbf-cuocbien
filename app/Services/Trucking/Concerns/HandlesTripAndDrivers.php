@@ -24,7 +24,6 @@ use App\Models\TruckingSetting;
 use App\Models\TruckingAttachment;
 use App\Models\TruckingPlanLink;
 use App\Models\TruckingShipment;
-use App\Models\TruckingShipmentSpend;
 use App\Models\TruckingShipmentWarehouse;
 use App\Models\TruckingVehicleCostType;
 use App\Models\TruckingAssetCategory;
@@ -369,33 +368,13 @@ trait HandlesTripAndDrivers
     }
 
     /**
-     * Tổng duyệt chi theo shipment_id, tách salary|company + theo trạng thái:
-     *  - salary/company/total           = ĐÃ CHI (đã tick paid)
-     *  - unpaidSalary/unpaidCompany/... = CHƯA CHI (đã ghi nhận nhưng chưa tick)
-     * Phí xe: Đã chi cộng dồn; Chưa chi = các khoản đã ghi nhận còn chờ chi.
+     * (Đã bỏ "duyệt chi theo lô" — chi cho lái xe nay quản lý ở Lộ trình qua
+     * trucking_route_pays.) Giữ hàm trả rỗng để các nơi cũ vẫn chạy, cột "Đã chi"
+     * ở Phí xe hiển thị 0; phần tính lương lái xe sẽ làm lại sau.
      */
     private function spendsByShipment(array $shipmentIds): array
     {
-        $ids = array_values(array_filter($shipmentIds, fn ($v) => is_numeric($v)));
-        if (! $ids) return [];
-        $out = [];
-        $rows = TruckingShipmentSpend::whereIn('shipment_id', $ids)
-            ->selectRaw('shipment_id, kind, paid, SUM(amount) as amt')
-            ->groupBy('shipment_id', 'kind', 'paid')->get();
-        foreach ($rows as $r) {
-            $sid = (int) $r->shipment_id;
-            $out[$sid] ??= self::EMPTY_SPENT;
-            $k = $r->kind === 'salary' ? 'salary' : 'company';
-            $amt = (int) round((float) $r->amt);
-            if ($r->paid) {
-                $out[$sid][$k] += $amt;
-                $out[$sid]['total'] += $amt;
-            } else {
-                $out[$sid]['unpaid' . ucfirst($k)] += $amt;
-                $out[$sid]['unpaidTotal'] += $amt;
-            }
-        }
-        return $out;
+        return [];
     }
 
     /** Khung "spent" rỗng (đã chi + chưa chi) — dùng làm mặc định khi lô chưa có duyệt chi. */

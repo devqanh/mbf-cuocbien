@@ -134,7 +134,6 @@ Route::middleware('auth')->group(function () {
             Route::get('/', fn () => redirect()->route('trucking2.shipments'));
             Route::get('/lo-hang',        [TruckingShipmentController::class, 'index'])->name('shipments');
             Route::get('/shipments-page', [TruckingShipmentController::class, 'page'])->name('shipmentsPage');
-            Route::get('/shipments/{shipment}/spend-suggest', [TruckingShipmentController::class, 'spendSuggest'])->name('shipments.spendSuggest');
             Route::get('/config',         [TruckingShipmentController::class, 'configData'])->name('configData');
             Route::get('/bootstrap',      [TruckingShipmentController::class, 'bootstrap'])->name('bootstrap');
             Route::get('/ke-hoach',                [PlanLinkController::class, 'index'])->name('plan');   // quản lý link kế hoạch

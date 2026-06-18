@@ -82,12 +82,6 @@ class ShipmentController extends BaseTruckingController
         return response()->json(['ok' => true] + $res);
     }
 
-    /** Gợi ý các khoản DUYỆT CHI cho 1 lô từ Phí tuyến đường (khớp theo kho + CRU + số cầu). */
-    public function spendSuggest(TruckingShipment $shipment): JsonResponse
-    {
-        return response()->json(['ok' => true] + $this->svc->shipmentSpendSuggest($shipment));
-    }
-
     private function validateShipment(Request $request): array
     {
         $data = $request->validate([
