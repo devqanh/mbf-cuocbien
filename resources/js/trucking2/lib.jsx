@@ -475,8 +475,20 @@ function calcRevICD(r) {
   return { tongDT, vat, rate, phaiThu, conNo, daTT };
 }
 
-/* Free time & kết nối — quy tắc kế toán ICD (ngưỡng giờ cấu hình được) */
-function calcFreeTime(s, thresholdH) {
+/* Free time & kết nối — quy tắc kế toán ICD.
+ * Ngưỡng (giờ): mặc định = thresholdH; nếu có `rules` (quy tắc theo khoảng ngày) và NGÀY CONT RA
+ * (gio_xe_ra) rơi vào 1 khoảng → dùng ngưỡng của khoảng đó. rules = [{from:"YYYY-MM-DD", to?, hours}]. */
+function freeTimeThresholdFor(dRa, thresholdH, rules) {
+  const def = thresholdH == null || thresholdH === "" ? 4 : (parseFloat(thresholdH) || 0);
+  if (!Array.isArray(rules) || !rules.length || !dRa || isNaN(dRa.getTime())) return def;
+  const p = (n) => String(n).padStart(2, "0");
+  const ymd = `${dRa.getFullYear()}-${p(dRa.getMonth() + 1)}-${p(dRa.getDate())}`;
+  for (const r of rules) {
+    if (r && r.from && ymd >= r.from && (!r.to || ymd <= r.to)) return (r.hours == null || r.hours === "") ? def : (parseFloat(r.hours) || def);
+  }
+  return def;
+}
+function calcFreeTime(s, thresholdH, rules) {
   const den = s && s.gioXeDen, duKien = s && s.gioDenDuKien, ra = s && s.gioXeRa;
   if (!ra || (!den && !duKien)) return null;
   const dRa = new Date(ra);
@@ -487,7 +499,7 @@ function calcFreeTime(s, thresholdH) {
   } else { start = new Date(den || duKien); basis = den ? "Giờ xe đến" : "Giờ đến kế hoạch"; }
   if (isNaN(dRa.getTime()) || isNaN(start.getTime())) return null;
   const hours = (dRa - start) / 3600000;
-  const th = thresholdH == null || thresholdH === "" ? 4 : (parseFloat(thresholdH) || 0);
+  const th = freeTimeThresholdFor(dRa, thresholdH, rules);   // ngưỡng theo NGÀY cont ra
   return { hours, connect: hours > th, threshold: th, basis };
 }
 const fmtHours = (h) => {

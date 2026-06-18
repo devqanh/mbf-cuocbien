@@ -293,6 +293,20 @@ trait HandlesPricingAndImport
         if (isset($cfg['vatDefault']['hph'])) TruckingSetting::put('vat_default_hph', $cfg['vatDefault']['hph']);
         if (isset($cfg['vatDefault']['icd'])) TruckingSetting::put('vat_default_icd', $cfg['vatDefault']['icd']);
         if (array_key_exists('freeTimeHours', $cfg)) TruckingSetting::put('free_time_hours', $cfg['freeTimeHours']);
+        if (array_key_exists('freeTimeRules', $cfg)) {   // quy tắc ngưỡng theo khoảng ngày → lưu JSON
+            $rules = [];
+            foreach ((is_array($cfg['freeTimeRules']) ? $cfg['freeTimeRules'] : []) as $r) {
+                $from = trim((string) ($r['from'] ?? ''));
+                if ($from === '') continue;   // bắt buộc "từ ngày"
+                $rules[] = [
+                    'from'  => $from,
+                    'to'    => trim((string) ($r['to'] ?? '')) ?: null,
+                    'hours' => (isset($r['hours']) && $r['hours'] !== '' && $r['hours'] !== null) ? (float) $r['hours'] : null,
+                    'note'  => trim((string) ($r['note'] ?? '')),
+                ];
+            }
+            TruckingSetting::put('free_time_rules', json_encode($rules, JSON_UNESCAPED_UNICODE));
+        }
         if (array_key_exists('dueWarnDays', $cfg)) {
             $d = (int) preg_replace('/[^\d]/', '', (string) $cfg['dueWarnDays']);
             TruckingSetting::put('due_warn_days', (string) ($d > 0 ? $d : 30));

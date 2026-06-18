@@ -23,7 +23,7 @@ const CAT_KEYS = {
   assetCategories: ["assetCategories"],
   routeFees: ["routeFees"],
   fuelPrices: ["fuelPrices"],
-  __general: ["vatDefault", "freeTimeHours", "dueWarnDays"],
+  __general: ["vatDefault", "freeTimeHours", "freeTimeRules", "dueWarnDays"],
 };
 
 // Nhãn tab (cho hộp xác nhận)
@@ -36,7 +36,7 @@ const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&":
 
 function SettingsApp() {
   const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
-  const DEFAULT_CFG = { locations: [], locationCode: {}, locationCodeArr: [], locationsIdArr: [], locationLocked: [], customers: [], customerInfo: {}, contTypes: [], warehouses: [], warehouseCode: {}, warehouseCodeArr: [], warehousesIdArr: [], warehouseAddr: {}, warehouseAddrArr: [], warehouseGeoArr: [], payers: [], costItems: [], choHoItems: [], revItems: [], vehicles: [], vehicleType: {}, vehicleAxle: {}, vehicleGps: {}, gpsVehicles: [], drivers: [], salaryItems: [], vehicleCostTypes: [], assetCategories: [], routeFees: [], fuelPrices: [], prices: {}, costColors: {}, vatDefault: { hph: "8", icd: "0" }, freeTimeHours: "4", dueWarnDays: "30" };
+  const DEFAULT_CFG = { locations: [], locationCode: {}, locationCodeArr: [], locationsIdArr: [], locationLocked: [], customers: [], customerInfo: {}, contTypes: [], warehouses: [], warehouseCode: {}, warehouseCodeArr: [], warehousesIdArr: [], warehouseAddr: {}, warehouseAddrArr: [], warehouseGeoArr: [], payers: [], costItems: [], choHoItems: [], revItems: [], vehicles: [], vehicleType: {}, vehicleAxle: {}, vehicleGps: {}, gpsVehicles: [], drivers: [], salaryItems: [], vehicleCostTypes: [], assetCategories: [], routeFees: [], fuelPrices: [], prices: {}, costColors: {}, vatDefault: { hph: "8", icd: "0" }, freeTimeHours: "4", freeTimeRules: [], dueWarnDays: "30" };
   const api = (method, url, body) => window.trkApi(method, url, body);
   const [cfg, setCfgState] = useState(DEFAULT_CFG);
   const [counts, setCounts] = useState(B.counts || {});   // badge sidebar (boot, nhẹ)

@@ -744,7 +744,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
           ) : g.fuelprices ? (
             <FuelPrices rows={cfg.fuelPrices || []} onChange={(rows) => setCfg("fuelPrices", rows)} />
           ) : g.general ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 460 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 600 }}>
               {/* VAT mặc định */}
               <div>
                 <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 8 }}>VAT mặc định</div>
@@ -770,8 +770,41 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                   </div>
                 </Field>
                 <div style={{ fontSize: 12, color: "var(--ink-4)", lineHeight: 1.6, marginTop: 6 }}>
-                  Free time <b>&gt; {cfg.freeTimeHours || 4}h</b> → <b style={{ color: "var(--good)" }}>CONNECT</b>; nhỏ hơn → <b style={{ color: "var(--danger)" }}>DISCONNECT</b>.
-                  <br />Free time = Giờ xe ra − (Giờ đến kế hoạch hoặc Giờ xe đến, lấy giờ muộn hơn).
+                  Free time <b>&gt; ngưỡng</b> → <b style={{ color: "var(--good)" }}>CONNECT</b>; nhỏ hơn → <b style={{ color: "var(--danger)" }}>DISCONNECT</b>.
+                  <br />Free time = Giờ xe ra − (Giờ đến kế hoạch hoặc Giờ xe đến, lấy giờ muộn hơn). Mặc định <b>{cfg.freeTimeHours || 4}h</b> dùng khi không khớp khoảng ngày nào.
+                </div>
+                {/* Ngưỡng theo KHOẢNG NGÀY (ưu tiên hơn mặc định) — chọn theo NGÀY cont ra */}
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 4 }}>Ngưỡng theo khoảng ngày <span style={{ fontWeight: 400, color: "var(--ink-4)" }}>(ưu tiên hơn mặc định)</span></div>
+                  <div style={{ fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.5, marginBottom: 8 }}>
+                    Ngưỡng áp theo <b>ngày cont ra</b> (Giờ xe ra). Cont ra rơi vào khoảng nào thì dùng ngưỡng của khoảng đó (vd 12/06–30/06 = 2h; 01/07–20/07 = 4h). <b>Đến ngày</b> để trống = từ ngày đó trở đi.
+                  </div>
+                  {(cfg.freeTimeRules || []).map((r, i) => {
+                    const upd = (np) => setCfg("freeTimeRules", (cfg.freeTimeRules || []).map((x, j) => (j === i ? { ...x, ...np } : x)));
+                    const lbl = (t) => <div style={{ fontSize: 11, color: "var(--ink-4)", marginBottom: 3, fontWeight: 500 }}>{t}</div>;
+                    return (
+                      <div key={r.id || i} style={{ display: "flex", alignItems: "flex-end", gap: 8, flexWrap: "wrap", border: "1px solid var(--line)", borderRadius: 10, padding: "8px 10px", marginBottom: 8, background: "#fafbfc" }}>
+                        <div>{lbl("Từ ngày")}<div style={{ width: 130 }}><DateField value={r.from} onChange={(x) => upd({ from: x })} /></div></div>
+                        <div>{lbl("Đến ngày")}<div style={{ width: 130 }}><DateField value={r.to} onChange={(x) => upd({ to: x })} /></div></div>
+                        <div>{lbl("Ngưỡng (giờ)")}
+                          <div style={{ position: "relative", width: 90 }}>
+                            <input inputMode="decimal" value={r.hours == null ? "" : r.hours} onChange={(e) => upd({ hours: e.target.value.replace(/[^\d.]/g, "") })} placeholder={String(cfg.freeTimeHours || 4)} className="tnum"
+                              style={{ width: "100%", padding: "8px 26px 8px 10px", fontSize: 13.5, textAlign: "right", border: "1px solid var(--line)", borderRadius: 9, outline: "none" }}
+                              onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
+                            <span style={{ position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)", fontSize: 12, pointerEvents: "none" }}>h</span>
+                          </div>
+                        </div>
+                        <button type="button" onClick={() => setCfg("freeTimeRules", (cfg.freeTimeRules || []).filter((_, j) => j !== i))} title="Xóa khoảng"
+                          style={{ width: 34, height: 38, display: "grid", placeItems: "center", border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--ink-4)", cursor: "pointer" }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = "#fce8e8"; e.currentTarget.style.color = "var(--danger)"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "var(--ink-4)"; }}><I.trash /></button>
+                      </div>
+                    );
+                  })}
+                  <button type="button" onClick={() => setCfg("freeTimeRules", [...(cfg.freeTimeRules || []), { id: Date.now() + Math.random(), from: "", to: "", hours: "" }])}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 13px", fontSize: 13, fontWeight: 600, border: "1px dashed var(--accent)", borderRadius: 10, background: "var(--accent-weak-2)", color: "var(--accent)", cursor: "pointer" }}>
+                    <I.plus /> Thêm khoảng ngày
+                  </button>
                 </div>
               </div>
 

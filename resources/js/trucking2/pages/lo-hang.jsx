@@ -570,7 +570,7 @@ function ShipmentsApp() {
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {rows.map((s) => {
                 const cc = calcCost(s.cost); const m = metrics(s);
-                const ft = !isHph ? calcFreeTime(s, cfg.freeTimeHours) : null;
+                const ft = !isHph ? calcFreeTime(s, cfg.freeTimeHours, cfg.freeTimeRules) : null;
                 const out = !!(s.gioXeRa && s.gioXeRa.trim());   // "đã ra" = cont có Giờ xe ra của chính nó (không xét BKS / xe kéo cont khác)
                 return (
                   <div key={s.id} onClick={() => openModal({ id: s.id, type: "info" })}
@@ -690,7 +690,7 @@ function ShipmentsApp() {
                           <>
                             <div style={{ fontSize: 12.5, color: "var(--ink-2)" }} className="tnum">Cắt máng: {fmtCM(s.cutOff) || "—"}</div>
                             <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 2 }} className="tnum">Đến: {fmtDate(s.contDen) || "—"}</div>
-                            {(() => { const ft = calcFreeTime(s, cfg.freeTimeHours); return ft ? (
+                            {(() => { const ft = calcFreeTime(s, cfg.freeTimeHours, cfg.freeTimeRules); return ft ? (
                               <div style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 3, fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, color: ft.connect ? "var(--good)" : "var(--danger)", background: ft.connect ? "var(--good-weak)" : "#fce8e8" }}>
                                 <span style={{ width: 6, height: 6, borderRadius: 999, background: "currentColor" }} />{ft.connect ? "CONNECT" : "DISCONNECT"} <span style={{ fontWeight: 500, opacity: .8 }}>· {fmtHours(ft.hours)}</span>
                               </div>

@@ -585,7 +585,7 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
       {!isHph && (() => {
         // Free time tính theo giờ xe ra CỦA CHÍNH cont này. "Cont khác ra" → cont này KHÔNG tự ra
         // (gio_xe_ra rỗng) → không có free time ở đây; chuyến ra (giờ + BKS) ghi ở cont đã chọn.
-        const ft = calcFreeTime(ship, (cfg.freeTimeHours == null ? "4" : cfg.freeTimeHours));
+        const ft = calcFreeTime(ship, (cfg.freeTimeHours == null ? "4" : cfg.freeTimeHours), cfg.freeTimeRules);
         return (
           <Section title="Free time & kết nối">
             <div style={{ fontSize: 11.5, color: "var(--ink-4)", padding: "2px 0 6px" }}>Free time = Giờ xe ra − (Giờ đến kế hoạch hoặc Giờ xe đến, lấy giờ muộn hơn). Ngưỡng <b style={{ color: "var(--ink-3)" }}>{ft ? ft.threshold : (cfg.freeTimeHours || 4)}h</b> chỉnh trong Cấu hình. Có thể để trống nếu chưa có giờ.</div>

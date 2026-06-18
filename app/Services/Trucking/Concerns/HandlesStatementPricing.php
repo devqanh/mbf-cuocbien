@@ -42,8 +42,29 @@ trait HandlesStatementPricing
             } else { $start = Carbon::parse($den ?: $duKien); $basis = $den ? 'Giờ xe đến' : 'Giờ đến kế hoạch'; }
         } catch (\Throwable) { return null; }
         $hours = ($dRa->getTimestamp() - $start->getTimestamp()) / 3600;
-        $th = ($thresholdH === null || $thresholdH === '') ? 4.0 : (float) $thresholdH;
+        $th = $this->freeTimeThresholdForDate($dRa, $thresholdH);   // ngưỡng theo NGÀY cont ra (quy tắc khoảng ngày), fallback mặc định
         return ['hours' => $hours, 'connect' => $hours > $th, 'threshold' => $th, 'basis' => $basis];
+    }
+
+    /** Ngưỡng free time (giờ) theo NGÀY cont ra: khớp quy tắc khoảng ngày (free_time_rules) → fallback mặc định. */
+    private ?array $freeTimeRulesCache = null;
+    private function freeTimeThresholdForDate(Carbon $dRa, $default): float
+    {
+        $def = ($default === null || $default === '') ? 4.0 : (float) $default;
+        if ($this->freeTimeRulesCache === null) {
+            $raw = TruckingSetting::get('free_time_rules', '');
+            $arr = is_array($raw) ? $raw : (json_decode((string) $raw, true) ?: []);
+            $this->freeTimeRulesCache = is_array($arr) ? $arr : [];
+        }
+        $ymd = $dRa->format('Y-m-d');
+        foreach ($this->freeTimeRulesCache as $r) {
+            $from = trim((string) ($r['from'] ?? ''));
+            $to   = trim((string) ($r['to'] ?? ''));
+            if ($from !== '' && $ymd >= $from && ($to === '' || $ymd <= $to)) {
+                return (isset($r['hours']) && $r['hours'] !== '' && $r['hours'] !== null) ? (float) $r['hours'] : $def;
+            }
+        }
+        return $def;
     }
 
     /**

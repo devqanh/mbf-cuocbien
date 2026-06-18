@@ -123,9 +123,29 @@ trait HandlesCatalog
             'icd' => TruckingSetting::get('vat_default_icd', '0'),
         ];
         $cfg['freeTimeHours'] = TruckingSetting::get('free_time_hours', '4');
+        $cfg['freeTimeRules'] = $this->freeTimeRulesArray();
         $cfg['dueWarnDays']   = TruckingSetting::get('due_warn_days', '30');
 
         return $cfg;
+    }
+
+    /** Quy tắc ngưỡng free time theo KHOẢNG NGÀY (lưu JSON ở setting free_time_rules). */
+    public function freeTimeRulesArray(): array
+    {
+        $raw = TruckingSetting::get('free_time_rules', '');
+        $arr = is_array($raw) ? $raw : (json_decode((string) $raw, true) ?: []);
+        $out = [];
+        foreach ((is_array($arr) ? $arr : []) as $r) {
+            $from = trim((string) ($r['from'] ?? ''));
+            if ($from === '') continue;
+            $out[] = [
+                'from'  => $from,
+                'to'    => trim((string) ($r['to'] ?? '')) ?: null,
+                'hours' => (isset($r['hours']) && $r['hours'] !== '' && $r['hours'] !== null) ? (float) $r['hours'] : null,
+                'note'  => trim((string) ($r['note'] ?? '')),
+            ];
+        }
+        return $out;
     }
 
     /** Đếm số mục mỗi danh mục — cho badge sidebar Cài đặt (không hydrate, rất nhẹ). */
@@ -207,6 +227,7 @@ trait HandlesCatalog
             return [
                 'vatDefault'    => ['hph' => TruckingSetting::get('vat_default_hph', '8'), 'icd' => TruckingSetting::get('vat_default_icd', '0')],
                 'freeTimeHours' => TruckingSetting::get('free_time_hours', '4'),
+                'freeTimeRules' => $this->freeTimeRulesArray(),
                 'dueWarnDays'   => TruckingSetting::get('due_warn_days', '30'),
             ];
         }

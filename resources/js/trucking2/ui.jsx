@@ -84,7 +84,7 @@ function makePricer(cfg) {
   Object.keys(locationCode).forEach((nm) => { const c = (locationCode[nm] || "").toString().trim(); if (c) codeToName[c] = nm; });
   const nameOf = (v) => { v = (v || "").toString().trim(); return codeToName[v] || v; };
   const cont20 = (s) => /20/.test(s.contType || "");
-  const connOf = (s) => { const ft = calcFreeTime(s, cfg.freeTimeHours); return ft ? (ft.connect ? "Connect" : "Disconnect") : null; };
+  const connOf = (s) => { const ft = calcFreeTime(s, cfg.freeTimeHours, cfg.freeTimeRules); return ft ? (ft.connect ? "Connect" : "Disconnect") : null; };
   const isExport = (s) => (s.io || "").toString().toLowerCase().includes("xu");
   const kindOf = (s) => s.cru ? (isExport(s) ? "External CRU transportation" : "Internal CRU transportation") : "Transportation 1 way of Import/Export";
   // So khớp KIND: bỏ khoảng trắng 2 đầu + KHÔNG phân biệt hoa/thường
@@ -93,7 +93,7 @@ function makePricer(cfg) {
   const priceFor = (s) => {
     const list = ((cfg.customerInfo || {})[s.customer] || {}).priceList || [];
     const fromRaw = (s.from || "").trim(), dropRaw = (s.to || "").trim();
-    const ft = calcFreeTime(s, cfg.freeTimeHours);             // chi tiết free time để ghi rõ
+    const ft = calcFreeTime(s, cfg.freeTimeHours, cfg.freeTimeRules);   // chi tiết free time để ghi rõ
     const conn = ft ? (ft.connect ? "Connect" : "Disconnect") : null;
     const fromC = codeOf(s.from), dropC = codeOf(s.to), kind = kindOf(s);
     const eq = (a, b) => !!a && a === b;
