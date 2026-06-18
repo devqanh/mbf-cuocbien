@@ -647,6 +647,12 @@ trait HandlesShipments
             foreach ($cols as $key => [$col, $val]) {
                 if ($apply($key)) $s->{$col} = $val;
             }
+            // "Cont khác ra" / "Không kéo cont ra" → cont HIỆN TẠI không tự ra: luôn để TRỐNG giờ ra + BKS ra
+            // (giờ ra/BKS thật ghi ở cont đã chọn qua patchOther). Tránh dính giờ ra cũ khi đổi từ "self".
+            if ($apply('raMode') && in_array($s->ra_mode, ['other', 'none'], true)) {
+                $s->gio_xe_ra = null;
+                $s->bks_ra = null;
+            }
             // Đăng ký KÝ HIỆU địa điểm mới gõ tay vào danh mục — bảng kê khớp giá qua codeMap
             // (port từ registerLocationCode dùng cho import bảng giá). Idempotent: đã có → no-op.
             if ($apply('from')) $this->registerLocationCode($data['from'] ?? null);

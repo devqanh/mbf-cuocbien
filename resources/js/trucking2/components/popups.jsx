@@ -431,6 +431,8 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
   const setRaBks = (val) => { if (other && patchOther) { setRaEdit((e) => ({ ...e, bksRa: val })); patchOther(other.id, { bksRa: val }); } else set({ bksRa: val }); };
   const otherGioXeRa = (other && raEdit.id === other.id) ? raEdit.gioXeRa : (other ? other.gioXeRa || "" : "");
   const otherBksRa = (other && raEdit.id === other.id) ? raEdit.bksRa : (other ? other.bksRa || "" : "");
+  const otherLabel = (sibOpts.find((o) => o.value === ship.raOtherId) || {}).label || "";
+  const fmtDateTime = (s) => { if (!s) return ""; const d = new Date(s); return isNaN(d) ? "" : d.toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }); };
 
   const dirty = !!(isDirty && (isDirty(ship.id) || (other && isDirty(other.id))));
   const missingReq = !((ship.customer || "").toString().trim()) || !((ship.booking || "").toString().trim());
@@ -578,9 +580,9 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
       </Section>
 
       {!isHph && (() => {
-        // Khi "cont khác ra": dùng giờ xe ra của cont kia để tính free time của chuyến.
-        const effective = other ? { ...ship, gioXeRa: otherGioXeRa } : ship;
-        const ft = calcFreeTime(effective, (cfg.freeTimeHours == null ? "4" : cfg.freeTimeHours));
+        // Free time tính theo giờ xe ra CỦA CHÍNH cont này. "Cont khác ra" → cont này KHÔNG tự ra
+        // (gio_xe_ra rỗng) → không có free time ở đây; chuyến ra (giờ + BKS) ghi ở cont đã chọn.
+        const ft = calcFreeTime(ship, (cfg.freeTimeHours == null ? "4" : cfg.freeTimeHours));
         return (
           <Section title="Free time & kết nối">
             <div style={{ fontSize: 11.5, color: "var(--ink-4)", padding: "2px 0 6px" }}>Free time = Giờ xe ra − (Giờ đến kế hoạch hoặc Giờ xe đến, lấy giờ muộn hơn). Ngưỡng <b style={{ color: "var(--ink-3)" }}>{ft ? ft.threshold : (cfg.freeTimeHours || 4)}h</b> chỉnh trong Cấu hình. Có thể để trống nếu chưa có giờ.</div>
@@ -589,7 +591,7 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
               <Field label="Giờ xe đến"><DTField value={ship.gioXeDen} onChange={(x) => set({ gioXeDen: x })} /></Field>
               <Field label="Giờ xe ra (của cont)">{raMode === "self"
                 ? <DTField value={ship.gioXeRa} onChange={(x) => setRa(x)} />
-                : <div style={{ padding: "9px 11px", fontSize: 13, border: "1px dashed var(--line)", borderRadius: 9, background: "#fafbfc", color: "var(--ink-4)" }} title={raMode === "other" ? "Cont này không tự ra — giờ ghi vào cont đã chọn ở dưới" : "Xe không kéo cont — nhập giờ XE ra ở khung dưới"}>{raMode === "other" ? (otherGioXeRa ? new Date(otherGioXeRa).toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "Cont này không tự ra") : "Cont không ra — nhập ở dưới"}</div>}</Field>
+                : <div style={{ padding: "9px 11px", fontSize: 13, border: "1px dashed var(--line)", borderRadius: 9, background: "#fafbfc", color: "var(--ink-4)" }} title={raMode === "other" ? "Cont này không tự ra — giờ ra ghi vào cont đã chọn ở dưới, cont này để TRỐNG" : "Xe không kéo cont — nhập giờ XE ra ở khung dưới"}>{raMode === "other" ? "Để trống — cont khác kéo ra" : "Cont không ra — nhập ở dưới"}</div>}</Field>
             </div>
             <div style={{ background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", borderRadius: 10, padding: "10px 12px", margin: "2px 0 12px" }}>
               <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 7, fontWeight: 500 }}>Giờ xe ra này là của:</div>
@@ -600,9 +602,13 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
                     // Đổi trường hợp → dọn field không liên quan để 2 mốc giờ KHÔNG lẫn nhau:
                     //  none: giờ ghi vào gioXeRaXe (của xe) → xóa gioXeRa (cont) + bỏ liên kết cont khác.
                     //  self/other: giờ là của cont → xóa gioXeRaXe (của xe). self/none bỏ luôn raOtherId.
-                    const onPick = k === "none" ? { raMode: "none", raOtherId: null, gioXeRa: "" }
+                    // Dọn dữ liệu để 2 mốc giờ KHÔNG lẫn + cont hiện tại đúng quy tắc:
+                    //  none: giờ vào gioXeRaXe (của xe) → xóa giờ ra/BKS của CONT + bỏ liên kết.
+                    //  other: cont này KHÔNG tự ra → xóa giờ ra/BKS của cont hiện tại (giờ ghi vào cont đã chọn).
+                    //  self: giờ ra là của cont → xóa gioXeRaXe; bỏ raOtherId.
+                    const onPick = k === "none" ? { raMode: "none", raOtherId: null, gioXeRa: "", bksRa: "" }
                       : k === "self" ? { raMode: "self", raOtherId: null, gioXeRaXe: "" }
-                      : { raMode: "other", gioXeRaXe: "" };
+                      : { raMode: "other", gioXeRaXe: "", gioXeRa: "", bksRa: "" };
                     return (
                       <button key={k} type="button" onClick={() => set(onPick)}
                         style={{ border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, padding: "6px 13px", borderRadius: 6, whiteSpace: "nowrap",
@@ -631,8 +637,14 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
                         <Combo value={otherBksRa} onChange={(x) => setRaBks(x)} options={cfg.vehicles || []} onCreate={addVehExt} placeholder="BKS ra…" small />
                       </div>
                     </div>
+                    {(otherGioXeRa || otherBksRa) && (
+                      <div style={{ fontSize: 12, color: "var(--accent)", marginTop: 8, fontWeight: 600, display: "flex", alignItems: "flex-start", gap: 6, lineHeight: 1.5 }}>
+                        <i className="bi bi-check-circle-fill" style={{ marginTop: 1 }} />
+                        <span>{otherBksRa ? <>BKS <b>{otherBksRa}</b> kéo cont <b>{otherLabel}</b> ra</> : <>Cont <b>{otherLabel}</b> ra</>}{otherGioXeRa ? <> lúc <b>{fmtDateTime(otherGioXeRa)}</b></> : ""}. Cont hiện tại để <b>TRỐNG</b> giờ xe ra.</span>
+                      </div>
+                    )}
                     <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 7, lineHeight: 1.5 }}>
-                      Nhập <b style={{ color: "var(--ink-3)" }}>giờ ra</b> và <b style={{ color: "var(--ink-3)" }}>biển số</b> ở đây chỉ cập nhật cho cont đã chọn (cont thực sự rời đi). Cont hiện tại giữ <b style={{ color: "var(--ink-3)" }}>trống</b> giờ xe ra. Thay đổi sẽ lưu khi bấm <b style={{ color: "var(--ink-3)" }}>Lưu thông tin</b>.
+                      Giờ ra & biển số ở đây chỉ cập nhật cho <b style={{ color: "var(--ink-3)" }}>cont đã chọn</b> (cont thực sự rời đi). Cont hiện tại luôn giữ <b style={{ color: "var(--ink-3)" }}>trống</b> giờ xe ra. Thay đổi lưu khi bấm <b style={{ color: "var(--ink-3)" }}>Lưu thông tin</b>.
                     </div>
                   </div>
                 ) : (
