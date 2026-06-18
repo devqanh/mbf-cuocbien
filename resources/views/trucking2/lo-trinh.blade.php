@@ -14,6 +14,7 @@ window.__TRK = {
   routes: {
     data: '{{ route("trucking2.loTrinh.data") }}',
     savePay: '{{ route("trucking2.loTrinh.savePay") }}',
+    freeze: '{{ route("trucking2.loTrinh.freeze") }}',
     shipment: '{{ url("trucking-v2/lo-hang") }}',
     routeFees: '{{ url("trucking-v2/cai-dat") }}#routeFees',
   },

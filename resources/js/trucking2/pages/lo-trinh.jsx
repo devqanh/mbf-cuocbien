@@ -220,6 +220,7 @@ function LoTrinhApp() {
   const [data, setData] = useState(null);   // null = đang tải
   const [showExt, setShowExt] = useState(false);   // mặc định CHỈ xe MBF; bật để xem xe ngoài chạy
   const [payTruck, setPayTruck] = useState(null);   // xe đang mở popup "chi cho lái"
+  const [freezing, setFreezing] = useState(false);
   const reqId = useRef(0);
   // Cập nhật lái nhận/đã chi vào state cục bộ sau khi lưu (khỏi tải lại cả trang).
   const applyPay = (bks, np) => setData((d) => d ? { ...d, trucks: (d.trucks || []).map((t) => (t.bks === bks ? { ...t, ...np } : t)) } : d);
@@ -239,6 +240,27 @@ function LoTrinhApp() {
   const extCount = allTrucks.length - allTrucks.filter(isMbf).length;
   const trucks = showExt ? allTrucks : allTrucks.filter(isMbf);   // mặc định chỉ MBF
   const visLegs = trucks.reduce((a, t) => a + t.legs.length, 0);
+  const allFrozen = allTrucks.length > 0 && allTrucks.every((t) => t.frozen);
+
+  // Chốt / bỏ chốt cả ngày: đóng băng số tiền chi cho lái (không đổi khi sửa Phí tuyến).
+  const doFreeze = async (frozen) => {
+    if (freezing || !allTrucks.length) return;
+    const ok = await window.confirmAction({
+      title: frozen ? "Chốt (đóng băng) ngày này?" : "Bỏ chốt ngày này?",
+      text: frozen
+        ? `Số tiền chi cho lái của <b>${allTrucks.length} xe</b> ngày <b>${date}</b> sẽ được <b>đóng băng</b> — không đổi dù sau này sửa Phí tuyến.`
+        : `Bỏ đóng băng ngày <b>${date}</b> — số tiền sẽ tính lại theo Phí tuyến hiện tại.`,
+      confirmText: frozen ? '<i class="bi bi-lock me-1"></i> Chốt ngày' : '<i class="bi bi-unlock me-1"></i> Bỏ chốt',
+    });
+    if (!ok) return;
+    setFreezing(true);
+    try {
+      const r = await window.trkApi("POST", ROUTES.freeze, { date, frozen });
+      if (r && r.ok) { window.trkToast && window.trkToast(frozen ? "Đã chốt ngày" : "Đã bỏ chốt"); load(); }
+      else window.trkToast && window.trkToast("Thao tác thất bại", "error");
+    } catch (e) { window.trkToast && window.trkToast("Lỗi kết nối", "error"); }
+    setFreezing(false);
+  };
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
@@ -258,6 +280,13 @@ function LoTrinhApp() {
                 style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 32, padding: "0 12px", fontSize: 12.5, fontWeight: 600, borderRadius: 9, cursor: "pointer",
                   border: "1px solid " + (showExt ? "var(--accent)" : "var(--line)"), background: showExt ? "var(--accent-weak-2)" : "#fff", color: showExt ? "var(--accent)" : "var(--ink-2)" }}>
                 <i className={"bi " + (showExt ? "bi-eye-fill" : "bi-eye")} /> {showExt ? "Đang hiện xe ngoài" : `Xem xe ngoài (${extCount})`}
+              </button>
+            )}
+            {T.canEdit && allTrucks.length > 0 && (
+              <button type="button" onClick={() => doFreeze(!allFrozen)} disabled={freezing} title={allFrozen ? "Bỏ đóng băng (tính lại theo phí tuyến)" : "Đóng băng số tiền chi cho lái ngày này"}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 32, padding: "0 12px", fontSize: 12.5, fontWeight: 700, borderRadius: 9, cursor: "pointer",
+                  border: "1px solid " + (allFrozen ? "var(--good)" : "var(--accent)"), background: allFrozen ? "var(--good-weak)" : "var(--accent-weak)", color: allFrozen ? "var(--good)" : "var(--accent)" }}>
+                <i className={"bi " + (allFrozen ? "bi-lock-fill" : "bi-snow")} /> {allFrozen ? "Đã chốt — Bỏ chốt" : "Chốt ngày"}
               </button>
             )}
             <button type="button" onClick={() => shiftDay(-1)} title="Ngày trước" style={btnIcon}>‹</button>
@@ -289,6 +318,7 @@ function LoTrinhApp() {
                       ? <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--good)", background: "var(--good-weak)", padding: "1px 7px", borderRadius: 999 }}>✓ {tr.type === "Ngoài" ? "Xe ngoài" : "Xe MBF"}</span>
                       : <span style={{ fontSize: 10.5, color: "var(--ink-4)" }}>(ngoài hệ thống)</span>}
                     {(tr.axle === "1" || tr.axle === "2") && <span title="Số cầu xe" style={{ fontSize: 10.5, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak)", padding: "1px 7px", borderRadius: 999 }}>{tr.axle} cầu</span>}
+                    {tr.frozen && <span title="Đã chốt (số tiền đóng băng)" style={{ fontSize: 10.5, fontWeight: 700, color: "#2563eb", background: "#e7efff", padding: "1px 7px", borderRadius: 999 }}><i className="bi bi-lock-fill" /> Đã chốt</span>}
                     <span style={{ flex: 1 }} />
                     <span style={{ fontSize: 12, color: "var(--ink-3)", fontWeight: 600, marginRight: 4 }}>{tr.legs.length} hoạt động</span>
                     {/* Chi cho lái: tổng các khoản "chi theo ngày" + lái nhận */}

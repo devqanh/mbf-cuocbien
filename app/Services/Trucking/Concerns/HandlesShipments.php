@@ -544,6 +544,42 @@ trait HandlesShipments
     }
 
     /**
+     * ĐÓNG BĂNG (chốt) cả ngày: snapshot số tiền đã tính cho MỌI xe ngày đó vào route_pays
+     * (frozen_data) để KHÔNG đổi khi sau này sửa Phí tuyến. $frozen=false → bỏ chốt.
+     */
+    public function freezeDay(string $date, bool $frozen): array
+    {
+        $date = trim($date);
+        if ($date === '') return ['ok' => false, 'message' => 'Thiếu ngày'];
+        if (! $frozen) {
+            \App\Models\TruckingRoutePay::whereDate('work_date', $date)
+                ->update(['frozen' => false, 'frozen_at' => null, 'frozen_data' => null]);
+            return ['ok' => true, 'frozen' => false];
+        }
+        $day = $this->routeTripByDate($date);
+        $n = 0;
+        foreach ($day['trucks'] as $t) {
+            $bks = $t['bks'];
+            if ($bks === '') continue;
+            $veh = TruckingVehicle::where('plate', $bks)->first();
+            $row = \App\Models\TruckingRoutePay::firstOrNew(['work_date' => $date, 'bks' => $bks]);
+            if (! $row->vehicle_id) $row->vehicle_id = $veh?->id;
+            $row->frozen = true;
+            $row->frozen_at = now();
+            $row->frozen_data = [
+                'payGroups'    => $t['payGroups'],
+                'payTotal'     => $t['payTotal'],
+                'payrollTotal' => $t['payrollTotal'],
+                'payWarn'      => $t['payWarn'],
+            ];
+            $row->updated_by = auth()->id();
+            $row->save();
+            $n++;
+        }
+        return ['ok' => true, 'frozen' => true, 'count' => $n];
+    }
+
+    /**
      * Kỳ LƯƠNG lái xe — gom theo BIỂN SỐ XE qua khoảng ngày [from..to]:
      *  - payroll  = Σ khoản CHƯA "chi theo ngày" (lương gom trả 1 đợt) = TIỀN PHẢI TRẢ.
      *  - paidDaily = Σ khoản "chi theo ngày" (đã thanh toán theo ngày) — tham khảo.

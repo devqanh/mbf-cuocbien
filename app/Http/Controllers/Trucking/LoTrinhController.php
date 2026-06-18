@@ -39,4 +39,14 @@ class LoTrinhController extends BaseTruckingController
         ]);
         return response()->json($this->svc->saveRoutePay($d['date'], $d['bks'], $d));
     }
+
+    /** Chốt / bỏ chốt cả ngày (đóng băng số tiền chi cho lái). */
+    public function freeze(Request $request): JsonResponse
+    {
+        $d = $request->validate([
+            'date'   => ['required', 'string'],
+            'frozen' => ['required', 'boolean'],
+        ]);
+        return response()->json($this->svc->freezeDay($d['date'], (bool) $d['frozen']));
+    }
 }

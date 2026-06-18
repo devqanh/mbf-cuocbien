@@ -140,6 +140,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/lo-trinh',                [LoTrinhController::class, 'index'])->name('loTrinh');      // lộ trình lái xe theo chuyến
             Route::get('/lo-trinh/data',           [LoTrinhController::class, 'data'])->name('loTrinh.data');
             Route::post('/lo-trinh/pay',           [LoTrinhController::class, 'savePay'])->name('loTrinh.savePay')->middleware('permission:shipments.update');
+            Route::post('/lo-trinh/freeze',        [LoTrinhController::class, 'freeze'])->name('loTrinh.freeze')->middleware('permission:shipments.update');
         });
         // --- Phí xe & lương lái xe (quyền riêng tripCost.*) ---
         Route::middleware('permission:tripCost.view')->group(function () {
