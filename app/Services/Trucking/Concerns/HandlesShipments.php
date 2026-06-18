@@ -384,11 +384,22 @@ trait HandlesShipments
                 $payrollTotal += $g['payrollSub'];
                 if ($g['note'] !== '') $payWarn++;   // chuyến chưa ra tiền (không khớp / chưa tick / =0)
             }
+            // ĐÓNG BĂNG (chốt): nếu xe/ngày đã chốt → dùng số ĐÃ CHỐT (không đổi dù sửa phí tuyến).
+            $frozen = (bool) ($pay?->frozen);
+            if ($frozen && is_array($pay->frozen_data)) {
+                $fd = $pay->frozen_data;
+                $payGroups    = $fd['payGroups'] ?? $payGroups;
+                $payTotal     = $fd['payTotal'] ?? $payTotal;
+                $payrollTotal = $fd['payrollTotal'] ?? $payrollTotal;
+                $payWarn      = $fd['payWarn'] ?? $payWarn;
+            }
             $trucks[] = ['bks' => $bks, 'matched' => $matched, 'type' => $type, 'axle' => $axle, 'legs' => $ls,
                 'payGroups' => $payGroups, 'payTotal' => $payTotal, 'payrollTotal' => $payrollTotal, 'payWarn' => $payWarn,
+                'frozen' => $frozen,
                 'payDriver' => $pay?->driver ?? '', 'paid' => (bool) ($pay?->paid ?? false), 'paidDate' => $pay ? $this->outDate($pay->paid_date) : ''];
         }
         usort($trucks, fn ($a, $b) => count($b['legs']) <=> count($a['legs']) ?: strcmp($a['bks'], $b['bks']));
+        $frozenCount = count(array_filter($trucks, fn ($t) => $t['frozen']));
 
         return [
             'date'  => $start->format('Y-m-d'),

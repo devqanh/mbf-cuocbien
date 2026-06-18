@@ -733,6 +733,21 @@ trait HandlesTripAndDrivers
         return 'LG-' . str_pad((string) (TruckingPayrollPeriod::max('id') + 1), 4, '0', STR_PAD_LEFT);
     }
 
+    /** Chuẩn hóa các đợt thanh toán lương: {date, amount, note}; bỏ dòng rỗng. */
+    private function paymentsIn($payments): array
+    {
+        if (! is_array($payments)) return [];
+        $out = [];
+        foreach ($payments as $p) {
+            if (! is_array($p)) continue;
+            $amount = $this->inMoney($p['amount'] ?? null) ?? 0;
+            $date   = $this->inDate($p['date'] ?? null);
+            if ($amount <= 0 && ! $date) continue;
+            $out[] = ['date' => $date, 'amount' => $amount, 'note' => $this->str($p['note'] ?? null) ?? ''];
+        }
+        return $out;
+    }
+
     /** Lưu/cập nhật 1 kỳ lương — chốt snapshot theo bks (tiền tính lúc tạo). */
     public function savePayroll(array $data, ?TruckingPayrollPeriod $p = null): TruckingPayrollPeriod
     {
@@ -750,7 +765,8 @@ trait HandlesTripAndDrivers
                 'paidDaily' => $pd,
                 'payroll'   => $payroll,
                 'note'      => $this->str($r['note'] ?? null) ?? '',
-                'detail'    => is_array($r['lines'] ?? null) ? $r['lines'] : [],
+                'detail'    => is_array($r['detail'] ?? null) ? $r['detail'] : (is_array($r['lines'] ?? null) ? $r['lines'] : []),
+                'payments'  => $this->paymentsIn($r['payments'] ?? null),   // các đợt thanh toán (trả chậm/chia đợt)
             ];
             $total += $payroll; $paidDaily += $pd;
         }

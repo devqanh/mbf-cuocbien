@@ -4,6 +4,7 @@ import "@trk/shared.js";
 
 const { useState } = React;
 import { I, Btn, Txt, Combo, DateField, fmtVND } from "@trk/lib.jsx";
+import { PayrollDetail } from "@trk/components/payroll-detail.jsx";
 
 const lbl = (t) => <div style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>{t}</div>;
 const TH = ({ children, right }) => <th style={{ textAlign: right ? "right" : "left", padding: "8px 10px", fontSize: 11, fontWeight: 700, color: "var(--ink-4)", textTransform: "uppercase", letterSpacing: ".03em", borderBottom: "1px solid var(--line)", whiteSpace: "nowrap" }}>{children}</th>;
@@ -21,6 +22,8 @@ function CreatePayrollApp() {
   const [rows, setRows] = useState(null);     // [{bks,driver,type,axle,days,trips,paidDaily,payroll,total,lines}]
   const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState({});       // bks → mở chi tiết
+  const toggle = (bks) => setOpen((o) => ({ ...o, [bks]: !o[bks] }));
 
   const compute = () => {
     if (!from || !to) { window.trkToast && window.trkToast("Chọn khoảng ngày", "error"); return; }
@@ -94,7 +97,7 @@ function CreatePayrollApp() {
           ) : (
             <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
               <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--line-2)", fontSize: 12, color: "var(--ink-4)" }}>
-                <i className="bi bi-info-circle" /> <b>Lương phải trả</b> = các khoản CHƯA "chi theo ngày" (gom trả 1 đợt). <b>Đã chi theo ngày</b> chỉ để tham khảo (đã thanh toán ở Lộ trình). Lái xe tự gán theo thời điểm — sửa được nếu cần.
+                <i className="bi bi-info-circle" /> <b>Lương phải trả</b> = các khoản CHƯA "chi theo ngày" (gom trả 1 đợt). <b>Đã chi theo ngày</b> chỉ để tham khảo (đã thanh toán ở Lộ trình). Bấm vào dòng xe để xem <b>chi tiết từng chuyến</b>. Lái xe tự gán theo thời điểm — sửa được nếu cần.
               </div>
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -104,17 +107,21 @@ function CreatePayrollApp() {
                   </tr></thead>
                   <tbody>
                     {rows.map((r, i) => (
-                      <tr key={r.bks}>
+                      <React.Fragment key={r.bks}>
+                      <tr style={{ cursor: "pointer" }} onClick={() => toggle(r.bks)}>
                         <TD>
+                          <i className={"bi " + (open[r.bks] ? "bi-chevron-down" : "bi-chevron-right")} style={{ fontSize: 11, color: "var(--ink-4)", marginRight: 6 }} />
                           <span className="tnum" style={{ fontWeight: 700 }}>{r.bks}</span>
                           {(r.axle === "1" || r.axle === "2") && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak)", padding: "1px 6px", borderRadius: 999 }}>{r.axle} cầu</span>}
                         </TD>
-                        <TD><div style={{ minWidth: 180 }}><Combo value={r.driver || ""} onChange={(v) => set(i, { driver: v })} options={drivers} placeholder="Chọn lái…" small /></div></TD>
+                        <TD><div style={{ minWidth: 180 }} onClick={(e) => e.stopPropagation()}><Combo value={r.driver || ""} onChange={(v) => set(i, { driver: v })} options={drivers} placeholder="Chọn lái…" small /></div></TD>
                         <TD right><span className="tnum">{r.days}</span></TD>
                         <TD right><span className="tnum">{r.trips}</span></TD>
                         <TD right><span className="tnum" style={{ color: "var(--ink-4)" }}>{fmtVND(r.paidDaily)}</span></TD>
                         <TD right><span className="tnum" style={{ fontWeight: 700, color: "var(--accent)" }}>{fmtVND(r.total)}</span></TD>
                       </tr>
+                      {open[r.bks] && <tr><td colSpan={6} style={{ padding: 0, borderBottom: "1px solid var(--line-2)" }}><PayrollDetail row={r} /></td></tr>}
+                      </React.Fragment>
                     ))}
                   </tbody>
                   <tfoot>

@@ -27,7 +27,7 @@
 - [Duyệt chi theo lô (ĐÃ BỎ)](shipment-spend-duyet-chi.md) — đã gỡ "chi cho tài xế" khỏi Lô hàng + drop trucking_shipment_spends; chi lái nay ở Lộ trình
 - [Chi lái ở Lộ trình](route-pays-lo-trinh.md) — phí tuyến chọn Cảng+Kho, "chi theo ngày" tổng hợp theo xe/ngày, lương 4 mức (kéo×CRU), repeater chi khác; bảng trucking_route_pays (chỉ lưu lái nhận + đã chi)
 - [JSON schema evolution](json-schema-evolution.md) — cột JSON phải tiến hóa tương thích ngược: chỉ thêm trường tùy chọn + đọc kèm default; không đổi tên/kiểu trường cũ
-- [Kỳ lương lái xe (kế hoạch)](payroll-period-plan.md) — CHƯA build; gom theo khoảng ngày + lái xe; chi-theo-ngày=đã trả, chưa-chi-theo-ngày=lương gom đợt; cần tách rổ payrollItems
+- [Kỳ lương lái xe](payroll-period-plan.md) — ĐÃ build; /phi-xe gom theo BIỂN SỐ XE qua khoảng ngày; chưa-chi-theo-ngày=lương phải trả, chi-theo-ngày=đã trả; bảng trucking_payroll_periods
 - [Verify không phá data](verify-no-destructive-save.md) — đừng gọi saveCatalog/reconcile thật khi test (nó xóa dòng thiếu trong payload); dùng transaction rollback / chỉ test hàm đọc
 - [Phân quyền hệ thống](permissions-system.md) — Spatie; /roles liệt kê Permission DB + config/permissions.php; KHÔNG có Gate::before nên thêm quyền phải gán tường minh (migration); đã tách tripCost/fleet/tracking/tasks.update+delete
 - [Lộ trình chuyến](route-trips.md) — trang /lo-trinh: 1 lộ trình/xe/ngày vận hành 08:00→08:00, timeline xe vào/ra+số cont, gom theo bks_vao + ra_mode (self/none/other), dedup cont kéo khác ra; command trucking:seed-routes test

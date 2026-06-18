@@ -3,7 +3,8 @@ import { createRoot } from "react-dom/client";
 import "@trk/shared.js";
 
 const { useState } = React;
-import { I, Btn, Txt, fmtVND } from "@trk/lib.jsx";
+import { I, Btn, Txt, fmtVND, toNum } from "@trk/lib.jsx";
+import { PayrollDetail, PaymentsEditor } from "@trk/components/payroll-detail.jsx";
 
 const lbl = (t) => <div style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>{t}</div>;
 const TH = ({ children, right }) => <th style={{ textAlign: right ? "right" : "left", padding: "8px 10px", fontSize: 11, fontWeight: 700, color: "var(--ink-4)", textTransform: "uppercase", letterSpacing: ".03em", borderBottom: "1px solid var(--line)", whiteSpace: "nowrap" }}>{children}</th>;
@@ -17,12 +18,16 @@ function ViewPayrollApp() {
 
   const [no, setNo] = useState(batch.no || "");
   const [name, setName] = useState(batch.name || "");
-  const [rows, setRows] = useState((batch.rows || []).map((x) => ({ ...x })));
+  const [rows, setRows] = useState((batch.rows || []).map((x) => ({ ...x, payments: Array.isArray(x.payments) ? x.payments : [] })));
   const [dirty, setDirty] = useState(false);
+  const [open, setOpen] = useState({});
+  const toggle = (bks) => setOpen((o) => ({ ...o, [bks]: !o[bks] }));
 
   const set = (i, np) => { setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...np } : r))); setDirty(true); };
+  const paidOf = (r) => (r.payments || []).reduce((s, p) => s + toNum(p.amount), 0);
   const grandPayroll = rows.reduce((a, x) => a + (x.payroll || x.total || 0), 0);
   const grandDaily = rows.reduce((a, x) => a + (x.paidDaily || 0), 0);
+  const grandPaid = rows.reduce((a, x) => a + paidOf(x), 0);
 
   const save = async () => {
     const res = await api("PUT", ROUTES.update + (batch.hashid || batch.id), { batch: { no, name, from: batch.from, to: batch.to, rows } });
@@ -78,19 +83,33 @@ function ViewPayrollApp() {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead><tr>
                   <TH>Biển số xe</TH><TH>Lái xe nhận lương</TH><TH right>Ngày</TH><TH right>Chuyến</TH>
-                  <TH right>Đã chi theo ngày</TH><TH right>Lương phải trả</TH>
+                  <TH right>Đã chi theo ngày</TH><TH right>Lương phải trả</TH><TH right>Đã trả</TH><TH right>Còn lại</TH>
                 </tr></thead>
                 <tbody>
-                  {rows.map((r, i) => (
-                    <tr key={r.bks + i}>
-                      <TD><span className="tnum" style={{ fontWeight: 700 }}>{r.bks}</span></TD>
-                      <TD><div style={{ minWidth: 170 }}><Txt value={r.driver || ""} onChange={(v) => set(i, { driver: v })} placeholder="Lái xe…" /></div></TD>
+                  {rows.map((r, i) => {
+                    const payroll = r.payroll || r.total || 0; const paid = paidOf(r); const remain = payroll - paid;
+                    return (
+                    <React.Fragment key={r.bks + i}>
+                    <tr style={{ cursor: "pointer" }} onClick={() => toggle(r.bks)}>
+                      <TD>
+                        <i className={"bi " + (open[r.bks] ? "bi-chevron-down" : "bi-chevron-right")} style={{ fontSize: 11, color: "var(--ink-4)", marginRight: 6 }} />
+                        <span className="tnum" style={{ fontWeight: 700 }}>{r.bks}</span>
+                      </TD>
+                      <TD><div style={{ minWidth: 170 }} onClick={(e) => e.stopPropagation()}><Txt value={r.driver || ""} onChange={(v) => set(i, { driver: v })} placeholder="Lái xe…" /></div></TD>
                       <TD right><span className="tnum">{r.days}</span></TD>
                       <TD right><span className="tnum">{r.trips}</span></TD>
                       <TD right><span className="tnum" style={{ color: "var(--ink-4)" }}>{fmtVND(r.paidDaily)}</span></TD>
-                      <TD right><span className="tnum" style={{ fontWeight: 700, color: "var(--accent)" }}>{fmtVND(r.payroll || r.total)}</span></TD>
+                      <TD right><span className="tnum" style={{ fontWeight: 700, color: "var(--accent)" }}>{fmtVND(payroll)}</span></TD>
+                      <TD right><span className="tnum" style={{ color: "var(--good)" }}>{fmtVND(paid)}</span></TD>
+                      <TD right><span className="tnum" style={{ fontWeight: 700, color: remain > 0 ? "var(--danger)" : "var(--good)" }}>{fmtVND(remain)}</span></TD>
                     </tr>
-                  ))}
+                    {open[r.bks] && <tr><td colSpan={8} style={{ padding: 0, borderBottom: "1px solid var(--line-2)", background: "#fafbfc" }}>
+                      <PayrollDetail row={r} />
+                      <PaymentsEditor payments={r.payments} onChange={(arr) => set(i, { payments: arr })} payroll={payroll} />
+                    </td></tr>}
+                    </React.Fragment>
+                    );
+                  })}
                   {rows.length === 0 && <tr><TD><span style={{ color: "var(--ink-4)" }}>Kỳ rỗng.</span></TD></tr>}
                 </tbody>
                 <tfoot>
@@ -98,6 +117,8 @@ function ViewPayrollApp() {
                     <TD><b>Tổng {rows.length} xe</b></TD><TD /><TD /><TD />
                     <TD right><span className="tnum" style={{ color: "var(--ink-4)" }}>{fmtVND(grandDaily)}</span></TD>
                     <TD right><span className="tnum" style={{ fontWeight: 800, fontSize: 15, color: "var(--accent)" }}>{fmtVND(grandPayroll)}</span></TD>
+                    <TD right><span className="tnum" style={{ color: "var(--good)" }}>{fmtVND(grandPaid)}</span></TD>
+                    <TD right><span className="tnum" style={{ fontWeight: 800, color: (grandPayroll - grandPaid) > 0 ? "var(--danger)" : "var(--good)" }}>{fmtVND(grandPayroll - grandPaid)}</span></TD>
                   </tr>
                 </tfoot>
               </table>
