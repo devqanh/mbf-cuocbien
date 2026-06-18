@@ -163,8 +163,28 @@ function RouteFees({ rows = [], onChange, warehouses = [], locations = [], isDup
   };
   const del = (i) => onChange(rows.filter((_, j) => j !== i));
   const lbl = (t) => <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>{t}</div>;
+  // Xuất/Nhập Excel — nhập UPSERT theo tuyến (trùng → cập nhật, mới → thêm)
+  const R = (window.__TRK || {}).routes || {};
+  const ioBtn = { display: "inline-flex", alignItems: "center", gap: 6, height: 32, padding: "0 12px", fontSize: 12.5, fontWeight: 600, borderRadius: 9, border: "1px solid var(--line)", background: "#fff", color: "var(--ink-2)", cursor: "pointer", textDecoration: "none" };
+  const importFees = async (e) => {
+    const f = e.target.files && e.target.files[0]; e.target.value = "";
+    if (!f) return;
+    const ok = await window.confirmAction({ title: "Nhập phí tuyến từ Excel?", text: "Trùng tuyến sẽ <b>cập nhật</b>, tuyến mới sẽ <b>thêm</b>. Thay đổi chưa lưu trên màn hình sẽ bị bỏ qua.", confirmText: '<i class="bi bi-upload me-1"></i> Nhập' });
+    if (!ok) return;
+    const fd = new FormData(); fd.append("file", f);
+    try {
+      const res = await window.trkUpload("POST", R.routeFeesImport, fd);
+      if (res && res.ok) { window.trkToast && window.trkToast(`Đã nhập: +${res.created} mới · ${res.updated} cập nhật${res.skipped ? ` · bỏ ${res.skipped}` : ""}`); setTimeout(() => window.location.reload(), 700); }
+      else window.trkToast && window.trkToast((res && res.message) || "Nhập thất bại", "error");
+    } catch (err) { window.trkToast && window.trkToast("Nhập thất bại", "error"); }
+  };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <a href={R.routeFeesExport} style={ioBtn}><i className="bi bi-file-earmark-excel" /> Xuất Excel</a>
+        <label style={{ ...ioBtn, cursor: "pointer" }}><i className="bi bi-upload" /> Nhập Excel<input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={importFees} /></label>
+        <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>Điền nhanh trên Excel rồi nhập lại — <b>trùng tuyến tự cập nhật</b>, tuyến mới tự thêm.</span>
+      </div>
       {(rows || []).length === 0 && <div style={{ padding: "14px 2px", fontSize: 12.5, color: "var(--ink-4)" }}>Chưa có tuyến nào — bấm <b>+ Thêm tuyến</b> để cấu hình phí.</div>}
       {(rows || []).map((r, i) => {
         const dup = isDup(r.route);

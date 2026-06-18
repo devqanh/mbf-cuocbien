@@ -19,6 +19,8 @@ window.__TRK = {
     vehicles: '{{ route("trucking2.vehicles.save") }}',
     settings: '{{ route("trucking2.settings.save") }}',
     routeFees: '{{ route("trucking2.routeFees.save") }}',
+    routeFeesExport: '{{ route("trucking2.routeFees.export") }}',
+    routeFeesImport: '{{ route("trucking2.routeFees.import") }}',
     fuelPrices: '{{ route("trucking2.fuelPrices.save") }}',
     drivers: '{{ route("trucking2.drivers.save") }}',
     driversBase: '{{ url("trucking-v2/drivers") }}/',

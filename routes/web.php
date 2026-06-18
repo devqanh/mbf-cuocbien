@@ -244,6 +244,8 @@ Route::middleware('auth')->group(function () {
             Route::put('/vehicles',          [CatalogController::class, 'saveVehicles'])->name('vehicles.save');
             Route::put('/settings',          [CatalogController::class, 'saveSettings'])->name('settings.save');
             Route::put('/route-fees',        [CatalogController::class, 'saveRouteFees'])->name('routeFees.save');
+            Route::get('/route-fees/export', [CatalogController::class, 'exportRouteFees'])->name('routeFees.export');
+            Route::post('/route-fees/import',[CatalogController::class, 'importRouteFees'])->name('routeFees.import');
             Route::put('/fuel-prices',       [CatalogController::class, 'saveFuelPrices'])->name('fuelPrices.save');
             Route::put('/drivers',           [DriverController::class, 'save'])->name('drivers.save');
             Route::post('/drivers/{driver}/docs', [DriverController::class, 'uploadDocs'])->name('drivers.docs.upload');

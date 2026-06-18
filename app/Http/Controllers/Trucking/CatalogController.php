@@ -76,6 +76,51 @@ class CatalogController extends BaseTruckingController
         return response()->json(['ok' => true]);
     }
 
+    /** Xuất Phí tuyến ra Excel (điền nhanh rồi nhập lại). */
+    public function exportRouteFees()
+    {
+        $data = $this->svc->routeFeeExportRows();
+        $ss = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $ss->getActiveSheet();
+        $sheet->setTitle('Phi tuyen');
+        $sheet->fromArray($data['header'], null, 'A1');
+        if ($data['rows']) $sheet->fromArray($data['rows'], null, 'A2');
+        $sheet->getStyle('A1:M1')->getFont()->setBold(true);
+        foreach (range('A', 'M') as $c) $sheet->getColumnDimension($c)->setAutoSize(true);
+
+        $name = 'phi-tuyen-' . now()->format('Ymd-Hi') . '.xlsx';
+        return response()->streamDownload(function () use ($ss) {
+            (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($ss))->save('php://output');
+        }, $name, ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
+    }
+
+    /** Nhập Phí tuyến từ Excel — upsert theo tuyến (trùng tuyến → cập nhật). */
+    public function importRouteFees(Request $request): JsonResponse
+    {
+        $request->validate(['file' => ['required', 'file', 'mimes:xlsx,xls,csv,txt', 'max:5120']]);
+        try {
+            $sheet = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($request->file('file')->getRealPath())
+                ->load($request->file('file')->getRealPath())->getActiveSheet();
+            $raw = $sheet->toArray(null, true, false, false);
+        } catch (\Throwable $e) {
+            return response()->json(['ok' => false, 'message' => 'Không đọc được file Excel.'], 422);
+        }
+        // cột theo thứ tự khi xuất; bỏ dòng tiêu đề (nếu ô A1 chứa "Tuyến")
+        $keys = ['route', 'veTram', 'tienDuong', 'troCap', 'phiKhac', 'luongKeoCru', 'luongKeoKhongCru',
+            'luongKhongKeoCru', 'luongKhongKeoKhongCru', 'km', 'dau2', 'dau1', 'chiTheoNgay'];
+        $rows = [];
+        foreach ($raw as $i => $line) {
+            if (! is_array($line)) continue;
+            $first = trim((string) ($line[0] ?? ''));
+            if ($first === '' ) continue;
+            if ($i === 0 && mb_stripos($first, 'tuyến') !== false) continue;   // header
+            $row = [];
+            foreach ($keys as $ci => $k) $row[$k] = $line[$ci] ?? null;
+            $rows[] = $row;
+        }
+        return response()->json($this->svc->importRouteFees($rows));
+    }
+
     /** Lưu Bảng giá dầu (repeater theo khoảng ngày). */
     public function saveFuelPrices(Request $request): JsonResponse
     {

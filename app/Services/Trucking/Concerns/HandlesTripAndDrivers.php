@@ -663,6 +663,96 @@ trait HandlesTripAndDrivers
         return $out;
     }
 
+    /** Nhãn ↔ key cho cột "Chi theo ngày" khi xuất/nhập Excel. */
+    private const SALARY_LABELS = ['veTram' => 'Vé trạm', 'tienDuong' => 'Tiền đường', 'troCap' => 'Trợ cấp', 'phiKhac' => 'Phí khác', 'luong' => 'Lương', 'dau1' => 'Dầu 1 cầu', 'dau2' => 'Dầu 2 cầu'];
+
+    /** Header + dữ liệu phí tuyến để XUẤT Excel (điền nhanh rồi nhập lại). */
+    public function routeFeeExportRows(): array
+    {
+        $header = ['Tuyến', 'Vé trạm', 'Tiền đường', 'Trợ cấp', 'Phí khác',
+            'Lương kéo CRU', 'Lương kéo không CRU', 'Lương không kéo CRU', 'Lương không kéo không CRU',
+            'Km', 'Dầu 2 cầu (lít)', 'Dầu 1 cầu (lít)', 'Chi theo ngày (cách nhau dấu phẩy)'];
+        $rows = [];
+        foreach (TruckingRouteFee::orderBy('sort')->orderBy('id')->get() as $r) {
+            $parts = $this->cleanSalaryParts($r->salary_parts);
+            $ctn = implode(', ', array_map(fn ($k) => self::SALARY_LABELS[$k] ?? $k, $parts));
+            $rows[] = [
+                (string) $r->route, (float) $r->ve_tram, (float) $r->tien_duong, (float) $r->tro_cap, (float) $r->phi_khac,
+                (float) $r->luong, (float) $r->luong_no_cru, (float) $r->luong_nokeo, (float) $r->luong_nokeo_no_cru,
+                (float) $r->km, (float) $r->dau_2cau, (float) $r->dau_1cau, $ctn,
+            ];
+        }
+        return ['header' => $header, 'rows' => $rows];
+    }
+
+    /**
+     * NHẬP phí tuyến từ Excel — UPSERT theo TUYẾN (tập node Cảng+Kho): trùng tuyến → cập nhật,
+     * chưa có → tạo mới. KHÔNG xóa tuyến vắng mặt (an toàn, nhập từng phần được). Giữ "Chi khác".
+     * $rows: mảng assoc theo cột {route, veTram, tienDuong, troCap, phiKhac, luongKeoCru,
+     * luongKeoKhongCru, luongKhongKeoCru, luongKhongKeoKhongCru, km, dau2, dau1, chiTheoNgay}.
+     */
+    public function importRouteFees(array $rows): array
+    {
+        // map nhãn/key "chi theo ngày" → key chuẩn
+        $labelToKey = [];
+        foreach (self::SALARY_LABELS as $k => $label) { $labelToKey[$this->normKey($label)] = $k; $labelToKey[$this->normKey($k)] = $k; }
+        $parseParts = function ($cell) use ($labelToKey) {
+            $out = [];
+            foreach (preg_split('/\s*[,;]\s*/u', trim((string) $cell)) ?: [] as $tok) {
+                if ($tok === '') continue;
+                $k = $labelToKey[$this->normKey($tok)] ?? null;
+                if ($k && ! in_array($k, $out, true)) $out[] = $k;
+            }
+            return $out;
+        };
+
+        // index tuyến hiện có theo TẬP node
+        $byKey = [];
+        foreach (TruckingRouteFee::all() as $rf) { $k = $this->routeNodeKey($this->routeStringNodes((string) $rf->route)); if ($k !== '') $byKey[$k] = $rf; }
+        $maxSort = (int) (TruckingRouteFee::max('sort') ?? -1);
+
+        $created = 0; $updated = 0; $skipped = 0;
+        DB::transaction(function () use ($rows, $parseParts, &$byKey, &$maxSort, &$created, &$updated, &$skipped) {
+            foreach ($rows as $r) {
+                $route = trim((string) ($r['route'] ?? ''));
+                $key = $route === '' ? '' : $this->routeNodeKey($this->routeStringNodes($route));
+                if ($key === '') { $skipped++; continue; }
+                $attrs = [
+                    'route'        => $route,
+                    'route_key'    => $this->routeKey($route),
+                    've_tram'      => $this->inMoney($r['veTram'] ?? null) ?? 0,
+                    'tien_duong'   => $this->inMoney($r['tienDuong'] ?? null) ?? 0,
+                    'tro_cap'      => $this->inMoney($r['troCap'] ?? null) ?? 0,
+                    'phi_khac'     => $this->inMoney($r['phiKhac'] ?? null) ?? 0,
+                    'luong'        => $this->inMoney($r['luongKeoCru'] ?? null) ?? 0,
+                    'luong_no_cru' => $this->inMoney($r['luongKeoKhongCru'] ?? null) ?? 0,
+                    'luong_nokeo'  => $this->inMoney($r['luongKhongKeoCru'] ?? null) ?? 0,
+                    'luong_nokeo_no_cru' => $this->inMoney($r['luongKhongKeoKhongCru'] ?? null) ?? 0,
+                    'km'           => $this->inNum($r['km'] ?? null) ?? 0,
+                    'dau_2cau'     => $this->inNum($r['dau2'] ?? null) ?? 0,
+                    'dau_1cau'     => $this->inNum($r['dau1'] ?? null) ?? 0,
+                    'salary_parts' => $parseParts($r['chiTheoNgay'] ?? ''),
+                ];
+                if (isset($byKey[$key])) {                       // trùng tuyến → cập nhật (giữ extra_fees)
+                    $byKey[$key]->update($attrs);
+                    $updated++;
+                } else {                                          // tuyến mới
+                    $attrs['extra_fees'] = [];
+                    $attrs['sort'] = ++$maxSort;
+                    $byKey[$key] = TruckingRouteFee::create($attrs);
+                    $created++;
+                }
+            }
+        });
+        return ['ok' => true, 'created' => $created, 'updated' => $updated, 'skipped' => $skipped];
+    }
+
+    /** Chuẩn hóa khóa so khớp nhãn (bỏ dấu cách + viết thường). */
+    private function normKey(string $v): string
+    {
+        return mb_strtolower(preg_replace('/\s+/u', '', trim($v)) ?? '');
+    }
+
     /** Lưu phí tuyến đường — xóa sạch & tạo lại (không có FK liên kết). */
     public function saveRouteFees(array $rows): void
     {
