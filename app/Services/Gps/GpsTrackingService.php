@@ -280,9 +280,17 @@ class GpsTrackingService
             $key = $v->vehicle_id ? ('v' . $v->vehicle_id) : ('g:' . $v->gps_ref);
             if (! isset($g[$key])) {
                 $g[$key] = ['plate' => $v->vehicle_plate ?: $v->gps_plate, 'driver' => $v->driver, 'matched' => (bool) $v->vehicle_id,
-                            'trips' => 0, 'wh' => [], 'whName' => [], 'days' => [], 'dwellMs' => 0, 'last' => null];
+                            'trips' => 0, 'wh' => [], 'whName' => [], 'days' => [], 'dwellMs' => 0, 'last' => null, 'visits' => []];
             }
             $g[$key]['trips']++;
+            $vEnd = $v->departed_at ?? $v->last_inside_at;
+            $g[$key]['visits'][] = [                                    // chi tiết từng lượt (cho phần mở rộng)
+                'warehouse'  => $v->warehouse_name,
+                'arrivedAt'  => $v->arrived_at ? $v->arrived_at->getTimestampMs() : null,
+                'departedAt' => $v->departed_at ? $v->departed_at->getTimestampMs() : null,
+                'dwellMs'    => ($v->arrived_at && $vEnd) ? max(0, $vEnd->getTimestampMs() - $v->arrived_at->getTimestampMs()) : null,
+                'open'       => $v->departed_at === null,
+            ];
             if ($v->warehouse_id) {                                     // lộ trình kho: đếm số lượt mỗi kho
                 $g[$key]['wh'][$v->warehouse_id] = ($g[$key]['wh'][$v->warehouse_id] ?? 0) + 1;
                 $g[$key]['whName'][$v->warehouse_id] = $v->warehouse_name;
@@ -308,6 +316,7 @@ class GpsTrackingService
                 'days'       => count($x['days']),
                 'dwellMin'   => (int) round($x['dwellMs'] / 60000),
                 'lastVisit'  => $x['last'],
+                'visits'     => array_reverse($x['visits']),            // mới nhất lên đầu
             ];
         }, $g));
         usort($rows, fn ($a, $b) => $b['trips'] <=> $a['trips']);       // nhiều chuyến nhất lên đầu

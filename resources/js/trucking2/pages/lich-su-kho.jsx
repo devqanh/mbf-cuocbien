@@ -20,6 +20,8 @@ function VisitsPage() {
   const [rows, setRows] = useState([]);
   const [info, setInfo] = useState({ page: 1, perPage: 30, total: 0, lastPage: 1 });
   const [stats, setStats] = useState({ rows: [], totals: { vehicles: 0, trips: 0 } });
+  const [sortBy, setSortBy] = useState("trips");   // trips | dwell | avg | perDay
+  const [openKey, setOpenKey] = useState(null);    // biển số đang mở chi tiết
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [qDeb, setQDeb] = useState("");
@@ -88,6 +90,33 @@ function VisitsPage() {
     );
   };
 
+  // Sắp xếp bảng thống kê (client-side): nhiều chuyến / đỗ lâu tổng / đỗ lâu TB / năng suất lượt-ngày.
+  const avgOf = (s) => Math.round((s.dwellMin || 0) / Math.max(1, s.trips));
+  const perDayOf = (s) => s.days ? s.trips / s.days : 0;
+  const sortedStats = [...(stats.rows || [])].sort((a, b) => {
+    if (sortBy === "dwell") return (b.dwellMin || 0) - (a.dwellMin || 0);
+    if (sortBy === "avg") return avgOf(b) - avgOf(a);
+    if (sortBy === "perDay") return perDayOf(b) - perDayOf(a);
+    return b.trips - a.trips;
+  });
+
+  // Xuất CSV (Excel) bảng thống kê tháng — client-side, có BOM cho tiếng Việt.
+  const exportCsv = () => {
+    const esc = (v) => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
+    const head = ["STT", "Biển số", "Tài xế", "Số chuyến", "Ngày HĐ", "Lượt/ngày", "Số kho", "Lộ trình kho", "Tổng ở kho (phút)", "TB/chuyến (phút)", "Ghé cuối"];
+    const lines = [head.map(esc).join(",")];
+    sortedStats.forEach((s, i) => {
+      const route = (s.whTop || []).map((w) => `${w.name}(${w.count})`).join("; ");
+      const perDay = s.days ? (s.trips / s.days).toFixed(1) : "";
+      lines.push([i + 1, s.plate, s.driver || "", s.trips, s.days || 0, perDay, s.warehouses, route, s.dwellMin || 0, avgOf(s), fmtClock(s.lastVisit)].map(esc).join(","));
+    });
+    const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `thong-ke-xe-${month || (from && to ? from + "_" + to : "tat-ca")}.csv`;
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  };
+
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
       <header style={{ background: "#fff", borderBottom: "1px solid var(--line)", padding: isMobile ? "10px 14px" : "0 22px", flexShrink: 0 }}>
@@ -144,13 +173,32 @@ function VisitsPage() {
             stats.rows.length === 0 ? (
               <div style={{ padding: "40px", textAlign: "center", color: "var(--ink-4)", fontSize: 13.5 }}>Không có chuyến nào trong khoảng đã chọn.</div>
             ) : (
-              <div style={{ overflowX: "auto" }}>
+              <>
+                {/* toolbar: sắp xếp + xuất CSV */}
+                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderBottom: "1px solid var(--line-2)", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 12, color: "var(--ink-3)", fontWeight: 600 }}>Sắp xếp:</span>
+                  <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}
+                    style={{ fontSize: 12.5, padding: "6px 9px", border: "1px solid var(--line)", borderRadius: 8, background: "#fff", color: "var(--ink-2)", cursor: "pointer" }}>
+                    <option value="trips">Nhiều chuyến nhất</option>
+                    <option value="dwell">Đỗ lâu nhất (tổng giờ)</option>
+                    <option value="avg">Đỗ lâu nhất (TB/chuyến)</option>
+                    <option value="perDay">Năng suất (lượt/ngày)</option>
+                  </select>
+                  <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>Bấm 1 xe để xem chi tiết các lượt ghé</span>
+                  <span style={{ flex: 1 }} />
+                  <button type="button" onClick={exportCsv}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 13px", fontSize: 12.5, fontWeight: 600, border: "1px solid var(--good)", borderRadius: 8, background: "var(--good-weak)", color: "var(--good)", cursor: "pointer", whiteSpace: "nowrap" }}>
+                    <i className="bi bi-filetype-csv" /> Xuất CSV
+                  </button>
+                </div>
+                <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead><tr>
                     <th style={{ ...th, width: 40, textAlign: "center" }}>#</th>
                     <th style={th}>Xe</th><th style={th}>Tài xế</th>
                     <th style={{ ...th, textAlign: "center" }}>Số chuyến</th>
                     <th style={{ ...th, textAlign: "center" }}>Ngày HĐ</th>
+                    <th style={{ ...th, textAlign: "center" }}>Lượt/ngày</th>
                     <th style={{ ...th, textAlign: "center" }}>Số kho</th>
                     <th style={th}>Lộ trình kho (lượt)</th>
                     <th style={{ ...th, textAlign: "right" }}>Tổng ở kho</th>
@@ -158,13 +206,18 @@ function VisitsPage() {
                     <th style={th}>Ghé cuối</th>
                   </tr></thead>
                   <tbody>
-                    {stats.rows.map((s, i) => (
-                      <tr key={i}>
-                        <td style={{ ...td, textAlign: "center", color: "var(--ink-4)", fontWeight: 600 }} className="tnum">{i + 1}</td>
+                    {sortedStats.map((s, i) => {
+                      const open = openKey === s.plate;
+                      const perDay = s.days ? (s.trips / s.days).toFixed(1) : "—";
+                      return (
+                      <React.Fragment key={i}>
+                      <tr onClick={() => setOpenKey(open ? null : s.plate)} style={{ cursor: "pointer", background: open ? "var(--accent-weak-2)" : "transparent" }}>
+                        <td style={{ ...td, textAlign: "center", color: "var(--ink-4)", fontWeight: 600 }} className="tnum"><i className={"bi " + (open ? "bi-chevron-down" : "bi-chevron-right")} style={{ fontSize: 10, marginRight: 3 }} />{i + 1}</td>
                         <td style={td}>{plateCell(s)}</td>
                         <td style={{ ...td, color: "var(--ink-2)" }}>{s.driver || "—"}</td>
                         <td style={{ ...td, textAlign: "center", fontWeight: 700, fontSize: 15, color: "#4f46e5" }} className="tnum">{s.trips}</td>
                         <td style={{ ...td, textAlign: "center", color: "var(--ink-2)" }} className="tnum">{s.days || "—"}</td>
+                        <td style={{ ...td, textAlign: "center", color: "var(--ink-3)" }} className="tnum">{perDay}</td>
                         <td style={{ ...td, textAlign: "center" }} className="tnum">{s.warehouses}</td>
                         <td style={td}>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 4, maxWidth: 320 }}>
@@ -181,10 +234,39 @@ function VisitsPage() {
                         <td style={{ ...td, textAlign: "right", color: "var(--ink-3)" }} className="tnum">{fmtMin(Math.round((s.dwellMin || 0) / Math.max(1, s.trips)))}</td>
                         <td style={{ ...td, color: "var(--ink-3)" }} className="tnum">{fmtClock(s.lastVisit)}</td>
                       </tr>
-                    ))}
+                      {open && (
+                        <tr><td colSpan={11} style={{ padding: 0, background: "#fafbfc", borderBottom: "1px solid var(--line-2)" }}>
+                          <div style={{ padding: "8px 14px 12px 40px" }}>
+                            <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--ink-3)", margin: "2px 0 6px" }}>Chi tiết {(s.visits || []).length} lượt ghé · {s.plate}</div>
+                            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                              <thead><tr>
+                                <th style={{ ...th, position: "static", padding: "6px 10px", background: "transparent" }}>Kho</th>
+                                <th style={{ ...th, position: "static", padding: "6px 10px", background: "transparent" }}>Đến</th>
+                                <th style={{ ...th, position: "static", padding: "6px 10px", background: "transparent" }}>Rời</th>
+                                <th style={{ ...th, position: "static", padding: "6px 10px", background: "transparent", textAlign: "right" }}>Ở kho</th>
+                              </tr></thead>
+                              <tbody>
+                                {(s.visits || []).map((v, k) => (
+                                  <tr key={k}>
+                                    <td style={{ ...td, padding: "6px 10px", fontWeight: 600 }}>🏭 {v.warehouse}</td>
+                                    <td style={{ ...td, padding: "6px 10px", color: "var(--ink-2)" }} className="tnum">{fmtClock(v.arrivedAt)}</td>
+                                    <td style={{ ...td, padding: "6px 10px" }} className="tnum">{v.open ? <span style={{ color: "var(--good)", fontWeight: 700 }}>● Đang ở kho</span> : fmtClock(v.departedAt)}</td>
+                                    <td style={{ ...td, padding: "6px 10px", textAlign: "right", fontWeight: 600 }} className="tnum">{fmtDur(v.dwellMs)}</td>
+                                  </tr>
+                                ))}
+                                {!(s.visits || []).length && <tr><td colSpan={4} style={{ ...td, padding: "6px 10px", color: "var(--ink-4)" }}>Không có dữ liệu lượt ghé.</td></tr>}
+                              </tbody>
+                            </table>
+                          </div>
+                        </td></tr>
+                      )}
+                      </React.Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
-              </div>
+                </div>
+              </>
             )
           ) : rows.length === 0 ? (
             <div style={{ padding: "40px", textAlign: "center", color: "var(--ink-4)", fontSize: 13.5 }}>Không có lượt ghé kho trong khoảng đã chọn. (Hệ thống quét mỗi 5 phút; cần đã ghim tọa độ kho.)</div>
