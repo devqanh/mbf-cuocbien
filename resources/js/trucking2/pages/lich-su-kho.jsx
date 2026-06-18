@@ -25,6 +25,7 @@ function VisitsPage() {
   const [qDeb, setQDeb] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [month, setMonth] = useState("");   // "YYYY-MM" khi đang lọc theo tháng (rỗng = khoảng ngày tùy chọn)
   const [page, setPage] = useState(1);
   const reqId = useRef(0);
 
@@ -50,8 +51,14 @@ function VisitsPage() {
   useEffect(() => { load(); }, [view, page, qDeb, from, to]);
 
   const setRange = (f, t) => { setFrom(f); setTo(t); setPage(1); };
-  const presetDays = (n) => { const now = new Date(); const f = new Date(now); f.setDate(now.getDate() - (n - 1)); setRange(toYmd(f), toYmd(now)); };
-  const presetMonth = () => { const now = new Date(); setRange(toYmd(new Date(now.getFullYear(), now.getMonth(), 1)), toYmd(now)); };
+  // Khoảng ngày tùy chọn / preset ngày → KHÔNG còn ở chế độ "lọc tháng".
+  const setCustomRange = (f, t) => { setMonth(""); setRange(f, t); };
+  const presetDays = (n) => { const now = new Date(); const f = new Date(now); f.setDate(now.getDate() - (n - 1)); setCustomRange(toYmd(f), toYmd(now)); };
+  // Lọc theo THÁNG: "YYYY-MM" → from = ngày 1, to = ngày cuối tháng.
+  const monthLabel = (ym) => { const [y, m] = ym.split("-"); return `Tháng ${Number(m)}/${y}`; };
+  const pickMonth = (ym) => { const [y, m] = ym.split("-").map(Number); const f = new Date(y, m - 1, 1), t = new Date(y, m, 0); setMonth(ym); setRange(toYmd(f), toYmd(t)); };
+  const stepMonth = (delta) => { const base = month || toYmd(new Date()).slice(0, 7); const [y, m] = base.split("-").map(Number); const d = new Date(y, m - 1 + delta, 1); pickMonth(`${d.getFullYear()}-${z(d.getMonth() + 1)}`); };
+  const thisYm = () => toYmd(new Date()).slice(0, 7);
 
   const th = { textAlign: "left", fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.03em", padding: "10px 12px", background: "#fafbfc", borderBottom: "1px solid var(--line)", whiteSpace: "nowrap", position: "sticky", top: 0 };
   const td = { padding: "10px 12px", fontSize: 13, borderBottom: "1px solid var(--line-2)", verticalAlign: "top" };
@@ -107,16 +114,25 @@ function VisitsPage() {
             {tabBtn("list", "Lượt ghé", "bi-list-ul")}
             {tabBtn("stats", "Thống kê xe", "bi-bar-chart-line")}
           </div>
+          {/* Lọc theo THÁNG (stepper) */}
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 2, border: `1px solid ${month ? "var(--accent)" : "var(--line)"}`, borderRadius: 9, background: month ? "var(--accent-weak)" : "#fff", overflow: "hidden" }}>
+            <button type="button" onClick={() => stepMonth(-1)} title="Tháng trước" style={{ border: "none", background: "transparent", cursor: "pointer", padding: "6px 9px", color: "var(--ink-2)", fontSize: 13 }}>‹</button>
+            <button type="button" onClick={() => pickMonth(thisYm())} title="Chọn tháng hiện tại"
+              style={{ border: "none", background: "transparent", cursor: "pointer", padding: "6px 8px", fontSize: 12.5, fontWeight: 700, color: month ? "var(--accent)" : "var(--ink-2)", whiteSpace: "nowrap", minWidth: 96, textAlign: "center" }}>
+              {month ? monthLabel(month) : "Chọn tháng"}
+            </button>
+            <button type="button" onClick={() => stepMonth(1)} title="Tháng sau" style={{ border: "none", background: "transparent", cursor: "pointer", padding: "6px 9px", color: "var(--ink-2)", fontSize: 13 }}>›</button>
+          </div>
+          <span style={{ width: 1, height: 22, background: "var(--line-2)" }} />
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ fontSize: 12, color: "var(--ink-3)" }}>Từ</span>
-            <div style={{ width: 150 }}><DateField value={from} onChange={(v) => setRange(v, to)} /></div>
+            <div style={{ width: 150 }}><DateField value={from} onChange={(v) => setCustomRange(v, to)} /></div>
             <span style={{ fontSize: 12, color: "var(--ink-3)" }}>đến</span>
-            <div style={{ width: 150 }}><DateField value={to} onChange={(v) => setRange(from, v)} /></div>
+            <div style={{ width: 150 }}><DateField value={to} onChange={(v) => setCustomRange(from, v)} /></div>
           </div>
           {presetBtn("7 ngày", () => presetDays(7))}
           {presetBtn("30 ngày", () => presetDays(30))}
-          {presetBtn("Tháng này", presetMonth)}
-          {(from || to) && presetBtn("✕ Tất cả", () => setRange("", ""))}
+          {(from || to) && presetBtn("✕ Tất cả", () => setCustomRange("", ""))}
         </div>
       </header>
 
@@ -134,7 +150,9 @@ function VisitsPage() {
                     <th style={{ ...th, width: 40, textAlign: "center" }}>#</th>
                     <th style={th}>Xe</th><th style={th}>Tài xế</th>
                     <th style={{ ...th, textAlign: "center" }}>Số chuyến</th>
+                    <th style={{ ...th, textAlign: "center" }}>Ngày HĐ</th>
                     <th style={{ ...th, textAlign: "center" }}>Số kho</th>
+                    <th style={th}>Lộ trình kho (lượt)</th>
                     <th style={{ ...th, textAlign: "right" }}>Tổng ở kho</th>
                     <th style={{ ...th, textAlign: "right" }}>TB/chuyến</th>
                     <th style={th}>Ghé cuối</th>
@@ -146,7 +164,19 @@ function VisitsPage() {
                         <td style={td}>{plateCell(s)}</td>
                         <td style={{ ...td, color: "var(--ink-2)" }}>{s.driver || "—"}</td>
                         <td style={{ ...td, textAlign: "center", fontWeight: 700, fontSize: 15, color: "#4f46e5" }} className="tnum">{s.trips}</td>
+                        <td style={{ ...td, textAlign: "center", color: "var(--ink-2)" }} className="tnum">{s.days || "—"}</td>
                         <td style={{ ...td, textAlign: "center" }} className="tnum">{s.warehouses}</td>
+                        <td style={td}>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, maxWidth: 320 }}>
+                            {(s.whTop || []).slice(0, 5).map((w, j) => (
+                              <span key={j} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, fontWeight: 600, padding: "2px 8px", borderRadius: 999, background: "var(--accent-weak)", color: "var(--accent)", whiteSpace: "nowrap" }}>
+                                🏭 {w.name} <span className="tnum" style={{ color: "var(--ink-3)", fontWeight: 700 }}>×{w.count}</span>
+                              </span>
+                            ))}
+                            {(s.whTop || []).length > 5 && <span style={{ fontSize: 11.5, color: "var(--ink-4)", alignSelf: "center" }}>+{s.whTop.length - 5} kho</span>}
+                            {!(s.whTop || []).length && <span style={{ color: "var(--ink-4)" }}>—</span>}
+                          </div>
+                        </td>
                         <td style={{ ...td, textAlign: "right" }} className="tnum">{fmtMin(s.dwellMin)}</td>
                         <td style={{ ...td, textAlign: "right", color: "var(--ink-3)" }} className="tnum">{fmtMin(Math.round((s.dwellMin || 0) / Math.max(1, s.trips)))}</td>
                         <td style={{ ...td, color: "var(--ink-3)" }} className="tnum">{fmtClock(s.lastVisit)}</td>

@@ -280,25 +280,36 @@ class GpsTrackingService
             $key = $v->vehicle_id ? ('v' . $v->vehicle_id) : ('g:' . $v->gps_ref);
             if (! isset($g[$key])) {
                 $g[$key] = ['plate' => $v->vehicle_plate ?: $v->gps_plate, 'driver' => $v->driver, 'matched' => (bool) $v->vehicle_id,
-                            'trips' => 0, 'wh' => [], 'dwellMs' => 0, 'last' => null];
+                            'trips' => 0, 'wh' => [], 'whName' => [], 'days' => [], 'dwellMs' => 0, 'last' => null];
             }
             $g[$key]['trips']++;
-            if ($v->warehouse_id) $g[$key]['wh'][$v->warehouse_id] = true;
+            if ($v->warehouse_id) {                                     // lộ trình kho: đếm số lượt mỗi kho
+                $g[$key]['wh'][$v->warehouse_id] = ($g[$key]['wh'][$v->warehouse_id] ?? 0) + 1;
+                $g[$key]['whName'][$v->warehouse_id] = $v->warehouse_name;
+            }
+            if ($v->arrived_at) $g[$key]['days'][$v->arrived_at->format('Y-m-d')] = true;   // số ngày hoạt động
             if ($v->driver) $g[$key]['driver'] = $v->driver;            // giữ tài xế gần nhất
             $end = $v->departed_at ?? $v->last_inside_at;               // visit đang mở → tính tới lần thấy cuối
             if ($v->arrived_at && $end) $g[$key]['dwellMs'] += max(0, $end->getTimestampMs() - $v->arrived_at->getTimestampMs());
             $am = $v->arrived_at ? $v->arrived_at->getTimestampMs() : null;
             if ($am && (! $g[$key]['last'] || $am > $g[$key]['last'])) $g[$key]['last'] = $am;
         }
-        $rows = array_values(array_map(fn ($x) => [
-            'plate'      => $x['plate'] ?: '(không rõ)',
-            'driver'     => $x['driver'],
-            'matched'    => $x['matched'],
-            'trips'      => $x['trips'],
-            'warehouses' => count($x['wh']),
-            'dwellMin'   => (int) round($x['dwellMs'] / 60000),
-            'lastVisit'  => $x['last'],
-        ], $g));
+        $rows = array_values(array_map(function ($x) {
+            $whTop = [];
+            foreach ($x['wh'] as $wid => $cnt) $whTop[] = ['name' => $x['whName'][$wid] ?: ('#' . $wid), 'count' => $cnt];
+            usort($whTop, fn ($a, $b) => $b['count'] <=> $a['count']);   // kho hay ghé nhất lên đầu
+            return [
+                'plate'      => $x['plate'] ?: '(không rõ)',
+                'driver'     => $x['driver'],
+                'matched'    => $x['matched'],
+                'trips'      => $x['trips'],
+                'warehouses' => count($x['wh']),
+                'whTop'      => $whTop,
+                'days'       => count($x['days']),
+                'dwellMin'   => (int) round($x['dwellMs'] / 60000),
+                'lastVisit'  => $x['last'],
+            ];
+        }, $g));
         usort($rows, fn ($a, $b) => $b['trips'] <=> $a['trips']);       // nhiều chuyến nhất lên đầu
 
         return [
