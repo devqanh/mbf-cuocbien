@@ -7,6 +7,10 @@ import { I, fmtVND, fmtShort, fmtDate, calcCost, calcVeh, calcRev, calcVehICD, c
 import { CostPopup, SpendPopup, InfoPopup, colorHex } from "@trk/pop.jsx";
 import { SortBtn, CellBtn, Badge, EditCell, TH, TD } from "@trk/ui.jsx";
 
+// Chip số INV — nổi bật để kế toán dễ dò
+const invChip = { display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", padding: "1px 8px", borderRadius: 7 };
+const invChipLbl = { fontSize: 9.5, fontWeight: 800, letterSpacing: ".04em", opacity: .75 };
+
 function ShipmentsApp() {
   const isMobile = useIsMobile();
   const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
@@ -603,7 +607,11 @@ function ShipmentsApp() {
                       <span style={{ color: "var(--accent)", flexShrink: 0 }}><I.arrow /></span>
                       <span style={{ color: "var(--ink-2)" }}>{s.to || "—"}</span>
                     </div>
-                    <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 6 }} className="tnum">{s.contNo || "—"} · {s.contType}{s.kho ? " · " + s.kho : ""}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+                      <span className="tnum" style={{ fontSize: 14.5, fontWeight: 700, color: "var(--ink)" }}>{s.contNo || "—"}</span>
+                      <span className="tnum" style={{ fontSize: 12, color: "var(--ink-4)" }}>{s.contType}{s.kho ? " · " + s.kho : ""}</span>
+                      {s.inv && <span className="tnum" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", padding: "1px 8px", borderRadius: 7 }}><span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: ".04em", opacity: .75 }}>INV</span> {s.inv}</span>}
+                    </div>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 7 }}>
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, color: out ? "var(--good)" : "var(--warn)", background: out ? "var(--good-weak)" : "#fcf3e2" }}>
                         <span style={{ width: 6, height: 6, borderRadius: 999, background: "currentColor" }} />{out ? ("Đã ra" + (fmtRa(s.gioXeRa) ? " · " + fmtRa(s.gioXeRa) : "") + (s.bksRa && s.bksRa.trim() ? " · " + s.bksRa : "")) : "Chưa ra"}</span>
@@ -665,13 +673,15 @@ function ShipmentsApp() {
                       <EditCell onClick={() => openModal({ id: s.id, type: "info" })}>
                         {isHph ? (
                           <>
-                            <div style={{ fontWeight: 600, fontSize: 13 }} className="tnum">{s.qty} × {s.contType}</div>
+                            <div style={{ fontWeight: 700, fontSize: 13.5 }} className="tnum">{s.qty} × {s.contType}</div>
                             <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 2 }} className="tnum">{s.contNo || "—"}</div>
+                            {s.inv && <div style={{ marginTop: 4 }}><span className="tnum" style={invChip}><span style={invChipLbl}>INV</span> {s.inv}</span></div>}
                           </>
                         ) : (
                           <>
-                            <div style={{ fontWeight: 600, fontSize: 13 }} className="tnum">{s.contNo || "—"}</div>
+                            <div style={{ fontWeight: 700, fontSize: 14.5, color: "var(--ink)" }} className="tnum">{s.contNo || "—"}</div>
                             <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 2 }} className="tnum">{s.contType}{s.kho ? " · " + s.kho : ""}</div>
+                            {s.inv && <div style={{ marginTop: 4 }}><span className="tnum" style={invChip}><span style={invChipLbl}>INV</span> {s.inv}</span></div>}
                             {(() => { const out = !!(s.gioXeRa && s.gioXeRa.trim()); return (
                             <div style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 4, fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
                               color: out ? "var(--good)" : "var(--warn)", background: out ? "var(--good-weak)" : "#fcf3e2" }}>
