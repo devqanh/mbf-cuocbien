@@ -175,7 +175,7 @@ function LoTrinhApp() {
                   {/* LỘ TRÌNH 1 NGÀY: timeline dọc nối liền các hoạt động */}
                   <div style={{ padding: "8px 12px 10px" }}>
                     {tr.legs.map((l, i) => (
-                      <TripNode key={i} l={l} isFirst={i === 0} isLast={i === tr.legs.length - 1} bks={tr.bks} href={ROUTES.shipment} />
+                      <TripNode key={i} l={l} isFirst={i === 0} isLast={i === tr.legs.length - 1} bks={tr.bks} href={ROUTES.shipment + (l.cont ? "?q=" + encodeURIComponent(l.cont) + "&open=1" : "")} />
                     ))}
                   </div>
                 </div>

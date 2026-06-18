@@ -28,8 +28,11 @@ function ShipmentsApp() {
   const [draft, setDraft] = useState(null);   // lô nháp đang tạo (chưa ghi server) — chỉ sống trong popup
   const [cfg, setCfgState] = useState(() => ({ ...DEFAULT_CFG, ...(B.cfg || {}) }));
   const [modal, setModal] = useState(null);
-  const [q, setQ] = useState("");
-  const [qDeb, setQDeb] = useState("");        // q sau debounce (param thật gửi server)
+  // Mở từ trang khác (Lộ trình / Bảng kê): ?q=<cont> để LỌC, ?open=1 để TỰ MỞ popup lô.
+  const _initSp = new URLSearchParams(window.location.search);
+  const [q, setQ] = useState(_initSp.get("q") || "");
+  const [qDeb, setQDeb] = useState(_initSp.get("q") || "");   // q sau debounce (param thật gửi server)
+  const pendingOpen = useRef(_initSp.get("open"));            // truthy → tự mở popup dòng đầu sau khi tải lọc
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState("all");
   // Bộ lọc theo "follow": 'all' | 'any' | 'missing' | '#hex' (lọc theo màu cụ thể)
@@ -75,6 +78,13 @@ function ShipmentsApp() {
         setFollowStats(r.followStats || { anyShips: 0, missShips: 0, byColor: [] });
         if (r.sibs) setSibs(r.sibs);
         if (r.page !== pg) setPage(r.page);
+        // Tự mở popup lô (mở từ Lộ trình/Bảng kê với ?open) — chỉ 1 lần, dòng khớp cont (hoặc dòng đầu).
+        if (pendingOpen.current && (r.data || []).length) {
+          const want = String(pendingOpen.current);
+          const m = (r.data).find((s) => String(s.id) === want) || (r.data).find((s) => (s.contNo || "").toString() === want) || r.data[0];
+          pendingOpen.current = null;
+          if (m) setTimeout(() => openModal({ id: m.id, type: "info" }), 0);
+        }
       }
     } catch (e) { window.trkToast && window.trkToast("Lỗi tải danh sách", "error"); }
     finally { if (myId === reqId.current) setLoading(false); }
@@ -87,6 +97,8 @@ function ShipmentsApp() {
     if (skipFirst.current) { skipFirst.current = false; return; }
     load();
   }, [page, qDeb, filter, followFilter, sort]);
+  // Mở từ Lộ trình/Bảng kê (?q/?open): boot là danh sách CHƯA lọc → tải lại theo q ngay + tự mở popup.
+  useEffect(() => { if (_initSp.get("q") || _initSp.get("open")) { skipFirst.current = false; load(); } }, []);
 
   // Lazy-load master data (danh mục dropdown) lần đầu cần — boot chỉ có cfg tối thiểu.
   // cfgRef giữ cfg mới nhất để ensureCfg trả về giá trị đã merge (tránh stale closure ở export).

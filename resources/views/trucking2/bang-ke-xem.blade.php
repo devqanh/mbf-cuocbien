@@ -16,6 +16,7 @@ window.__TRK = {
     list: '{{ route("trucking2.statements") }}',
     statement: '{{ url("trucking-v2/statements") }}/',
     base: '{{ url("trucking-v2/bang-ke") }}/',
+    loHang: '{{ url("trucking-v2/lo-hang") }}',
   },
   boot: @json($boot),
 };
