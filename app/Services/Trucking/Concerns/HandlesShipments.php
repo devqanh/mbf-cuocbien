@@ -411,8 +411,16 @@ trait HandlesShipments
      */
     private function legPayGroup(array $leg, ?string $axle, array $rfBySet, $fuels, string $date): array
     {
-        // Chuỗi node thực tế của chuyến: Nơi lấy (cảng) → các Kho → Nơi hạ (cảng).
-        $nodes = array_merge([$leg['from'] ?? ''], $this->khoPoints($leg['kho'] ?? ''), [$leg['to'] ?? '']);
+        // Chuỗi node thực tế của chuyến — đúng như Lộ trình hiển thị:
+        //  - KHÔNG kéo cont ra (mode none): xe chỉ tới NƠI LẤY rồi ra → chỉ tính điểm pickup.
+        //  - Có kéo cont ra (self/other): đủ Nơi lấy (cảng) → các Kho → Nơi hạ (cảng).
+        $noPull = ($leg['mode'] ?? '') === 'none';
+        if ($noPull) {
+            $pts = array_values(array_filter($leg['points'] ?? [], fn ($p) => ($p['kind'] ?? '') === 'pickup'));
+            $nodes = $pts ? array_map(fn ($p) => $p['label'] ?? '', $pts) : [$leg['from'] ?? ''];
+        } else {
+            $nodes = array_merge([$leg['from'] ?? ''], $this->khoPoints($leg['kho'] ?? ''), [$leg['to'] ?? '']);
+        }
         // Hiển thị lộ trình thực tế (bỏ điểm rỗng + trùng liền kề).
         $disp = [];
         foreach ($nodes as $n) { $n = trim((string) $n); if ($n === '' || (count($disp) && end($disp) === $n)) continue; $disp[] = $n; }
@@ -434,8 +442,7 @@ trait HandlesShipments
         $push('veTram', 'Vé trạm', $rf->ve_tram);
         $push('tienDuong', 'Tiền đường', $rf->tien_duong);
         $push('troCap', 'Trợ cấp', $rf->tro_cap);
-        // Lương theo 2 chiều: (CÓ/KHÔNG kéo cont ra) × (CRU/không CRU).
-        $noPull = ($leg['mode'] ?? '') === 'none';   // mode none = ra xe KHÔNG kéo cont
+        // Lương theo 2 chiều: (CÓ/KHÔNG kéo cont ra) × (CRU/không CRU). $noPull tính ở trên.
         $cru    = ! empty($leg['cru']);
         $wage   = $noPull ? ($cru ? $rf->luong_nokeo : $rf->luong_nokeo_no_cru)
                           : ($cru ? $rf->luong       : $rf->luong_no_cru);
