@@ -712,10 +712,12 @@ trait HandlesTripAndDrivers
                     $issues[] = ['level' => 'error', 'msg' => 'Trùng tuyến với dòng ' . $seen[$key] . ' trong file'];
                 } else {
                     $seen[$key] = $line;
+                    // Mỗi điểm PHẢI tồn tại trong danh mục Cảng/Kho (khớp theo ký hiệu hoặc tên) — sai = LỖI, chặn nhập.
+                    $badNode = false;
                     foreach ($this->routeStringNodes($route) as $node) {
-                        if (! isset($codeMap[$norm($node)])) $issues[] = ['level' => 'warn', 'msg' => "Điểm \"$node\" chưa có trong danh mục Cảng/Kho"];
+                        if (! isset($codeMap[$norm($node)])) { $issues[] = ['level' => 'error', 'msg' => "Không tồn tại địa điểm/kho \"$node\" (kiểm tra ký hiệu ở Cài đặt → Địa điểm/Kho)"]; $badNode = true; }
                     }
-                    $action = isset($existing[$key]) ? 'update' : 'create';
+                    $action = $badNode ? 'error' : (isset($existing[$key]) ? 'update' : 'create');
                 }
             }
             foreach ($numCells as $c) {
