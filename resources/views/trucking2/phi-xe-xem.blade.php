@@ -1,5 +1,5 @@
 @extends('layouts.app')
-@section('title', 'Kỳ phí xe — Trucking')
+@section('title', 'Kỳ lương lái xe — Trucking')
 
 @push('styles')
 @include('trucking2.partials._styles')

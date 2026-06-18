@@ -17,6 +17,7 @@ use App\Models\TruckingRouteFee;
 use App\Models\TruckingSalaryItem;
 use App\Models\TruckingTripCostBatch;
 use App\Models\TruckingTripCostLine;
+use App\Models\TruckingPayrollPeriod;
 use App\Models\TruckingVehicleCost;
 use App\Models\TruckingVehicleDepreciation;
 use App\Models\TruckingVehicleUsage;
@@ -688,6 +689,84 @@ trait HandlesTripAndDrivers
                 ]);
             }
         });
+    }
+
+    // ===================================================================
+    // KỲ LƯƠNG LÁI XE (snapshot theo biển số xe)
+    // ===================================================================
+
+    /** Danh sách kỳ lương đã lưu (tóm tắt). */
+    public function payrollList(): array
+    {
+        return TruckingPayrollPeriod::orderByDesc('id')->get()->map(fn ($p) => [
+            'id'    => $p->id,
+            'hashid' => $p->hashid(),
+            'no'    => $p->no,
+            'name'  => $p->name ?? '',
+            'from'  => $this->outDate($p->period_from),
+            'to'    => $this->outDate($p->period_to),
+            'total'     => (int) round((float) $p->total),
+            'paidDaily' => (int) round((float) $p->paid_daily),
+            'count' => is_array($p->lines) ? count($p->lines) : 0,
+        ])->all();
+    }
+
+    /** Snapshot 1 kỳ lương (cho trang Xem). */
+    public function payrollToArray(TruckingPayrollPeriod $p): array
+    {
+        return [
+            'id'    => $p->id,
+            'hashid' => $p->hashid(),
+            'no'    => $p->no,
+            'name'  => $p->name ?? '',
+            'from'  => $this->outDate($p->period_from),
+            'to'    => $this->outDate($p->period_to),
+            'total'     => (int) round((float) $p->total),
+            'paidDaily' => (int) round((float) $p->paid_daily),
+            'note'  => $p->note ?? '',
+            'rows'  => is_array($p->lines) ? $p->lines : [],
+        ];
+    }
+
+    private function nextPayrollNo(): string
+    {
+        return 'LG-' . str_pad((string) (TruckingPayrollPeriod::max('id') + 1), 4, '0', STR_PAD_LEFT);
+    }
+
+    /** Lưu/cập nhật 1 kỳ lương — chốt snapshot theo bks (tiền tính lúc tạo). */
+    public function savePayroll(array $data, ?TruckingPayrollPeriod $p = null): TruckingPayrollPeriod
+    {
+        $lines = []; $total = 0; $paidDaily = 0;
+        foreach (array_values($data['rows'] ?? []) as $r) {
+            $bks = $this->str($r['bks'] ?? null) ?? '';
+            if ($bks === '') continue;
+            $payroll = (int) round((float) ($r['total'] ?? $r['payroll'] ?? 0));
+            $pd      = (int) round((float) ($r['paidDaily'] ?? 0));
+            $lines[] = [
+                'bks'       => $bks,
+                'driver'    => $this->str($r['driver'] ?? null) ?? '',
+                'days'      => (int) ($r['days'] ?? 0),
+                'trips'     => (int) ($r['trips'] ?? 0),
+                'paidDaily' => $pd,
+                'payroll'   => $payroll,
+                'note'      => $this->str($r['note'] ?? null) ?? '',
+                'detail'    => is_array($r['lines'] ?? null) ? $r['lines'] : [],
+            ];
+            $total += $payroll; $paidDaily += $pd;
+        }
+        $attrs = [
+            'no'          => $this->str($data['no'] ?? null) ?: $this->nextPayrollNo(),
+            'name'        => $this->str($data['name'] ?? null),
+            'period_from' => $this->inDate($data['from'] ?? null),
+            'period_to'   => $this->inDate($data['to'] ?? null),
+            'total'       => $total,
+            'paid_daily'  => $paidDaily,
+            'lines'       => $lines,
+            'note'        => $this->str($data['note'] ?? null),
+        ];
+        if ($p) { $p->update($attrs); return $p->fresh(); }
+        $attrs['created_by'] = auth()->id();
+        return TruckingPayrollPeriod::create($attrs);
     }
 
 }

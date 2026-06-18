@@ -13,13 +13,13 @@ function TripBatchesApp() {
   const del = async (b, e) => {
     e.stopPropagation();
     const ok = await window.confirmAction({
-      title: "Xóa kỳ phí xe?",
-      text: `Kỳ <b>${b.no}</b> · <b>${b.count}</b> lô · tổng <b>${(b.total || 0).toLocaleString("vi-VN")} ₫</b> sẽ bị xóa vĩnh viễn.`,
+      title: "Xóa kỳ lương?",
+      text: `Kỳ <b>${b.no}</b> · <b>${b.count}</b> xe · lương <b>${(b.total || 0).toLocaleString("vi-VN")} ₫</b> sẽ bị xóa vĩnh viễn.`,
       confirmText: '<i class="bi bi-trash me-1"></i> Xóa kỳ', danger: true,
     });
     if (!ok) return;
     const res = await api("DELETE", ROUTES.batch + (b.hashid || b.id));
-    if (res && res.ok) { setBatches((bs) => bs.filter((x) => x.id !== b.id)); window.trkToast && window.trkToast("Đã xóa kỳ phí xe"); }
+    if (res && res.ok) { setBatches((bs) => bs.filter((x) => x.id !== b.id)); window.trkToast && window.trkToast("Đã xóa kỳ lương"); }
     else window.trkToast && window.trkToast("Xóa thất bại", "error");
   };
 
@@ -33,11 +33,11 @@ function TripBatchesApp() {
           <div className="trk-head-lead" style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
             <div style={{ width: 32, height: 32, flexShrink: 0, borderRadius: 9, background: "var(--accent)", color: "#fff", display: "grid", placeItems: "center" }}><I.truck /></div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 15.5, fontWeight: 700, lineHeight: 1.1 }}>Chi phí & lương lái xe</div>
-              <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Lịch sử các kỳ tính phí chuyến (theo ngày xe ra)</div>
+              <div style={{ fontSize: 15.5, fontWeight: 700, lineHeight: 1.1 }}>Kỳ lương lái xe</div>
+              <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Lịch sử các kỳ lương (gom theo biển số xe qua khoảng ngày)</div>
             </div>
           </div>
-          {T.canEdit && <Btn variant="primary" onClick={() => { window.location.href = ROUTES.create; }}><I.plus /> Tạo kỳ phí xe</Btn>}
+          {T.canEdit && <Btn variant="primary" onClick={() => { window.location.href = ROUTES.create; }}><I.plus /> Tạo kỳ lương</Btn>}
         </div>
       </header>
 
@@ -45,16 +45,16 @@ function TripBatchesApp() {
         <div style={{ maxWidth: 1000, margin: "0 auto", background: "#fff", border: "1px solid var(--line)", borderRadius: 14, overflow: "hidden" }}>
           {batches.length === 0 ? (
             <div style={{ padding: "48px 20px", textAlign: "center", color: "var(--ink-4)", fontSize: 13.5 }}>
-              Chưa có kỳ phí xe nào. Bấm <b>Tạo kỳ phí xe</b> để chọn khoảng ngày xe ra và tính phí.
+              Chưa có kỳ lương nào. Bấm <b>Tạo kỳ lương</b> để chọn khoảng ngày và gom lương theo xe.
             </div>
           ) : (
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead><tr style={{ background: "var(--bg)" }}>
                 <th style={th}>Số kỳ</th>
                 <th style={th}>Tên / ghi chú</th>
-                <th style={th}>Kỳ (ngày xe ra)</th>
-                <th style={{ ...th, textAlign: "center" }}>Số lô</th>
-                <th style={{ ...th, textAlign: "right" }}>Tổng phí</th>
+                <th style={th}>Khoảng ngày</th>
+                <th style={{ ...th, textAlign: "center" }}>Số xe</th>
+                <th style={{ ...th, textAlign: "right" }}>Lương phải trả</th>
                 <th style={{ ...th, width: 44 }}></th>
               </tr></thead>
               <tbody>

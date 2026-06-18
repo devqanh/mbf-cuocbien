@@ -147,7 +147,6 @@ Route::middleware('auth')->group(function () {
             Route::get('/phi-xe/tao',                [TripCostController::class, 'create'])->name('tripCost.create');
             Route::get('/phi-xe/compute',            [TripCostController::class, 'compute'])->name('tripCost.compute');
             Route::get('/phi-xe/{tripCost}',         [TripCostController::class, 'view'])->name('tripCost.view');
-            Route::get('/phi-xe/{tripCost}/context', [TripCostController::class, 'context'])->name('tripCost.context');
         });
         Route::middleware('permission:tripCost.create')->group(function () {
             Route::post('/trip-costs', [TripCostController::class, 'store'])->name('tripCost.store');

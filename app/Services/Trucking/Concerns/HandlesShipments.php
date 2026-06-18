@@ -363,26 +363,29 @@ trait HandlesShipments
                 if (! is_array($m)) continue;
                 $manualByCont[(string) ($m['cont'] ?? '')][] = $m;
             }
-            // "Chi theo ngày": MỖI chuyến (leg) = 1 nhóm (kể cả không khớp phí tuyến → cảnh báo cho kế toán).
-            $payGroups = []; $payTotal = 0; $payWarn = 0;
+            // MỖI chuyến (leg) = 1 nhóm (kể cả không khớp phí tuyến → cảnh báo cho kế toán).
+            // payTotal = chi theo ngày; payrollTotal = khoản gom trả 1 đợt (lương) cho kỳ lương.
+            $payGroups = []; $payTotal = 0; $payrollTotal = 0; $payWarn = 0;
             foreach ($ls as $l) {
                 $g = $this->legPayGroup($l, $axle, $rfBySet, $fuels, $dateStr);
-                // Gắn chi khác phát sinh của chuyến (theo cont) — cộng vào tổng nếu perDay.
+                // Gắn chi khác phát sinh của chuyến (theo cont) — perDay→chi theo ngày, không→gom lương.
                 $manual = [];
                 foreach ($manualByCont[(string) $g['cont']] ?? [] as $m) {
                     $amt = (int) round((float) ($m['amount'] ?? 0));
                     $perDay = ! isset($m['perDay']) || ! empty($m['perDay']);
                     $manual[] = ['name' => (string) ($m['name'] ?? ''), 'amount' => $amt, 'perDay' => $perDay];
-                    if ($perDay && $amt > 0) $g['sub'] += $amt;
+                    if ($amt <= 0) continue;
+                    if ($perDay) $g['sub'] += $amt; else $g['payrollSub'] += $amt;
                 }
                 $g['manual'] = $manual;
                 if ($g['sub'] > 0 && $g['note'] !== '') $g['note'] = '';   // có tiền (kể cả thủ công) → hết cảnh báo
                 $payGroups[] = $g;
                 $payTotal += $g['sub'];
+                $payrollTotal += $g['payrollSub'];
                 if ($g['note'] !== '') $payWarn++;   // chuyến chưa ra tiền (không khớp / chưa tick / =0)
             }
             $trucks[] = ['bks' => $bks, 'matched' => $matched, 'type' => $type, 'axle' => $axle, 'legs' => $ls,
-                'payGroups' => $payGroups, 'payTotal' => $payTotal, 'payWarn' => $payWarn,
+                'payGroups' => $payGroups, 'payTotal' => $payTotal, 'payrollTotal' => $payrollTotal, 'payWarn' => $payWarn,
                 'payDriver' => $pay?->driver ?? '', 'paid' => (bool) ($pay?->paid ?? false), 'paidDate' => $pay ? $this->outDate($pay->paid_date) : ''];
         }
         usort($trucks, fn ($a, $b) => count($b['legs']) <=> count($a['legs']) ?: strcmp($a['bks'], $b['bks']));
@@ -441,45 +444,51 @@ trait HandlesShipments
         $disp = [];
         foreach ($nodes as $n) { $n = trim((string) $n); if ($n === '' || (count($disp) && end($disp) === $n)) continue; $disp[] = $n; }
         $routeDisp = implode(' → ', $disp) ?: ($this->khoRouteDisplay($leg['kho'] ?? '') ?: '—');
-        $g = ['route' => $routeDisp, 'cont' => $leg['cont'] ?? '', 'mode' => $leg['mode'] ?? '', 'items' => [], 'sub' => 0, 'matched' => false, 'note' => ''];
+        $g = ['route' => $routeDisp, 'cont' => $leg['cont'] ?? '', 'mode' => $leg['mode'] ?? '',
+              'items' => [], 'sub' => 0, 'payrollItems' => [], 'payrollSub' => 0, 'matched' => false, 'note' => ''];
 
         $rf = $rfBySet[$this->routeNodeKey($nodes)] ?? null;
         if (! $rf) { $g['note'] = 'Chưa có Phí tuyến khớp lộ trình này'; return $g; }
         $g['matched'] = true;
-        $parts = $this->cleanSalaryParts($rf->salary_parts);
+        $parts = $this->cleanSalaryParts($rf->salary_parts);   // khoản TÍCH "chi theo ngày"
 
-        $items = [];
-        $push = function ($key, $label, $amount, array $extra = []) use (&$items, $parts) {
+        // Tính TẤT CẢ khoản, gắn cờ perDay: tích chi theo ngày = đã chi trong ngày;
+        // KHÔNG tích = gom trả 1 đợt (lương) → tách ra payrollItems cho kỳ lương.
+        $all = [];
+        $daily = fn ($k) => in_array($k, $parts, true);
+        $add = function ($key, $label, $amount, bool $perDay, array $extra = []) use (&$all) {
             $amount = (int) round((float) $amount);
-            if (! in_array($key, $parts, true) || $amount <= 0) return;
-            $items[] = ['key' => $key, 'label' => $label, 'amount' => $amount] + $extra;
+            if ($amount <= 0) return;
+            $all[] = ['key' => $key, 'label' => $label, 'amount' => $amount, 'perDay' => $perDay] + $extra;
         };
-        $push('veTram', 'Vé trạm', $rf->ve_tram);
-        $push('tienDuong', 'Tiền đường', $rf->tien_duong);
-        $push('troCap', 'Trợ cấp', $rf->tro_cap);
+        $add('veTram', 'Vé trạm', $rf->ve_tram, $daily('veTram'));
+        $add('tienDuong', 'Tiền đường', $rf->tien_duong, $daily('tienDuong'));
+        $add('troCap', 'Trợ cấp', $rf->tro_cap, $daily('troCap'));
         // Lương theo 2 chiều: (CÓ/KHÔNG kéo cont ra) × (CRU/không CRU). $noPull tính ở trên.
         $cru    = ! empty($leg['cru']);
         $wage   = $noPull ? ($cru ? $rf->luong_nokeo : $rf->luong_nokeo_no_cru)
                           : ($cru ? $rf->luong       : $rf->luong_no_cru);
         $label  = 'Lương' . ($noPull ? ' · không kéo cont' : '') . ($cru ? ' · CRU' : ' · không CRU');
-        $push('luong', $label, $wage);
+        $add('luong', $label, $wage, $daily('luong'));
         $is2 = ($axle === '2');                                  // chọn lít dầu theo SỐ CẦU xe
         $dauKey = $is2 ? 'dau2' : 'dau1';
-        if (in_array($dauKey, $parts, true)) {
-            $liters = (float) ($is2 ? $rf->dau_2cau : $rf->dau_1cau);
-            $unit   = (float) $this->fuelPriceForDate($fuels, $date);   // đơn giá dầu theo NGÀY của chuyến
-            // Kèm số lít + đơn giá để kế toán rà soát: tiền = lít × đơn giá.
-            $push($dauKey, 'Dầu ' . ($is2 ? '2 cầu' : '1 cầu'), $liters * $unit, ['liters' => $liters, 'unitPrice' => (int) round($unit)]);
+        $liters = (float) ($is2 ? $rf->dau_2cau : $rf->dau_1cau);
+        if ($liters > 0) {
+            $unit = (float) $this->fuelPriceForDate($fuels, $date);   // đơn giá dầu theo NGÀY của chuyến
+            $add($dauKey, 'Dầu ' . ($is2 ? '2 cầu' : '1 cầu'), $liters * $unit, $daily($dauKey), ['liters' => $liters, 'unitPrice' => (int) round($unit)]);
         }
-        // Chi khác (repeater) — mỗi dòng TỰ quyết "chi theo ngày" (không qua salary_parts).
+        // Chi khác (repeater phí tuyến) — mỗi dòng TỰ quyết "chi theo ngày".
         foreach ((array) ($rf->extra_fees ?? []) as $ex) {
-            if (! is_array($ex) || empty($ex['perDay'])) continue;
-            $amt = (int) round((float) ($ex['amount'] ?? 0));
-            if ($amt <= 0) continue;
-            $items[] = ['key' => 'extra', 'label' => trim((string) ($ex['name'] ?? '')) ?: 'Chi khác', 'amount' => $amt];
+            if (! is_array($ex)) continue;
+            $add('extra', trim((string) ($ex['name'] ?? '')) ?: 'Chi khác', $ex['amount'] ?? 0, ! empty($ex['perDay']));
         }
+        // Tách 2 rổ: items = chi theo ngày (hiện ở Lộ trình); payrollItems = gom trả 1 đợt (kỳ lương).
+        $items = array_values(array_filter($all, fn ($x) => $x['perDay']));
+        $payroll = array_values(array_filter($all, fn ($x) => ! $x['perDay']));
         $g['items'] = $items;
         $g['sub']   = array_sum(array_column($items, 'amount'));
+        $g['payrollItems'] = $payroll;
+        $g['payrollSub']   = array_sum(array_column($payroll, 'amount'));
         if (! $items) $g['note'] = $parts ? 'Các khoản "chi theo ngày" của tuyến đều = 0' : 'Phí tuyến chưa tích "chi theo ngày" khoản nào';
         return $g;
     }
@@ -521,6 +530,56 @@ trait HandlesShipments
             ]
         );
         return ['ok' => true];
+    }
+
+    /**
+     * Kỳ LƯƠNG lái xe — gom theo BIỂN SỐ XE qua khoảng ngày [from..to]:
+     *  - payroll  = Σ khoản CHƯA "chi theo ngày" (lương gom trả 1 đợt) = TIỀN PHẢI TRẢ.
+     *  - paidDaily = Σ khoản "chi theo ngày" (đã thanh toán theo ngày) — tham khảo.
+     * Lái xe TỰ GÁN theo thời điểm (lấy từ route_pays.driver các ngày trong kỳ).
+     */
+    public function computePayroll(?string $from, ?string $to): array
+    {
+        $start = Carbon::parse($from ?: now()->format('Y-m-d'))->startOfDay();
+        $end   = Carbon::parse($to ?: ($from ?: now()->format('Y-m-d')))->startOfDay();
+        if ($end->lt($start)) { $tmp = $start; $start = $end; $end = $tmp; }
+
+        $byBks = [];
+        for ($d = $start->copy(); $d->lte($end); $d->addDay()) {
+            $ds  = $d->format('Y-m-d');
+            $day = $this->routeTripByDate($ds);
+            foreach ($day['trucks'] as $t) {
+                $bks = $t['bks'];
+                if (! isset($byBks[$bks])) {
+                    $byBks[$bks] = ['bks' => $bks, 'type' => $t['type'], 'axle' => $t['axle'],
+                        'drivers' => [], 'days' => 0, 'trips' => 0, 'paidDaily' => 0, 'payroll' => 0, 'lines' => []];
+                }
+                $byBks[$bks]['days']++;
+                $byBks[$bks]['trips']     += count($t['payGroups']);
+                $byBks[$bks]['paidDaily'] += $t['payTotal'];
+                $byBks[$bks]['payroll']   += $t['payrollTotal'];
+                if (! empty($t['payDriver'])) $byBks[$bks]['drivers'][$t['payDriver']] = true;
+                $byBks[$bks]['lines'][] = ['date' => $ds, 'driver' => $t['payDriver'] ?? '',
+                    'paidDaily' => $t['payTotal'], 'payroll' => $t['payrollTotal'], 'groups' => $t['payGroups']];
+            }
+        }
+
+        $rows = [];
+        foreach ($byBks as $r) {
+            $r['driver'] = implode(', ', array_keys($r['drivers']));   // lái auto theo thời điểm
+            unset($r['drivers']);
+            $r['total'] = $r['payroll'];                               // lương phải trả đợt
+            $rows[] = $r;
+        }
+        usort($rows, fn ($a, $b) => strcmp($a['bks'], $b['bks']));
+
+        return [
+            'from' => $start->format('Y-m-d'), 'to' => $end->format('Y-m-d'),
+            'rows' => $rows,
+            'grandPayroll'   => array_sum(array_column($rows, 'payroll')),
+            'grandPaidDaily' => array_sum(array_column($rows, 'paidDaily')),
+            'drivers' => $this->driversOut(),
+        ];
     }
 
     /**
