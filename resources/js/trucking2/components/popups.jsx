@@ -592,9 +592,7 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr", gap: 12, padding: "4px 0 6px" }}>
               <Field label="Giờ đến kế hoạch"><DTField value={ship.gioDenDuKien} onChange={(x) => set({ gioDenDuKien: x })} /></Field>
               <Field label="Giờ xe đến"><DTField value={ship.gioXeDen} onChange={(x) => set({ gioXeDen: x })} /></Field>
-              <Field label="Giờ xe ra (của cont)">{raMode === "self"
-                ? <DTField value={ship.gioXeRa} onChange={(x) => setRa(x)} />
-                : <div style={{ padding: "9px 11px", fontSize: 13, border: "1px dashed var(--line)", borderRadius: 9, background: "#fafbfc", color: "var(--ink-4)" }} title={raMode === "other" ? "Cont này không tự ra — giờ ra ghi vào cont đã chọn ở dưới, cont này để TRỐNG" : "Xe không kéo cont — nhập giờ XE ra ở khung dưới"}>{raMode === "other" ? "Để trống — cont khác kéo ra" : "Cont không ra — nhập ở dưới"}</div>}</Field>
+              <Field label="Giờ xe ra (của cont)"><DTField value={ship.gioXeRa} onChange={(x) => set({ gioXeRa: x })} /></Field>
             </div>
             <div style={{ background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", borderRadius: 10, padding: "10px 12px", margin: "2px 0 12px" }}>
               <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 7, fontWeight: 500 }}>Giờ xe ra này là của:</div>
@@ -602,16 +600,12 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
                 <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 8, padding: 2, flexWrap: "wrap" }}>
                   {[["self", "Chính cont này"], ["other", "Cont khác ra"], ["none", "Không kéo công ra"]].map(([k, lbl]) => {
                     const on = raMode === k;
-                    // Đổi trường hợp → dọn field không liên quan để 2 mốc giờ KHÔNG lẫn nhau:
-                    //  none: giờ ghi vào gioXeRaXe (của xe) → xóa gioXeRa (cont) + bỏ liên kết cont khác.
-                    //  self/other: giờ là của cont → xóa gioXeRaXe (của xe). self/none bỏ luôn raOtherId.
-                    // Dọn dữ liệu để 2 mốc giờ KHÔNG lẫn + cont hiện tại đúng quy tắc:
-                    //  none: giờ vào gioXeRaXe (của xe) → xóa giờ ra/BKS của CONT + bỏ liên kết.
-                    //  other: cont này KHÔNG tự ra → xóa giờ ra/BKS của cont hiện tại (giờ ghi vào cont đã chọn).
-                    //  self: giờ ra là của cont → xóa gioXeRaXe; bỏ raOtherId.
-                    const onPick = k === "none" ? { raMode: "none", raOtherId: null, gioXeRa: "", bksRa: "" }
+                    // Ô "Giờ xe ra (của cont)" luôn cho nhập (giờ ra RIÊNG của cont), độc lập với lựa chọn này.
+                    // self/other → xóa gioXeRaXe (chỉ dùng cho 'none'); self/none → bỏ liên kết cont khác.
+                    // KHÔNG xóa gioXeRa/bksRa của cont hiện tại nữa.
+                    const onPick = k === "none" ? { raMode: "none", raOtherId: null }
                       : k === "self" ? { raMode: "self", raOtherId: null, gioXeRaXe: "" }
-                      : { raMode: "other", gioXeRaXe: "", gioXeRa: "", bksRa: "" };
+                      : { raMode: "other", gioXeRaXe: "" };
                     return (
                       <button key={k} type="button" onClick={() => set(onPick)}
                         style={{ border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, padding: "6px 13px", borderRadius: 6, whiteSpace: "nowrap",
@@ -643,11 +637,11 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
                     {(otherGioXeRa || otherBksRa) && (
                       <div style={{ fontSize: 12, color: "var(--accent)", marginTop: 8, fontWeight: 600, display: "flex", alignItems: "flex-start", gap: 6, lineHeight: 1.5 }}>
                         <i className="bi bi-check-circle-fill" style={{ marginTop: 1 }} />
-                        <span>{otherBksRa ? <>BKS <b>{otherBksRa}</b> kéo cont <b>{otherLabel}</b> ra</> : <>Cont <b>{otherLabel}</b> ra</>}{otherGioXeRa ? <> lúc <b>{fmtDateTime(otherGioXeRa)}</b></> : ""}. Cont hiện tại để <b>TRỐNG</b> giờ xe ra.</span>
+                        <span>{otherBksRa ? <>BKS <b>{otherBksRa}</b> kéo cont <b>{otherLabel}</b> ra</> : <>Cont <b>{otherLabel}</b> ra</>}{otherGioXeRa ? <> lúc <b>{fmtDateTime(otherGioXeRa)}</b></> : ""}.</span>
                       </div>
                     )}
                     <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 7, lineHeight: 1.5 }}>
-                      Giờ ra & biển số ở đây chỉ cập nhật cho <b style={{ color: "var(--ink-3)" }}>cont đã chọn</b> (cont thực sự rời đi). Cont hiện tại luôn giữ <b style={{ color: "var(--ink-3)" }}>trống</b> giờ xe ra. Thay đổi lưu khi bấm <b style={{ color: "var(--ink-3)" }}>Lưu thông tin</b>.
+                      Giờ ra & biển số ở đây cập nhật cho <b style={{ color: "var(--ink-3)" }}>cont đã chọn</b> (cont thực sự rời đi). Giờ xe ra của cont hiện tại nhập ở ô <b style={{ color: "var(--ink-3)" }}>“Giờ xe ra (của cont)”</b> phía trên. Thay đổi lưu khi bấm <b style={{ color: "var(--ink-3)" }}>Lưu thông tin</b>.
                     </div>
                   </div>
                 ) : (
