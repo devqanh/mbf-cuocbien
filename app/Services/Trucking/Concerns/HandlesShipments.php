@@ -661,6 +661,22 @@ trait HandlesShipments
             }
             $s->save();
 
+            // "Cont khác ra": đẩy GIỜ RA + BKS đã nhập ở popup sang đúng cont ĐƯỢC CHỌN (ra_other_id) — theo id,
+            // nên cập nhật được CẢ KHI cont đó không nằm trong trang đang xem (sửa bug giờ ra không xuống cont kia).
+            if ($s->ra_mode === 'other' && $s->ra_other_id) {
+                $hasGio = $apply('raOtherGioXeRa') && array_key_exists('raOtherGioXeRa', $data);
+                $hasBks = $apply('raOtherBksRa') && array_key_exists('raOtherBksRa', $data);
+                if ($hasGio || $hasBks) {
+                    $o = TruckingShipment::find($s->ra_other_id);
+                    if ($o) {
+                        if ($hasGio) $o->gio_xe_ra = $this->inDateTime($data['raOtherGioXeRa']);
+                        if ($hasBks) $o->bks_ra   = $this->str($data['raOtherBksRa']);
+                        $o->save();
+                        $this->recomputeShipmentDerived($o, null);
+                    }
+                }
+            }
+
             // Dòng con chỉ đồng bộ khi nhóm tương ứng được sửa (cost / rev)
             if ($apply('cost')) {
             $s->costLines()->delete();

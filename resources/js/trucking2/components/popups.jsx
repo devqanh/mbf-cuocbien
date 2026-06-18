@@ -427,14 +427,17 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
   useEffect(() => {
     if (other) setRaEdit({ id: other.id, gioXeRa: other.gioXeRa || "", bksRa: other.bksRa || "" });
   }, [ship.raOtherId, raMode]);
-  const setRa = (val) => { if (other && patchOther) { setRaEdit((e) => ({ ...e, gioXeRa: val })); patchOther(other.id, { gioXeRa: val }); } else set({ gioXeRa: val }); };
-  const setRaBks = (val) => { if (other && patchOther) { setRaEdit((e) => ({ ...e, bksRa: val })); patchOther(other.id, { bksRa: val }); } else set({ bksRa: val }); };
+  // "Cont khác ra": giờ ra/BKS nhập ở đây ghi vào field TRANSIENT của LÔ HIỆN TẠI (raOtherGioXeRa/raOtherBksRa)
+  // → backend tự đẩy sang cont ra_other_id THEO ID (cập nhật được cả khi cont kia ở trang khác). Cont hiện tại
+  // không động vào cột giờ ra. raEdit chỉ để hiển thị tức thời.
+  const setRa = (val) => { if (other) { setRaEdit((e) => ({ ...e, gioXeRa: val })); set({ raOtherGioXeRa: val }); } else set({ gioXeRa: val }); };
+  const setRaBks = (val) => { if (other) { setRaEdit((e) => ({ ...e, bksRa: val })); set({ raOtherBksRa: val }); } else set({ bksRa: val }); };
   const otherGioXeRa = (other && raEdit.id === other.id) ? raEdit.gioXeRa : (other ? other.gioXeRa || "" : "");
   const otherBksRa = (other && raEdit.id === other.id) ? raEdit.bksRa : (other ? other.bksRa || "" : "");
   const otherLabel = (sibOpts.find((o) => o.value === ship.raOtherId) || {}).label || "";
   const fmtDateTime = (s) => { if (!s) return ""; const d = new Date(s); return isNaN(d) ? "" : d.toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }); };
 
-  const dirty = !!(isDirty && (isDirty(ship.id) || (other && isDirty(other.id))));
+  const dirty = !!(isDirty && isDirty(ship.id));   // giờ ra cont khác cũng ghi vào lô hiện tại (raOther*) → chỉ cần xét ship.id
   const missingReq = !((ship.customer || "").toString().trim()) || !((ship.booking || "").toString().trim());
   const [saving, setSaving] = useState(false);
   const handleSave = () => { if (missingReq || saving) return; setSaving(true); Promise.resolve(onSave && onSave()).then(() => onClose()).catch(() => setSaving(false)); };
