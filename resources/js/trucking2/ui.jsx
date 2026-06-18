@@ -96,13 +96,14 @@ function makePricer(cfg) {
     const ft = calcFreeTime(s, cfg.freeTimeHours, cfg.freeTimeRules);   // chi tiết free time để ghi rõ
     const conn = ft ? (ft.connect ? "Connect" : "Disconnect") : null;
     const fromC = codeOf(s.from), dropC = codeOf(s.to), kind = kindOf(s);
-    const eq = (a, b) => !!a && a === b;
-    const fromMatch = (p) => eq(codeOf(p.from), fromC) || eq((p.from || "").trim(), fromRaw);
-    // Nơi hạ trống HOẶC trùng nơi lấy → coi như không có điểm hạ riêng → bỏ ràng buộc hạ (khớp theo đi+loại).
+    // So khớp BỎ DẤU CÁCH giữa + hoa/thường: "ICD QV" == "ICDQV" (bảng giá import lệch dấu cách).
+    const ns = (v) => (v || "").toString().replace(/\s+/g, "").toUpperCase();
+    const eq = (a, b) => !!a && ns(a) === ns(b);
+    const fromMatch = (p) => eq(codeOf(p.from), fromC) || eq(p.from, fromRaw);
     const dropMatch = (p) => {
-      if (!dropRaw || dropC === fromC) return true;
-      const c = [codeOf(p.to1), (p.to1 || "").trim(), codeOf(p.loc), (p.loc || "").trim()];
-      return c.includes(dropC) || c.includes(dropRaw);
+      if (!dropRaw) return true;   // lô không có nơi hạ → khớp theo đi+loại
+      const cand = [codeOf(p.to1), p.to1, codeOf(p.loc), p.loc].map(ns);
+      return cand.includes(ns(dropC)) || cand.includes(ns(dropRaw));
     };
     const kindMatch = (p) => nk(p.kind) === nk(kind);
     let p = list.find((p) => fromMatch(p) && dropMatch(p) && kindMatch(p) && (!conn || (p.conn || "Connect") === conn));
@@ -116,7 +117,7 @@ function makePricer(cfg) {
     const costItems = items.map((e) => ({ item: e.item || "(khoản)", amount: toNum(e.amount), billable: !!e.billable, src: e.src || "" }));
     const chiHo = choHoItems.reduce((a, e) => a + e.amount, 0);
     const route = p ? ((nameOf(p.from) || "?") + " → " + (nameOf(p.to1 || p.loc) || "?")) : null;
-    const noDrop = (!dropRaw || dropC === fromC) && !!p;
+    const noDrop = !dropRaw && !!p;
     return { matched: !!p, conn, kind, is20, cuoc, dau, chiHo, choHoItems, costItems, route, noDrop,
       ftHours: ft ? ft.hours : null, ftThreshold: ft ? ft.threshold : null, ftBasis: ft ? ft.basis : null,
       phaiThu: cuoc + dau + chiHo };

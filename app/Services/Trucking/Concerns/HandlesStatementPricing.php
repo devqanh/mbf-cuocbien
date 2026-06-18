@@ -79,7 +79,7 @@ trait HandlesStatementPricing
         $threshold = $ctx['threshold'];
 
         $nk   = fn ($v) => mb_strtolower(trim((string) $v));
-        $norm = fn ($v) => mb_strtoupper(trim(Str::ascii((string) $v)));
+        $norm = fn ($v) => mb_strtoupper(preg_replace('/\s+/u', '', trim(Str::ascii((string) $v))) ?? '');   // bỏ DẤU CÁCH giữa: "ICD QV" == "ICDQV"
         $rc   = fn ($v) => $codeMap[$norm($v)] ?? $norm($v);
 
         $cont20   = str_contains((string) $s->cont_type, '20');
@@ -97,11 +97,7 @@ trait HandlesStatementPricing
         // So theo KÝ HIỆU CHUẨN ($rc) → "LACH HUYEN"=="LẠCH HUYỆN"=="LHP".
         $loFrom = $rc($s->from_loc);
         $loDrop = $rc($s->to_loc);
-        // Nơi hạ TRÙNG nơi lấy (hoặc để trống) → coi như KHÔNG có điểm hạ riêng → khớp theo
-        // ĐI + NHÀ MÁY + LOẠI (bỏ ràng buộc nơi hạ). Bảng giá thường để loc = cảng cố định nên
-        // lô đi-về cùng điểm sẽ không khớp nếu ép nơi hạ.
-        $effDrop = ($loDrop === '' || $loDrop === $loFrom) ? '' : $loDrop;
-        $noDrop  = ($effDrop === '');
+        $noDrop = ($loDrop === '');   // lô không có nơi hạ → khớp theo đi+nhà máy (giữ ràng buộc hạ khi có)
         $khoCodes = [];
         foreach (preg_split('/\s*(?:,|→|->|–|—|\s-\s)\s*/u', (string) $s->kho) ?: [] as $k) { $c = $rc($k); if ($c !== '') $khoCodes[] = $c; }
 
@@ -110,7 +106,7 @@ trait HandlesStatementPricing
         $p = null; $fallback = null;
         foreach ($priceList as $r) {
             if ($loFrom !== '' && $r['rcFrom'] !== '' && $r['rcFrom'] !== $loFrom) continue;
-            if ($effDrop !== '' && $r['rcDrop'] !== '' && $r['rcDrop'] !== $effDrop) continue;
+            if ($loDrop !== '' && $r['rcDrop'] !== '' && $r['rcDrop'] !== $loDrop) continue;
             if (empty($khoCodes) || empty($r['rcKho'])) continue;   // kho rỗng = không khớp (giữ semantic cũ)
             $khoOk = false;
             foreach ($r['rcKho'] as $k) if (in_array($k, $khoCodes, true)) { $khoOk = true; break; }
@@ -173,7 +169,7 @@ trait HandlesStatementPricing
     private function normalizedCodeMap(): array
     {
         if ($this->codeMapCache !== null) return $this->codeMapCache;
-        $norm = fn ($v) => mb_strtoupper(trim(Str::ascii((string) $v)));
+        $norm = fn ($v) => mb_strtoupper(preg_replace('/\s+/u', '', trim(Str::ascii((string) $v))) ?? '');   // bỏ DẤU CÁCH giữa: "ICD QV" == "ICDQV"
         $m = [];
         foreach (TruckingLocation::toBase()->get(['name', 'code']) as $l) {
             if ($l->code) { $m[$norm($l->code)] = $l->code; if ($l->name) $m[$norm($l->name)] = $l->code; }
@@ -208,7 +204,7 @@ trait HandlesStatementPricing
 
         $locCode = $this->locationCodeMap();
         $codeMap = $this->normalizedCodeMap();
-        $norm = fn ($v) => mb_strtoupper(trim(Str::ascii((string) $v)));
+        $norm = fn ($v) => mb_strtoupper(preg_replace('/\s+/u', '', trim(Str::ascii((string) $v))) ?? '');   // bỏ DẤU CÁCH giữa: "ICD QV" == "ICDQV"
         $rc   = fn ($v) => $codeMap[$norm($v)] ?? $norm($v);
         $nk   = fn ($v) => mb_strtolower(trim((string) $v));
 
