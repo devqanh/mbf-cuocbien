@@ -434,9 +434,13 @@ trait HandlesShipments
         $push('veTram', 'Vé trạm', $rf->ve_tram);
         $push('tienDuong', 'Tiền đường', $rf->tien_duong);
         $push('troCap', 'Trợ cấp', $rf->tro_cap);
-        // Lương: xe KHÔNG kéo cont ra (mode none) → "Lương không CRU"; có kéo cont ra (self/other) → "Lương CRU".
-        $noPull = ($leg['mode'] ?? '') === 'none';
-        $push('luong', $noPull ? 'Lương (không kéo cont)' : 'Lương', $noPull ? $rf->luong_no_cru : $rf->luong);
+        // Lương theo 2 chiều: (CÓ/KHÔNG kéo cont ra) × (CRU/không CRU).
+        $noPull = ($leg['mode'] ?? '') === 'none';   // mode none = ra xe KHÔNG kéo cont
+        $cru    = ! empty($leg['cru']);
+        $wage   = $noPull ? ($cru ? $rf->luong_nokeo : $rf->luong_nokeo_no_cru)
+                          : ($cru ? $rf->luong       : $rf->luong_no_cru);
+        $label  = 'Lương' . ($noPull ? ' · không kéo cont' : '') . ($cru ? ' · CRU' : ' · không CRU');
+        $push('luong', $label, $wage);
         $is2 = ($axle === '2');                                  // chọn lít dầu theo SỐ CẦU xe
         $dauKey = $is2 ? 'dau2' : 'dau1';
         if (in_array($dauKey, $parts, true)) {

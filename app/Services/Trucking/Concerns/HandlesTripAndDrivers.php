@@ -607,7 +607,11 @@ trait HandlesTripAndDrivers
             'troCap'    => $this->outMoney($r->tro_cap),
             'phiKhac'   => $this->outMoney($r->phi_khac),
             'cru'         => (bool) $r->cru,
-            'luong'       => $this->outMoney($r->luong),
+            // Lương theo 2 chiều: (có/không kéo cont ra) × (CRU/không CRU)
+            'luong'            => $this->outMoney($r->luong),               // có kéo + CRU
+            'luongNoCru'       => $this->outMoney($r->luong_no_cru),        // có kéo + không CRU
+            'luongNokeo'       => $this->outMoney($r->luong_nokeo),         // không kéo + CRU
+            'luongNokeoNoCru'  => $this->outMoney($r->luong_nokeo_no_cru),  // không kéo + không CRU
             'salaryParts' => $this->cleanSalaryParts($r->salary_parts),
             'km'        => $this->outNum($r->km),
             'dau2'      => $this->outNum($r->dau_2cau),
@@ -642,6 +646,8 @@ trait HandlesTripAndDrivers
                     'cru'        => ! empty($r['cru']),
                     'luong'      => $this->inMoney($r['luong'] ?? null) ?? 0,
                     'luong_no_cru' => $this->inMoney($r['luongNoCru'] ?? null) ?? 0,
+                    'luong_nokeo'  => $this->inMoney($r['luongNokeo'] ?? null) ?? 0,
+                    'luong_nokeo_no_cru' => $this->inMoney($r['luongNokeoNoCru'] ?? null) ?? 0,
                     'salary_parts' => $this->cleanSalaryParts($r['salaryParts'] ?? null),
                     'km'         => $this->inNum($r['km'] ?? null) ?? 0,
                     'dau_2cau'   => $this->inNum($r['dau2'] ?? null) ?? 0,

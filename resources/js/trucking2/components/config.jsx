@@ -144,7 +144,7 @@ function RouteFees({ rows = [], onChange, warehouses = [], locations = [], isDup
   // Node tuyến = Cảng (địa điểm) HOẶC Kho — gợi ý gom 2 nhóm để chọn cả chuỗi Cảng→Kho→Kho→Cảng.
   const routeGroups = [{ label: "Cảng", items: locations || [] }, { label: "Kho", items: warehouses || [] }];
   const set = (i, np) => onChange(rows.map((r, j) => (j === i ? { ...r, ...np } : r)));
-  const add = () => onChange([...(rows || []), { id: Date.now() + Math.random(), route: "", veTram: "", tienDuong: "", troCap: "", cru: false, luong: "", luongNoCru: "", salaryParts: ["troCap", "luong"], km: "", dau2: "", dau1: "" }]);
+  const add = () => onChange([...(rows || []), { id: Date.now() + Math.random(), route: "", veTram: "", tienDuong: "", troCap: "", cru: false, luong: "", luongNoCru: "", luongNokeo: "", luongNokeoNoCru: "", salaryParts: ["troCap", "luong"], km: "", dau2: "", dau1: "" }]);
   const del = (i) => onChange(rows.filter((_, j) => j !== i));
   const lbl = (t) => <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>{t}</div>;
   return (
@@ -165,22 +165,45 @@ function RouteFees({ rows = [], onChange, warehouses = [], locations = [], isDup
           <div style={{ display: "flex", alignItems: "flex-end", gap: 12, marginBottom: 12 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               {lbl(<>Tuyến · chọn Cảng &amp; Kho <span style={{ color: "var(--ink-4)", fontWeight: 400 }}>(cả chuỗi, vd Cảng → Kho → Kho → Cảng)</span>{dup && <span style={{ color: "var(--danger)", fontWeight: 700, marginLeft: 6 }}>· trùng tuyến</span>}</>)}
-              <MultiCombo values={(r.route || "").split(/\s*-\s*/).filter(Boolean)} onChange={(arr) => set(i, { route: arr.join(" - ") })} groups={routeGroups} max={Infinity} placeholder="Chọn cảng/kho cho tuyến…" />
+              <MultiCombo values={(r.route || "").split(/\s*-\s*/).filter(Boolean)} onChange={(arr) => set(i, { route: arr.join(" - ") })} groups={routeGroups} allowDup max={Infinity} placeholder="Chọn cảng/kho cho tuyến…" />
             </div>
             <button type="button" onClick={() => del(i)} title="Xóa tuyến"
               style={{ flexShrink: 0, width: 36, height: 36, display: "grid", placeItems: "center", border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--ink-4)", cursor: "pointer" }}
               onMouseEnter={(e) => { e.currentTarget.style.background = "#fce8e8"; e.currentTarget.style.color = "var(--danger)"; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "var(--ink-4)"; }}><I.trash /></button>
           </div>
-          {/* Các khoản phí — tích "lương NS" để khoản đó tính vào lương lái xe (mặc định Trợ cấp + Lương) */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, marginBottom: 4 }}>
+          {/* Phí cố định của tuyến */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, marginBottom: 10 }}>
             <div>{lbl("Vé trạm")}<Money value={r.veTram} onChange={(x) => set(i, { veTram: x })} dim />{salChk("veTram")}</div>
             <div>{lbl("Tiền đường")}<Money value={r.tienDuong} onChange={(x) => set(i, { tienDuong: x })} dim />{salChk("tienDuong")}</div>
             <div>{lbl("Trợ cấp")}<Money value={r.troCap} onChange={(x) => set(i, { troCap: x })} dim />{salChk("troCap")}</div>
-            <div>{lbl(<span title="Áp dụng khi xe CÓ kéo cont ra (chuyến lấy/giao cont)">Lương CRU<br /><span style={{ fontWeight: 400, fontSize: 10 }}>(có kéo cont ra)</span></span>)}<Money value={r.luong} onChange={(x) => set(i, { luong: x })} dim />{salChk("luong")}</div>
-            <div>{lbl(<span title="Áp dụng khi xe KHÔNG kéo cont ra (chạy xe không)">Lương không CRU<br /><span style={{ fontWeight: 400, fontSize: 10 }}>(không kéo cont ra)</span></span>)}<Money value={r.luongNoCru} onChange={(x) => set(i, { luongNoCru: x })} dim />{salChk("luong")}</div>
           </div>
-          <div style={{ fontSize: 11, color: "var(--ink-4)", marginBottom: 10 }}>Chuyến xe <b>có kéo cont ra</b> tính theo <b>Lương CRU</b>; chuyến <b>ra xe không kéo cont</b> tính theo <b>Lương không CRU</b>. Tích <b style={{ color: "var(--accent)" }}>chi theo ngày</b> ở khoản nào → khoản đó được tổng hợp trả cho lái xe theo từng chuyến ở <b>Lộ trình</b>. Dầu tính tiền = số lít × <b>giá dầu theo ngày</b> của chuyến.</div>
+          {/* Lương lái xe — 2 chiều: (CÓ/KHÔNG kéo cont ra) × (CRU/không CRU) = 4 mức */}
+          <div style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "11px 12px", marginBottom: 10, background: "#fff" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
+              <i className="bi bi-cash-stack" style={{ color: "var(--accent)", fontSize: 13 }} />
+              <span style={{ fontWeight: 700, fontSize: 12.5 }}>Lương lái xe</span>
+              <span style={{ fontSize: 11, color: "var(--ink-4)" }}>theo <b>kéo cont ra</b> × <b>CRU</b></span>
+              <span style={{ flex: 1 }} />
+              {salChk("luong")}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 10 }}>
+              {[
+                { hd: "Có kéo cont ra", sub: "chuyến lấy/giao cont", cru: "luong", noCru: "luongNoCru" },
+                { hd: "Không kéo cont ra", sub: "ra xe không kéo cont", cru: "luongNokeo", noCru: "luongNokeoNoCru" },
+              ].map((grp) => (
+                <div key={grp.cru} style={{ border: "1px solid var(--line-2)", borderRadius: 9, padding: "9px 10px", background: "#fafbfc" }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--ink-2)", marginBottom: 2 }}>{grp.hd}</div>
+                  <div style={{ fontSize: 10, color: "var(--ink-4)", marginBottom: 7 }}>{grp.sub}</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <div>{lbl("CRU")}<Money value={r[grp.cru]} onChange={(x) => set(i, { [grp.cru]: x })} dim /></div>
+                    <div>{lbl("Không CRU")}<Money value={r[grp.noCru]} onChange={(x) => set(i, { [grp.noCru]: x })} dim /></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={{ fontSize: 11, color: "var(--ink-4)", marginBottom: 10 }}>Lương chọn theo <b>2 điều kiện</b>: chuyến <b>có/không kéo cont ra</b> và lô <b>tích CRU</b> hay không. Tích <b style={{ color: "var(--accent)" }}>chi theo ngày</b> ở khoản nào → khoản đó tổng hợp trả cho lái xe theo từng chuyến ở <b>Lộ trình</b>. Dầu tính tiền = số lít × <b>giá dầu theo ngày</b> của chuyến.</div>
           {/* Định mức km & dầu — dầu có thể tích "chi theo ngày" (tính tiền theo Bảng giá dầu theo ngày) */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
             <div>{lbl("Số km")}<Num value={r.km} onChange={(x) => set(i, { km: x })} suffix="km" /></div>
