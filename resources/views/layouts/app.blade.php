@@ -65,6 +65,12 @@
                             <i class="bi bi-cash-stack"></i> Lương lái xe
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link {{ request()->routeIs('trucking2.report') ? 'active' : '' }}"
+                           href="{{ route('trucking2.report') }}">
+                            <i class="bi bi-bar-chart-line-fill"></i> Báo cáo chi phí
+                        </a>
+                    </li>
                     @endcan
                     @can('tracking.view')
                     <li class="nav-item">

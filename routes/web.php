@@ -22,6 +22,7 @@ use App\Http\Controllers\Trucking\SpendRequestController;
 use App\Http\Controllers\Trucking\StatementController;
 use App\Http\Controllers\Trucking\TrackingController;
 use App\Http\Controllers\Trucking\TripCostController;
+use App\Http\Controllers\Trucking\ReportController;
 use App\Http\Controllers\UserController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -149,6 +150,8 @@ Route::middleware('auth')->group(function () {
             Route::get('/phi-xe/compute',            [TripCostController::class, 'compute'])->name('tripCost.compute');
             Route::get('/phi-xe/{tripCost}/recompute', [TripCostController::class, 'recompute'])->name('tripCost.recompute');
             Route::get('/phi-xe/{tripCost}',         [TripCostController::class, 'view'])->name('tripCost.view');
+            Route::get('/bao-cao',                   [ReportController::class, 'index'])->name('report');
+            Route::get('/bao-cao/data',              [ReportController::class, 'data'])->name('report.data');
         });
         Route::middleware('permission:tripCost.create')->group(function () {
             Route::post('/trip-costs', [TripCostController::class, 'store'])->name('tripCost.store');

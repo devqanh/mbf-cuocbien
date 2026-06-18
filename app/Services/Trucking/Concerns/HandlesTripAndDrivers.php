@@ -13,6 +13,7 @@ use App\Models\TruckingPayer;
 use App\Models\TruckingPriceRow;
 use App\Models\TruckingFuelPrice;
 use App\Models\TruckingRevenueItem;
+use App\Models\TruckingRevenueLine;
 use App\Models\TruckingRouteFee;
 use App\Models\TruckingSalaryItem;
 use App\Models\TruckingTripCostBatch;
@@ -800,6 +801,89 @@ trait HandlesTripAndDrivers
         if ($p) { $p->update($attrs); return $p->fresh(); }
         $attrs['created_by'] = auth()->id();
         return TruckingPayrollPeriod::create($attrs);
+    }
+
+    // ===================================================================
+    // BÁO CÁO CHI PHÍ THÁNG (P&L + cơ cấu chi phí + theo xe) — chỉ ĐỌC
+    // ===================================================================
+
+    /**
+     * Báo cáo chi phí công ty theo THÁNG: Doanh thu − Chi phí = Lợi nhuận, cơ cấu chi phí theo
+     * loại, chi phí theo xe (+ chi phí/chuyến). Gộp 4 nguồn (không trùng nhau theo thiết kế):
+     *  1) Doanh thu = revenue_lines(doanhThu) của lô có Giờ xe ra trong tháng.
+     *  2) Lương & vận hành lái xe = route-pay (dầu/lương/cầu đường/trợ cấp/phát sinh) — loop ngày.
+     *  3) Chi phí xe = vehicle_costs theo spend_date (sửa chữa/khấu hao…).
+     *  4) Chi phí lô hàng = cost_lines KHÔNG phải chi hộ (billable=false).
+     */
+    public function monthlyCostReport(int $year, int $month): array
+    {
+        $start = Carbon::create($year, $month, 1)->startOfDay();
+        $end   = $start->copy()->endOfMonth();
+        $s = $start->format('Y-m-d'); $e = $end->format('Y-m-d');
+
+        // 1) Doanh thu + sản lượng (lô có Giờ xe ra trong tháng)
+        $shipIds = TruckingShipment::whereNotNull('gio_xe_ra')
+            ->whereDate('gio_xe_ra', '>=', $s)->whereDate('gio_xe_ra', '<=', $e)->pluck('id');
+        $revenue = (int) round((float) TruckingRevenueLine::whereIn('shipment_id', $shipIds)->where('kind', 'doanhThu')->sum('amount'));
+
+        $cat = [];                 // label => amount (cơ cấu chi phí)
+        $byPlate = [];             // bks => ['cost'=>, 'trips'=>]
+        $addCat = function ($label, $amt) use (&$cat) { $amt = (int) round((float) $amt); if ($amt) $cat[$label] = ($cat[$label] ?? 0) + $amt; };
+        $addPlate = function ($bks, $amt) use (&$byPlate) { $bks = $bks ?: '—'; $byPlate[$bks] ??= ['cost' => 0, 'trips' => 0]; $byPlate[$bks]['cost'] += (int) round((float) $amt); };
+
+        // 2) Lương & vận hành lái xe (route-pay) — loop từng ngày trong tháng
+        $catMap = ['veTram' => 'Cầu đường, vé trạm', 'tienDuong' => 'Cầu đường, vé trạm', 'troCap' => 'Trợ cấp',
+                   'luong' => 'Lương lái xe', 'dau1' => 'Dầu', 'dau2' => 'Dầu', 'extra' => 'Phụ phí tuyến'];
+        $totalTrips = 0;
+        for ($d = $start->copy(); $d->lte($end); $d->addDay()) {
+            $day = $this->routeTripByDate($d->format('Y-m-d'));
+            foreach ($day['trucks'] as $t) {
+                $bks = $t['bks'];
+                foreach ($t['payGroups'] as $g) {
+                    $totalTrips++; $byPlate[$bks] ??= ['cost' => 0, 'trips' => 0]; $byPlate[$bks]['trips']++;
+                    foreach (array_merge($g['items'] ?? [], $g['payrollItems'] ?? []) as $it) {
+                        $label = $catMap[$it['key'] ?? ''] ?? 'Phát sinh chuyến';
+                        $addCat($label, $it['amount'] ?? 0); $addPlate($bks, $it['amount'] ?? 0);
+                    }
+                    foreach ($g['manual'] ?? [] as $m) { $addCat('Phát sinh chuyến', $m['amount'] ?? 0); $addPlate($bks, $m['amount'] ?? 0); }
+                }
+            }
+        }
+
+        // 3) Chi phí xe (vehicle_costs) theo spend_date
+        foreach (TruckingVehicleCost::with('vehicle:id,plate')->whereNotNull('spend_date')
+            ->whereDate('spend_date', '>=', $s)->whereDate('spend_date', '<=', $e)->get() as $vc) {
+            $label = 'Chi phí xe' . (trim((string) $vc->name) !== '' ? ' · ' . trim((string) $vc->name) : '');
+            $addCat($label, $vc->amount); $addPlate($vc->vehicle?->plate ?? '—', $vc->amount);
+        }
+
+        // 4) Chi phí lô hàng (cost_lines, KHÔNG tính chi hộ khách)
+        foreach (TruckingCostLine::whereIn('shipment_id', $shipIds)
+            ->where(fn ($q) => $q->where('billable', false)->orWhereNull('billable'))->get(['item', 'amount']) as $cl) {
+            $addCat('Chi phí lô · ' . (trim((string) $cl->item) ?: 'khác'), $cl->amount);
+        }
+
+        $totalCost = array_sum($cat);
+        arsort($cat);
+        $costByCategory = [];
+        foreach ($cat as $label => $amt) {
+            $costByCategory[] = ['label' => $label, 'amount' => $amt, 'pct' => $totalCost ? round($amt * 100 / $totalCost, 1) : 0];
+        }
+        $costByVehicle = [];
+        foreach ($byPlate as $bks => $v) {
+            $costByVehicle[] = ['bks' => $bks, 'cost' => $v['cost'], 'trips' => $v['trips'], 'perTrip' => $v['trips'] ? (int) round($v['cost'] / $v['trips']) : 0];
+        }
+        usort($costByVehicle, fn ($a, $b) => $b['cost'] <=> $a['cost']);
+
+        $profit = $revenue - $totalCost;
+        return [
+            'year' => $year, 'month' => $month, 'monthLabel' => sprintf('%02d/%d', $month, $year),
+            'revenue' => $revenue, 'totalCost' => $totalCost, 'profit' => $profit,
+            'margin' => $revenue ? round($profit * 100 / $revenue, 1) : 0,
+            'trips' => $totalTrips, 'conts' => $shipIds->count(), 'vehicles' => count($byPlate),
+            'costByCategory' => $costByCategory,
+            'costByVehicle' => $costByVehicle,
+        ];
     }
 
     /** Chuẩn hóa "lương phát sinh" thêm tay: {name, amount}; bỏ dòng rỗng. */
