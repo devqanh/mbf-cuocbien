@@ -30,4 +30,8 @@ metadata:
 
 **CẦN chạy VPS:** `php artisan migrate`.
 
-Liên quan [[shipment-spend-duyet-chi]], [[phi-xe-batch-model]], [[route-trips]], [[ra-status-rule]], [[coded-catalog-edit]].
+**Đóng băng (chốt) ngày:** nút "Chốt ngày" ở Lộ trình → `freezeDay($date,$frozen)` snapshot payGroups/tổng mọi xe vào `route_pays.frozen_data` (cột frozen/frozen_at/frozen_data, migration `2026_06_18_000008`). routeTripByDate ƯU TIÊN frozen_data nếu đã chốt → số tiền KHÔNG đổi dù sửa Phí tuyến; kỳ lương tự dùng số đã chốt. Route `loTrinh.freeze`. Badge "Đã chốt" trên header xe.
+
+**Chi tiết kế toán (kỳ lương /phi-xe):** component dùng chung `components/payroll-detail.jsx` — `PayrollDetail` (click bks → bung 2 cột: ĐÃ CHI THEO NGÀY | LƯƠNG CHƯA CHI, gom theo ngày+chuyến) + `PaymentsEditor` (các đợt thanh toán {date,amount,note}, trả chậm/chia đợt → Còn lại = payroll − Σ). savePayroll lưu `payments`+`detail` mỗi line; phi-xe-xem có cột Đã trả/Còn lại.
+
+Liên quan [[shipment-spend-duyet-chi]], [[phi-xe-batch-model]], [[payroll-period-plan]], [[route-trips]], [[ra-status-rule]], [[coded-catalog-edit]].

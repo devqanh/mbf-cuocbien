@@ -11,7 +11,7 @@ class TruckingPayrollPeriod extends Model
     use HasHashid;
 
     protected $fillable = [
-        'no', 'name', 'period_from', 'period_to', 'total', 'paid_daily', 'lines', 'note', 'created_by',
+        'no', 'name', 'period_from', 'period_to', 'total', 'paid_daily', 'locked', 'locked_at', 'lines', 'note', 'created_by',
     ];
 
     protected $casts = [
@@ -19,6 +19,8 @@ class TruckingPayrollPeriod extends Model
         'period_to'   => 'date',
         'total'       => 'decimal:2',
         'paid_daily'  => 'decimal:2',
+        'locked'      => 'boolean',
+        'locked_at'   => 'datetime',
         'lines'       => 'array',
     ];
 }

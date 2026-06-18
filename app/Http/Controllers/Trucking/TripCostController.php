@@ -31,6 +31,12 @@ class TripCostController extends BaseTruckingController
         return response()->json(['ok' => true] + $this->svc->computePayroll($from, $to));
     }
 
+    /** Tính lại kỳ lương theo cấu hình hiện tại (trả rows mới, FE gộp & lưu sau). */
+    public function recompute(TruckingPayrollPeriod $tripCost): JsonResponse
+    {
+        return response()->json(['ok' => true] + $this->svc->recomputePayroll($tripCost));
+    }
+
     /** Trang Xem 1 kỳ lương đã lưu (snapshot). */
     public function view(TruckingPayrollPeriod $tripCost)
     {

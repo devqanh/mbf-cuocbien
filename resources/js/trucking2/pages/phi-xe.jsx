@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import "@trk/shared.js";
 
 const { useState } = React;
-import { I, Btn, fmtVND } from "@trk/lib.jsx";
+import { I, Btn, fmtVND, fmtDate } from "@trk/lib.jsx";
 
 function TripBatchesApp() {
   const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
@@ -64,7 +64,7 @@ function TripBatchesApp() {
                     onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg)")} onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
                     <td style={{ ...td, fontWeight: 700 }} className="tnum">{b.no}</td>
                     <td style={{ ...td, color: "var(--ink-3)" }}>{b.name || "—"}</td>
-                    <td style={td} className="tnum">{b.from || "?"} → {b.to || "?"}</td>
+                    <td style={td} className="tnum">{fmtDate(b.from) || "?"} → {fmtDate(b.to) || "?"}</td>
                     <td style={{ ...td, textAlign: "center" }} className="tnum">{b.count}</td>
                     <td style={{ ...td, textAlign: "right", fontWeight: 700, color: "var(--accent)" }} className="tnum">{fmtVND(b.total)}</td>
                     <td style={{ ...td, textAlign: "center" }}>

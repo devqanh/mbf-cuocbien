@@ -16,7 +16,7 @@ window.__TRK = {
     list: '{{ route("trucking2.tripCost") }}',
     update: '{{ url("trucking-v2/trip-costs") }}/',
     destroy: '{{ url("trucking-v2/trip-costs") }}/',
-    context: '{{ url("trucking-v2/phi-xe") }}/',
+    recompute: '{{ url("trucking-v2/phi-xe") }}/',
   },
   boot: @json($boot),
 };

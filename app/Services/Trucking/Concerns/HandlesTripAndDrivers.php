@@ -723,9 +723,19 @@ trait HandlesTripAndDrivers
             'to'    => $this->outDate($p->period_to),
             'total'     => (int) round((float) $p->total),
             'paidDaily' => (int) round((float) $p->paid_daily),
+            'locked'    => (bool) $p->locked,
+            'lockedAt'  => $p->locked_at ? $p->locked_at->format('d/m/Y H:i') : '',
             'note'  => $p->note ?? '',
             'rows'  => is_array($p->lines) ? $p->lines : [],
         ];
+    }
+
+    /** Tính lại kỳ lương từ cấu hình hiện tại (theo khoảng ngày của kỳ) — trả rows mới để FE gộp. */
+    public function recomputePayroll(TruckingPayrollPeriod $p): array
+    {
+        $from = $p->period_from ? $p->period_from->format('Y-m-d') : null;
+        $to   = $p->period_to ? $p->period_to->format('Y-m-d') : null;
+        return $this->computePayroll($from, $to);
     }
 
     private function nextPayrollNo(): string
@@ -755,21 +765,26 @@ trait HandlesTripAndDrivers
         foreach (array_values($data['rows'] ?? []) as $r) {
             $bks = $this->str($r['bks'] ?? null) ?? '';
             if ($bks === '') continue;
-            $payroll = (int) round((float) ($r['total'] ?? $r['payroll'] ?? 0));
-            $pd      = (int) round((float) ($r['paidDaily'] ?? 0));
+            $base     = (int) round((float) ($r['payroll'] ?? $r['total'] ?? 0));   // lương gốc (từ phí tuyến)
+            $extraPay = $this->extraPayIn($r['extraPay'] ?? null);                  // lương phát sinh thêm tay
+            $eff      = $base + array_sum(array_column($extraPay, 'amount'));        // lương phải trả = gốc + phát sinh
+            $pd       = (int) round((float) ($r['paidDaily'] ?? 0));
             $lines[] = [
                 'bks'       => $bks,
                 'driver'    => $this->str($r['driver'] ?? null) ?? '',
                 'days'      => (int) ($r['days'] ?? 0),
                 'trips'     => (int) ($r['trips'] ?? 0),
                 'paidDaily' => $pd,
-                'payroll'   => $payroll,
+                'payroll'   => $base,
+                'extraPay'  => $extraPay,
+                'total'     => $eff,
                 'note'      => $this->str($r['note'] ?? null) ?? '',
                 'detail'    => is_array($r['detail'] ?? null) ? $r['detail'] : (is_array($r['lines'] ?? null) ? $r['lines'] : []),
                 'payments'  => $this->paymentsIn($r['payments'] ?? null),   // các đợt thanh toán (trả chậm/chia đợt)
             ];
-            $total += $payroll; $paidDaily += $pd;
+            $total += $eff; $paidDaily += $pd;
         }
+        $locked = ! empty($data['locked']);
         $attrs = [
             'no'          => $this->str($data['no'] ?? null) ?: $this->nextPayrollNo(),
             'name'        => $this->str($data['name'] ?? null),
@@ -777,12 +792,29 @@ trait HandlesTripAndDrivers
             'period_to'   => $this->inDate($data['to'] ?? null),
             'total'       => $total,
             'paid_daily'  => $paidDaily,
+            'locked'      => $locked,
+            'locked_at'   => $locked ? ($p && $p->locked_at ? $p->locked_at : now()) : null,
             'lines'       => $lines,
             'note'        => $this->str($data['note'] ?? null),
         ];
         if ($p) { $p->update($attrs); return $p->fresh(); }
         $attrs['created_by'] = auth()->id();
         return TruckingPayrollPeriod::create($attrs);
+    }
+
+    /** Chuẩn hóa "lương phát sinh" thêm tay: {name, amount}; bỏ dòng rỗng. */
+    private function extraPayIn($items): array
+    {
+        if (! is_array($items)) return [];
+        $out = [];
+        foreach ($items as $it) {
+            if (! is_array($it)) continue;
+            $name = $this->str($it['name'] ?? null) ?? '';
+            $amount = $this->inMoney($it['amount'] ?? null) ?? 0;
+            if ($name === '' && $amount <= 0) continue;
+            $out[] = ['name' => $name, 'amount' => $amount];
+        }
+        return $out;
     }
 
 }

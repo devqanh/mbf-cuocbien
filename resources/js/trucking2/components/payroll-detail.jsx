@@ -1,5 +1,5 @@
 import React from "react";
-import { I, Money, DateField, Txt, fmtVND, fmtNum, toNum } from "@trk/lib.jsx";
+import { I, Money, DateField, Txt, fmtVND, fmtNum, fmtDate, toNum } from "@trk/lib.jsx";
 
 /* Gộp khoản phí tuyến + chi khác thủ công của 1 chuyến thành 2 rổ hiển thị cho kế toán. */
 function splitGroup(g) {
@@ -30,7 +30,7 @@ export function PayrollDetail({ row }) {
         if (!groups.length) return null;
         return (
           <div key={li} style={{ marginBottom: 8 }}>
-            <div style={{ fontSize: 10.5, color: "var(--ink-4)", fontWeight: 600 }} className="tnum">{ln.date}</div>
+            <div style={{ fontSize: 10.5, color: "var(--ink-4)", fontWeight: 600 }} className="tnum">{fmtDate(ln.date)}</div>
             {groups.map((x, gi) => (
               <div key={gi} style={{ margin: "3px 0 5px", paddingLeft: 8, borderLeft: "2px solid var(--line-2)" }}>
                 <div className="tnum" style={{ fontSize: 11, color: "var(--ink-3)", fontWeight: 600 }}>{x.g.route}{x.g.cont ? " · " + x.g.cont : ""}</div>
@@ -62,6 +62,28 @@ export function PayrollDetail({ row }) {
         <div style={{ flex: 1 }}>Σ đã chi theo ngày: <b className="tnum" style={{ color: "var(--ink-2)" }}>{fmtVND(totDaily)}</b></div>
         <div style={{ flex: 1 }}>Σ lương phải trả: <b className="tnum" style={{ color: "var(--accent)" }}>{fmtVND(totPayroll)}</b></div>
       </div>
+    </div>
+  );
+}
+
+/* LƯƠNG PHÁT SINH thêm tay cho kỳ (ngoài phí tuyến) — cộng vào "lương phải trả". */
+export function ExtraPayEditor({ items = [], onChange, disabled = false }) {
+  const list = Array.isArray(items) ? items : [];
+  const upd = (k, np) => onChange(list.map((p, j) => (j === k ? { ...p, ...np } : p)));
+  return (
+    <div style={{ padding: "10px 14px", borderTop: "1px dashed var(--line)" }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", marginBottom: 7 }}><i className="bi bi-plus-slash-minus" /> Lương phát sinh (thêm cho kỳ này)</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {list.map((p, k) => (
+          <div key={k} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input value={p.name || ""} disabled={disabled} onChange={(e) => upd(k, { name: e.target.value })} placeholder="Tên khoản lương phát sinh" style={{ flex: 1, minWidth: 0, padding: "6px 9px", fontSize: 12.5, border: "1px solid var(--line)", borderRadius: 7, outline: "none", background: disabled ? "var(--line-2)" : "#fff" }} />
+            <div style={{ width: 130 }}><Money value={p.amount} onChange={(v) => upd(k, { amount: v })} dim /></div>
+            {!disabled && <button type="button" onClick={() => onChange(list.filter((_, j) => j !== k))} title="Xóa" style={{ flexShrink: 0, width: 28, height: 28, display: "grid", placeItems: "center", border: "1px solid var(--line)", borderRadius: 7, background: "#fff", color: "var(--ink-4)", cursor: "pointer" }}><I.x /></button>}
+          </div>
+        ))}
+        {!list.length && <div style={{ fontSize: 12, color: "var(--ink-4)" }}>Chưa có khoản lương phát sinh.</div>}
+      </div>
+      {!disabled && <button type="button" onClick={() => onChange([...list, { name: "", amount: "" }])} style={{ marginTop: 7, display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 11px", fontSize: 12, fontWeight: 600, border: "1px dashed var(--line)", borderRadius: 8, background: "#fff", color: "var(--accent)", cursor: "pointer" }}><I.plus /> Thêm lương phát sinh</button>}
     </div>
   );
 }

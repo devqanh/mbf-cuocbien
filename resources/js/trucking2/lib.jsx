@@ -81,11 +81,11 @@ function Payer({ value, onChange, placeholder = "Bên TT…" }) {
     </div>
   );
 }
-function Txt({ value, onChange, placeholder }) {
+function Txt({ value, onChange, placeholder, disabled = false }) {
   return (
-    <input value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
-      style={{ width: "100%", padding: "8px 11px", fontSize: 13.5, background: "#fff", border: "1px solid var(--line)", borderRadius: 9, outline: "none" }}
-      onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.boxShadow = "0 0 0 3px var(--accent-weak)"; }}
+    <input value={value || ""} disabled={disabled} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
+      style={{ width: "100%", padding: "8px 11px", fontSize: 13.5, background: disabled ? "var(--line-2)" : "#fff", border: "1px solid var(--line)", borderRadius: 9, outline: "none", color: disabled ? "var(--ink-3)" : "inherit" }}
+      onFocus={(e) => { if (disabled) return; e.target.style.borderColor = "var(--accent)"; e.target.style.boxShadow = "0 0 0 3px var(--accent-weak)"; }}
       onBlur={(e) => { e.target.style.borderColor = "var(--line)"; e.target.style.boxShadow = "none"; }} />
   );
 }
