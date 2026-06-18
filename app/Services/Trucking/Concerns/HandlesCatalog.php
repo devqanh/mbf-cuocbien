@@ -232,8 +232,12 @@ trait HandlesCatalog
             ];
         }
         if ($key === 'routeFees') {
-            // kèm danh sách kho để chọn tuyến (MultiCombo)
-            return ['routeFees' => $this->routeFees(), 'warehouses' => TruckingWarehouse::orderBy('sort')->orderBy('name')->pluck('name')->all()];
+            // kèm danh sách KHO + ĐỊA ĐIỂM (cảng) để chọn cả chuỗi tuyến Cảng→Kho→Kho→Cảng (MultiCombo groups)
+            return [
+                'routeFees'  => $this->routeFees(),
+                'warehouses' => TruckingWarehouse::orderBy('sort')->orderBy('name')->pluck('name')->all(),
+                'locations'  => TruckingLocation::orderBy('sort')->orderBy('name')->pluck('name')->all(),
+            ];
         }
         if ($key === 'fuelPrices') {
             return ['fuelPrices' => $this->fuelPrices()];

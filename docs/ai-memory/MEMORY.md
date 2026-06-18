@@ -24,7 +24,8 @@
 - [Date fields](date-fields.md) — input ngày/giờ React dùng DateField/DTField (Flatpickr locale VN, fallback native), KHÔNG dùng type=date native; trừ 2 trang public lái xe
 - [Ra status rule](ra-status-rule.md) — "đã ra" = có Giờ xe ra (gio_xe_ra) HOẶC Biển số ra (bks_ra); xe ngoài không có BKS nên giờ ra là đủ; áp ở badge/tab lọc/ô chọn cont khác ra; có ra_mode self/other/none (none→gio_xe_ra_xe cột riêng)
 - [Coded catalog edit](coded-catalog-edit.md) — Địa điểm/Kho cho sửa ký hiệu; reconcileLookup khớp theo id (idArr) giữ id khi đổi code, không đứt link; vẫn chặn trùng mã
-- [Duyệt chi theo lô](shipment-spend-duyet-chi.md) — popup Duyệt chi (theo BKS) thay Doanh thu&công nợ; bảng trucking_shipment_spends (salary/company), gợi ý từ route fee; Phí xe hiện Kế hoạch/Đã chi/Còn lại
+- [Duyệt chi theo lô (ĐÃ BỎ)](shipment-spend-duyet-chi.md) — đã gỡ "chi cho tài xế" khỏi Lô hàng + drop trucking_shipment_spends; chi lái nay ở Lộ trình
+- [Chi lái ở Lộ trình](route-pays-lo-trinh.md) — phí tuyến chọn Cảng+Kho, "chi theo ngày" tổng hợp theo xe/ngày, lương theo kéo-cont-ra; bảng trucking_route_pays (chỉ lưu lái nhận + đã chi)
 - [Verify không phá data](verify-no-destructive-save.md) — đừng gọi saveCatalog/reconcile thật khi test (nó xóa dòng thiếu trong payload); dùng transaction rollback / chỉ test hàm đọc
 - [Phân quyền hệ thống](permissions-system.md) — Spatie; /roles liệt kê Permission DB + config/permissions.php; KHÔNG có Gate::before nên thêm quyền phải gán tường minh (migration); đã tách tripCost/fleet/tracking/tasks.update+delete
 - [Lộ trình chuyến](route-trips.md) — trang /lo-trinh: 1 lộ trình/xe/ngày vận hành 08:00→08:00, timeline xe vào/ra+số cont, gom theo bks_vao + ra_mode (self/none/other), dedup cont kéo khác ra; command trucking:seed-routes test

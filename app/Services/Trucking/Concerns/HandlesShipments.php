@@ -415,10 +415,11 @@ trait HandlesShipments
         if (! $parts) return [];
         $route = trim((string) $rf->route) ?: ($this->khoRouteDisplay($leg['kho'] ?? '') ?: ($leg['kho'] ?? ''));
         $items = [];
-        $push = function ($key, $label, $amount) use (&$items, $parts, $route, $leg) {
+        // Mỗi khoản kèm tham chiếu chuyến (route + cont) để Lộ trình GOM theo tuyến cho kế toán rà soát.
+        $push = function ($key, $label, $amount, array $extra = []) use (&$items, $parts, $route, $leg) {
             $amount = (int) round((float) $amount);
             if (! in_array($key, $parts, true) || $amount <= 0) return;
-            $items[] = ['key' => $key, 'label' => $label, 'amount' => $amount, 'route' => $route, 'cont' => $leg['cont'] ?? ''];
+            $items[] = ['key' => $key, 'label' => $label, 'amount' => $amount, 'route' => $route, 'cont' => $leg['cont'] ?? ''] + $extra;
         };
         $push('veTram', 'Vé trạm', $rf->ve_tram);
         $push('tienDuong', 'Tiền đường', $rf->tien_duong);
@@ -430,7 +431,9 @@ trait HandlesShipments
         $dauKey = $is2 ? 'dau2' : 'dau1';
         if (in_array($dauKey, $parts, true)) {
             $liters = (float) ($is2 ? $rf->dau_2cau : $rf->dau_1cau);
-            $push($dauKey, 'Dầu ' . ($is2 ? '2 cầu' : '1 cầu'), $liters * $this->fuelPriceForDate($fuels, $date));
+            $unit   = (float) $this->fuelPriceForDate($fuels, $date);   // đơn giá dầu theo NGÀY của chuyến
+            // Kèm số lít + đơn giá để kế toán rà soát: tiền = lít × đơn giá.
+            $push($dauKey, 'Dầu ' . ($is2 ? '2 cầu' : '1 cầu'), $liters * $unit, ['liters' => $liters, 'unitPrice' => (int) round($unit)]);
         }
         return $items;
     }

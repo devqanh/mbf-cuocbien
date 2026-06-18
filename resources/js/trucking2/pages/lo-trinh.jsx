@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import "@trk/shared.js";
 
 const { useState, useEffect, useRef } = React;
-import { I, useIsMobile, DateField, Combo, Modal, Btn, fmtVND } from "@trk/lib.jsx";
+import { I, useIsMobile, DateField, Combo, Modal, Btn, fmtVND, fmtNum } from "@trk/lib.jsx";
 
 /* Popup chi cho lái xe (theo ngày + xe): tổng các khoản "chi theo ngày" từ Phí tuyến + chọn lái nhận. */
 function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
@@ -12,6 +12,14 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const items = truck.payItems || [];
   const total = truck.payTotal || 0;
+  // Gom theo TỪNG CHUYẾN (tuyến + cont) để kế toán rà soát chi tiết từng lượt.
+  const groups = [];
+  const gmap = {};
+  items.forEach((it) => {
+    const k = (it.route || "") + "¦" + (it.cont || "");
+    if (!gmap[k]) { gmap[k] = { route: it.route || "—", cont: it.cont || "", items: [], sub: 0 }; groups.push(gmap[k]); }
+    gmap[k].items.push(it); gmap[k].sub += it.amount || 0;
+  });
   const save = () => {
     if (saving) return; setSaving(true);
     window.trkApi("POST", (window.__TRK.routes || {}).savePay, { date, bks: truck.bks, driver, paid })
@@ -30,17 +38,31 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
         {items.length === 0 ? (
           <div style={{ padding: "14px", fontSize: 13, color: "var(--ink-4)", background: "#fafbfc", border: "1px dashed var(--line)", borderRadius: 10 }}>Không có khoản "chi theo ngày" nào khớp Phí tuyến cho các chuyến hôm nay. Kiểm tra tuyến (tập kho) + tick "chi theo ngày" trong Cài đặt phí tuyến.</div>
         ) : (
-          <div style={{ border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
-            {items.map((it, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderTop: i ? "1px solid var(--line-2)" : "none", fontSize: 13 }}>
-                <span style={{ fontWeight: 600 }}>{it.label}</span>
-                <span style={{ fontSize: 11.5, color: "var(--ink-4)" }} className="tnum">{it.route}{it.cont ? " · " + it.cont : ""}</span>
-                <span style={{ flex: 1 }} />
-                <span className="tnum" style={{ fontWeight: 600 }}>{fmtVND(it.amount)}</span>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {groups.map((g, gi) => (
+              <div key={gi} style={{ border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
+                {/* Header tuyến: lộ trình + cont + tổng phụ của chuyến */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "var(--accent-weak)", borderBottom: "1px solid var(--line-2)" }}>
+                  <i className="bi bi-signpost-split" style={{ color: "var(--accent)", fontSize: 13 }} />
+                  <span className="tnum" style={{ fontWeight: 700, fontSize: 12.5, color: "var(--accent)" }}>{g.route}</span>
+                  {g.cont ? <span className="tnum" style={{ fontSize: 11, color: "var(--ink-4)", fontWeight: 600 }}>· cont {g.cont}</span> : null}
+                  <span style={{ flex: 1 }} />
+                  <span className="tnum" style={{ fontWeight: 700, fontSize: 12.5 }}>{fmtVND(g.sub)}</span>
+                </div>
+                {g.items.map((it, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", borderTop: i ? "1px solid var(--line-2)" : "none", fontSize: 13 }}>
+                    <span style={{ fontWeight: 600 }}>{it.label}</span>
+                    {it.liters != null && it.unitPrice != null
+                      ? <span style={{ fontSize: 11.5, color: "var(--ink-4)" }} className="tnum">{fmtNum(it.liters)} lít × {fmtVND(it.unitPrice)}/lít</span>
+                      : null}
+                    <span style={{ flex: 1 }} />
+                    <span className="tnum" style={{ fontWeight: 600 }}>{fmtVND(it.amount)}</span>
+                  </div>
+                ))}
               </div>
             ))}
-            <div style={{ display: "flex", alignItems: "center", padding: "9px 12px", borderTop: "1.5px solid var(--line)", background: "#fafbfc" }}>
-              <span style={{ fontWeight: 700 }}>Tổng chi cho lái</span><span style={{ flex: 1 }} />
+            <div style={{ display: "flex", alignItems: "center", padding: "10px 12px", border: "1.5px solid var(--accent)", borderRadius: 10, background: "var(--accent-weak)" }}>
+              <span style={{ fontWeight: 700 }}>Tổng chi cho lái <span style={{ fontWeight: 400, fontSize: 12, color: "var(--ink-4)" }}>({groups.length} chuyến)</span></span><span style={{ flex: 1 }} />
               <span className="tnum" style={{ fontWeight: 800, fontSize: 16, color: "var(--accent)" }}>{fmtVND(total)}</span>
             </div>
           </div>
