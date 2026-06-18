@@ -150,17 +150,13 @@ trait HandlesShipments
         // --- Aggregate toàn cục trên tập đã tìm ---
         $totalCost = (int) round((float) TruckingCostLine::whereIn('shipment_id', $searched()->select('id'))->sum('amount'));
 
-        // "Đã ra" = đã có GIỜ XE RA (hoặc Biển số ra). Ưu tiên giờ xe ra vì xe thuê ngoài
-        // nhiều khi không cập nhật được biển số → chỉ cần có giờ ra là coi như đã ra.
+        // "Đã ra" = CONT này có GIỜ XE RA (gio_xe_ra) của chính nó. CHỈ xét gio_xe_ra — không xét bks_ra
+        // (BKS có thể chỉ là xe kéo, chưa chắc cont đã ra) cũng không xét việc xe kéo cont KHÁC ra.
         $applyOut = function ($q) {
-            return $q->where(function ($w) {
-                $w->where(fn ($a) => $a->whereNotNull('gio_xe_ra')->where('gio_xe_ra', '!=', ''))
-                  ->orWhere(fn ($a) => $a->whereNotNull('bks_ra')->where('bks_ra', '!=', ''));
-            });
+            return $q->whereNotNull('gio_xe_ra')->where('gio_xe_ra', '!=', '');
         };
         $applyNotOut = function ($q) {
-            return $q->where(fn ($a) => $a->whereNull('gio_xe_ra')->orWhere('gio_xe_ra', ''))
-                     ->where(fn ($a) => $a->whereNull('bks_ra')->orWhere('bks_ra', ''));
+            return $q->where(fn ($a) => $a->whereNull('gio_xe_ra')->orWhere('gio_xe_ra', ''));
         };
 
         $allCount = $searched()->count();

@@ -413,10 +413,10 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
       setCostItems(costItems.filter((it) => it.src !== "thanhLyFee"));
     }
   };
-  // Chỉ liệt kê cont CHƯA RA = chưa có Giờ xe ra VÀ chưa có Biển số ra (khớp quy tắc "có giờ ra = đã ra").
+  // Chỉ liệt kê cont CHƯA RA = chưa có Giờ xe ra (của cont) — khớp quy tắc "đã ra = có gio_xe_ra".
   // Giữ cont đang chọn để không mất hiển thị lựa chọn.
   const sibOpts = siblings
-    .filter((s) => (!(s.gioXeRa || "").trim() && !(s.bksRa || "").trim()) || s.id === ship.raOtherId)
+    .filter((s) => !(s.gioXeRa || "").trim() || s.id === ship.raOtherId)
     .map((s) => ({ value: s.id, label: (s.contNo || "(chưa có cont)") + " — " + (s.booking || "(chưa có booking)") }));
   const raMode = ship.raMode || "self";
   const other = (raMode === "other" && ship.raOtherId != null) ? siblings.find((s) => s.id === ship.raOtherId) : null;

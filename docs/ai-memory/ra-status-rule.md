@@ -20,7 +20,7 @@ Phân biệt 3 field dễ nhầm: `gio_xe_ra` (Giờ xe ra, tính free time) ≠
 
 **Trường hợp giờ xe ra (`ra_mode`) — 3 lựa chọn trong popup (mục Free time & kết nối):**
 - `self` (Chính cont này) → `gio_xe_ra` = giờ ra **của cont** (lô này).
-- `other` (Cont khác ra) → ghi `gio_xe_ra`+`bks_ra` vào **cont khác** (`ra_other_id`); lô này để trống.
+- `other` (Cont khác ra) → ghi `gio_xe_ra`+`bks_ra` vào **cont khác** (`ra_other_id`); lô này để trống. UI: ô "Giờ xe ra (của cont)" hiện **"Để trống — cont khác kéo ra"** (KHÔNG hiện giờ cont khác), free time tính theo giờ ra của CHÍNH cont (other → không có free time), + dòng xác nhận "BKS X kéo cont Y ra lúc Z". onPick other/none xóa luôn gioXeRa+bksRa cont hiện tại; backend guard ép null khi ra_mode other/none (commit 89de067).
 - `none` (Không kéo công ra) → xe ra nhưng KHÔNG kéo cont nào; ghi vào **cột RIÊNG `gio_xe_ra_xe`** (giờ ra của XE/đầu kéo) để sau tính phí hạng mục khác. `gio_xe_ra` (cont) GIỮ TRỐNG → lô vẫn "**chưa ra**" (đúng: cont không ra). Migration `2026_06_15_000002`.
 
 **`gio_xe_ra` LUÔN là giờ của CONT; `gio_xe_ra_xe` là giờ của XE (chỉ dùng khi ra_mode='none').** Quy tắc "đã ra" CHỈ xét `gio_xe_ra`+`bks_ra` (KHÔNG xét `gio_xe_ra_xe`) — đừng nhầm. UI: nhãn ô đổi động "Giờ xe ra (của cont)" / "(của XE)"; đổi trường hợp thì tự dọn field còn lại (popups.jsx) để 2 mốc không lẫn.
