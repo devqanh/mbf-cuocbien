@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import "@trk/shared.js";
 
 const { useState, useEffect, useRef } = React;
-import { I, useIsMobile, DateField, Combo, Modal, Btn, fmtVND, fmtNum } from "@trk/lib.jsx";
+import { I, useIsMobile, DateField, Combo, Modal, Btn, Money, fmtVND, fmtNum, toNum } from "@trk/lib.jsx";
 
 /* Popup chi cho lái xe (theo ngày + xe): tổng các khoản "chi theo ngày" từ Phí tuyến + chọn lái nhận. */
 function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
@@ -12,11 +12,28 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   // Mỗi CHUYẾN = 1 nhóm (backend đã gom, kể cả chuyến KHÔNG khớp phí tuyến → có note cảnh báo).
   const groups = truck.payGroups || [];
-  const total = truck.payTotal || 0;
-  const warnCount = groups.filter((g) => g.note).length;
+  // Chi khác phát sinh THỦ CÔNG theo từng chuyến — state song song groups, init từ g.manual (đã lưu).
+  const [extras, setExtras] = useState(() => groups.map((g) => (g.manual || []).map((m) => ({ ...m }))));
+  const setGE = (gi, arr) => setExtras((prev) => prev.map((x, j) => (j === gi ? arr : x)));
+  const updEx = (gi, k, np) => setGE(gi, (extras[gi] || []).map((m, j) => (j === k ? { ...m, ...np } : m)));
+  const addEx = (gi) => setGE(gi, [...(extras[gi] || []), { name: "", amount: "", perDay: true }]);
+  const delEx = (gi, k) => setGE(gi, (extras[gi] || []).filter((_, j) => j !== k));
+
+  const computedSub = (g) => (g.items || []).reduce((s, it) => s + (it.amount || 0), 0);
+  const manualSub = (gi) => (extras[gi] || []).reduce((s, m) => s + (m.perDay !== false ? toNum(m.amount) : 0), 0);
+  const groupTotal = (g, gi) => computedSub(g) + manualSub(gi);
+  const total = groups.reduce((s, g, gi) => s + groupTotal(g, gi), 0);
+  // Cảnh báo: chuyến KHÔNG khớp phí tuyến VÀ chưa thêm chi khác thủ công nào.
+  const warnCount = groups.filter((g, gi) => g.note && manualSub(gi) <= 0).length;
+
   const save = () => {
     if (saving) return; setSaving(true);
-    window.trkApi("POST", (window.__TRK.routes || {}).savePay, { date, bks: truck.bks, driver, paid })
+    const extraItems = [];
+    groups.forEach((g, gi) => (extras[gi] || []).forEach((m) => {
+      if (!(m.name || "").trim() && !toNum(m.amount)) return;   // bỏ dòng rỗng
+      extraItems.push({ cont: g.cont || "", name: m.name || "", amount: m.amount, perDay: m.perDay !== false });
+    }));
+    window.trkApi("POST", (window.__TRK.routes || {}).savePay, { date, bks: truck.bks, driver, paid, extraItems })
       .then((r) => { if (r && r.ok) { window.trkToast && window.trkToast("Đã lưu chi cho lái"); onSaved({ payDriver: driver, paid }); onClose(); } else { window.trkToast && window.trkToast("Lưu thất bại", "error"); setSaving(false); } })
       .catch(() => { window.trkToast && window.trkToast("Lỗi kết nối", "error"); setSaving(false); });
   };
@@ -26,8 +43,18 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
       <div style={{ display: "flex", gap: 8 }}><Btn onClick={onClose}>Đóng</Btn><Btn variant="primary" onClick={save} disabled={saving}>{saving ? "Đang lưu…" : "Lưu"}</Btn></div>
     </div>
   );
+  // Hàng nhập 1 khoản chi khác thủ công (tên + tiền + xóa)
+  const exRow = (gi, m, k) => (
+    <div key={"m" + k} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderTop: "1px solid var(--line-2)", background: "#fcfdff" }}>
+      <i className="bi bi-plus-circle" style={{ color: "var(--accent)", fontSize: 12 }} />
+      <input value={m.name || ""} onChange={(e) => updEx(gi, k, { name: e.target.value })} placeholder="Tên khoản phát sinh"
+        style={{ flex: 1, minWidth: 0, padding: "5px 8px", fontSize: 12.5, border: "1px solid var(--line)", borderRadius: 7, outline: "none" }} />
+      <div style={{ width: 130 }}><Money value={m.amount} onChange={(x) => updEx(gi, k, { amount: x })} dim /></div>
+      <button type="button" onClick={() => delEx(gi, k)} title="Xóa khoản" style={{ flexShrink: 0, width: 26, height: 26, display: "grid", placeItems: "center", border: "1px solid var(--line)", borderRadius: 7, background: "#fff", color: "var(--ink-4)", cursor: "pointer" }}><I.x /></button>
+    </div>
+  );
   return (
-    <Modal title={"Chi cho lái xe · " + truck.bks} subtitle={"Ngày " + date + " · tổng hợp các khoản “chi theo ngày” từ Phí tuyến"} onClose={onClose} footer={footer} width={560} icon={<i className="bi bi-cash-coin" />}>
+    <Modal title={"Chi cho lái xe · " + truck.bks} subtitle={"Ngày " + date + " · phí tuyến (chi theo ngày) + chi khác phát sinh từng chuyến"} onClose={onClose} footer={footer} width={580} icon={<i className="bi bi-cash-coin" />}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {groups.length === 0 ? (
           <div style={{ padding: "14px", fontSize: 13, color: "var(--ink-4)", background: "#fafbfc", border: "1px dashed var(--line)", borderRadius: 10 }}>Xe không có chuyến nào trong ngày.</div>
@@ -36,26 +63,24 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
             {warnCount > 0 && (
               <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "9px 12px", fontSize: 12.5, color: "#a05a00", background: "#fff7e9", border: "1px solid #f1d59a", borderRadius: 10 }}>
                 <i className="bi bi-exclamation-triangle-fill" style={{ marginTop: 1 }} />
-                <span><b>{warnCount}/{groups.length} chuyến chưa ra tiền</b> — kiểm tra Phí tuyến (chọn đủ Cảng + Kho khớp lộ trình + tích "chi theo ngày").</span>
+                <span><b>{warnCount}/{groups.length} chuyến chưa ra tiền</b> — kiểm tra Phí tuyến, hoặc thêm <b>chi khác</b> phát sinh cho chuyến đó bên dưới.</span>
               </div>
             )}
             {groups.map((g, gi) => {
-              const warn = !!g.note;
+              const warn = !!g.note && manualSub(gi) <= 0;
+              const gt = groupTotal(g, gi);
               return (
               <div key={gi} style={{ border: "1px solid " + (warn ? "#f1d59a" : "var(--line)"), borderRadius: 10, overflow: "hidden" }}>
-                {/* Header tuyến: lộ trình + cont + tổng phụ / cảnh báo của chuyến */}
+                {/* Header tuyến: lộ trình + cont + tổng phụ của chuyến */}
                 <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: warn ? "#fff7e9" : "var(--accent-weak)", borderBottom: "1px solid var(--line-2)" }}>
                   <i className={"bi " + (warn ? "bi-exclamation-triangle-fill" : "bi-signpost-split")} style={{ color: warn ? "#c9820f" : "var(--accent)", fontSize: 13 }} />
                   <span className="tnum" style={{ fontWeight: 700, fontSize: 12.5, color: warn ? "#a05a00" : "var(--accent)" }}>{g.route}</span>
                   {g.cont ? <span className="tnum" style={{ fontSize: 11, color: "var(--ink-4)", fontWeight: 600 }}>· cont {g.cont}</span> : null}
                   <span style={{ flex: 1 }} />
-                  {warn
-                    ? <span style={{ fontWeight: 700, fontSize: 12.5, color: "#a05a00" }}>—</span>
-                    : <span className="tnum" style={{ fontWeight: 700, fontSize: 12.5 }}>{fmtVND(g.sub)}</span>}
+                  <span className="tnum" style={{ fontWeight: 700, fontSize: 12.5, color: warn ? "#a05a00" : "var(--ink-1)" }}>{warn ? "—" : fmtVND(gt)}</span>
                 </div>
-                {warn ? (
-                  <div style={{ padding: "8px 12px", fontSize: 12, color: "#a05a00" }}>{g.note}</div>
-                ) : g.items.map((it, i) => (
+                {/* Khoản từ phí tuyến (tự tính, chỉ đọc) */}
+                {(g.items || []).map((it, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", borderTop: i ? "1px solid var(--line-2)" : "none", fontSize: 13 }}>
                     <span style={{ fontWeight: 600 }}>{it.label}</span>
                     {it.liters != null && it.unitPrice != null
@@ -65,6 +90,14 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
                     <span className="tnum" style={{ fontWeight: 600 }}>{fmtVND(it.amount)}</span>
                   </div>
                 ))}
+                {g.note && !(g.items || []).length ? (
+                  <div style={{ padding: "8px 12px", fontSize: 12, color: "#a05a00" }}>{g.note} <span style={{ color: "var(--ink-4)" }}>· có thể thêm chi khác phát sinh bên dưới</span></div>
+                ) : null}
+                {/* Chi khác phát sinh THỦ CÔNG của chuyến này */}
+                {(extras[gi] || []).map((m, k) => exRow(gi, m, k))}
+                <button type="button" onClick={() => addEx(gi)} style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "7px 12px", fontSize: 12, fontWeight: 600, borderTop: "1px dashed var(--line)", background: "#fff", color: "var(--accent)", cursor: "pointer", border: "none" }}>
+                  <I.plus /> Thêm chi khác phát sinh
+                </button>
               </div>
               );
             })}

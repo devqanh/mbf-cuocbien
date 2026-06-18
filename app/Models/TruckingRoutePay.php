@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 class TruckingRoutePay extends Model
 {
     protected $fillable = [
-        'work_date', 'bks', 'vehicle_id', 'driver', 'driver_id', 'paid', 'paid_date', 'note', 'updated_by',
+        'work_date', 'bks', 'vehicle_id', 'driver', 'driver_id', 'paid', 'paid_date', 'note', 'extra_items', 'updated_by',
     ];
 
     protected $casts = [
@@ -17,5 +17,6 @@ class TruckingRoutePay extends Model
         'paid_date' => 'date',
         'vehicle_id' => 'integer',
         'driver_id'  => 'integer',
+        'extra_items' => 'array',
     ];
 }

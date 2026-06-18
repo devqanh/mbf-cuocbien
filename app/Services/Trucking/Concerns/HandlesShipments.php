@@ -356,15 +356,31 @@ trait HandlesShipments
                 $axle = $vehByPlate[$bks]->axle ?? null;
                 $matched = $vehByPlate->has($bks);
             }
+            $pay = $paysByBks->get($bks);
+            // Chi khác phát sinh THỦ CÔNG (đã lưu) — gom theo cont để gắn vào đúng chuyến.
+            $manualByCont = [];
+            foreach ((array) ($pay?->extra_items ?? []) as $m) {
+                if (! is_array($m)) continue;
+                $manualByCont[(string) ($m['cont'] ?? '')][] = $m;
+            }
             // "Chi theo ngày": MỖI chuyến (leg) = 1 nhóm (kể cả không khớp phí tuyến → cảnh báo cho kế toán).
             $payGroups = []; $payTotal = 0; $payWarn = 0;
             foreach ($ls as $l) {
                 $g = $this->legPayGroup($l, $axle, $rfBySet, $fuels, $dateStr);
+                // Gắn chi khác phát sinh của chuyến (theo cont) — cộng vào tổng nếu perDay.
+                $manual = [];
+                foreach ($manualByCont[(string) $g['cont']] ?? [] as $m) {
+                    $amt = (int) round((float) ($m['amount'] ?? 0));
+                    $perDay = ! isset($m['perDay']) || ! empty($m['perDay']);
+                    $manual[] = ['name' => (string) ($m['name'] ?? ''), 'amount' => $amt, 'perDay' => $perDay];
+                    if ($perDay && $amt > 0) $g['sub'] += $amt;
+                }
+                $g['manual'] = $manual;
+                if ($g['sub'] > 0 && $g['note'] !== '') $g['note'] = '';   // có tiền (kể cả thủ công) → hết cảnh báo
                 $payGroups[] = $g;
                 $payTotal += $g['sub'];
                 if ($g['note'] !== '') $payWarn++;   // chuyến chưa ra tiền (không khớp / chưa tick / =0)
             }
-            $pay = $paysByBks->get($bks);
             $trucks[] = ['bks' => $bks, 'matched' => $matched, 'type' => $type, 'axle' => $axle, 'legs' => $ls,
                 'payGroups' => $payGroups, 'payTotal' => $payTotal, 'payWarn' => $payWarn,
                 'payDriver' => $pay?->driver ?? '', 'paid' => (bool) ($pay?->paid ?? false), 'paidDate' => $pay ? $this->outDate($pay->paid_date) : ''];
@@ -477,6 +493,20 @@ trait HandlesShipments
         $dkey = $driver ? mb_strtolower(preg_replace('/\s+/u', ' ', trim($driver)) ?? '') : '';
         $paid = ! empty($data['paid']);
         $veh = TruckingVehicle::where('plate', $bks)->first();
+        // Chi khác phát sinh THỦ CÔNG theo từng chuyến (cont) — {cont, name, amount, perDay}.
+        $extraItems = [];
+        foreach ((array) ($data['extraItems'] ?? []) as $m) {
+            if (! is_array($m)) continue;
+            $name = $this->str($m['name'] ?? null) ?? '';
+            $amount = $this->inMoney($m['amount'] ?? null) ?? 0;
+            if ($name === '' && $amount <= 0) continue;
+            $extraItems[] = [
+                'cont'   => $this->str($m['cont'] ?? null) ?? '',
+                'name'   => $name,
+                'amount' => $amount,
+                'perDay' => ! isset($m['perDay']) || ! empty($m['perDay']),   // mặc định chi theo ngày
+            ];
+        }
         \App\Models\TruckingRoutePay::updateOrCreate(
             ['work_date' => $date, 'bks' => $bks],
             [
@@ -486,6 +516,7 @@ trait HandlesShipments
                 'paid'       => $paid,
                 'paid_date'  => $paid ? ($this->inDate($data['paidDate'] ?? null) ?: $date) : null,
                 'note'       => $this->str($data['note'] ?? null),
+                'extra_items' => $extraItems,
                 'updated_by' => auth()->id(),
             ]
         );

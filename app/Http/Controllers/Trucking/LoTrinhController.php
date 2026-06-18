@@ -31,6 +31,11 @@ class LoTrinhController extends BaseTruckingController
             'paid'   => ['nullable', 'boolean'],
             'paidDate' => ['nullable', 'string'],
             'note'   => ['nullable', 'string'],
+            'extraItems'            => ['nullable', 'array'],
+            'extraItems.*.cont'     => ['nullable', 'string'],
+            'extraItems.*.name'     => ['nullable', 'string'],
+            'extraItems.*.amount'   => ['nullable'],
+            'extraItems.*.perDay'   => ['nullable', 'boolean'],
         ]);
         return response()->json($this->svc->saveRoutePay($d['date'], $d['bks'], $d));
     }
