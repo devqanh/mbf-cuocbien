@@ -19,7 +19,10 @@ metadata:
 
 **Quyết định mở rộng (user 2026-06-18):** GIỮ cột cứng cho từng phí (rõ ràng, có kiểu). Thêm phí mới = migration + sửa ~6 chỗ (model/routeFees output/saveRouteFees/config.jsx/legPayGroup+SALARY_KEYS). KHÔNG dùng JSON "phí khác tùy chỉnh" — user chốt giữ cột cứng, khi cần phí mới sẽ báo.
 
-**Khớp tuyến (backend, HandlesShipments):** `routeNodeKey(labels[])` = TẬP node chuẩn hóa về **ký hiệu** qua `normalizedCodeMap` (khớp cả tên lẫn mã, bỏ dấu/dấu cách; reuse từ statement pricing), KHÔNG phụ thuộc thứ tự (A→B→C ≡ A→C→B). Leg node = `[from_loc] + khoPoints(kho) + [to_loc]`. `routeStringNodes()` tách chuỗi phí tuyến. `legDailyCharge($leg,$axle,$rfBySet,$fuels,$date)` sinh các khoản; `routeTripByDate` cộng `payItems`/`payTotal` mỗi xe.
+**Khớp tuyến (backend, HandlesShipments):** `routeNodeKey(labels[])` = TẬP node chuẩn hóa về **ký hiệu** qua `normalizedCodeMap` (khớp cả tên lẫn mã, bỏ dấu/dấu cách; reuse từ statement pricing), KHÔNG phụ thuộc thứ tự (A→B→C ≡ A→C→B). `routeStringNodes()` tách chuỗi phí tuyến. `legPayGroup($leg,$axle,$rfBySet,$fuels,$date)` (đổi tên từ legDailyCharge) trả 1 nhóm/CHUYẾN.
+- **Node của chuyến theo MODE:** KHÔNG kéo cont (mode none) → CHỈ điểm pickup (`leg.points` kind=pickup, fallback `leg.from`) vì xe chỉ tới nơi lấy rồi ra (fee 1 node "ICDQV" khớp); CÓ kéo cont (self/other) → `[from_loc]+khoPoints(kho)+[to_loc]`.
+
+**Chi khác (repeater theo tuyến):** cột JSON `extra_fees` = list `{name, amount, perDay}` (migration `2026_06_18_000005`). Mỗi dòng TỰ quyết "chi theo ngày" (`perDay`, KHÔNG qua salary_parts). legPayGroup gom dòng perDay=true (key `'extra'`). saveRouteFees sanitize (bỏ dòng rỗng, parse tiền) qua `extraFeesIn`/`cleanExtraFees`. Đây là phần linh hoạt "thêm phí không cần code" — bù cho quyết định giữ cột cứng phí cốt lõi.
 
 **Lưu lái nhận + đã chi:** bảng **`trucking_route_pays`** (migration `2026_06_18_000002`, unique `work_date`+`bks`) — CHỈ lưu `driver`/`driver_id`(lái nhận) + `paid`/`paid_date` + note; **tiền KHÔNG lưu** (auto-tính từ phí tuyến). Model `TruckingRoutePay`. Service `saveRoutePay($date,$bks,$data)` (updateOrCreate). Route `POST trucking-v2/lo-trinh/pay` (`trucking2.loTrinh.savePay`, permission `shipments.update`). `routeTripByDate` nạp `paysByBks` (whereDate work_date) → mỗi xe có `payDriver`/`paid`/`paidDate`.
 

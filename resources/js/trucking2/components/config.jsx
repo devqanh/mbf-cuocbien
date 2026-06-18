@@ -175,18 +175,29 @@ function RouteFees({ rows = [], onChange, warehouses = [], locations = [], isDup
             chi theo ngày
           </label>
         );
+        const rid = r.id || i; const isOpen = open.has(rid);
+        const routeText = (r.route || "").split(/\s*-\s*/).filter(Boolean).join(" → ");
         return (
-        <div key={r.id || i} style={{ border: `1px solid ${dup ? "var(--danger)" : "var(--line)"}`, borderRadius: 12, padding: "14px 16px", background: dup ? "#fff5f5" : "#fafbfc" }}>
-          {/* Hàng đầu: tuyến (chọn kho) + xóa */}
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 12, marginBottom: 12 }}>
+        <div key={r.id || i} style={{ border: `1px solid ${dup ? "var(--danger)" : "var(--line)"}`, borderRadius: 12, background: dup ? "#fff5f5" : "#fafbfc", overflow: "hidden" }}>
+          {/* HEADER: click để mở/đóng cấu hình giá tuyến */}
+          <div onClick={() => toggle(rid)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", cursor: "pointer", userSelect: "none" }}>
+            <i className={"bi " + (isOpen ? "bi-chevron-down" : "bi-chevron-right")} style={{ color: "var(--ink-4)", fontSize: 13, flexShrink: 0 }} />
+            <i className="bi bi-signpost-2-fill" style={{ color: dup ? "var(--danger)" : "var(--accent)", flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              {lbl(<>Tuyến · chọn Cảng &amp; Kho <span style={{ color: "var(--ink-4)", fontWeight: 400 }}>(cả chuỗi, vd Cảng → Kho → Kho → Cảng)</span>{dup && <span style={{ color: "var(--danger)", fontWeight: 700, marginLeft: 6 }}>· trùng tuyến</span>}</>)}
-              <MultiCombo values={(r.route || "").split(/\s*-\s*/).filter(Boolean)} onChange={(arr) => set(i, { route: arr.join(" - ") })} groups={routeGroups} allowDup max={Infinity} placeholder="Chọn cảng/kho cho tuyến…" />
+              <div className="tnum" style={{ fontSize: 13.5, fontWeight: 700, color: routeText ? "var(--ink)" : "var(--ink-4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{routeText || "(chưa chọn tuyến)"}</div>
+              {!isOpen && <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 1 }}>Vé {fmtShort(r.veTram || 0)} · Lương kéo {fmtShort(r.luong || 0)}{(r.km ? " · " + r.km + "km" : "")}{dup ? " · ⚠ trùng tuyến" : " · bấm để sửa giá"}</div>}
             </div>
-            <button type="button" onClick={() => del(i)} title="Xóa tuyến"
-              style={{ flexShrink: 0, width: 36, height: 36, display: "grid", placeItems: "center", border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--ink-4)", cursor: "pointer" }}
+            <button type="button" onClick={(e) => { e.stopPropagation(); del(i); }} title="Xóa tuyến"
+              style={{ flexShrink: 0, width: 32, height: 32, display: "grid", placeItems: "center", border: "1px solid var(--line)", borderRadius: 8, background: "#fff", color: "var(--ink-4)", cursor: "pointer" }}
               onMouseEnter={(e) => { e.currentTarget.style.background = "#fce8e8"; e.currentTarget.style.color = "var(--danger)"; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "var(--ink-4)"; }}><I.trash /></button>
+          </div>
+          {isOpen && (
+          <div style={{ padding: "0 16px 14px" }}>
+          {/* Chọn tuyến */}
+          <div style={{ marginBottom: 12 }}>
+            {lbl(<>Tuyến · chọn Cảng &amp; Kho <span style={{ color: "var(--ink-4)", fontWeight: 400 }}>(cả chuỗi, vd Cảng → Kho → Kho → Cảng)</span>{dup && <span style={{ color: "var(--danger)", fontWeight: 700, marginLeft: 6 }}>· trùng tuyến</span>}</>)}
+            <MultiCombo values={(r.route || "").split(/\s*-\s*/).filter(Boolean)} onChange={(arr) => set(i, { route: arr.join(" - ") })} groups={routeGroups} allowDup max={Infinity} placeholder="Chọn cảng/kho cho tuyến…" />
           </div>
           {/* Phí cố định của tuyến */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, marginBottom: 10 }}>
@@ -251,6 +262,8 @@ function RouteFees({ rows = [], onChange, warehouses = [], locations = [], isDup
               </div>
             );
           })()}
+          </div>
+          )}
         </div>
         );
       })}
@@ -773,7 +786,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
         </div>
         {/* items editor */}
         <div>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
+          <div style={{ position: "sticky", top: 0, zIndex: 10, background: "#fff", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "10px 0 8px", marginBottom: 6, borderBottom: "1px solid var(--line-2)" }}>
             <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: "-0.01em" }}>{g.label}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               {dirty
