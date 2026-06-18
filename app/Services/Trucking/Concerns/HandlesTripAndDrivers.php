@@ -863,17 +863,39 @@ trait HandlesTripAndDrivers
             $addCat('Chi phí lô · ' . (trim((string) $cl->item) ?: 'khác'), $cl->amount);
         }
 
+        // Doanh thu theo XE + sản lượng theo TUYẾN/KHO (từ lô trong tháng)
+        $ships = TruckingShipment::whereIn('id', $shipIds)->get(['id', 'vehicle_id', 'bks_vao', 'from_loc', 'to_loc', 'kho']);
+        $vehPlate = TruckingVehicle::whereIn('id', $ships->pluck('vehicle_id')->filter()->unique())->pluck('plate', 'id');
+        $revByShip = TruckingRevenueLine::whereIn('shipment_id', $shipIds)->where('kind', 'doanhThu')
+            ->selectRaw('shipment_id, SUM(amount) amt')->groupBy('shipment_id')->pluck('amt', 'shipment_id');
+        $byRoute = []; $byKho = [];
+        foreach ($ships as $sh) {
+            $plate = trim((string) ($sh->vehicle_id ? ($vehPlate[$sh->vehicle_id] ?? $sh->bks_vao) : $sh->bks_vao)) ?: '—';
+            $byPlate[$plate] ??= ['cost' => 0, 'trips' => 0];
+            $byPlate[$plate]['revenue'] = ($byPlate[$plate]['revenue'] ?? 0) + (int) round((float) ($revByShip[$sh->id] ?? 0));
+            $byPlate[$plate]['conts'] = ($byPlate[$plate]['conts'] ?? 0) + 1;
+            $rk = trim(($sh->from_loc ?? '') . ' → ' . ($sh->to_loc ?? ''), ' →') ?: '(chưa rõ)';
+            $byRoute[$rk] = ($byRoute[$rk] ?? 0) + 1;
+            foreach ($this->khoPoints($sh->kho) ?: ['(không kho)'] as $kp) { $byKho[$kp] = ($byKho[$kp] ?? 0) + 1; }
+        }
+
         $totalCost = array_sum($cat);
         arsort($cat);
         $costByCategory = [];
         foreach ($cat as $label => $amt) {
             $costByCategory[] = ['label' => $label, 'amount' => $amt, 'pct' => $totalCost ? round($amt * 100 / $totalCost, 1) : 0];
         }
-        $costByVehicle = [];
+        // Đội xe: doanh thu − chi phí = lợi nhuận mỗi xe + tỷ lệ chi phí/doanh thu
+        $fleet = [];
         foreach ($byPlate as $bks => $v) {
-            $costByVehicle[] = ['bks' => $bks, 'cost' => $v['cost'], 'trips' => $v['trips'], 'perTrip' => $v['trips'] ? (int) round($v['cost'] / $v['trips']) : 0];
+            $rev = (int) ($v['revenue'] ?? 0); $cost = (int) $v['cost'];
+            $fleet[] = ['bks' => $bks, 'revenue' => $rev, 'cost' => $cost, 'profit' => $rev - $cost,
+                'trips' => $v['trips'], 'conts' => (int) ($v['conts'] ?? 0),
+                'perTrip' => $v['trips'] ? (int) round($cost / $v['trips']) : 0,
+                'costRatio' => $rev ? round($cost * 100 / $rev, 1) : 0];
         }
-        usort($costByVehicle, fn ($a, $b) => $b['cost'] <=> $a['cost']);
+        usort($fleet, fn ($a, $b) => $b['cost'] <=> $a['cost']);
+        $mkTop = function ($arr) { arsort($arr); $o = []; foreach ($arr as $k => $c) $o[] = ['label' => $k, 'count' => $c]; return $o; };
 
         $profit = $revenue - $totalCost;
         return [
@@ -882,8 +904,61 @@ trait HandlesTripAndDrivers
             'margin' => $revenue ? round($profit * 100 / $revenue, 1) : 0,
             'trips' => $totalTrips, 'conts' => $shipIds->count(), 'vehicles' => count($byPlate),
             'costByCategory' => $costByCategory,
-            'costByVehicle' => $costByVehicle,
+            'costByVehicle' => $fleet,            // (giữ tên cũ cho biểu đồ bar) — nay kèm doanh thu/lợi nhuận
+            'fleet' => $fleet,
+            'byRoute' => $mkTop($byRoute),
+            'byKho'   => $mkTop($byKho),
         ];
+    }
+
+    /**
+     * Xu hướng 12 THÁNG (kết tại year/month): Doanh thu / Chi phí / Lợi nhuận mỗi tháng.
+     * Doanh thu + chi phí lô/xe gom bằng SQL; chi phí lái xe (route-pay) cộng theo ngày.
+     */
+    public function costTrend(int $year, int $month): array
+    {
+        $endM = Carbon::create($year, $month, 1)->startOfMonth();
+        $startM = $endM->copy()->subMonths(11);
+        $rangeStart = $startM->copy()->startOfMonth(); $rangeEnd = $endM->copy()->endOfMonth();
+        $sd = $rangeStart->format('Y-m-d'); $ed = $rangeEnd->format('Y-m-d');
+
+        $keys = []; $rev = []; $cost = [];
+        for ($d = $startM->copy(); $d->lte($endM); $d->addMonth()) { $k = $d->format('Y-m'); $keys[] = $k; $rev[$k] = 0; $cost[$k] = 0; }
+
+        // Doanh thu theo tháng Giờ xe ra
+        foreach (TruckingRevenueLine::where('kind', 'doanhThu')
+            ->join('trucking_shipments', 'trucking_shipments.id', '=', 'trucking_revenue_lines.shipment_id')
+            ->whereNotNull('gio_xe_ra')->whereDate('gio_xe_ra', '>=', $sd)->whereDate('gio_xe_ra', '<=', $ed)
+            ->selectRaw("DATE_FORMAT(gio_xe_ra,'%Y-%m') ym, SUM(trucking_revenue_lines.amount) amt")
+            ->groupBy('ym')->get() as $r) { if (isset($rev[$r->ym])) $rev[$r->ym] += (float) $r->amt; }
+
+        // Chi phí lô (cost_lines non-billable) theo tháng Giờ xe ra
+        foreach (TruckingCostLine::join('trucking_shipments', 'trucking_shipments.id', '=', 'trucking_cost_lines.shipment_id')
+            ->where(fn ($q) => $q->where('trucking_cost_lines.billable', false)->orWhereNull('trucking_cost_lines.billable'))
+            ->whereNotNull('gio_xe_ra')->whereDate('gio_xe_ra', '>=', $sd)->whereDate('gio_xe_ra', '<=', $ed)
+            ->selectRaw("DATE_FORMAT(gio_xe_ra,'%Y-%m') ym, SUM(trucking_cost_lines.amount) amt")
+            ->groupBy('ym')->get() as $r) { if (isset($cost[$r->ym])) $cost[$r->ym] += (float) $r->amt; }
+
+        // Chi phí xe theo spend_date
+        foreach (TruckingVehicleCost::whereNotNull('spend_date')->whereDate('spend_date', '>=', $sd)->whereDate('spend_date', '<=', $ed)
+            ->selectRaw("DATE_FORMAT(spend_date,'%Y-%m') ym, SUM(amount) amt")->groupBy('ym')->get() as $r) {
+            if (isset($cost[$r->ym])) $cost[$r->ym] += (float) $r->amt;
+        }
+
+        // Chi phí lái xe (route-pay) — cộng theo ngày trong khoảng
+        for ($d = $rangeStart->copy(); $d->lte($rangeEnd); $d->addDay()) {
+            $ym = $d->format('Y-m'); if (! isset($cost[$ym])) continue;
+            $day = $this->routeTripByDate($d->format('Y-m-d'));
+            foreach ($day['trucks'] as $t) $cost[$ym] += (int) $t['payTotal'] + (int) $t['payrollTotal'];
+        }
+
+        $rows = [];
+        foreach ($keys as $k) {
+            [$y, $m] = explode('-', $k);
+            $rows[] = ['ym' => $k, 'label' => $m . '/' . substr($y, 2),
+                'revenue' => (int) round($rev[$k]), 'cost' => (int) round($cost[$k]), 'profit' => (int) round($rev[$k] - $cost[$k])];
+        }
+        return ['rows' => $rows];
     }
 
     /** Chuẩn hóa "lương phát sinh" thêm tay: {name, amount}; bỏ dòng rỗng. */

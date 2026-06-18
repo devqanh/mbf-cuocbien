@@ -13,6 +13,7 @@ window.__TRK = {
   canEdit: {{ $canEdit ? 'true' : 'false' }},
   routes: {
     data: '{{ route("trucking2.report.data") }}',
+    trend: '{{ route("trucking2.report.trend") }}',
   },
   boot: @json($boot),
 };

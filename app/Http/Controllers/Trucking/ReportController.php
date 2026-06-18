@@ -25,4 +25,14 @@ class ReportController extends BaseTruckingController
         ]);
         return response()->json(['ok' => true, 'report' => $this->svc->monthlyCostReport((int) $d['year'], (int) $d['month'])]);
     }
+
+    /** JSON: xu hướng 12 tháng (kết tại year/month) — lazy-load vì có cộng route-pay theo ngày. */
+    public function trend(Request $request): JsonResponse
+    {
+        $d = $request->validate([
+            'year'  => ['required', 'integer', 'min:2000', 'max:2100'],
+            'month' => ['required', 'integer', 'min:1', 'max:12'],
+        ]);
+        return response()->json(['ok' => true] + $this->svc->costTrend((int) $d['year'], (int) $d['month']));
+    }
 }

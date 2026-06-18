@@ -2,8 +2,8 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import "@trk/shared.js";
 
-const { useState } = React;
-import { I, fmtVND, fmtNum } from "@trk/lib.jsx";
+const { useState, useEffect } = React;
+import { I, fmtVND, fmtNum, fmtShort } from "@trk/lib.jsx";
 
 const PALETTE = ["#2a6fdb", "#1f8a5b", "#e08600", "#9333ea", "#dc2626", "#0891b2", "#65a30d", "#db2777", "#64748b"];
 
@@ -34,6 +34,57 @@ const KPI = ({ label, value, sub, color }) => (
   </div>
 );
 
+/* Danh sách top (sản lượng theo tuyến/kho) — bar CSS ngang */
+function TopList({ title, icon, data, unit }) {
+  const top = (data || []).slice(0, 8);
+  const max = Math.max(1, ...top.map((d) => d.count));
+  return (
+    <div style={{ flex: 1, minWidth: 300, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "16px" }}>
+      <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 12 }}><i className={"bi " + icon} style={{ color: "var(--accent)" }} /> {title}</div>
+      {top.length === 0 ? <div style={{ color: "var(--ink-4)", fontSize: 13 }}>Không có dữ liệu.</div> : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {top.map((d, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span className="tnum" style={{ flex: 1, fontSize: 12.5, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.label}</span>
+              <div style={{ width: 120, background: "var(--line-2)", borderRadius: 5, height: 16, overflow: "hidden" }}>
+                <div style={{ width: (d.count / max * 100) + "%", height: "100%", background: "var(--accent)", borderRadius: 5, minWidth: 2 }} />
+              </div>
+              <span className="tnum" style={{ width: 64, textAlign: "right", fontSize: 12.5, fontWeight: 700 }}>{d.count} {unit}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Xu hướng 12 tháng — cột DT vs CP mỗi tháng + đường lợi nhuận (số) */
+function TrendChart({ rows }) {
+  const max = Math.max(1, ...rows.map((r) => Math.max(r.revenue, r.cost)));
+  const H = 130;
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 16, fontSize: 12, marginBottom: 10 }}>
+        <span><span style={{ display: "inline-block", width: 10, height: 10, background: "var(--accent)", borderRadius: 2, marginRight: 5 }} />Doanh thu</span>
+        <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#dc2626", borderRadius: 2, marginRight: 5 }} />Chi phí</span>
+        <span style={{ color: "var(--ink-4)" }}>Lợi nhuận hiện dưới mỗi cột</span>
+      </div>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 6, overflowX: "auto", paddingBottom: 4 }}>
+        {rows.map((r, i) => (
+          <div key={i} style={{ flex: 1, minWidth: 52, display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: H, width: "100%", justifyContent: "center" }}>
+              <div title={"DT " + fmtVND(r.revenue)} style={{ width: 14, height: Math.max(2, r.revenue / max * H), background: "var(--accent)", borderRadius: "3px 3px 0 0" }} />
+              <div title={"CP " + fmtVND(r.cost)} style={{ width: 14, height: Math.max(2, r.cost / max * H), background: "#dc2626", borderRadius: "3px 3px 0 0" }} />
+            </div>
+            <div className="tnum" style={{ fontSize: 10, fontWeight: 700, marginTop: 4, color: r.profit >= 0 ? "var(--good)" : "#dc2626" }}>{fmtShort(r.profit)}</div>
+            <div className="tnum" style={{ fontSize: 10.5, color: "var(--ink-4)" }}>{r.label}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ReportApp() {
   const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
   const init = B.report || {};
@@ -41,6 +92,16 @@ function ReportApp() {
   const [month, setMonth] = useState(init.month || (new Date().getMonth() + 1));
   const [rep, setRep] = useState(init);
   const [loading, setLoading] = useState(false);
+  const [trend, setTrend] = useState(null);   // 12 tháng — lazy (có cộng route-pay theo ngày)
+  const [trendLoading, setTrendLoading] = useState(false);
+  // Tải xu hướng 12 tháng (neo theo tháng đang xem) — bấm mới tải vì hơi nặng.
+  const loadTrend = () => {
+    setTrendLoading(true);
+    window.trkApi("GET", ROUTES.trend + `?year=${year}&month=${month}`)
+      .then((r) => { if (r && r.ok) setTrend(r.rows || []); setTrendLoading(false); })
+      .catch(() => { setTrendLoading(false); window.trkToast && window.trkToast("Lỗi tải xu hướng", "error"); });
+  };
+  useEffect(() => { setTrend(null); }, [year, month]);   // đổi tháng → ẩn trend cũ, bấm tải lại
 
   const loadMonth = (y, m) => {
     setLoading(true); setYear(y); setMonth(m);
@@ -110,23 +171,49 @@ function ReportApp() {
             )}
           </div>
 
-          {/* Chi phí theo xe */}
+          {/* Hiệu suất đội xe */}
           <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "16px" }}>
-            <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 12 }}><i className="bi bi-truck" style={{ color: "var(--accent)" }} /> Chi phí theo xe <span style={{ fontWeight: 400, fontSize: 12, color: "var(--ink-4)" }}>(và chi phí/chuyến)</span></div>
+            <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 12 }}><i className="bi bi-truck" style={{ color: "var(--accent)" }} /> Hiệu suất đội xe <span style={{ fontWeight: 400, fontSize: 12, color: "var(--ink-4)" }}>(doanh thu · chi phí · lợi nhuận mỗi xe)</span></div>
             {vehicles.length === 0 ? <div style={{ color: "var(--ink-4)", fontSize: 13 }}>Không có dữ liệu.</div> : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-              {vehicles.map((v) => (
-                <div key={v.bks} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span className="tnum" style={{ width: 92, fontSize: 12.5, fontWeight: 700, flexShrink: 0 }}>{v.bks}</span>
-                  <div style={{ flex: 1, background: "var(--line-2)", borderRadius: 6, height: 22, position: "relative", overflow: "hidden" }}>
-                    <div style={{ width: (v.cost / maxVeh * 100) + "%", height: "100%", background: "var(--accent)", borderRadius: 6, minWidth: 2 }} />
-                  </div>
-                  <span className="tnum" style={{ width: 110, textAlign: "right", fontSize: 13, fontWeight: 700 }}>{fmtVND(v.cost)}</span>
-                  <span className="tnum" style={{ width: 120, textAlign: "right", fontSize: 11.5, color: "var(--ink-4)" }}>{fmtVND(v.perTrip)}/chuyến</span>
-                </div>
-              ))}
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead><tr style={{ color: "var(--ink-4)", fontSize: 11, textTransform: "uppercase", letterSpacing: ".03em" }}>
+                  {["Biển số", "Doanh thu", "Chi phí", "Lợi nhuận", "Chuyến", "Cont", "CP/DT", "CP/chuyến"].map((h, i) => (
+                    <th key={i} style={{ textAlign: i ? "right" : "left", padding: "6px 9px", borderBottom: "1px solid var(--line)", fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {vehicles.map((v) => (
+                    <tr key={v.bks}>
+                      <td style={{ padding: "7px 9px", borderBottom: "1px solid var(--line-2)", fontWeight: 700 }} className="tnum">{v.bks}</td>
+                      <td style={{ padding: "7px 9px", borderBottom: "1px solid var(--line-2)", textAlign: "right" }} className="tnum">{fmtVND(v.revenue || 0)}</td>
+                      <td style={{ padding: "7px 9px", borderBottom: "1px solid var(--line-2)", textAlign: "right" }} className="tnum">{fmtVND(v.cost)}</td>
+                      <td style={{ padding: "7px 9px", borderBottom: "1px solid var(--line-2)", textAlign: "right", fontWeight: 700, color: (v.profit || 0) >= 0 ? "var(--good)" : "#dc2626" }} className="tnum">{fmtVND(v.profit || 0)}</td>
+                      <td style={{ padding: "7px 9px", borderBottom: "1px solid var(--line-2)", textAlign: "right" }} className="tnum">{v.trips}</td>
+                      <td style={{ padding: "7px 9px", borderBottom: "1px solid var(--line-2)", textAlign: "right" }} className="tnum">{v.conts || 0}</td>
+                      <td style={{ padding: "7px 9px", borderBottom: "1px solid var(--line-2)", textAlign: "right", color: (v.costRatio || 0) > 100 ? "#dc2626" : "var(--ink-3)" }} className="tnum">{v.revenue ? v.costRatio + "%" : "—"}</td>
+                      <td style={{ padding: "7px 9px", borderBottom: "1px solid var(--line-2)", textAlign: "right", color: "var(--ink-4)" }} className="tnum">{fmtVND(v.perTrip)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
             )}
+          </div>
+
+          {/* Sản lượng theo tuyến / kho */}
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+            <TopList title="Sản lượng theo tuyến" icon="bi-signpost-2" data={rep.byRoute || []} unit="chuyến" />
+            <TopList title="Sản lượng theo kho" icon="bi-buildings" data={rep.byKho || []} unit="lượt" />
+          </div>
+
+          {/* Xu hướng 12 tháng (lazy) */}
+          <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "16px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, flex: 1 }}><i className="bi bi-graph-up" style={{ color: "var(--accent)" }} /> Xu hướng 12 tháng <span style={{ fontWeight: 400, fontSize: 12, color: "var(--ink-4)" }}>(đến tháng {String(month).padStart(2, "0")}/{year})</span></div>
+              {trend === null && <button type="button" onClick={loadTrend} disabled={trendLoading} style={{ ...btnIcon, width: "auto", padding: "0 12px", fontSize: 12.5, fontWeight: 600 }}>{trendLoading ? "Đang tính…" : "Tải biểu đồ"}</button>}
+            </div>
+            {trend === null ? <div style={{ color: "var(--ink-4)", fontSize: 12.5 }}>Bấm <b>Tải biểu đồ</b> để xem xu hướng doanh thu – chi phí – lợi nhuận 12 tháng.</div> : <TrendChart rows={trend} />}
           </div>
 
           <div style={{ fontSize: 11.5, color: "var(--ink-4)", display: "flex", gap: 7, alignItems: "flex-start" }}>
