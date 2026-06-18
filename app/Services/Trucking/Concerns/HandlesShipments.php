@@ -330,9 +330,9 @@ trait HandlesShipments
         // bền hơn so với match plate string (khử rủi ro typo/whitespace). Fallback theo plate
         // cho lô legacy chưa có vehicle_id.
         $vehIds = array_values(array_unique(array_filter(array_map(fn ($l) => $l['vehicleId'] ?? null, $legs))));
-        $vehById = $vehIds ? TruckingVehicle::whereIn('id', $vehIds)->get(['id', 'plate', 'type'])->keyBy('id') : collect();
+        $vehById = $vehIds ? TruckingVehicle::whereIn('id', $vehIds)->get(['id', 'plate', 'type', 'axle'])->keyBy('id') : collect();
         $legacyPlates = array_values(array_unique(array_map(fn ($l) => $l['bks'], array_filter($legs, fn ($l) => empty($l['vehicleId'])))));
-        $vehByPlate = $legacyPlates ? TruckingVehicle::whereIn('plate', $legacyPlates)->pluck('type', 'plate')->all() : [];
+        $vehByPlate = $legacyPlates ? TruckingVehicle::whereIn('plate', $legacyPlates)->get(['plate', 'type', 'axle'])->keyBy('plate') : collect();
         $byBks = [];
         foreach ($legs as $l) { $byBks[$l['bks']][] = $l; }
         $trucks = [];
@@ -341,12 +341,14 @@ trait HandlesShipments
             $vid = $ls[0]['vehicleId'] ?? null;
             if ($vid && $vehById->has($vid)) {
                 $type = $vehById[$vid]->type ?? null;
+                $axle = $vehById[$vid]->axle ?? null;
                 $matched = true;
             } else {
-                $type = $vehByPlate[$bks] ?? null;
-                $matched = isset($vehByPlate[$bks]);
+                $type = $vehByPlate[$bks]->type ?? null;
+                $axle = $vehByPlate[$bks]->axle ?? null;
+                $matched = $vehByPlate->has($bks);
             }
-            $trucks[] = ['bks' => $bks, 'matched' => $matched, 'type' => $type, 'legs' => $ls];
+            $trucks[] = ['bks' => $bks, 'matched' => $matched, 'type' => $type, 'axle' => $axle, 'legs' => $ls];
         }
         usort($trucks, fn ($a, $b) => count($b['legs']) <=> count($a['legs']) ?: strcmp($a['bks'], $b['bks']));
 

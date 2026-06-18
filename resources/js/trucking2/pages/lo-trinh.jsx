@@ -168,6 +168,7 @@ function LoTrinhApp() {
                     {tr.matched
                       ? <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--good)", background: "var(--good-weak)", padding: "1px 7px", borderRadius: 999 }}>✓ {tr.type === "Ngoài" ? "Xe ngoài" : "Xe MBF"}</span>
                       : <span style={{ fontSize: 10.5, color: "var(--ink-4)" }}>(ngoài hệ thống)</span>}
+                    {(tr.axle === "1" || tr.axle === "2") && <span title="Số cầu xe" style={{ fontSize: 10.5, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak)", padding: "1px 7px", borderRadius: 999 }}>{tr.axle} cầu</span>}
                     <span style={{ flex: 1 }} />
                     <span style={{ fontSize: 12, color: "var(--ink-3)", fontWeight: 600 }}>{tr.legs.length} hoạt động</span>
                   </div>
