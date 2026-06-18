@@ -334,10 +334,10 @@ trait HandlesShipments
         $vehById = $vehIds ? TruckingVehicle::whereIn('id', $vehIds)->get(['id', 'plate', 'type', 'axle'])->keyBy('id') : collect();
         $legacyPlates = array_values(array_unique(array_map(fn ($l) => $l['bks'], array_filter($legs, fn ($l) => empty($l['vehicleId'])))));
         $vehByPlate = $legacyPlates ? TruckingVehicle::whereIn('plate', $legacyPlates)->get(['plate', 'type', 'axle'])->keyBy('plate') : collect();
-        // Phí tuyến (khớp theo TẬP kho — không thứ tự) + giá dầu + chi đã lưu cho ngày này.
+        // Phí tuyến (khớp theo TẬP node Cảng+Kho — không thứ tự) + giá dầu + chi đã lưu cho ngày này.
         $dateStr = $start->format('Y-m-d');
         $rfBySet = [];
-        foreach (\App\Models\TruckingRouteFee::all() as $rf) { $k = $this->routeSetKey((string) $rf->route); if ($k !== '') $rfBySet[$k] = $rf; }
+        foreach (\App\Models\TruckingRouteFee::all() as $rf) { $k = $this->routeNodeKey($this->routeStringNodes((string) $rf->route)); if ($k !== '') $rfBySet[$k] = $rf; }
         $fuels = TruckingFuelPrice::orderByDesc('from_date')->orderByDesc('id')->get();
         $paysByBks = \App\Models\TruckingRoutePay::whereDate('work_date', $dateStr)->get()->keyBy('bks');
 
@@ -381,23 +381,39 @@ trait HandlesShipments
         ];
     }
 
-    /** Khóa tuyến theo TẬP kho — KHÔNG quan tâm thứ tự + bỏ dấu cách (A→B→C ≡ A→C→B; "ICD QV"=="ICDQV"). */
-    private function routeSetKey(string $s): string
+    /** Tách 1 chuỗi tuyến (Cảng/Kho) thành các node (cùng dấu phân tách với route fee). */
+    private function routeStringNodes(string $s): array
     {
         $parts = preg_split('/\s*(?:,|→|->|–|—|\s-\s)\s*/u', trim($s)) ?: [];
-        $parts = array_values(array_filter(array_map(fn ($x) => mb_strtoupper(preg_replace('/\s+/u', '', trim($x)) ?? ''), $parts), fn ($x) => $x !== ''));
-        sort($parts);
-        return implode('|', $parts);
+        return array_values(array_filter(array_map('trim', $parts), fn ($x) => $x !== ''));
     }
 
-    /** Các khoản "chi theo ngày" của 1 chuyến (leg): theo Phí tuyến khớp (tập kho) + dầu × giá dầu theo ngày. */
+    /**
+     * Khóa tuyến theo TẬP node (Cảng + Kho) — KHÔNG quan tâm thứ tự, chuẩn hóa mỗi node
+     * về KÝ HIỆU qua normalizedCodeMap (khớp cả tên lẫn mã, bỏ dấu/dấu cách):
+     * "ICD Quế Võ"="ICDQV"; A→B→C ≡ A→C→B.
+     */
+    private function routeNodeKey(array $labels): string
+    {
+        $codeMap = $this->normalizedCodeMap();
+        $norm = fn ($v) => mb_strtoupper(preg_replace('/\s+/u', '', trim(\Illuminate\Support\Str::ascii((string) $v))) ?? '');
+        $set = [];
+        foreach ($labels as $l) { $c = $codeMap[$norm($l)] ?? $norm($l); if ($c !== '') $set[$c] = true; }
+        $set = array_keys($set);
+        sort($set);
+        return implode('|', $set);
+    }
+
+    /** Các khoản "chi theo ngày" của 1 chuyến (leg): Phí tuyến khớp (TẬP Cảng+Kho) + dầu × giá dầu theo ngày. */
     private function legDailyCharge(array $leg, ?string $axle, array $rfBySet, $fuels, string $date): array
     {
-        $rf = $rfBySet[$this->routeSetKey((string) ($leg['kho'] ?? ''))] ?? null;
+        // Chuỗi node thực tế của chuyến: Nơi lấy (cảng) → các Kho → Nơi hạ (cảng).
+        $nodes = array_merge([$leg['from'] ?? ''], $this->khoPoints($leg['kho'] ?? ''), [$leg['to'] ?? '']);
+        $rf = $rfBySet[$this->routeNodeKey($nodes)] ?? null;
         if (! $rf) return [];
         $parts = $this->cleanSalaryParts($rf->salary_parts);
         if (! $parts) return [];
-        $route = $this->khoRouteDisplay($leg['kho'] ?? '') ?: ($leg['kho'] ?? '');
+        $route = trim((string) $rf->route) ?: ($this->khoRouteDisplay($leg['kho'] ?? '') ?: ($leg['kho'] ?? ''));
         $items = [];
         $push = function ($key, $label, $amount) use (&$items, $parts, $route, $leg) {
             $amount = (int) round((float) $amount);
@@ -407,7 +423,9 @@ trait HandlesShipments
         $push('veTram', 'Vé trạm', $rf->ve_tram);
         $push('tienDuong', 'Tiền đường', $rf->tien_duong);
         $push('troCap', 'Trợ cấp', $rf->tro_cap);
-        $push('luong', 'Lương', ! empty($leg['cru']) ? $rf->luong : $rf->luong_no_cru);
+        // Lương: xe KHÔNG kéo cont ra (mode none) → "Lương không CRU"; có kéo cont ra (self/other) → "Lương CRU".
+        $noPull = ($leg['mode'] ?? '') === 'none';
+        $push('luong', $noPull ? 'Lương (không kéo cont)' : 'Lương', $noPull ? $rf->luong_no_cru : $rf->luong);
         $is2 = ($axle === '2');                                  // chọn lít dầu theo SỐ CẦU xe
         $dauKey = $is2 ? 'dau2' : 'dau1';
         if (in_array($dauKey, $parts, true)) {
