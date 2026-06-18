@@ -98,8 +98,9 @@ function makePricer(cfg) {
     const fromC = codeOf(s.from), dropC = codeOf(s.to), kind = kindOf(s);
     const eq = (a, b) => !!a && a === b;
     const fromMatch = (p) => eq(codeOf(p.from), fromC) || eq((p.from || "").trim(), fromRaw);
+    // Nơi hạ trống HOẶC trùng nơi lấy → coi như không có điểm hạ riêng → bỏ ràng buộc hạ (khớp theo đi+loại).
     const dropMatch = (p) => {
-      if (!dropRaw) return true;
+      if (!dropRaw || dropC === fromC) return true;
       const c = [codeOf(p.to1), (p.to1 || "").trim(), codeOf(p.loc), (p.loc || "").trim()];
       return c.includes(dropC) || c.includes(dropRaw);
     };
@@ -115,7 +116,7 @@ function makePricer(cfg) {
     const costItems = items.map((e) => ({ item: e.item || "(khoản)", amount: toNum(e.amount), billable: !!e.billable, src: e.src || "" }));
     const chiHo = choHoItems.reduce((a, e) => a + e.amount, 0);
     const route = p ? ((nameOf(p.from) || "?") + " → " + (nameOf(p.to1 || p.loc) || "?")) : null;
-    const noDrop = !dropRaw && !!p;
+    const noDrop = (!dropRaw || dropC === fromC) && !!p;
     return { matched: !!p, conn, kind, is20, cuoc, dau, chiHo, choHoItems, costItems, route, noDrop,
       ftHours: ft ? ft.hours : null, ftThreshold: ft ? ft.threshold : null, ftBasis: ft ? ft.basis : null,
       phaiThu: cuoc + dau + chiHo };

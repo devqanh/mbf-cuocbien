@@ -97,6 +97,11 @@ trait HandlesStatementPricing
         // So theo KÝ HIỆU CHUẨN ($rc) → "LACH HUYEN"=="LẠCH HUYỆN"=="LHP".
         $loFrom = $rc($s->from_loc);
         $loDrop = $rc($s->to_loc);
+        // Nơi hạ TRÙNG nơi lấy (hoặc để trống) → coi như KHÔNG có điểm hạ riêng → khớp theo
+        // ĐI + NHÀ MÁY + LOẠI (bỏ ràng buộc nơi hạ). Bảng giá thường để loc = cảng cố định nên
+        // lô đi-về cùng điểm sẽ không khớp nếu ép nơi hạ.
+        $effDrop = ($loDrop === '' || $loDrop === $loFrom) ? '' : $loDrop;
+        $noDrop  = ($effDrop === '');
         $khoCodes = [];
         foreach (preg_split('/\s*(?:,|→|->|–|—|\s-\s)\s*/u', (string) $s->kho) ?: [] as $k) { $c = $rc($k); if ($c !== '') $khoCodes[] = $c; }
 
@@ -105,7 +110,7 @@ trait HandlesStatementPricing
         $p = null; $fallback = null;
         foreach ($priceList as $r) {
             if ($loFrom !== '' && $r['rcFrom'] !== '' && $r['rcFrom'] !== $loFrom) continue;
-            if ($loDrop !== '' && $r['rcDrop'] !== '' && $r['rcDrop'] !== $loDrop) continue;
+            if ($effDrop !== '' && $r['rcDrop'] !== '' && $r['rcDrop'] !== $effDrop) continue;
             if (empty($khoCodes) || empty($r['rcKho'])) continue;   // kho rỗng = không khớp (giữ semantic cũ)
             $khoOk = false;
             foreach ($r['rcKho'] as $k) if (in_array($k, $khoCodes, true)) { $khoOk = true; break; }
@@ -143,7 +148,7 @@ trait HandlesStatementPricing
         return [
             'matched' => (bool) $p, 'conn' => $conn, 'kind' => $kind, 'is20' => $cont20,
             'cuoc' => $cuoc, 'dau' => $dau, 'chiHo' => $chiHo, 'choHoItems' => $choHoItems, 'costItems' => $costItems,
-            'route' => $route, 'loTrinh' => $loTrinh, 'kho' => trim((string) $s->kho), 'noDrop' => false, 'diag' => $diag,
+            'route' => $route, 'loTrinh' => $loTrinh, 'kho' => trim((string) $s->kho), 'noDrop' => $noDrop, 'diag' => $diag,
             'ftHours' => $ft['hours'] ?? null, 'ftThreshold' => $ft['threshold'] ?? null, 'ftBasis' => $ft['basis'] ?? null,
             'phaiThu' => $cuoc + $dau + $chiHo,
         ];
