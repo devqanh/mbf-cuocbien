@@ -798,7 +798,7 @@ function TrackingApp() {
         )}
         {hasFilter && (
           <button type="button" onClick={clearFilters} title="Bỏ mọi bộ lọc & về toàn cảnh bản đồ"
-            style={{ flexShrink: 0, marginLeft: isMobile ? 0 : "auto", display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid var(--danger)", background: "var(--danger-weak, #fdecec)", color: "var(--danger)", borderRadius: 999, padding: "5px 11px", cursor: "pointer", fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" }}>
+            style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid var(--danger)", background: "var(--danger-weak, #fdecec)", color: "var(--danger)", borderRadius: 999, padding: "5px 11px", cursor: "pointer", fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" }}>
             <i className="bi bi-x-circle" /> Xóa lọc
           </button>
         )}
