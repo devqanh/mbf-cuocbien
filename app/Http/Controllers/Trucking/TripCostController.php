@@ -40,8 +40,10 @@ class TripCostController extends BaseTruckingController
     /** Trang Xem 1 kỳ lương đã lưu (snapshot). */
     public function view(TruckingPayrollPeriod $tripCost)
     {
+        $drivers = \App\Models\TruckingDriver::orderBy('sort')->orderBy('name')->pluck('name')->filter()->values()->all();
         return view('trucking2.phi-xe-xem', $this->pageData([
-            'batch' => $this->svc->payrollToArray($tripCost),
+            'batch'   => $this->svc->payrollToArray($tripCost),
+            'drivers' => $drivers,
         ], 'tripCost.update', 'tripCost.delete'));
     }
 

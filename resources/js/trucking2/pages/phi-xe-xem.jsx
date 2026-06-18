@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import "@trk/shared.js";
 
 const { useState } = React;
-import { I, Btn, Txt, fmtVND, fmtDate, toNum } from "@trk/lib.jsx";
+import { I, Btn, Txt, Combo, fmtVND, fmtDate, toNum } from "@trk/lib.jsx";
 import { PayrollDetail, ExtraPayEditor, PaymentsEditor } from "@trk/components/payroll-detail.jsx";
 
 const lbl = (t) => <div style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>{t}</div>;
@@ -15,6 +15,7 @@ function ViewPayrollApp() {
   const back = () => { window.location.href = ROUTES.list; };
   const api = (method, url, body) => window.trkApi(method, url, body);
   const batch = B.batch || {};
+  const drivers = B.drivers || [];
   const idUrl = batch.hashid || batch.id;
 
   const [no, setNo] = useState(batch.no || "");
@@ -145,7 +146,11 @@ function ViewPayrollApp() {
                         <i className={"bi " + (open[r.bks] ? "bi-chevron-down" : "bi-chevron-right")} style={{ fontSize: 11, color: "var(--ink-4)", marginRight: 6 }} />
                         <span className="tnum" style={{ fontWeight: 700 }}>{r.bks}</span>
                       </TD>
-                      <TD><div style={{ minWidth: 170 }} onClick={(e) => e.stopPropagation()}><Txt value={r.driver || ""} onChange={(v) => set(i, { driver: v })} placeholder="Lái xe…" disabled={locked} /></div></TD>
+                      <TD><div style={{ minWidth: 170 }} onClick={(e) => e.stopPropagation()}>
+                        {locked
+                          ? <span className="tnum" style={{ fontWeight: 600 }}>{r.driver || "—"}</span>
+                          : <Combo value={r.driver || ""} onChange={(v) => set(i, { driver: v })} options={drivers} placeholder="Chọn lái…" small />}
+                      </div></TD>
                       <TD right><span className="tnum">{r.days}</span></TD>
                       <TD right><span className="tnum">{r.trips}</span></TD>
                       <TD right><span className="tnum" style={{ color: "var(--ink-4)" }}>{fmtVND(r.paidDaily)}</span></TD>

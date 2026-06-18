@@ -21,6 +21,13 @@ metadata:
 
 **Quyết định (user):** gom theo BKS (không theo lái); lái tự gán theo thời điểm; lương đợt = MỌI khoản không tích chi theo ngày.
 
-**Còn để ngỏ:** "Tính lại" cho kỳ đã lưu (hiện snapshot tĩnh); perf loop-từng-ngày (ok cho generate, có thể tối ưu query gom nếu kỳ dài). TripCostBatch tables cũ bỏ không dùng (chưa drop).
+**Trang xem kỳ (phi-xe-xem) — ĐÃ thêm (commit `9c14983`):**
+- **Lương phát sinh** (repeater `ExtraPayEditor`): mỗi xe thêm khoản {name,amount} → lương phải trả = gốc(payroll) + Σ extraPay (line.total). savePayroll lưu `extraPay`.
+- **Các đợt thanh toán** (`PaymentsEditor`): {date,amount,note} trả chậm/chia đợt → cột Đã trả/Còn lại (= lương − Σ đợt). savePayroll lưu `payments` (paymentsIn).
+- **Chốt lương** (locked + locked_at, migration `2026_06_18_000009`): đóng băng, khóa sửa lương + Tính lại (vẫn ghi đợt thanh toán được); badge "Đã chốt".
+- **Tính lại** (`recomputePayroll` + route `tripCost.recompute`): tính lại theo khoảng ngày của kỳ, GIỮ lái/extraPay/payments, cập nhật lương gốc + detail. **Chốt + Tính lại ĐỀU confirmAction trước khi thao tác** (user yêu cầu "nhớ hỏi mới được thao tác").
+- Component dùng chung `components/payroll-detail.jsx` (PayrollDetail/ExtraPayEditor/PaymentsEditor). Format ngày d/m/Y (fmtDate); Txt thêm prop `disabled`.
+
+**Còn để ngỏ:** perf loop-từng-ngày (ok cho generate). TripCostBatch tables cũ bỏ không dùng (chưa drop).
 
 Liên quan [[route-pays-lo-trinh]], [[phi-xe-batch-model]], [[json-schema-evolution]].
