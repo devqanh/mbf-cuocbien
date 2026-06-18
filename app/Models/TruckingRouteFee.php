@@ -10,12 +10,13 @@ class TruckingRouteFee extends Model
     protected $fillable = [
         'route', 'route_key', 've_tram', 'tien_duong', 'tro_cap', 'phi_khac',
         'cru', 'luong', 'luong_no_cru', 'luong_nokeo', 'luong_nokeo_no_cru',
-        'salary_parts', 'km', 'dau_2cau', 'dau_1cau', 'sort',
+        'salary_parts', 'km', 'dau_2cau', 'dau_1cau', 'extra_fees', 'sort',
     ];
 
     protected $casts = [
         'cru'          => 'boolean',
         'salary_parts' => 'array',
+        'extra_fees'   => 'array',
         've_tram'    => 'decimal:2',
         'tien_duong' => 'decimal:2',
         'tro_cap'    => 'decimal:2',

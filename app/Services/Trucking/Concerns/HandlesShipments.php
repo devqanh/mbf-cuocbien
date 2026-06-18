@@ -431,7 +431,6 @@ trait HandlesShipments
         if (! $rf) { $g['note'] = 'Chưa có Phí tuyến khớp lộ trình này'; return $g; }
         $g['matched'] = true;
         $parts = $this->cleanSalaryParts($rf->salary_parts);
-        if (! $parts) { $g['note'] = 'Phí tuyến chưa tích "chi theo ngày" khoản nào'; return $g; }
 
         $items = [];
         $push = function ($key, $label, $amount, array $extra = []) use (&$items, $parts) {
@@ -456,9 +455,16 @@ trait HandlesShipments
             // Kèm số lít + đơn giá để kế toán rà soát: tiền = lít × đơn giá.
             $push($dauKey, 'Dầu ' . ($is2 ? '2 cầu' : '1 cầu'), $liters * $unit, ['liters' => $liters, 'unitPrice' => (int) round($unit)]);
         }
+        // Chi khác (repeater) — mỗi dòng TỰ quyết "chi theo ngày" (không qua salary_parts).
+        foreach ((array) ($rf->extra_fees ?? []) as $ex) {
+            if (! is_array($ex) || empty($ex['perDay'])) continue;
+            $amt = (int) round((float) ($ex['amount'] ?? 0));
+            if ($amt <= 0) continue;
+            $items[] = ['key' => 'extra', 'label' => trim((string) ($ex['name'] ?? '')) ?: 'Chi khác', 'amount' => $amt];
+        }
         $g['items'] = $items;
         $g['sub']   = array_sum(array_column($items, 'amount'));
-        if (! $items) $g['note'] = 'Các khoản "chi theo ngày" của tuyến đều = 0';
+        if (! $items) $g['note'] = $parts ? 'Các khoản "chi theo ngày" của tuyến đều = 0' : 'Phí tuyến chưa tích "chi theo ngày" khoản nào';
         return $g;
     }
 

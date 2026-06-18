@@ -144,6 +144,9 @@ function RouteFees({ rows = [], onChange, warehouses = [], locations = [], isDup
   // Node tuyến = Cảng (địa điểm) HOẶC Kho — gợi ý gom 2 nhóm để chọn cả chuỗi Cảng→Kho→Kho→Cảng.
   const routeGroups = [{ label: "Cảng", items: locations || [] }, { label: "Kho", items: warehouses || [] }];
   const set = (i, np) => onChange(rows.map((r, j) => (j === i ? { ...r, ...np } : r)));
+  // Toggle: mặc định THU GỌN từng tuyến, click header mới hiện cấu hình giá (đỡ rối khi nhiều tuyến).
+  const [open, setOpen] = useState(() => new Set());
+  const toggle = (id) => setOpen((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   // Thêm tuyến: KẾ THỪA giá + tick "chi theo ngày" của tuyến trên (đỡ nhập lại), chỉ để TRỐNG ô Tuyến.
   const add = () => {
     const list = rows || [];
@@ -151,9 +154,12 @@ function RouteFees({ rows = [], onChange, warehouses = [], locations = [], isDup
     const base = prev
       ? { veTram: prev.veTram, tienDuong: prev.tienDuong, troCap: prev.troCap, phiKhac: prev.phiKhac, cru: prev.cru,
           luong: prev.luong, luongNoCru: prev.luongNoCru, luongNokeo: prev.luongNokeo, luongNokeoNoCru: prev.luongNokeoNoCru,
-          salaryParts: [...(prev.salaryParts || [])], km: prev.km, dau2: prev.dau2, dau1: prev.dau1 }
-      : { veTram: "", tienDuong: "", troCap: "", cru: false, luong: "", luongNoCru: "", luongNokeo: "", luongNokeoNoCru: "", salaryParts: ["troCap", "luong"], km: "", dau2: "", dau1: "" };
-    onChange([...list, { id: Date.now() + Math.random(), route: "", ...base }]);
+          salaryParts: [...(prev.salaryParts || [])], km: prev.km, dau2: prev.dau2, dau1: prev.dau1,
+          extraFees: (prev.extraFees || []).map((f) => ({ ...f })) }
+      : { veTram: "", tienDuong: "", troCap: "", cru: false, luong: "", luongNoCru: "", luongNokeo: "", luongNokeoNoCru: "", salaryParts: ["troCap", "luong"], km: "", dau2: "", dau1: "", extraFees: [] };
+    const id = Date.now() + Math.random();
+    onChange([...list, { id, route: "", ...base }]);
+    setOpen((s) => new Set(s).add(id));   // tuyến mới: mở sẵn để nhập
   };
   const del = (i) => onChange(rows.filter((_, j) => j !== i));
   const lbl = (t) => <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>{t}</div>;
@@ -220,6 +226,31 @@ function RouteFees({ rows = [], onChange, warehouses = [], locations = [], isDup
             <div>{lbl("Dầu 2 cầu")}<Num value={r.dau2} onChange={(x) => set(i, { dau2: x })} suffix="lít" />{salChk("dau2")}</div>
             <div>{lbl("Dầu 1 cầu")}<Num value={r.dau1} onChange={(x) => set(i, { dau1: x })} suffix="lít" />{salChk("dau1")}</div>
           </div>
+          {/* Chi khác — repeater khoản tùy chỉnh của tuyến (mỗi dòng tự tick "chi theo ngày") */}
+          {(() => {
+            const ex = Array.isArray(r.extraFees) ? r.extraFees : [];
+            const setEx = (arr) => set(i, { extraFees: arr });
+            const updEx = (k, np) => setEx(ex.map((f, j) => (j === k ? { ...f, ...np } : f)));
+            return (
+              <div style={{ marginTop: 12, borderTop: "1px dashed var(--line)", paddingTop: 11 }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--ink-2)", marginBottom: 7 }}><i className="bi bi-plus-slash-minus" style={{ color: "var(--accent)" }} /> Chi khác <span style={{ fontWeight: 400, color: "var(--ink-4)" }}>(khoản tùy chỉnh của tuyến)</span></div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                  {ex.map((f, k) => (
+                    <div key={k} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <input value={f.name || ""} onChange={(e) => updEx(k, { name: e.target.value })} placeholder="Tên khoản chi" style={{ flex: 1, minWidth: 0, padding: "7px 10px", fontSize: 13, border: "1px solid var(--line)", borderRadius: 8, outline: "none" }} />
+                      <div style={{ width: 150 }}><Money value={f.amount} onChange={(x) => updEx(k, { amount: x })} dim /></div>
+                      <label style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, color: f.perDay ? "var(--accent)" : "var(--ink-4)", cursor: "pointer", whiteSpace: "nowrap" }} title="Tích = chi khoản này cho lái xe theo ngày (gom ở Lộ trình)">
+                        <input type="checkbox" checked={!!f.perDay} onChange={() => updEx(k, { perDay: !f.perDay })} style={{ accentColor: "var(--accent)", margin: 0, cursor: "pointer" }} /> chi theo ngày
+                      </label>
+                      <button type="button" onClick={() => setEx(ex.filter((_, j) => j !== k))} title="Xóa khoản" style={{ flexShrink: 0, width: 30, height: 30, display: "grid", placeItems: "center", border: "1px solid var(--line)", borderRadius: 8, background: "#fff", color: "var(--ink-4)", cursor: "pointer" }}><I.x /></button>
+                    </div>
+                  ))}
+                  {ex.length === 0 && <div style={{ fontSize: 11.5, color: "var(--ink-4)" }}>Chưa có khoản chi khác.</div>}
+                </div>
+                <button type="button" onClick={() => setEx([...ex, { name: "", amount: "", perDay: true }])} style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 11px", fontSize: 12.5, fontWeight: 600, border: "1px dashed var(--line)", borderRadius: 8, background: "#fff", color: "var(--ink-3)", cursor: "pointer" }}><I.plus /> Thêm khoản chi khác</button>
+              </div>
+            );
+          })()}
         </div>
         );
       })}

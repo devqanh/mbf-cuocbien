@@ -616,6 +616,7 @@ trait HandlesTripAndDrivers
             'km'        => $this->outNum($r->km),
             'dau2'      => $this->outNum($r->dau_2cau),
             'dau1'      => $this->outNum($r->dau_1cau),
+            'extraFees' => $this->cleanExtraFees($r->extra_fees),
         ])->all();
     }
 
@@ -628,6 +629,36 @@ trait HandlesTripAndDrivers
         if ($parts === null) return ['troCap', 'luong'];
         if (! is_array($parts)) return [];
         return array_values(array_intersect(self::SALARY_KEYS, array_map('strval', $parts)));
+    }
+
+    /** Chuẩn hóa danh sách "Chi khác" (repeater) cho OUTPUT: {name, amount (tiền), perDay}. */
+    private function cleanExtraFees($fees): array
+    {
+        if (! is_array($fees)) return [];
+        $out = [];
+        foreach ($fees as $f) {
+            if (! is_array($f)) continue;
+            $name = trim((string) ($f['name'] ?? ''));
+            $amount = (float) ($f['amount'] ?? 0);
+            if ($name === '' && $amount <= 0) continue;
+            $out[] = ['name' => $name, 'amount' => $this->outMoney($amount), 'perDay' => ! empty($f['perDay'])];
+        }
+        return $out;
+    }
+
+    /** Chuẩn hóa "Chi khác" cho LƯU: {name, amount (int), perDay}; bỏ dòng rỗng. */
+    private function extraFeesIn($fees): array
+    {
+        if (! is_array($fees)) return [];
+        $out = [];
+        foreach ($fees as $f) {
+            if (! is_array($f)) continue;
+            $name = $this->str($f['name'] ?? null) ?? '';
+            $amount = $this->inMoney($f['amount'] ?? null) ?? 0;
+            if ($name === '' && $amount <= 0) continue;
+            $out[] = ['name' => $name, 'amount' => $amount, 'perDay' => ! empty($f['perDay'])];
+        }
+        return $out;
     }
 
     /** Lưu phí tuyến đường — xóa sạch & tạo lại (không có FK liên kết). */
@@ -652,6 +683,7 @@ trait HandlesTripAndDrivers
                     'km'         => $this->inNum($r['km'] ?? null) ?? 0,
                     'dau_2cau'   => $this->inNum($r['dau2'] ?? null) ?? 0,
                     'dau_1cau'   => $this->inNum($r['dau1'] ?? null) ?? 0,
+                    'extra_fees' => $this->extraFeesIn($r['extraFees'] ?? null),
                     'sort'       => $i,
                 ]);
             }
