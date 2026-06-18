@@ -660,7 +660,7 @@ function ShipmentsApp() {
                           <>
                             <div style={{ fontWeight: 600, fontSize: 13 }} className="tnum">{s.contNo || "—"}</div>
                             <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 2 }} className="tnum">{s.contType}{s.kho ? " · " + s.kho : ""}</div>
-                            {(() => { const out = !!(s.gioXeRa && s.gioXeRa.trim());   // "đã ra" = cont có Giờ xe ra của chính nó (không xét BKS / xe kéo cont khác) return (
+                            {(() => { const out = !!(s.gioXeRa && s.gioXeRa.trim()); return (
                             <div style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 4, fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
                               color: out ? "var(--good)" : "var(--warn)", background: out ? "var(--good-weak)" : "#fcf3e2" }}>
                               <span style={{ width: 6, height: 6, borderRadius: 999, background: "currentColor" }} />
