@@ -356,16 +356,17 @@ trait HandlesShipments
                 $axle = $vehByPlate[$bks]->axle ?? null;
                 $matched = $vehByPlate->has($bks);
             }
-            // "Chi theo ngày": mỗi chuyến (leg) khớp 1 phí tuyến theo TẬP kho → cộng các khoản tick chi theo ngày.
-            $payItems = []; $payTotal = 0;
+            // "Chi theo ngày": MỖI chuyến (leg) = 1 nhóm (kể cả không khớp phí tuyến → cảnh báo cho kế toán).
+            $payGroups = []; $payTotal = 0; $payWarn = 0;
             foreach ($ls as $l) {
-                foreach ($this->legDailyCharge($l, $axle, $rfBySet, $fuels, $dateStr) as $it) {
-                    $payItems[] = $it; $payTotal += $it['amount'];
-                }
+                $g = $this->legPayGroup($l, $axle, $rfBySet, $fuels, $dateStr);
+                $payGroups[] = $g;
+                $payTotal += $g['sub'];
+                if ($g['note'] !== '') $payWarn++;   // chuyến chưa ra tiền (không khớp / chưa tick / =0)
             }
             $pay = $paysByBks->get($bks);
             $trucks[] = ['bks' => $bks, 'matched' => $matched, 'type' => $type, 'axle' => $axle, 'legs' => $ls,
-                'payItems' => $payItems, 'payTotal' => $payTotal,
+                'payGroups' => $payGroups, 'payTotal' => $payTotal, 'payWarn' => $payWarn,
                 'payDriver' => $pay?->driver ?? '', 'paid' => (bool) ($pay?->paid ?? false), 'paidDate' => $pay ? $this->outDate($pay->paid_date) : ''];
         }
         usort($trucks, fn ($a, $b) => count($b['legs']) <=> count($a['legs']) ?: strcmp($a['bks'], $b['bks']));
@@ -404,22 +405,31 @@ trait HandlesShipments
         return implode('|', $set);
     }
 
-    /** Các khoản "chi theo ngày" của 1 chuyến (leg): Phí tuyến khớp (TẬP Cảng+Kho) + dầu × giá dầu theo ngày. */
-    private function legDailyCharge(array $leg, ?string $axle, array $rfBySet, $fuels, string $date): array
+    /**
+     * 1 CHUYẾN (leg) → nhóm chi cho lái: luôn trả nhóm (kể cả KHÔNG khớp phí tuyến) để
+     * Lộ trình hiện ĐỦ mọi chuyến + cảnh báo cho kế toán. matched/note cho biết lý do = 0.
+     */
+    private function legPayGroup(array $leg, ?string $axle, array $rfBySet, $fuels, string $date): array
     {
         // Chuỗi node thực tế của chuyến: Nơi lấy (cảng) → các Kho → Nơi hạ (cảng).
         $nodes = array_merge([$leg['from'] ?? ''], $this->khoPoints($leg['kho'] ?? ''), [$leg['to'] ?? '']);
+        // Hiển thị lộ trình thực tế (bỏ điểm rỗng + trùng liền kề).
+        $disp = [];
+        foreach ($nodes as $n) { $n = trim((string) $n); if ($n === '' || (count($disp) && end($disp) === $n)) continue; $disp[] = $n; }
+        $routeDisp = implode(' → ', $disp) ?: ($this->khoRouteDisplay($leg['kho'] ?? '') ?: '—');
+        $g = ['route' => $routeDisp, 'cont' => $leg['cont'] ?? '', 'mode' => $leg['mode'] ?? '', 'items' => [], 'sub' => 0, 'matched' => false, 'note' => ''];
+
         $rf = $rfBySet[$this->routeNodeKey($nodes)] ?? null;
-        if (! $rf) return [];
+        if (! $rf) { $g['note'] = 'Chưa có Phí tuyến khớp lộ trình này'; return $g; }
+        $g['matched'] = true;
         $parts = $this->cleanSalaryParts($rf->salary_parts);
-        if (! $parts) return [];
-        $route = trim((string) $rf->route) ?: ($this->khoRouteDisplay($leg['kho'] ?? '') ?: ($leg['kho'] ?? ''));
+        if (! $parts) { $g['note'] = 'Phí tuyến chưa tích "chi theo ngày" khoản nào'; return $g; }
+
         $items = [];
-        // Mỗi khoản kèm tham chiếu chuyến (route + cont) để Lộ trình GOM theo tuyến cho kế toán rà soát.
-        $push = function ($key, $label, $amount, array $extra = []) use (&$items, $parts, $route, $leg) {
+        $push = function ($key, $label, $amount, array $extra = []) use (&$items, $parts) {
             $amount = (int) round((float) $amount);
             if (! in_array($key, $parts, true) || $amount <= 0) return;
-            $items[] = ['key' => $key, 'label' => $label, 'amount' => $amount, 'route' => $route, 'cont' => $leg['cont'] ?? ''] + $extra;
+            $items[] = ['key' => $key, 'label' => $label, 'amount' => $amount] + $extra;
         };
         $push('veTram', 'Vé trạm', $rf->ve_tram);
         $push('tienDuong', 'Tiền đường', $rf->tien_duong);
@@ -435,7 +445,10 @@ trait HandlesShipments
             // Kèm số lít + đơn giá để kế toán rà soát: tiền = lít × đơn giá.
             $push($dauKey, 'Dầu ' . ($is2 ? '2 cầu' : '1 cầu'), $liters * $unit, ['liters' => $liters, 'unitPrice' => (int) round($unit)]);
         }
-        return $items;
+        $g['items'] = $items;
+        $g['sub']   = array_sum(array_column($items, 'amount'));
+        if (! $items) $g['note'] = 'Các khoản "chi theo ngày" của tuyến đều = 0';
+        return $g;
     }
 
     /** Lưu chi cho lái xe theo ngày + xe (chỉ lưu lái nhận + đã chi; tiền tự tính từ phí tuyến). */
