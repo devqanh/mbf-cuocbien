@@ -209,11 +209,14 @@ function MultiCombo({ values = [], onChange, options = [], onCreate, max = 3, pl
   selRef.current = sel;   // luôn giữ danh sách MỚI NHẤT để chống stale-closure khi re-render trễ
   const full = sel.length >= max;
   const ql = q.trim().toLowerCase();
-  const avail = options.filter((o) => !sel.includes(o) && (!ql || o.toLowerCase().includes(ql)));
-  const exact = options.some((o) => o.toLowerCase() === ql) || sel.some((o) => o.toLowerCase() === ql);
+  // Chống trùng KHÔNG phân biệt hoa/thường + dấu cách: "ICD QV" == "ICDQV" == "icdqv".
+  const norm = (v) => (v || "").toString().replace(/\s+/g, "").toLowerCase();
+  const has = (arr, v) => arr.some((x) => norm(x) === norm(v));
+  const avail = options.filter((o) => !has(sel, o) && (!ql || o.toLowerCase().includes(ql)));
+  const exact = has(options, q) || has(sel, q);
   // Chọn xong GIỮ mở + focus lại ô tìm để chọn tiếp nhiều mục (không bị mất các mục đã chọn)
   const refocus = () => { setTimeout(() => { try { searchRef.current && searchRef.current.focus(); } catch (e) {} }, 0); };
-  const addVal = (v) => { const cur = selRef.current; if (!v || cur.includes(v) || cur.length >= max) return; onChange([...cur, v]); setQ(""); refocus(); };
+  const addVal = (v) => { const cur = selRef.current; if (!v || has(cur, v) || cur.length >= max) return; onChange([...cur, v]); setQ(""); refocus(); };
   const removeVal = (v) => onChange(selRef.current.filter((x) => x !== v));
   const create = () => { const v = q.trim(); if (!v || sel.length >= max) return; if (onCreate && !options.includes(v)) onCreate(v); addVal(v); };
   return (
