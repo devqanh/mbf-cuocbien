@@ -885,12 +885,62 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                   : g.priced ? [<span key="i" />, <span key="n">Tên khoản</span>, <span key="p" style={{ textAlign: "right" }}>Đơn giá mặc định</span>, <span key="x" />]
                   : g.colored ? [<span key="i" />, <span key="n">Tên khoản</span>, <span key="c" style={{ textAlign: "center" }}>Theo dõi</span>, <span key="x" />]
                   : g.coded ? [<span key="i" />, <span key="n">{g.codeNameLabel || "Tên"}</span>, <span key="p">Ký hiệu</span>, ...(g.addressed ? [<span key="a">Địa chỉ kho</span>] : []), ...(g.geo ? [<span key="g">Vị trí (GPS)</span>] : []), <span key="x" />]
-                  : g.fleet ? [<span key="i" />, <span key="n">Biển số</span>, <span key="p" style={{ textAlign: "center" }}>Loại xe · số cầu · xe GPS</span>, <span key="x" />]
-                  : null;
+                  : null;   // đội xe (fleet) render dạng THẺ, không dùng header lưới
                 return head && <div style={{ display: "grid", gridTemplateColumns: grid, gap: 8, padding: "0 0 4px", fontSize: 11, fontWeight: 600, color: "var(--ink-4)", textTransform: "uppercase", letterSpacing: "0.04em" }}>{head}</div>;
               })()}
-              <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: 300, overflowY: "auto" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: g.fleet ? 8 : 2, maxHeight: g.fleet ? 420 : 300, overflowY: "auto", paddingRight: g.fleet ? 2 : 0 }}>
                 {list.map((it, i) => {
+                  // Đội xe (fleet): render dạng THẺ gọn — biển số + loại xe + số cầu + GPS, không nhồi vào 1 dòng lưới.
+                  if (g.fleet) {
+                    const isMbf = (vehType[it] || "MBF") === "MBF";
+                    const dupGps = isDupGps(it);
+                    const seg = (opts, cur, onPick, getColor) => (
+                      <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 8, padding: 2 }}>
+                        {opts.map(([val, lbl]) => { const on = cur === val; return (
+                          <button key={val} type="button" onClick={() => onPick(val)}
+                            style={{ border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 6, whiteSpace: "nowrap",
+                              background: on ? "#fff" : "transparent", color: on ? (getColor ? getColor(val) : "var(--accent)") : "var(--ink-4)", boxShadow: on ? "0 1px 2px rgba(16,19,23,.14)" : "none", transition: "all .12s" }}>{lbl}</button>
+                        ); })}
+                      </div>
+                    );
+                    return (
+                      <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 11, padding: "10px 12px", background: "#fff", display: "flex", flexDirection: "column", gap: 9 }}>
+                        {/* Hàng 1: biển số + xóa */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                          <i className="bi bi-truck" style={{ color: "var(--accent)", fontSize: 15, flexShrink: 0 }} />
+                          <input value={it} onChange={(e) => rename(i, e.target.value)} placeholder="Biển số" className="tnum"
+                            style={{ flex: 1, minWidth: 0, padding: "7px 11px", fontSize: 14.5, fontWeight: 700, letterSpacing: "0.02em", border: "1px solid var(--line)", borderRadius: 8, outline: "none" }}
+                            onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
+                          <button type="button" onClick={() => remove(i)} title="Xóa xe"
+                            style={{ width: 30, height: 30, flexShrink: 0, display: "grid", placeItems: "center", border: "none", borderRadius: 8, background: "transparent", color: "var(--ink-4)", cursor: "pointer" }}
+                            onMouseEnter={(e) => { e.currentTarget.style.background = "#fce8e8"; e.currentTarget.style.color = "var(--danger)"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--ink-4)"; }}><I.trash /></button>
+                        </div>
+                        {/* Hàng 2: loại xe + số cầu (MBF) */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                          {seg([["MBF", "Xe MBF"], ["Ngoài", "Xe ngoài"]], vehType[it] || "MBF", (v) => setVehType(it, v), (v) => v === "MBF" ? "var(--accent)" : "var(--ink-2)")}
+                          {isMbf && (
+                            <div style={{ display: "flex", alignItems: "center", gap: 7 }} title="Số cầu — để tính dầu theo Phí tuyến đường">
+                              <span style={{ fontSize: 11.5, color: "var(--ink-4)", fontWeight: 600 }}>Số cầu</span>
+                              {seg([["1", "1 cầu"], ["2", "2 cầu"]], vehAxle[it] || "", (v) => setVehAxle(it, v))}
+                            </div>
+                          )}
+                        </div>
+                        {/* Hàng 3: gán xe GPS (MBF) */}
+                        {isMbf && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <i className="bi bi-broadcast" style={{ color: vehGps[it] ? "var(--accent)" : "var(--ink-4)", fontSize: 14, flexShrink: 0 }} />
+                            <select value={vehGps[it] || ""} onChange={(e) => setVehGps(it, e.target.value)} title={dupGps ? "Xe GPS này đã gán cho xe khác — mỗi xe GPS chỉ gán 1 xe" : "Gán xe trong hệ thống GPS để theo dõi vị trí lô hàng"}
+                              style={{ flex: 1, minWidth: 0, fontSize: 12.5, padding: "7px 9px", border: `1px solid ${dupGps ? "var(--danger)" : (vehGps[it] ? "var(--accent)" : "var(--line)")}`, borderRadius: 8, background: dupGps ? "#fce8e8" : "#fff", color: dupGps ? "var(--danger)" : (vehGps[it] ? "var(--ink)" : "var(--ink-4)") }}>
+                              <option value="">Gán xe GPS để theo dõi vị trí…</option>
+                              {gpsVehicles.map((gv) => { const otherV = (gpsUsedBy[gv.ref] || []).filter((pl) => pl !== it); return <option key={gv.ref} value={gv.ref} disabled={otherV.length > 0}>{gv.plate} · {gv.providerLabel}{otherV.length ? ` (đã gán: ${otherV[0]})` : ""}</option>; })}
+                              {vehGps[it] && !gpsVehicles.some((gv) => gv.ref === vehGps[it]) && <option value={vehGps[it]}>(đã gán — xe đang offline)</option>}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
                   // Ký hiệu ĐÃ LƯU (dòng có id thật) → khóa, không cho sửa (giữ khớp import/bảng giá);
                   // dòng mới thêm (chưa có id) thì còn sửa ký hiệu được trước khi lưu.
                   const codeLocked = (() => { const id = idArr[i]; return id != null && id !== "" && !isNaN(+id); })();
@@ -929,52 +979,6 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                         <i className={"bi " + (pinned ? "bi-geo-alt-fill" : "bi-geo-alt")} /> {pinned ? "Đã ghim" : "Ghim BĐ"}
                       </button>
                     ); })()}
-                    {g.fleet && (
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                        <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 8, padding: 2 }}>
-                          {["MBF", "Ngoài"].map((opt) => {
-                            const active = (vehType[it] || "MBF") === opt;
-                            return (
-                              <button key={opt} type="button" onClick={() => setVehType(it, opt)}
-                                style={{ border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 6, whiteSpace: "nowrap",
-                                  background: active ? "#fff" : "transparent", color: active ? (opt === "MBF" ? "var(--accent)" : "var(--ink-2)") : "var(--ink-4)", boxShadow: active ? "0 1px 2px rgba(16,19,23,.14)" : "none", transition: "all .12s" }}>
-                                {opt === "MBF" ? "Xe MBF" : "Xe ngoài"}
-                              </button>
-                            );
-                          })}
-                        </div>
-                        {/* Số cầu — chỉ xe MBF (link Phí tuyến đường: dầu 2 cầu/1 cầu) */}
-                        {(vehType[it] || "MBF") === "MBF" && (
-                          <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 8, padding: 2 }} title="Số cầu — để tính dầu theo Phí tuyến đường">
-                            {["1", "2"].map((opt) => {
-                              const active = (vehAxle[it] || "") === opt;
-                              return (
-                                <button key={opt} type="button" onClick={() => setVehAxle(it, opt)}
-                                  style={{ border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, padding: "5px 11px", borderRadius: 6, whiteSpace: "nowrap",
-                                    background: active ? "#fff" : "transparent", color: active ? "var(--accent)" : "var(--ink-4)", boxShadow: active ? "0 1px 2px rgba(16,19,23,.14)" : "none", transition: "all .12s" }}>
-                                  {opt} cầu
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                        {/* Gán xe GPS — chỉ xe MBF (liên kết provider:deviceId để tracking) */}
-                        {(vehType[it] || "MBF") === "MBF" && (() => {
-                          const dupGps = isDupGps(it);
-                          return (
-                          <select value={vehGps[it] || ""} onChange={(e) => setVehGps(it, e.target.value)} title={dupGps ? "Xe GPS này đã gán cho xe khác — mỗi xe GPS chỉ gán 1 xe" : "Gán xe trong hệ thống GPS để theo dõi vị trí lô hàng"}
-                            style={{ fontSize: 12, padding: "6px 8px", border: `1px solid ${dupGps ? "var(--danger)" : (vehGps[it] ? "var(--accent)" : "var(--line)")}`, borderRadius: 8, background: dupGps ? "#fce8e8" : "#fff", color: dupGps ? "var(--danger)" : (vehGps[it] ? "var(--ink)" : "var(--ink-4)"), maxWidth: 190 }}>
-                            <option value="">🛰 Gán xe GPS…</option>
-                            {gpsVehicles.map((gv) => {
-                              const other = (gpsUsedBy[gv.ref] || []).filter((pl) => pl !== it);   // xe KHÁC đang gán ref này
-                              return <option key={gv.ref} value={gv.ref} disabled={other.length > 0}>{gv.plate} · {gv.providerLabel}{other.length ? ` (đã gán: ${other[0]})` : ""}</option>;
-                            })}
-                            {vehGps[it] && !gpsVehicles.some((gv) => gv.ref === vehGps[it]) && <option value={vehGps[it]}>(đã gán — xe đang offline)</option>}
-                          </select>
-                          );
-                        })()}
-                      </div>
-                    )}
                     <button type="button" onClick={() => remove(i)} title="Xóa"
                       style={{ width: 28, height: 28, display: "grid", placeItems: "center", border: "none", borderRadius: 7, background: "transparent", color: "var(--ink-4)", cursor: "pointer" }}
                       onMouseEnter={(e) => { e.currentTarget.style.background = "#fce8e8"; e.currentTarget.style.color = "var(--danger)"; }}
