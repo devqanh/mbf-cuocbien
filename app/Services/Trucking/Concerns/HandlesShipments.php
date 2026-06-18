@@ -195,7 +195,7 @@ trait HandlesShipments
         } elseif ($sortKey === 'cost') {
             $list->withSum('costLines as cost_total', 'amount')->orderBy('cost_total', $dir);
         } else {
-            $list->orderBy('id');
+            $list->orderBy('id', 'desc');   // mặc định: lô MỚI NHẬP lên đầu (id giảm dần)
         }
 
         $list->with(['customer', 'costLines', 'revenueLines', 'payments', 'spends']);
