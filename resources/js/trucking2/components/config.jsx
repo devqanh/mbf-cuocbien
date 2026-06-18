@@ -140,6 +140,109 @@ const CFG_GROUPS = [
 
 /* ===================== PHÍ TUYẾN ĐƯỜNG (repeater) ===================== */
 
+/* Popup Nhập phí tuyến từ Excel: chọn file → KIỂM TRA (terminal) → có lỗi thì chặn; OK mới cho nhập. */
+function RouteFeeImportModal({ onClose }) {
+  const R = (window.__TRK || {}).routes || {};
+  const [fileName, setFileName] = useState("");
+  const [file, setFile] = useState(null);
+  const [checking, setChecking] = useState(false);
+  const [res, setRes] = useState(null);        // kết quả check (rows/summary/canImport)
+  const [importing, setImporting] = useState(false);
+  const [shown, setShown] = useState(0);        // số dòng terminal đã hiện (tiến trình)
+  const [done, setDone] = useState(false);
+
+  const pick = async (e) => {
+    const f = e.target.files && e.target.files[0]; e.target.value = "";
+    if (!f) return;
+    setFile(f); setFileName(f.name); setRes(null); setDone(false); setShown(0); setChecking(true);
+    const fd = new FormData(); fd.append("file", f);
+    try {
+      const r = await window.trkUpload("POST", R.routeFeesImportCheck, fd);
+      if (r && r.rows) { setRes(r); setShown(r.rows.length); }
+      else window.trkToast && window.trkToast((r && r.message) || "Đọc file lỗi", "error");
+    } catch (err) { window.trkToast && window.trkToast("Đọc file lỗi", "error"); }
+    setChecking(false);
+  };
+
+  const doImport = async () => {
+    if (!file || !res || !res.canImport || importing) return;
+    setImporting(true); setShown(0);
+    const total = (res.rows || []).length;
+    const fd = new FormData(); fd.append("file", file);
+    const tick = setInterval(() => setShown((s) => (s < total ? s + 1 : s)), 70);   // tiến trình chạy dòng
+    try {
+      const r = await window.trkUpload("POST", R.routeFeesImport, fd);
+      clearInterval(tick); setShown(total);
+      if (r && r.ok) { setDone(true); window.trkToast && window.trkToast(`Đã nhập: +${r.created} mới · ${r.updated} cập nhật`); setTimeout(() => window.location.reload(), 1100); }
+      else { setImporting(false); window.trkToast && window.trkToast((r && r.message) || "Nhập thất bại", "error"); }
+    } catch (err) { clearInterval(tick); setImporting(false); window.trkToast && window.trkToast("Nhập thất bại", "error"); }
+  };
+
+  const sm = res ? res.summary : null;
+  const visRows = (res ? res.rows : []).slice(0, importing || done ? shown : undefined);
+  const ic = { error: { c: "#f87171", i: "✗" }, update: { c: "#34d399", i: "✓" }, create: { c: "#38bdf8", i: "✓" } };
+
+  const footer = (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+      <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "var(--accent)", cursor: importing ? "default" : "pointer", fontWeight: 600 }}>
+        <i className="bi bi-paperclip" /> {fileName ? "Chọn file khác" : "Chọn file Excel"}
+        <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} disabled={importing} onChange={pick} />
+      </label>
+      <div style={{ display: "flex", gap: 8 }}>
+        <Btn onClick={onClose} disabled={importing}>Đóng</Btn>
+        <Btn variant="primary" onClick={doImport} disabled={!res || !res.canImport || importing || done}>{importing ? "Đang nhập…" : "Xác nhận nhập"}</Btn>
+      </div>
+    </div>
+  );
+
+  return (
+    <Modal title="Nhập phí tuyến từ Excel" subtitle="Kiểm tra file trước — có lỗi sẽ KHÔNG nhập gì; sửa file rồi tải lại" width={680} onClose={importing ? () => {} : onClose} footer={footer} icon={<i className="bi bi-upload" />}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {!res && !checking && (
+          <div style={{ padding: "18px", textAlign: "center", color: "var(--ink-4)", fontSize: 13, border: "1px dashed var(--line)", borderRadius: 10 }}>
+            Chọn file Excel (xuất từ nút <b>Xuất Excel</b>, điền/sửa rồi tải lên). Hệ thống kiểm tra trước khi nhập.
+          </div>
+        )}
+        {checking && <div style={{ padding: "16px", textAlign: "center", color: "var(--ink-3)", fontSize: 13 }}><i className="bi bi-arrow-repeat" /> Đang kiểm tra file…</div>}
+        {sm && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 12.5 }}>
+            <span style={chip("#38bdf8")}>{sm.willCreate} thêm mới</span>
+            <span style={chip("#34d399")}>{sm.willUpdate} cập nhật</span>
+            {sm.warnings > 0 && <span style={chip("#f59e0b")}>{sm.warnings} cảnh báo</span>}
+            {sm.errors > 0 && <span style={chip("#f87171")}>{sm.errors} lỗi</span>}
+          </div>
+        )}
+        {sm && sm.errors > 0 && !importing && (
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "9px 12px", fontSize: 12.5, color: "#a05a00", background: "#fff7e9", border: "1px solid #f1d59a", borderRadius: 10 }}>
+            <i className="bi bi-exclamation-triangle-fill" style={{ marginTop: 1 }} /><span><b>File còn {sm.errors} lỗi</b> — sửa trên Excel rồi bấm "Chọn file khác". Chưa nhập gì cả.</span>
+          </div>
+        )}
+        {res && (
+          <div style={{ background: "#0f172a", borderRadius: 10, padding: "12px 14px", maxHeight: 320, overflowY: "auto", fontFamily: "ui-monospace, Menlo, Consolas, monospace", fontSize: 12.5, lineHeight: 1.7 }}>
+            {visRows.map((row, i) => {
+              const k = ic[row.action] || ic.error;
+              return (
+                <div key={i}>
+                  <span style={{ color: k.c, fontWeight: 700 }}>{k.i}</span>
+                  <span style={{ color: "#64748b" }}> dòng {row.line} </span>
+                  <span style={{ color: "#e2e8f0" }}>{row.route || "(trống)"}</span>
+                  <span style={{ color: row.action === "update" ? "#34d399" : row.action === "create" ? "#38bdf8" : "#f87171" }}> · {row.action === "update" ? "cập nhật" : row.action === "create" ? "thêm mới" : "LỖI"}</span>
+                  {(row.issues || []).map((is, j) => (
+                    <div key={j} style={{ color: is.level === "error" ? "#fca5a5" : "#fcd34d", paddingLeft: 18 }}>↳ {is.msg}</div>
+                  ))}
+                </div>
+              );
+            })}
+            {importing && shown < (res.rows || []).length && <div style={{ color: "#94a3b8" }}>▌ đang xử lý…</div>}
+            {done && <div style={{ color: "#34d399", fontWeight: 700, marginTop: 4 }}>✓ Hoàn tất — đang tải lại…</div>}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+const chip = (c) => ({ display: "inline-flex", alignItems: "center", gap: 5, padding: "2px 10px", borderRadius: 999, fontWeight: 700, color: c, background: c + "22", border: "1px solid " + c + "55" });
+
 function RouteFees({ rows = [], onChange, warehouses = [], locations = [], isDup = () => false }) {
   // Node tuyến = Cảng (địa điểm) HOẶC Kho — gợi ý gom 2 nhóm để chọn cả chuỗi Cảng→Kho→Kho→Cảng.
   const routeGroups = [{ label: "Cảng", items: locations || [] }, { label: "Kho", items: warehouses || [] }];
@@ -166,24 +269,14 @@ function RouteFees({ rows = [], onChange, warehouses = [], locations = [], isDup
   // Xuất/Nhập Excel — nhập UPSERT theo tuyến (trùng → cập nhật, mới → thêm)
   const R = (window.__TRK || {}).routes || {};
   const ioBtn = { display: "inline-flex", alignItems: "center", gap: 6, height: 32, padding: "0 12px", fontSize: 12.5, fontWeight: 600, borderRadius: 9, border: "1px solid var(--line)", background: "#fff", color: "var(--ink-2)", cursor: "pointer", textDecoration: "none" };
-  const importFees = async (e) => {
-    const f = e.target.files && e.target.files[0]; e.target.value = "";
-    if (!f) return;
-    const ok = await window.confirmAction({ title: "Nhập phí tuyến từ Excel?", text: "Trùng tuyến sẽ <b>cập nhật</b>, tuyến mới sẽ <b>thêm</b>. Thay đổi chưa lưu trên màn hình sẽ bị bỏ qua.", confirmText: '<i class="bi bi-upload me-1"></i> Nhập' });
-    if (!ok) return;
-    const fd = new FormData(); fd.append("file", f);
-    try {
-      const res = await window.trkUpload("POST", R.routeFeesImport, fd);
-      if (res && res.ok) { window.trkToast && window.trkToast(`Đã nhập: +${res.created} mới · ${res.updated} cập nhật${res.skipped ? ` · bỏ ${res.skipped}` : ""}`); setTimeout(() => window.location.reload(), 700); }
-      else window.trkToast && window.trkToast((res && res.message) || "Nhập thất bại", "error");
-    } catch (err) { window.trkToast && window.trkToast("Nhập thất bại", "error"); }
-  };
+  const [importOpen, setImportOpen] = useState(false);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {importOpen && <RouteFeeImportModal onClose={() => setImportOpen(false)} />}
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <a href={R.routeFeesExport} style={ioBtn}><i className="bi bi-file-earmark-excel" /> Xuất Excel</a>
-        <label style={{ ...ioBtn, cursor: "pointer" }}><i className="bi bi-upload" /> Nhập Excel<input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={importFees} /></label>
-        <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>Điền nhanh trên Excel rồi nhập lại — <b>trùng tuyến tự cập nhật</b>, tuyến mới tự thêm.</span>
+        <button type="button" onClick={() => setImportOpen(true)} style={ioBtn}><i className="bi bi-upload" /> Nhập Excel</button>
+        <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>Điền nhanh trên Excel rồi nhập lại — <b>kiểm tra trước, có lỗi không nhập gì</b>; trùng tuyến tự cập nhật.</span>
       </div>
       {(rows || []).length === 0 && <div style={{ padding: "14px 2px", fontSize: 12.5, color: "var(--ink-4)" }}>Chưa có tuyến nào — bấm <b>+ Thêm tuyến</b> để cấu hình phí.</div>}
       {(rows || []).map((r, i) => {

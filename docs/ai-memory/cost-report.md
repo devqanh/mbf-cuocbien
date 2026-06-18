@@ -18,6 +18,8 @@ Trả: revenue/totalCost/profit/margin, trips/conts/vehicles, costByCategory[{la
 
 **Frontend** `pages/bao-cao.jsx`: KPI P&L (DT/CP/LN/biên), **Donut SVG tự vẽ** (stroke-dasharray, KHÔNG thư viện) + legend %, **bar CSS** chi phí theo xe + chi phí/chuyến, chọn tháng prev/next. Palette màu cố định.
 
+**Báo cáo giám đốc (thêm, commit `b074038`):** `fleet[]` (DT/CP/LN/chuyến/cont/CP-DT% mỗi xe), `byRoute`/`byKho` (sản lượng đếm lô), `costTrend(year,month)` (route `report.trend`, LAZY — DT+cost_lines+vehicle_costs gom SQL, route-pay loop ngày). FE: bảng Hiệu suất đội xe, TopList tuyến/kho, TrendChart (cột DT vs CP + LN, tải bằng nút). Doanh thu theo khách: user CHƯA chọn làm.
+
 **Lưu ý double-count:** cost_lines có thể trùng route-pay (vd cầu đường) nếu user nhập 2 nơi — hiện để 4 bucket riêng, chưa khử trùng tự động.
 
 Liên quan [[payroll-period-plan]], [[route-pays-lo-trinh]], [[trucking-report-schema]].

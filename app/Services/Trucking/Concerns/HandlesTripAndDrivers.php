@@ -686,6 +686,54 @@ trait HandlesTripAndDrivers
     }
 
     /**
+     * KIỂM TRA (dry-run) file nhập phí tuyến: phân loại từng dòng create/update/error + cảnh báo,
+     * KHÔNG ghi gì. canImport=true khi 0 lỗi. Dùng chung cho popup check + import (chặn nếu có lỗi).
+     */
+    public function analyzeRouteFeeImport(array $rows): array
+    {
+        $existing = [];
+        foreach (TruckingRouteFee::all() as $rf) { $k = $this->routeNodeKey($this->routeStringNodes((string) $rf->route)); if ($k !== '') $existing[$k] = true; }
+        $codeMap = $this->normalizedCodeMap();
+        $norm = fn ($v) => mb_strtoupper(preg_replace('/\s+/u', '', trim(\Illuminate\Support\Str::ascii((string) $v))) ?? '');
+        $numCells = ['veTram', 'tienDuong', 'troCap', 'phiKhac', 'luongKeoCru', 'luongKeoKhongCru', 'luongKhongKeoCru', 'luongKhongKeoKhongCru', 'km', 'dau2', 'dau1'];
+
+        $seen = []; $out = []; $willCreate = 0; $willUpdate = 0; $errors = 0; $warnings = 0;
+        foreach ($rows as $idx => $r) {
+            $line = (int) ($r['_line'] ?? ($idx + 2));
+            $route = trim((string) ($r['route'] ?? ''));
+            $issues = []; $action = 'error';
+            if ($route === '') {
+                $issues[] = ['level' => 'error', 'msg' => 'Thiếu tên tuyến'];
+            } else {
+                $key = $this->routeNodeKey($this->routeStringNodes($route));
+                if ($key === '') {
+                    $issues[] = ['level' => 'error', 'msg' => 'Tuyến không hợp lệ'];
+                } elseif (isset($seen[$key])) {
+                    $issues[] = ['level' => 'error', 'msg' => 'Trùng tuyến với dòng ' . $seen[$key] . ' trong file'];
+                } else {
+                    $seen[$key] = $line;
+                    foreach ($this->routeStringNodes($route) as $node) {
+                        if (! isset($codeMap[$norm($node)])) $issues[] = ['level' => 'warn', 'msg' => "Điểm \"$node\" chưa có trong danh mục Cảng/Kho"];
+                    }
+                    $action = isset($existing[$key]) ? 'update' : 'create';
+                }
+            }
+            foreach ($numCells as $c) {
+                $v = trim((string) ($r[$c] ?? ''));
+                if ($v !== '' && preg_match('/[^\d.,\s-]/u', $v)) { $issues[] = ['level' => 'error', 'msg' => "Giá trị \"$v\" không phải số"]; $action = 'error'; }
+            }
+            foreach ($issues as $is) { $is['level'] === 'error' ? $errors++ : $warnings++; }
+            if ($action === 'update') $willUpdate++; elseif ($action === 'create') $willCreate++;
+            $out[] = ['line' => $line, 'route' => $route, 'action' => $action, 'issues' => $issues];
+        }
+        return [
+            'rows' => $out,
+            'summary' => ['total' => count($out), 'willCreate' => $willCreate, 'willUpdate' => $willUpdate, 'errors' => $errors, 'warnings' => $warnings],
+            'canImport' => $errors === 0 && count($out) > 0,
+        ];
+    }
+
+    /**
      * NHẬP phí tuyến từ Excel — UPSERT theo TUYẾN (tập node Cảng+Kho): trùng tuyến → cập nhật,
      * chưa có → tạo mới. KHÔNG xóa tuyến vắng mặt (an toàn, nhập từng phần được). Giữ "Chi khác".
      * $rows: mảng assoc theo cột {route, veTram, tienDuong, troCap, phiKhac, luongKeoCru,
@@ -693,6 +741,11 @@ trait HandlesTripAndDrivers
      */
     public function importRouteFees(array $rows): array
     {
+        // CHẶN nếu file còn lỗi — không ghi gì cả (validate lại ở server cho chắc).
+        $analysis = $this->analyzeRouteFeeImport($rows);
+        if (! $analysis['canImport']) {
+            return ['ok' => false, 'message' => 'File còn lỗi — chưa nhập gì. Sửa rồi tải lại.'] + $analysis;
+        }
         // map nhãn/key "chi theo ngày" → key chuẩn
         $labelToKey = [];
         foreach (self::SALARY_LABELS as $k => $label) { $labelToKey[$this->normKey($label)] = $k; $labelToKey[$this->normKey($k)] = $k; }
@@ -744,7 +797,7 @@ trait HandlesTripAndDrivers
                 }
             }
         });
-        return ['ok' => true, 'created' => $created, 'updated' => $updated, 'skipped' => $skipped];
+        return ['ok' => true, 'created' => $created, 'updated' => $updated, 'skipped' => $skipped] + $analysis;
     }
 
     /** Chuẩn hóa khóa so khớp nhãn (bỏ dấu cách + viết thường). */

@@ -9,6 +9,8 @@ metadata:
 
 **Chi cho lái xe nay ở Lộ trình** (`/lo-trinh`), thay "Duyệt chi theo lô" cũ (xem [[shipment-spend-duyet-chi]]). Mỗi xe/ngày tổng hợp các khoản "chi theo ngày" từ Phí tuyến khớp với từng chuyến.
 
+**Xuất/Nhập Excel phí tuyến** (commit `1b89947`): nút Xuất/Nhập ở RouteFees. `routeFeeExportRows`+`exportRouteFees` (PhpSpreadsheet xlsx, 13 cột). `importRouteFees` UPSERT theo TẬP node tuyến (routeNodeKey) — trùng→update (giữ extra_fees), mới→create, KHÔNG xóa tuyến vắng. Routes `routeFees.export`/`routeFees.import` (CatalogController, đọc xlsx qua IOFactory). FE dùng `trkUpload` (multipart+CSRF) + reload.
+
 **Phí tuyến (cai-dat#routeFees):** tuyến chọn CẢ chuỗi node **Cảng(địa điểm)→Kho→Kho→Cảng**, KHÔNG chỉ kho (trước chỉ kho là sai — không phân biệt tuyến cùng kho khác cảng, vd ICDQV→QV→ICDQV vs ICDQV→QV→HAIPHONG). UI: `MultiCombo` prop `groups` = [{label:'Cảng',items:locations},{label:'Kho',items:warehouses}] (gợi ý gom nhóm + nhãn loại trên chip/dropdown); giá trị lưu là chuỗi thuần " - " (không kèm loại). Mỗi khoản (vé trạm/tiền đường/trợ cấp/lương/dầu1/dầu2) có tick **"chi theo ngày"** (`salary_parts`) → tick mới được tổng hợp trả lái. Dầu: lít × **giá dầu theo ngày** của chuyến.
 
 **Lương = ma trận 2×2:** (CÓ/KHÔNG kéo cont ra) × (CRU/không CRU). `leg.mode==='none'` = KHÔNG kéo cont ra; `leg.cru` = cờ CRU của lô. 4 cột: `luong`(kéo+CRU) · `luong_no_cru`(kéo+không CRU) · `luong_nokeo`(không kéo+CRU) · `luong_nokeo_no_cru`(không kéo+không CRU) — migration `2026_06_18_000004`. UI config: khối Lương 2 thẻ (Có/Không kéo cont ra), mỗi thẻ 2 ô CRU/không CRU, 1 tick "chi theo ngày" chung (key `luong`).

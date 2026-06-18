@@ -94,31 +94,46 @@ class CatalogController extends BaseTruckingController
         }, $name, ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
     }
 
-    /** Nhập Phí tuyến từ Excel — upsert theo tuyến (trùng tuyến → cập nhật). */
+    /** KIỂM TRA file nhập (dry-run) — phân loại + báo lỗi, KHÔNG ghi gì. */
+    public function importRouteFeesCheck(Request $request): JsonResponse
+    {
+        [$rows, $err] = $this->parseRouteFeeFile($request);
+        if ($err) return response()->json(['ok' => false, 'message' => $err], 422);
+        return response()->json(['ok' => true] + $this->svc->analyzeRouteFeeImport($rows));
+    }
+
+    /** Nhập Phí tuyến từ Excel — upsert theo tuyến (chặn nếu còn lỗi). */
     public function importRouteFees(Request $request): JsonResponse
+    {
+        [$rows, $err] = $this->parseRouteFeeFile($request);
+        if ($err) return response()->json(['ok' => false, 'message' => $err], 422);
+        return response()->json($this->svc->importRouteFees($rows));
+    }
+
+    /** Đọc file Excel phí tuyến → mảng dòng (assoc theo cột). Trả [rows, errorMsg]. */
+    private function parseRouteFeeFile(Request $request): array
     {
         $request->validate(['file' => ['required', 'file', 'mimes:xlsx,xls,csv,txt', 'max:5120']]);
         try {
-            $sheet = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($request->file('file')->getRealPath())
-                ->load($request->file('file')->getRealPath())->getActiveSheet();
-            $raw = $sheet->toArray(null, true, false, false);
+            $path = $request->file('file')->getRealPath();
+            $raw = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($path)->load($path)->getActiveSheet()
+                ->toArray(null, true, false, false);
         } catch (\Throwable $e) {
-            return response()->json(['ok' => false, 'message' => 'Không đọc được file Excel.'], 422);
+            return [[], 'Không đọc được file Excel.'];
         }
-        // cột theo thứ tự khi xuất; bỏ dòng tiêu đề (nếu ô A1 chứa "Tuyến")
         $keys = ['route', 'veTram', 'tienDuong', 'troCap', 'phiKhac', 'luongKeoCru', 'luongKeoKhongCru',
             'luongKhongKeoCru', 'luongKhongKeoKhongCru', 'km', 'dau2', 'dau1', 'chiTheoNgay'];
         $rows = [];
         foreach ($raw as $i => $line) {
             if (! is_array($line)) continue;
             $first = trim((string) ($line[0] ?? ''));
-            if ($first === '' ) continue;
-            if ($i === 0 && mb_stripos($first, 'tuyến') !== false) continue;   // header
-            $row = [];
+            if ($i === 0 && mb_stripos($first, 'tuyến') !== false) continue;   // bỏ dòng tiêu đề
+            if ($first === '' && trim(implode('', array_map(fn ($x) => (string) $x, $line))) === '') continue;   // bỏ dòng trống
+            $row = ['_line' => $i + 1];
             foreach ($keys as $ci => $k) $row[$k] = $line[$ci] ?? null;
             $rows[] = $row;
         }
-        return response()->json($this->svc->importRouteFees($rows));
+        return [$rows, null];
     }
 
     /** Lưu Bảng giá dầu (repeater theo khoảng ngày). */
