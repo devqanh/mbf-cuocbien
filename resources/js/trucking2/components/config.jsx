@@ -144,7 +144,17 @@ function RouteFees({ rows = [], onChange, warehouses = [], locations = [], isDup
   // Node tuyến = Cảng (địa điểm) HOẶC Kho — gợi ý gom 2 nhóm để chọn cả chuỗi Cảng→Kho→Kho→Cảng.
   const routeGroups = [{ label: "Cảng", items: locations || [] }, { label: "Kho", items: warehouses || [] }];
   const set = (i, np) => onChange(rows.map((r, j) => (j === i ? { ...r, ...np } : r)));
-  const add = () => onChange([...(rows || []), { id: Date.now() + Math.random(), route: "", veTram: "", tienDuong: "", troCap: "", cru: false, luong: "", luongNoCru: "", luongNokeo: "", luongNokeoNoCru: "", salaryParts: ["troCap", "luong"], km: "", dau2: "", dau1: "" }]);
+  // Thêm tuyến: KẾ THỪA giá + tick "chi theo ngày" của tuyến trên (đỡ nhập lại), chỉ để TRỐNG ô Tuyến.
+  const add = () => {
+    const list = rows || [];
+    const prev = list[list.length - 1];
+    const base = prev
+      ? { veTram: prev.veTram, tienDuong: prev.tienDuong, troCap: prev.troCap, phiKhac: prev.phiKhac, cru: prev.cru,
+          luong: prev.luong, luongNoCru: prev.luongNoCru, luongNokeo: prev.luongNokeo, luongNokeoNoCru: prev.luongNokeoNoCru,
+          salaryParts: [...(prev.salaryParts || [])], km: prev.km, dau2: prev.dau2, dau1: prev.dau1 }
+      : { veTram: "", tienDuong: "", troCap: "", cru: false, luong: "", luongNoCru: "", luongNokeo: "", luongNokeoNoCru: "", salaryParts: ["troCap", "luong"], km: "", dau2: "", dau1: "" };
+    onChange([...list, { id: Date.now() + Math.random(), route: "", ...base }]);
+  };
   const del = (i) => onChange(rows.filter((_, j) => j !== i));
   const lbl = (t) => <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>{t}</div>;
   return (

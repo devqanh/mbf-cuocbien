@@ -11,7 +11,13 @@ metadata:
 
 **Phí tuyến (cai-dat#routeFees):** tuyến chọn CẢ chuỗi node **Cảng(địa điểm)→Kho→Kho→Cảng**, KHÔNG chỉ kho (trước chỉ kho là sai — không phân biệt tuyến cùng kho khác cảng, vd ICDQV→QV→ICDQV vs ICDQV→QV→HAIPHONG). UI: `MultiCombo` prop `groups` = [{label:'Cảng',items:locations},{label:'Kho',items:warehouses}] (gợi ý gom nhóm + nhãn loại trên chip/dropdown); giá trị lưu là chuỗi thuần " - " (không kèm loại). Mỗi khoản (vé trạm/tiền đường/trợ cấp/lương/dầu1/dầu2) có tick **"chi theo ngày"** (`salary_parts`) → tick mới được tổng hợp trả lái. Dầu: lít × **giá dầu theo ngày** của chuyến.
 
-**Lương theo điều kiện KÉO CONT RA (không phải cờ cru):** chuyến **không kéo cont ra** (`leg.mode==='none'`, "ra xe không cont") → **Lương không CRU** (`luong_no_cru`); chuyến **có kéo cont ra** (mode self/other) → **Lương CRU** (`luong`).
+**Lương = ma trận 2×2:** (CÓ/KHÔNG kéo cont ra) × (CRU/không CRU). `leg.mode==='none'` = KHÔNG kéo cont ra; `leg.cru` = cờ CRU của lô. 4 cột: `luong`(kéo+CRU) · `luong_no_cru`(kéo+không CRU) · `luong_nokeo`(không kéo+CRU) · `luong_nokeo_no_cru`(không kéo+không CRU) — migration `2026_06_18_000004`. UI config: khối Lương 2 thẻ (Có/Không kéo cont ra), mỗi thẻ 2 ô CRU/không CRU, 1 tick "chi theo ngày" chung (key `luong`).
+
+**Chọn lặp node:** MultiCombo prop `allowDup` cho chọn 1 cảng/kho nhiều lần (tuyến quay đầu ICDQV→QV→ICDQV); khớp vẫn theo TẬP (routeNodeKey dedup) nên lặp chỉ để ĐỌC đúng lộ trình.
+
+**Cảnh báo cho kế toán:** `routeTripByDate` trả `payGroups` (1 nhóm/CHUYẾN, kể cả KHÔNG khớp phí tuyến) + `payWarn`. Mỗi nhóm có `matched`+`note` (Chưa có phí tuyến khớp / chưa tích chi theo ngày / khoản=0). PayPopup tô vàng chuyến chưa ra tiền + banner tổng; nút "Chi lái" có icon ⚠. Khoản dầu kèm `liters`+`unitPrice` để rà soát (tiền = lít × đơn giá theo ngày).
+
+**Quyết định mở rộng (user 2026-06-18):** GIỮ cột cứng cho từng phí (rõ ràng, có kiểu). Thêm phí mới = migration + sửa ~6 chỗ (model/routeFees output/saveRouteFees/config.jsx/legPayGroup+SALARY_KEYS). KHÔNG dùng JSON "phí khác tùy chỉnh" — user chốt giữ cột cứng, khi cần phí mới sẽ báo.
 
 **Khớp tuyến (backend, HandlesShipments):** `routeNodeKey(labels[])` = TẬP node chuẩn hóa về **ký hiệu** qua `normalizedCodeMap` (khớp cả tên lẫn mã, bỏ dấu/dấu cách; reuse từ statement pricing), KHÔNG phụ thuộc thứ tự (A→B→C ≡ A→C→B). Leg node = `[from_loc] + khoPoints(kho) + [to_loc]`. `routeStringNodes()` tách chuỗi phí tuyến. `legDailyCharge($leg,$axle,$rfBySet,$fuels,$date)` sinh các khoản; `routeTripByDate` cộng `payItems`/`payTotal` mỗi xe.
 
