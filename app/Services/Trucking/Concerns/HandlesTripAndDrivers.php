@@ -992,6 +992,8 @@ trait HandlesTripAndDrivers
                         $addCat($label, $it['amount'] ?? 0); $addPlate($bks, $it['amount'] ?? 0);
                     }
                     foreach ($g['manual'] ?? [] as $m) { $addCat('Phát sinh chuyến', $m['amount'] ?? 0); $addPlate($bks, $m['amount'] ?? 0); }
+                    // Dầu = chi phí CÔNG TY (tách khỏi tiền lái nhưng VẪN là chi phí của xe).
+                    if (! empty($g['fuel'])) { $addCat('Dầu', $g['fuel']['amount'] ?? 0); $addPlate($bks, $g['fuel']['amount'] ?? 0); }
                 }
             }
         }
@@ -1095,7 +1097,7 @@ trait HandlesTripAndDrivers
         for ($d = $rangeStart->copy(); $d->lte($rangeEnd); $d->addDay()) {
             $ym = $d->format('Y-m'); if (! isset($cost[$ym])) continue;
             $day = $this->routeTripByDate($d->format('Y-m-d'));
-            foreach ($day['trucks'] as $t) $cost[$ym] += (int) $t['payTotal'] + (int) $t['payrollTotal'];
+            foreach ($day['trucks'] as $t) $cost[$ym] += (int) $t['payTotal'] + (int) $t['payrollTotal'] + (int) ($t['fuelTotal'] ?? 0);
         }
 
         $rows = [];

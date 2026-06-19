@@ -393,8 +393,12 @@ trait HandlesShipments
                 $payrollTotal = $fd['payrollTotal'] ?? $payrollTotal;
                 $payWarn      = $fd['payWarn'] ?? $payWarn;
             }
+            // Dầu = chi phí CÔNG TY (tách khỏi tiền lái) — tổng lít + tiền theo các chuyến trong ngày.
+            $fuelTotal = 0; $fuelLiters = 0.0;
+            foreach ($payGroups as $g) { if (! empty($g['fuel'])) { $fuelTotal += (int) ($g['fuel']['amount'] ?? 0); $fuelLiters += (float) ($g['fuel']['liters'] ?? 0); } }
             $trucks[] = ['bks' => $bks, 'matched' => $matched, 'type' => $type, 'axle' => $axle, 'legs' => $ls,
                 'payGroups' => $payGroups, 'payTotal' => $payTotal, 'payrollTotal' => $payrollTotal, 'payWarn' => $payWarn,
+                'fuelTotal' => $fuelTotal, 'fuelLiters' => round($fuelLiters, 1),
                 'frozen' => $frozen,
                 'payDriver' => $pay?->driver ?? '', 'paid' => (bool) ($pay?->paid ?? false), 'paidDate' => $pay ? $this->outDate($pay->paid_date) : ''];
         }
@@ -456,7 +460,7 @@ trait HandlesShipments
         foreach ($nodes as $n) { $n = trim((string) $n); if ($n === '' || (count($disp) && end($disp) === $n)) continue; $disp[] = $n; }
         $routeDisp = implode(' → ', $disp) ?: ($this->khoRouteDisplay($leg['kho'] ?? '') ?: '—');
         $g = ['route' => $routeDisp, 'cont' => $leg['cont'] ?? '', 'mode' => $leg['mode'] ?? '',
-              'items' => [], 'sub' => 0, 'payrollItems' => [], 'payrollSub' => 0, 'matched' => false, 'note' => ''];
+              'items' => [], 'sub' => 0, 'payrollItems' => [], 'payrollSub' => 0, 'fuel' => null, 'matched' => false, 'note' => ''];
 
         $rf = $rfBySet[$this->routeNodeKey($nodes)] ?? null;
         if (! $rf) { $g['note'] = 'Chưa có Phí tuyến khớp lộ trình này'; return $g; }
@@ -481,12 +485,12 @@ trait HandlesShipments
                           : ($cru ? $rf->luong       : $rf->luong_no_cru);
         $label  = 'Lương' . ($noPull ? ' · không kéo cont' : '') . ($cru ? ' · CRU' : ' · không CRU');
         $add('luong', $label, $wage, $daily('luong'));
+        // DẦU = CHI PHÍ CÔNG TY (KHÔNG chi theo ngày cho lái) → tách riêng $g['fuel'], hiển thị lít + tiền công ty trả ở Lộ trình.
         $is2 = ($axle === '2');                                  // chọn lít dầu theo SỐ CẦU xe
-        $dauKey = $is2 ? 'dau2' : 'dau1';
         $liters = (float) ($is2 ? $rf->dau_2cau : $rf->dau_1cau);
         if ($liters > 0) {
             $unit = (float) $this->fuelPriceForDate($fuels, $date);   // đơn giá dầu theo NGÀY của chuyến
-            $add($dauKey, 'Dầu ' . ($is2 ? '2 cầu' : '1 cầu'), $liters * $unit, $daily($dauKey), ['liters' => $liters, 'unitPrice' => (int) round($unit)]);
+            $g['fuel'] = ['axle' => $is2 ? 2 : 1, 'liters' => $liters, 'unitPrice' => (int) round($unit), 'amount' => (int) round($liters * $unit)];
         }
         // Chi khác (repeater phí tuyến) — mỗi dòng TỰ quyết "chi theo ngày".
         foreach ((array) ($rf->extra_fees ?? []) as $ex) {

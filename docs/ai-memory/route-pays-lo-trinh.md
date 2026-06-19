@@ -18,7 +18,9 @@ metadata:
 
 **Chọn lặp node:** MultiCombo prop `allowDup` cho chọn 1 cảng/kho nhiều lần (tuyến quay đầu ICDQV→QV→ICDQV); khớp vẫn theo TẬP (routeNodeKey dedup) nên lặp chỉ để ĐỌC đúng lộ trình.
 
-**Cảnh báo cho kế toán:** `routeTripByDate` trả `payGroups` (1 nhóm/CHUYẾN, kể cả KHÔNG khớp phí tuyến) + `payWarn`. Mỗi nhóm có `matched`+`note` (Chưa có phí tuyến khớp / chưa tích chi theo ngày / khoản=0). PayPopup tô vàng chuyến chưa ra tiền + banner tổng; nút "Chi lái" có icon ⚠. Khoản dầu kèm `liters`+`unitPrice` để rà soát (tiền = lít × đơn giá theo ngày).
+**Cảnh báo cho kế toán:** `routeTripByDate` trả `payGroups` (1 nhóm/CHUYẾN, kể cả KHÔNG khớp phí tuyến) + `payWarn`. Mỗi nhóm có `matched`+`note` (Chưa có phí tuyến khớp / chưa tích chi theo ngày / khoản=0). PayPopup tô vàng chuyến chưa ra tiền + banner tổng; nút "Chi lái" có icon ⚠.
+
+**DẦU = CHI PHÍ CÔNG TY (user 2026-06-19), KHÔNG chi cho lái:** legPayGroup KHÔNG còn đưa dầu vào items/payrollItems; tách riêng `$g['fuel']={axle,liters,unitPrice,amount}` (tiền = lít × giá dầu theo ngày). Truck thêm `fuelTotal`/`fuelLiters`. → `payTotal`/`payrollTotal` (và do đó tiền lái + kỳ lương /phi-xe qua computePayroll) tự động KHÔNG gồm dầu. Lo-trinh hiển thị dầu công ty: chip "Dầu (cty)" ở thẻ xe + dòng xanh "công ty trả" mỗi tuyến + box tổng trong PayPopup (màu #2563eb, tách khỏi "Tổng chi cho lái"). Config RouteFees: bỏ tick "chi theo ngày" cho dầu, ghi nhãn "chi phí công ty". Báo cáo ([[cost-report]] monthlyCostReport + costTrend) CỘNG `g.fuel.amount`/`fuelTotal` lại để dầu vẫn nằm trong chi phí công ty (category 'Dầu'). SALARY_KEYS vẫn còn dau1/dau2 (data cũ) nhưng vô hại vì legPayGroup không dùng cho dầu nữa.
 
 **Quyết định mở rộng (user 2026-06-18):** GIỮ cột cứng cho từng phí (rõ ràng, có kiểu). Thêm phí mới = migration + sửa ~6 chỗ (model/routeFees output/saveRouteFees/config.jsx/legPayGroup+SALARY_KEYS). KHÔNG dùng JSON "phí khác tùy chỉnh" — user chốt giữ cột cứng, khi cần phí mới sẽ báo.
 

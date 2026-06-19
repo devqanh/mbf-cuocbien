@@ -207,12 +207,12 @@ export function RouteFees({ rows = [], onChange, warehouses = [], locations = []
               ))}
             </div>
           </div>
-          <div style={{ fontSize: 11, color: "var(--ink-4)", marginBottom: 10 }}>Lương chọn theo <b>2 điều kiện</b>: chuyến <b>có/không kéo cont ra</b> và lô <b>tích CRU</b> hay không. Tích <b style={{ color: "var(--accent)" }}>chi theo ngày</b> ở khoản nào → khoản đó tổng hợp trả cho lái xe theo từng chuyến ở <b>Lộ trình</b>. Dầu tính tiền = số lít × <b>giá dầu theo ngày</b> của chuyến.</div>
-          {/* Định mức km & dầu — dầu có thể tích "chi theo ngày" (tính tiền theo Bảng giá dầu theo ngày) */}
+          <div style={{ fontSize: 11, color: "var(--ink-4)", marginBottom: 10 }}>Lương chọn theo <b>2 điều kiện</b>: chuyến <b>có/không kéo cont ra</b> và lô <b>tích CRU</b> hay không. Tích <b style={{ color: "var(--accent)" }}>chi theo ngày</b> ở khoản nào → khoản đó tổng hợp trả cho lái xe theo từng chuyến ở <b>Lộ trình</b>. <b>Dầu</b> = số lít × <b>giá dầu theo ngày</b> — là <b style={{ color: "#2563eb" }}>chi phí công ty</b> (KHÔNG chi cho lái), Lộ trình chỉ hiển thị lít + tiền công ty trả.</div>
+          {/* Định mức km & dầu — dầu là CHI PHÍ CÔNG TY (không chi theo ngày cho lái); tính tiền theo Bảng giá dầu theo ngày */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
             <div>{lbl("Số km")}<Num value={r.km} onChange={(x) => set(i, { km: x })} suffix="km" /></div>
-            <div>{lbl("Dầu 2 cầu")}<Num value={r.dau2} onChange={(x) => set(i, { dau2: x })} suffix="lít" />{salChk("dau2")}</div>
-            <div>{lbl("Dầu 1 cầu")}<Num value={r.dau1} onChange={(x) => set(i, { dau1: x })} suffix="lít" />{salChk("dau1")}</div>
+            <div>{lbl("Dầu 2 cầu")}<Num value={r.dau2} onChange={(x) => set(i, { dau2: x })} suffix="lít" /><span style={{ display: "inline-block", marginTop: 5, fontSize: 10.5, fontWeight: 600, color: "#2563eb" }}>chi phí công ty</span></div>
+            <div>{lbl("Dầu 1 cầu")}<Num value={r.dau1} onChange={(x) => set(i, { dau1: x })} suffix="lít" /><span style={{ display: "inline-block", marginTop: 5, fontSize: 10.5, fontWeight: 600, color: "#2563eb" }}>chi phí công ty</span></div>
           </div>
           {/* Chi khác — repeater khoản tùy chỉnh của tuyến (mỗi dòng tự tick "chi theo ngày") */}
           {(() => {
