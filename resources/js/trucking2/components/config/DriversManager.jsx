@@ -1,6 +1,24 @@
 import React from "react";
-const { useState, useRef } = React;
-import { I, Txt, DateField, useIsMobile } from "@trk/lib.jsx";
+const { useState, useRef, useEffect } = React;
+import { I, Txt, Combo, DateField, useIsMobile } from "@trk/lib.jsx";
+import { loadBanks, banksSync, findBank } from "@trk/banks.js";
+
+// Ô chọn ngân hàng từ danh sách VietQR (lưu tên viết tắt + bin để dựng QR sau này). Chỉ chọn, không gõ tự do.
+function BankPicker({ value, bin, banks, onPick }) {
+  const opts = banks.map((b) => ({ value: String(b.bin), label: `${b.shortName || b.code} — ${b.name}` }));
+  // Khớp value hiện tại: ưu tiên bin đã lưu; dữ liệu cũ chỉ có tên thì dò theo code/shortName.
+  const cur = findBank({ bin, bank: value });
+  return (
+    <Combo
+      value={cur ? String(cur.bin) : ""}
+      onChange={(v) => { const b = banks.find((x) => String(x.bin) === String(v)); if (b) onPick({ bank: b.shortName || b.code, bin: String(b.bin), code: b.code }); }}
+      options={opts}
+      placeholder={value ? value + " (chọn lại)" : "Chọn ngân hàng…"}
+      strict
+      small
+    />
+  );
+}
 
 /* ===================== HỒ SƠ LÁI XE (master-detail) ===================== */
 
@@ -30,6 +48,9 @@ export function DriversManager({ cfg, setCfg }) {
   const fileRef = useRef(null);
   const idx = sel < drivers.length ? sel : (drivers.length ? 0 : -1);
   const cur = idx >= 0 ? drivers[idx] : null;
+  // Danh sách NH VietQR (tải 1 lần, cache localStorage) — dùng cho ô chọn ngân hàng.
+  const [banks, setBanks] = useState(() => banksSync());
+  useEffect(() => { if (!banks.length) loadBanks().then((b) => setBanks(b || [])); }, []);
 
   const setDriver = (np) => setCfg("drivers", drivers.map((d, j) => (j === idx ? { ...d, ...np } : d)));
   const add = () => {
@@ -45,7 +66,7 @@ export function DriversManager({ cfg, setCfg }) {
   const delPhone = (i) => setDriver({ phones: (cur.phones || []).filter((_, k) => k !== i) });
   // banks repeater
   const setBank = (i, np) => setDriver({ banks: (cur.banks || []).map((b, k) => (k === i ? { ...b, ...np } : b)) });
-  const addBank = () => setDriver({ banks: [...(cur.banks || []), { bank: "", number: "", holder: cur.name || "" }] });
+  const addBank = () => setDriver({ banks: [...(cur.banks || []), { bank: "", bin: "", code: "", number: "", holder: cur.name || "" }] });
   const delBank = (i) => setDriver({ banks: (cur.banks || []).filter((_, k) => k !== i) });
 
   // upload tài liệu (cần lái xe đã lưu → có id)
@@ -139,11 +160,17 @@ export function DriversManager({ cfg, setCfg }) {
             {lbl("Tài khoản ngân hàng")}
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {(cur.banks || []).map((b, i) => (
-                <div key={i} style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr 32px" : "1fr 1.2fr 1fr 32px", gap: 8, alignItems: "center" }}>
-                  <Txt value={b.bank} onChange={(v) => setBank(i, { bank: v })} placeholder="Ngân hàng (VD: VCB)" />
-                  <Txt value={b.number} onChange={(v) => setBank(i, { number: v })} placeholder="Số tài khoản" />
-                  <Txt value={b.holder} onChange={(v) => setBank(i, { holder: v })} placeholder="Chủ tài khoản" />
-                  {delBtn(() => delBank(i), "Xóa tài khoản")}
+                <div key={i} style={{ display: "flex", flexDirection: "column", gap: 7, padding: 9, border: "1px solid var(--line)", borderRadius: 9, background: "#fafbfc" }}>
+                  {/* dòng 1: chọn NH (rộng cả hàng) + xóa — tên NH dài nên cho riêng 1 dòng */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}><BankPicker value={b.bank} bin={b.bin} banks={banks} onPick={(np) => setBank(i, np)} /></div>
+                    {delBtn(() => delBank(i), "Xóa tài khoản")}
+                  </div>
+                  {/* dòng 2: số TK + chủ TK */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <Txt value={b.number} onChange={(v) => setBank(i, { number: v })} placeholder="Số tài khoản" />
+                    <Txt value={b.holder} onChange={(v) => setBank(i, { holder: v })} placeholder="Chủ tài khoản" />
+                  </div>
                 </div>
               ))}
               <button type="button" onClick={addBank} style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 10px", fontSize: 12.5, fontWeight: 600, border: "none", borderRadius: 7, background: "var(--accent-weak)", color: "var(--accent)", cursor: "pointer" }}><I.plus /> Thêm tài khoản</button>

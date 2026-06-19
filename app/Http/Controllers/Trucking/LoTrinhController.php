@@ -10,7 +10,13 @@ class LoTrinhController extends BaseTruckingController
 {
     public function index()
     {
-        $drivers = \App\Models\TruckingDriver::orderBy('sort')->orderBy('name')->pluck('name')->filter()->values()->all();
+        // Lái xe + tài khoản NH (bank/number/holder/bin) → popup "chi cho lái" dựng được QR VietQR.
+        $drivers = \App\Models\TruckingDriver::orderBy('sort')->orderBy('name')->get()
+            ->filter(fn ($d) => trim((string) $d->name) !== '')
+            ->map(fn ($d) => [
+                'name'  => $d->name,
+                'banks' => is_array($d->bank_accounts) ? array_values($d->bank_accounts) : [],
+            ])->values()->all();
         return view('trucking2.lo-trinh', $this->pageData(['drivers' => $drivers], 'shipments.view', 'shipments.delete'));
     }
 

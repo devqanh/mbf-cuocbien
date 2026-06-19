@@ -268,8 +268,9 @@ trait HandlesTripAndDrivers
         foreach ($arr as $b) {
             if (! is_array($b)) continue;
             $bank = $this->str($b['bank'] ?? null); $num = $this->str($b['number'] ?? null); $holder = $this->str($b['holder'] ?? null);
+            $bin = $this->str($b['bin'] ?? null); $code = $this->str($b['code'] ?? null);
             if ($bank === null && $num === null && $holder === null) continue;
-            $out[] = ['bank' => $bank ?? '', 'number' => $num ?? '', 'holder' => $holder ?? ''];
+            $out[] = ['bank' => $bank ?? '', 'number' => $num ?? '', 'holder' => $holder ?? '', 'bin' => $bin ?? '', 'code' => $code ?? ''];
         }
         return $out;
     }

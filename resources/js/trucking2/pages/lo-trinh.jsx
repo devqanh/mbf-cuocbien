@@ -4,6 +4,44 @@ import "@trk/shared.js";
 
 const { useState, useEffect, useRef } = React;
 import { I, useIsMobile, DateField, Combo, Modal, Btn, Money, fmtVND, fmtNum, toNum } from "@trk/lib.jsx";
+import { vietqrImg } from "@trk/banks.js";
+
+// Khối thông tin NH của lái nhận tiền: copy STK + QR VietQR quét chuyển khoản. Gọn — QR ẩn, bấm mới hiện.
+function PayBankBox({ banks, amount, addInfo }) {
+  const list = (banks || []).filter((b) => (b.number || "").trim());
+  const [bi, setBi] = useState(0);
+  const [showQr, setShowQr] = useState(false);
+  if (!list.length) return null;
+  const b = list[Math.min(bi, list.length - 1)];
+  const copy = () => { try { navigator.clipboard.writeText((b.number || "").replace(/\s/g, "")); window.trkToast && window.trkToast("Đã copy số TK"); } catch (e) {} };
+  const qr = showQr ? vietqrImg({ bin: b.bin, account: b.number, name: b.holder, amount, info: addInfo }) : "";
+  return (
+    <div style={{ marginTop: 8, border: "1px solid var(--line)", borderRadius: 10, background: "#fafcff", overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px" }}>
+        <i className="bi bi-bank2" style={{ color: "var(--accent)", fontSize: 14 }} />
+        {list.length > 1 ? (
+          <select value={bi} onChange={(e) => setBi(+e.target.value)} style={{ fontSize: 12, fontWeight: 700, border: "1px solid var(--line)", borderRadius: 6, padding: "2px 4px", background: "#fff" }}>
+            {list.map((x, k) => <option key={k} value={k}>{x.bank || "NH"}</option>)}
+          </select>
+        ) : (
+          <span style={{ fontWeight: 700, fontSize: 12.5 }}>{b.bank || "Ngân hàng"}</span>
+        )}
+        <span className="tnum" style={{ fontWeight: 700, fontSize: 13 }}>{b.number || "—"}</span>
+        <button type="button" onClick={copy} title="Copy số TK" style={{ width: 24, height: 24, display: "grid", placeItems: "center", border: "1px solid var(--line)", borderRadius: 6, background: "#fff", color: "var(--ink-4)", cursor: "pointer" }}><i className="bi bi-clipboard" style={{ fontSize: 11 }} /></button>
+        {b.holder ? <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>· {b.holder}</span> : null}
+        <span style={{ flex: 1 }} />
+        {b.bin ? (
+          <button type="button" onClick={() => setShowQr((v) => !v)} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600, padding: "4px 9px", border: "1px solid var(--accent)", borderRadius: 7, background: showQr ? "var(--accent)" : "#fff", color: showQr ? "#fff" : "var(--accent)", cursor: "pointer" }}><i className="bi bi-qr-code" /> {showQr ? "Ẩn QR" : "Mã QR"}</button>
+        ) : <span style={{ fontSize: 11, color: "var(--ink-4)" }}>Chọn NH ở Cài đặt để có QR</span>}
+      </div>
+      {qr ? (
+        <div style={{ display: "flex", justifyContent: "center", padding: "4px 10px 12px" }}>
+          <img src={qr} alt="VietQR" style={{ width: 220, maxWidth: "100%", borderRadius: 8, border: "1px solid var(--line-2)" }} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 /* Popup chi cho lái xe (theo ngày + xe): tổng các khoản "chi theo ngày" từ Phí tuyến + chọn lái nhận. */
 function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
@@ -110,12 +148,15 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
           <div style={{ flex: 1, minWidth: 200 }}>
             <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>Lái xe nhận tiền</div>
-            <Combo value={driver} onChange={setDriver} options={drivers} placeholder="Chọn lái xe…" small />
+            <Combo value={driver} onChange={setDriver} options={(drivers || []).map((d) => d.name)} placeholder="Chọn lái xe…" small />
           </div>
           <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 600, color: paid ? "var(--good)" : "var(--ink-3)", cursor: "pointer", padding: "9px 0" }}>
             <input type="checkbox" checked={paid} onChange={() => setPaid((v) => !v)} style={{ accentColor: "var(--good)", cursor: "pointer", margin: 0 }} /> Đã chi cho lái
           </label>
         </div>
+        {/* Lái đã chọn → hiện NH + QR VietQR (copy STK / quét chuyển khoản đúng số tiền) */}
+        {(() => { const d = (drivers || []).find((x) => x.name === driver); return d && (d.banks || []).length
+          ? <PayBankBox banks={d.banks} amount={total} addInfo={"Chi lai xe " + truck.bks + " " + date} /> : null; })()}
       </div>
     </Modal>
   );

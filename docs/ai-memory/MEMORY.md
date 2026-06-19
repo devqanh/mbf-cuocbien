@@ -35,3 +35,4 @@
 - [MBF import](mbf-import.md) — import lô hàng từ file kế toán thật dev/mbf.xlsx (command trucking:import-mbf {THÁNG} --clear); map B nhà máy→kho QV/TS/TL, M POL→cảng, H→nơi hạ, R→biển số; tự tạo danh mục thiếu
 - [GPS tracking](gps-tracking.md) — Theo dõi xe realtime đa nhà cung cấp (Viettel/dvbk) qua proxy backend + adapter + auto-login (chỉ login lại khi fetch hỏng), map biển số→trucking_vehicles, Google Maps, poll 15s
 - [Product tour](product-tour.md) — tour onboarding tái dùng bằng driver.js (helper @trk/tour.js + data-tour + steps); áp cho mọi trang, lazy-load, có nút Bỏ qua toàn bộ
+- [VietQR bank](vietqr-bank.md) — chọn NH lái xe từ API VietQR (lưu bin) qua banks.js; popup "chi cho lái" /lo-trinh hiện STK+copy+QR chuyển khoản (amount=tổng chi)
