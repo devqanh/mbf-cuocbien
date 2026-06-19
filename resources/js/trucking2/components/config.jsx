@@ -808,6 +808,8 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
   if (g && g.coded && !allowDup) list.forEach((_, i) => { const c = normCode(codeArr[i]); if (c) codeCounts[c] = (codeCounts[c] || 0) + 1; });
   const isDupCode = (i) => { if (allowDup) return false; const c = normCode(codeArr[i]); return !!c && codeCounts[c] > 1; };
   const hasDupCode = !!(g && g.coded) && !allowDup && Object.values(codeCounts).some((n) => n > 1);
+  // Ký hiệu BẮT BUỘC: coded mà có dòng bỏ trống ký hiệu → chặn lưu (kể cả allowDupCode).
+  const hasEmptyCode = !!(g && g.coded) && list.some((_, i) => !String(codeArr[i] || "").trim());
   // Phí tuyến đường: phát hiện trùng TUYẾN — THEO CHIỀU (Kho1→Kho2 ≠ Kho2→Kho1, giữ thứ tự kho)
   const routeKey = (s) => (s || "").split(/\s*-\s*/).map((x) => x.trim().toUpperCase()).filter(Boolean).join(" | ");
   const rfRows = cfg.routeFees || [];
@@ -820,7 +822,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
   if (g && g.fleet) Object.keys(vehGps).forEach((plate) => { const r = vehGps[plate]; if (r && (vehType[plate] || "MBF") === "MBF") (gpsUsedBy[r] = gpsUsedBy[r] || []).push(plate); });
   const isDupGps = (plate) => { const r = vehGps[plate]; return !!r && (gpsUsedBy[r] || []).length > 1; };
   const hasDupGps = !!(g && g.fleet) && Object.values(gpsUsedBy).some((a) => a.length > 1);
-  const blockSave = hasDupCode || hasDupRoute || hasDupGps;   // chặn lưu khi còn trùng
+  const blockSave = hasDupCode || hasEmptyCode || hasDupRoute || hasDupGps;   // chặn lưu khi còn trùng / thiếu ký hiệu
   const costColors = cfg.costColors || {};
   const setColor = (name, val) => { const nc = { ...costColors }; if (val) nc[name] = val; else delete nc[name]; setCfg("costColors", nc); };
   const vatDefault = cfg.vatDefault || { hph: "8", icd: "0" };
@@ -906,7 +908,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                 ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "var(--warn)" }}><span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--warn)" }} /> Chưa lưu</span>
                 : <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600, color: "var(--good)" }}><I.check /> Đã lưu</span>}
               <button type="button" onClick={onSave} disabled={!dirty || saving || blockSave}
-                title={blockSave ? (hasDupCode ? "Có ký hiệu bị trùng — sửa trước khi lưu" : "Có tuyến bị trùng — sửa trước khi lưu") : ""}
+                title={blockSave ? (hasEmptyCode ? "Có dòng chưa nhập ký hiệu — bắt buộc điền trước khi lưu" : hasDupCode ? "Có ký hiệu bị trùng — sửa trước khi lưu" : "Có tuyến bị trùng — sửa trước khi lưu") : ""}
                 style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 14px", fontSize: 13, fontWeight: 600, borderRadius: 9, border: "none",
                   cursor: dirty && !saving && !blockSave ? "pointer" : "default", color: dirty && !saving && !blockSave ? "#fff" : "var(--ink-4)", background: dirty && !saving && !blockSave ? "var(--accent)" : "var(--line-2)",
                   boxShadow: dirty && !saving && !blockSave ? "0 1px 2px rgba(42,111,219,.4)" : "none" }}>
@@ -919,6 +921,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
             <i className="bi bi-info-circle-fill" style={{ color: "var(--accent)", marginTop: 1 }} />
             <span>Sửa được cả <b>tên</b> lẫn <b>ký hiệu</b>. Đổi ký hiệu vẫn giữ liên kết (bảng giá/lô) vì khớp theo dòng. {allowDup ? <>Cho phép <b>nhiều tên</b> dùng chung 1 <b>ký hiệu</b>.</> : <>Lưu ý: mỗi <b>ký hiệu</b> phải <b>duy nhất</b>.</>}</span>
           </div>}
+          {hasEmptyCode && <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: "var(--danger)", background: "#fce8e8", border: "1px solid #f3c9c9", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>⚠ Có dòng <b>chưa nhập ký hiệu</b> — ký hiệu là bắt buộc (dùng để tham chiếu). Điền các ô viền đỏ trước khi lưu.</div>}
           {hasDupCode && <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: "var(--danger)", background: "#fce8e8", border: "1px solid #f3c9c9", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>⚠ Có ký hiệu bị trùng — mỗi ký hiệu phải là duy nhất. Sửa các ô viền đỏ trước khi lưu.</div>}
           {hasDupRoute && <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: "var(--danger)", background: "#fce8e8", border: "1px solid #f3c9c9", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>⚠ Có tuyến bị trùng — mỗi tuyến (đúng thứ tự kho) phải là duy nhất. Sửa các tuyến viền đỏ trước khi lưu. (Kho1→Kho2 khác Kho2→Kho1.)</div>}
           {hasDupGps && <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: "var(--danger)", background: "#fce8e8", border: "1px solid #f3c9c9", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>⚠ Có xe GPS bị gán cho nhiều xe — mỗi xe GPS chỉ gán cho 1 xe. Sửa các ô viền đỏ trước khi lưu.</div>}
@@ -1168,9 +1171,12 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                   }
                   // Ký hiệu ĐÃ LƯU (dòng có id thật) → khóa, không cho sửa (giữ khớp import/bảng giá);
                   // dòng mới thêm (chưa có id) thì còn sửa ký hiệu được trước khi lưu.
-                  const codeLocked = (() => { const id = idArr[i]; return id != null && id !== "" && !isNaN(+id); })();
+                  // Khóa ký hiệu đã lưu để giữ khớp — NHƯNG mã đang TRỐNG thì cho sửa để điền (bắt buộc có ký hiệu).
+                  const codeLocked = (() => { const id = idArr[i]; const has = !!String(codeArr[i] || "").trim(); return has && id != null && id !== "" && !isNaN(+id); })();
                   const linkedToPrice = locked.has(it);    // đang được bảng giá tham chiếu (hiện icon liên kết)
                   const dupCode = isDupCode(i);
+                  const emptyCode = !!(g && g.coded) && !String(codeArr[i] || "").trim();   // ký hiệu BỎ TRỐNG → không cho lưu
+                  const badCode = dupCode || emptyCode;
                   const rowGrid = g.priced && g.colored ? "24px 1fr 150px 56px 28px"
                     : g.priced ? "24px 1fr 150px 28px"
                     : g.colored ? "24px 1fr 56px 28px"
@@ -1190,10 +1196,10 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                         <FlagPicker value={costColors[it] || ""} onChange={(c) => setColor(it, c)} />
                       </div>
                     )}
-                    {g.coded && <input value={codeArr[i] || ""} readOnly={codeLocked} onChange={(e) => { if (!codeLocked) setCode(i, e.target.value); }} placeholder="VD: TV"
-                      title={codeLocked ? "Ký hiệu đã lưu — không sửa để giữ khớp import/bảng giá" : (dupCode ? "Ký hiệu bị trùng với mục khác" : "")}
-                      style={{ width: "100%", padding: "7px 10px", fontSize: 13, fontWeight: 600, border: `1px solid ${dupCode ? "var(--danger)" : "var(--line)"}`, borderRadius: 8, outline: "none", textTransform: "uppercase", background: codeLocked ? "var(--line-2)" : (dupCode ? "#fce8e8" : "#fff"), color: codeLocked ? "var(--ink-3)" : (dupCode ? "var(--danger)" : "var(--ink)"), cursor: codeLocked ? "not-allowed" : "text" }}
-                      onFocus={(e) => { if (!codeLocked) e.target.style.borderColor = "var(--accent)"; }} onBlur={(e) => (e.target.style.borderColor = dupCode ? "var(--danger)" : "var(--line)")} />}
+                    {g.coded && <input value={codeArr[i] || ""} readOnly={codeLocked} onChange={(e) => { if (!codeLocked) setCode(i, e.target.value); }} placeholder="Bắt buộc · VD: TV"
+                      title={codeLocked ? "Ký hiệu đã lưu — không sửa để giữ khớp import/bảng giá" : (emptyCode ? "Bắt buộc nhập ký hiệu" : (dupCode ? "Ký hiệu bị trùng với mục khác" : ""))}
+                      style={{ width: "100%", padding: "7px 10px", fontSize: 13, fontWeight: 600, border: `1px solid ${badCode ? "var(--danger)" : "var(--line)"}`, borderRadius: 8, outline: "none", textTransform: "uppercase", background: codeLocked ? "var(--line-2)" : (badCode ? "#fce8e8" : "#fff"), color: codeLocked ? "var(--ink-3)" : (badCode ? "var(--danger)" : "var(--ink)"), cursor: codeLocked ? "not-allowed" : "text" }}
+                      onFocus={(e) => { if (!codeLocked) e.target.style.borderColor = "var(--accent)"; }} onBlur={(e) => (e.target.style.borderColor = badCode ? "var(--danger)" : "var(--line)")} />}
                     {g.addressed && <AddrInput value={addrArr[i] || ""} onChange={(v) => setAddr(i, v)}
                       onPlace={g.geo ? (lat, lng) => setGeo(i, lat.toFixed(7) + "," + lng.toFixed(7)) : () => {}}
                       mapsKey={mapsKey} placeholder="Gõ địa chỉ — gợi ý Google Maps (tự lấy tọa độ)" />}
