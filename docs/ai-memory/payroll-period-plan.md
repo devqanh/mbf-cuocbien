@@ -28,6 +28,8 @@ metadata:
 - **Tính lại** (`recomputePayroll` + route `tripCost.recompute`): tính lại theo khoảng ngày của kỳ, GIỮ lái/extraPay/payments, cập nhật lương gốc + detail. **Chốt + Tính lại ĐỀU confirmAction trước khi thao tác** (user yêu cầu "nhớ hỏi mới được thao tác").
 - Component dùng chung `components/payroll-detail.jsx` (PayrollDetail/ExtraPayEditor/PaymentsEditor). Format ngày d/m/Y (fmtDate); Txt thêm prop `disabled`.
 
+**DẦU KHÔNG tính vào lương lái (user 2026-06-19, xem [[route-pays-lo-trinh]]):** computePayroll tự loại dầu (payTotal/payrollTotal không còn dầu). Snapshot CŨ (chốt trước đổi luật) còn dau1/dau2 trong groups → xử lý ở FE: `payroll-detail.splitGroup` lọc item dầu (`key dau1/dau2` hoặc có `liters`+`unitPrice`) + export `payrollSumsFromDetail(row)`; `phi-xe-xem` chuẩn hóa rows lúc nạp (payroll/paidDaily suy từ detail đã trừ dầu) → hiển thị đúng ngay + bấm Lưu ghi đè DB (sửa luôn list). "Tính lại" cũng cho số sạch. Không cần migration.
+
 **Còn để ngỏ:** perf loop-từng-ngày (ok cho generate). TripCostBatch tables cũ bỏ không dùng (chưa drop).
 
 Liên quan [[route-pays-lo-trinh]], [[phi-xe-batch-model]], [[json-schema-evolution]].
