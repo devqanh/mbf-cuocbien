@@ -16,7 +16,7 @@ Trucking v2 (trang `/trucking-v2/*`) đã **migrate khỏi Babel in-browser** sa
 - `ui.jsx` — **barrel** (tách 2026-06, 728→5d) re-export từ `ui/`: `primitives.jsx` (SortBtn/CellBtn/Badge/EditCell/TH/TD), `pricer.js` (makePricer — legacy), `statement.jsx` (StatementForm/StatementDetailBody/Saved*/KePage/DriftChip + CO consts), `bang-gia.jsx` (BangGiaPage). Mọi `import ... from "@trk/ui.jsx"` giữ nguyên.
 - **Tách file con = thuần component (không phải vite entry)** → KHÔNG sửa vite.config.js; chỉ entry ở `pages/` mới cần khai báo. Barrel giữ đường import cũ → an toàn.
 - `shared.js` — vanilla: `window.confirmAction`, `window.trkToast`, fit `#trk-root`. Mỗi page entry `import "@trk/shared.js"`.
-- `pages/<page>.jsx` — entry mỗi trang (lo-hang, bang-gia, bang-ke, bang-ke-tao, bang-ke-xem, cai-dat, **quan-ly-xe**): `import { createRoot } from "react-dom/client"` + mount `#trk-root`. Dữ liệu vẫn qua `window.__TRK` (blade @section content).
+- `pages/<page>.jsx` — entry mỗi trang: `import { createRoot }` + mount `#trk-root`. Dữ liệu qua `window.__TRK`. **Page lớn đã tách thân ra `components/<page>/`, entry chỉ còn import + render (2026-06):** `quan-ly-xe` → components/quan-ly-xe/{parts,FleetApp,asset}; `theo-doi-xe` → components/theo-doi-xe/{helpers.js, TrackingApp.jsx}; `lo-hang` → components/lo-hang/ShipmentsApp.jsx. (TrackingApp/ShipmentsApp vẫn là 1 component to ~900d — pha sau có thể xẻ tiếp child component nếu cần.)
 
 Alias `@trk` = `resources/js/trucking2` (cấu hình ở vite.config.js + 6 entry trong laravel input). JSX do esbuild của Vite transpile (classic, `jsxFactory: React.createElement`) — KHÔNG dùng @vitejs/plugin-react (nó kẹt peer với Vite 7). Blade dùng `@vite('resources/js/trucking2/pages/<page>.jsx')` trong `@push('scripts')`.
 
