@@ -524,8 +524,16 @@ function TrackingApp() {
   useEffect(() => {
     if (!mapReady || !mapRef.current || !window.google) return;
     if (isMobile && mobileView !== "map") return;
-    const map = mapRef.current; const c = map.getCenter();
-    setTimeout(() => { window.google.maps.event.trigger(map, "resize"); if (c) map.setCenter(c); }, 180);
+    const map = mapRef.current;
+    // Resize map khi layout/tab đổi. CHỈ giữ lại center khi ĐÃ fit vào đàn xe — nếu không sẽ
+    // chụp center MẶC ĐỊNH (vùng trống) rồi setCenter đè lên fitBounds lần đầu (reload nhanh).
+    const t = setTimeout(() => {
+      if (!mapRef.current) return;
+      const c = mapRef.current.getCenter();
+      window.google.maps.event.trigger(mapRef.current, "resize");
+      if (c && didFit.current) mapRef.current.setCenter(c);
+    }, 180);
+    return () => clearTimeout(t);
   }, [mobileView, isMobile, mapReady]);
 
   // upsert markers theo filtered
