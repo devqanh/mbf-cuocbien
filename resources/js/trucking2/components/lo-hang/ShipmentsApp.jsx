@@ -8,6 +8,8 @@ import { loCountOf, parseImportRows, buildTemplateWb } from "./excel.js";
 // Chip số INV — nổi bật để kế toán dễ dò
 const invChip = { display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", padding: "1px 8px", borderRadius: 7 };
 const invChipLbl = { fontSize: 9.5, fontWeight: 800, letterSpacing: ".04em", opacity: .75 };
+// Màu badge Nhập/Xuất/Khác cho dễ phân biệt: Nhập=xanh dương · Xuất=xanh lá · Khác=hổ phách
+const ioTone = (io) => { const v = (io || "").toLowerCase(); return v.includes("nh") ? "blue" : v.includes("xu") ? "good" : "amber"; };
 
 function ShipmentsApp() {
   const isMobile = useIsMobile();
@@ -511,7 +513,7 @@ function ShipmentsApp() {
                         <div style={{ fontWeight: 600, fontSize: 15 }}>{s.customer || <span style={{ color: "var(--ink-4)", fontWeight: 400 }}>(chưa đặt tên)</span>}</div>
                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
                           <span className="tnum" style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{s.booking || "—"}</span>
-                          <Badge tone={s.io === "Nhập" ? "blue" : "gray"}>{s.io}</Badge>
+                          {s.io ? <Badge tone={ioTone(s.io)}>{s.io}</Badge> : null}
                           {s.cru ? <Badge tone="amber">CRU</Badge> : null}
                         </div>
                       </div>
@@ -575,7 +577,7 @@ function ShipmentsApp() {
                         <div style={{ fontWeight: 600, fontSize: 13.5 }}>{s.customer || <span style={{ color: "var(--ink-4)", fontWeight: 400 }}>(chưa đặt tên)</span>}</div>
                         <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 3 }}>
                           <span style={{ fontSize: 12, color: "var(--ink-3)" }} className="tnum">{s.booking || "—"}</span>
-                          <Badge tone={s.io === "Nhập" ? "blue" : "gray"}>{s.io}</Badge>
+                          {s.io ? <Badge tone={ioTone(s.io)}>{s.io}</Badge> : null}
                           {s.cru ? <Badge tone="amber">CRU</Badge> : null}
                         </div>
                       </EditCell>
