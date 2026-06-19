@@ -61,9 +61,7 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
   const manualSub = (gi) => (extras[gi] || []).reduce((s, m) => s + (m.perDay !== false ? toNum(m.amount) : 0), 0);
   const groupTotal = (g, gi) => computedSub(g) + manualSub(gi);
   const total = groups.reduce((s, g, gi) => s + groupTotal(g, gi), 0);
-  // Dầu = CHI PHÍ CÔNG TY (không tính vào tiền lái) — tổng lít + tiền theo các chuyến.
-  const fuelLiters = groups.reduce((s, g) => s + ((g.fuel && g.fuel.liters) || 0), 0);
-  const fuelAmount = groups.reduce((s, g) => s + ((g.fuel && g.fuel.amount) || 0), 0);
+  // (Dầu = chi phí công ty đã hiển thị ở timeline Lộ trình — KHÔNG đưa vào popup này cho đỡ rối.)
   // Cảnh báo: chuyến KHÔNG khớp phí tuyến VÀ chưa thêm chi khác thủ công nào.
   const warnCount = groups.filter((g, gi) => g.note && manualSub(gi) <= 0).length;
 
@@ -131,16 +129,6 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
                     <span className="tnum" style={{ fontWeight: 600 }}>{fmtVND(it.amount)}</span>
                   </div>
                 ))}
-                {/* Dầu = chi phí công ty (KHÔNG tính vào tiền lái) — hiển thị lít + tiền công ty trả */}
-                {g.fuel ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", borderTop: "1px solid var(--line-2)", fontSize: 13, background: "#f5f9ff" }}>
-                    <i className="bi bi-fuel-pump-fill" style={{ color: "#2563eb" }} />
-                    <span style={{ fontWeight: 600, color: "#2563eb" }}>Dầu {g.fuel.axle} cầu <span style={{ fontWeight: 400, fontSize: 11.5, color: "var(--ink-4)" }}>· công ty trả</span></span>
-                    <span className="tnum" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{fmtNum(g.fuel.liters)} lít × {fmtVND(g.fuel.unitPrice)}/lít</span>
-                    <span style={{ flex: 1 }} />
-                    <span className="tnum" style={{ fontWeight: 700, color: "#2563eb" }}>{fmtVND(g.fuel.amount)}</span>
-                  </div>
-                ) : null}
                 {g.note && !(g.items || []).length ? (
                   <div style={{ padding: "8px 12px", fontSize: 12, color: "#a05a00" }}>{g.note} <span style={{ color: "var(--ink-4)" }}>· có thể thêm chi khác phát sinh bên dưới</span></div>
                 ) : null}
@@ -156,14 +144,6 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
               <span style={{ fontWeight: 700 }}>Tổng chi cho lái <span style={{ fontWeight: 400, fontSize: 12, color: "var(--ink-4)" }}>({groups.length} chuyến{warnCount > 0 ? ", " + warnCount + " chưa ra tiền" : ""})</span></span><span style={{ flex: 1 }} />
               <span className="tnum" style={{ fontWeight: 800, fontSize: 16, color: "var(--accent)" }}>{fmtVND(total)}</span>
             </div>
-            {fuelAmount > 0 && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", border: "1px solid #cfe0ff", borderRadius: 10, background: "#f5f9ff" }}>
-                <i className="bi bi-fuel-pump-fill" style={{ color: "#2563eb" }} />
-                <span style={{ fontWeight: 700, color: "#2563eb" }}>Dầu — chi phí công ty <span style={{ fontWeight: 400, fontSize: 12, color: "var(--ink-4)" }}>· {fmtNum(fuelLiters)} lít · không tính vào tiền lái</span></span>
-                <span style={{ flex: 1 }} />
-                <span className="tnum" style={{ fontWeight: 800, fontSize: 15, color: "#2563eb" }}>{fmtVND(fuelAmount)}</span>
-              </div>
-            )}
           </div>
         )}
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
