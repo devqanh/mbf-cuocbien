@@ -1,21 +1,37 @@
 import React from "react";
 import { I, Money, DateField, Txt, fmtVND, fmtNum, fmtDate, toNum } from "@trk/lib.jsx";
 
+// Dầu = CHI PHÍ CÔNG TY, KHÔNG tính vào lương lái → loại khỏi cả 2 rổ (kể cả snapshot CŨ còn dau1/dau2 trong items).
+const isFuel = (it) => it && (it.key === "dau1" || it.key === "dau2" || (it.liters != null && it.unitPrice != null));
+
 /* Gộp khoản phí tuyến + chi khác thủ công của 1 chuyến thành 2 rổ hiển thị cho kế toán. */
 function splitGroup(g) {
   const manual = g.manual || [];
   const daily = [
-    ...(g.items || []),
+    ...(g.items || []).filter((it) => !isFuel(it)),
     ...manual.filter((m) => m.perDay !== false).map((m) => ({ label: m.name || "Chi khác", amount: m.amount })),
   ];
   const payroll = [
-    ...(g.payrollItems || []),
+    ...(g.payrollItems || []).filter((it) => !isFuel(it)),
     ...manual.filter((m) => m.perDay === false).map((m) => ({ label: m.name || "Chi khác", amount: m.amount })),
   ];
   return { daily, payroll };
 }
 
 const sum = (arr, k) => (arr || []).reduce((s, x) => s + (x[k] || 0), 0);
+
+/* Tổng kỳ lương suy TỪ detail groups (đã loại dầu) — dùng cho snapshot cũ chưa "Tính lại" để khớp với phần chi tiết.
+   Trả null nếu kỳ không có detail (để gọi nơi dùng fallback về số snapshot). */
+export function payrollSumsFromDetail(row) {
+  const lines = row.detail || row.lines || [];
+  if (!lines.length) return null;
+  let daily = 0, payroll = 0;
+  for (const ln of lines) for (const g of (ln.groups || [])) {
+    const sp = splitGroup(g);
+    daily += sum(sp.daily, "amount"); payroll += sum(sp.payroll, "amount");
+  }
+  return { daily, payroll };
+}
 
 /* CHI TIẾT 1 XE (read-only) — 2 cột: ĐÃ CHI THEO NGÀY · LƯƠNG CHƯA CHI, gom theo ngày + chuyến. */
 export function PayrollDetail({ row }) {

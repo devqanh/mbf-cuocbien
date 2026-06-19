@@ -4,7 +4,7 @@ import "@trk/shared.js";
 
 const { useState } = React;
 import { I, Btn, Txt, Combo, fmtVND, fmtDate, toNum } from "@trk/lib.jsx";
-import { PayrollDetail, ExtraPayEditor, PaymentsEditor } from "@trk/components/payroll-detail.jsx";
+import { PayrollDetail, ExtraPayEditor, PaymentsEditor, payrollSumsFromDetail } from "@trk/components/payroll-detail.jsx";
 
 const lbl = (t) => <div style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>{t}</div>;
 const TH = ({ children, right }) => <th style={{ textAlign: right ? "right" : "left", padding: "8px 10px", fontSize: 11, fontWeight: 700, color: "var(--ink-4)", textTransform: "uppercase", letterSpacing: ".03em", borderBottom: "1px solid var(--line)", whiteSpace: "nowrap" }}>{children}</th>;
@@ -21,7 +21,18 @@ function ViewPayrollApp() {
   const [no, setNo] = useState(batch.no || "");
   const [name, setName] = useState(batch.name || "");
   const [locked, setLocked] = useState(!!batch.locked);
-  const [rows, setRows] = useState((batch.rows || []).map((x) => ({ ...x, extraPay: Array.isArray(x.extraPay) ? x.extraPay : [], payments: Array.isArray(x.payments) ? x.payments : [] })));
+  // Chuẩn hóa LÚC NẠP: loại dầu (chi phí công ty) khỏi payroll/paidDaily — suy từ detail; snapshot cũ chưa "Tính lại" cũng đúng,
+  // và khi bấm Lưu sẽ ghi đè số đã trừ dầu vào DB (sửa luôn trang danh sách).
+  const [rows, setRows] = useState((batch.rows || []).map((x) => {
+    const d = payrollSumsFromDetail(x);
+    return {
+      ...x,
+      payroll: d ? d.payroll : (x.payroll != null ? x.payroll : (x.total || 0)),
+      paidDaily: d ? d.daily : (x.paidDaily || 0),
+      extraPay: Array.isArray(x.extraPay) ? x.extraPay : [],
+      payments: Array.isArray(x.payments) ? x.payments : [],
+    };
+  }));
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState({});
@@ -29,7 +40,7 @@ function ViewPayrollApp() {
 
   const set = (i, np) => { setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...np } : r))); setDirty(true); };
   const sumExtra = (r) => (r.extraPay || []).reduce((s, e) => s + toNum(e.amount), 0);
-  const effPay = (r) => (r.payroll || r.total || 0) + sumExtra(r);   // lương phải trả = gốc + phát sinh
+  const effPay = (r) => (r.payroll || 0) + sumExtra(r);   // lương phải trả = gốc (đã trừ dầu) + phát sinh
   const paidOf = (r) => (r.payments || []).reduce((s, p) => s + toNum(p.amount), 0);
   const grandPayroll = rows.reduce((a, x) => a + effPay(x), 0);
   const grandDaily = rows.reduce((a, x) => a + (x.paidDaily || 0), 0);
