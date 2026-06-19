@@ -600,6 +600,32 @@ function TrackingApp() {
     return () => ro.disconnect();
   }, [mapReady]);
 
+  // FIT LẦN ĐẦU bền vững (chống đua map↔ajax): khi map sẵn sàng & ĐÃ có xe nhưng CHƯA fit,
+  // thử fit lặp lại (chờ container có size + layout ổn) → map luôn center về đàn xe ở lần load đầu,
+  // không bị kẹt ở center mặc định (vùng Lào) khiến "xe không hiện trên map" dù danh sách có.
+  useEffect(() => {
+    if (!mapReady || didFit.current || !filtered.length || !mapRef.current || !window.google) return;
+    let tries = 0, t = null;
+    const tryFit = () => {
+      if (didFit.current || !mapRef.current || !mapEl.current) return;
+      const list = filteredRef.current;
+      if (mapEl.current.offsetHeight > 0 && list.length) {
+        const b = new window.google.maps.LatLngBounds();
+        list.forEach((p) => { if (p.lat != null && p.lng != null) b.extend({ lat: p.lat, lng: p.lng }); });
+        if (!b.isEmpty()) {
+          didFit.current = true;
+          window.google.maps.event.trigger(mapRef.current, "resize");
+          mapRef.current.fitBounds(b);
+          if (list.length === 1) mapRef.current.setZoom(15);
+          return;
+        }
+      }
+      if (tries++ < 25) t = setTimeout(tryFit, 150);   // chờ layout settle, tối đa ~3.7s
+    };
+    tryFit();
+    return () => clearTimeout(t);
+  }, [mapReady, filtered.length]);
+
   // ---- marker KHO (vẽ + kéo để chỉnh; bấm xem thông tin) ----
   useEffect(() => {
     if (!mapReady || !mapRef.current || !window.google) return;
