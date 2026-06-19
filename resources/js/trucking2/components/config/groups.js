@@ -1,0 +1,19 @@
+/* Định nghĩa các TAB của trang Cài đặt (mỗi mục = 1 bảng danh mục / cấu hình). */
+export const CFG_GROUPS = [
+  { key: "locations", label: "Địa điểm", hint: "depot, cảng, ICD, KCN — dùng cho Tuyến · thêm ký hiệu viết tắt; tự thêm khi import bảng giá (cột FROM + TO)", ph: "VD: Cảng Tân Vũ", coded: true, codeKey: "locationCode", codeNameLabel: "Tên địa điểm", allowDupCode: true },
+  { key: "customers", label: "Khách hàng", hint: "quản lý khách hàng — MST, liên hệ, hạn thanh toán, ghi chú…", ph: "VD: Canon Vietnam" },
+  { key: "contTypes", label: "Loại container", hint: "dùng cho cột Cont", ph: "VD: 40HC" },
+  { key: "warehouses", label: "Kho", hint: "kho hàng — dùng cho lô (chọn tối đa 3) · thêm ký hiệu viết tắt + địa chỉ; tự thêm khi import bảng giá (cột TO)", ph: "VD: Kho A2", coded: true, codeKey: "warehouseCode", codeNameLabel: "Tên kho", addressed: true, geo: true },
+  { key: "payers", label: "Bên thanh toán", hint: "dùng cho mọi dòng chi phí", ph: "VD: Tài xế" },
+  { key: "costItems", label: "Khoản chi phí", hint: "gắn màu “theo dõi” cho khoản cần nhắc khi chưa điền số tiền — dùng chung cho mọi lô", ph: "VD: Phí cân xe", colored: true },
+  { key: "choHoItems", label: "Khoản thu/chi hộ", hint: "dùng cho mục Thu chi hộ ở cả Chi phí & Doanh thu · có đơn giá mặc định", ph: "VD: Nâng", priced: true },
+  { key: "revItems", label: "Khoản doanh thu", hint: "dùng cho mục Doanh thu · có đơn giá mặc định", ph: "VD: Doanh thu cước xe", priced: true },
+  { key: "vehicles", label: "Biển số xe", hint: "đội xe — mỗi biển số chọn Xe MBF hay Xe ngoài", ph: "VD: 15C-123.45", fleet: true },
+  { key: "drivers", label: "Lái xe", hint: "hồ sơ tài xế — SĐT (nhiều số), ngày sinh, ngày vào công ty (tự tính thâm niên), tài khoản ngân hàng, tài liệu CCCD/bằng lái", ph: "VD: A.Tuấn", drivers: true },
+  { key: "salaryItems", label: "Khoản lương (lái xe)", hint: "các khoản lương thêm (thưởng, phụ cấp…) — chọn ở Phí xe nội bộ thay vì nhập tay để sau tổng hợp lương dễ", ph: "VD: Thưởng chuyên cần" },
+  { key: "vehicleCostTypes", label: "Loại chi phí xe", hint: "loại chi phí bảo dưỡng/sửa chữa xe — chọn ở Quản lý xe (tab Chi phí) để nhóm báo cáo theo loại", ph: "VD: Bảo dưỡng định kỳ" },
+  { key: "assetCategories", label: "Loại tài sản", hint: "phân loại tài sản (máy móc, thiết bị, nhà xưởng…) — chọn khi thêm/sửa tài sản ở Quản lý tài sản", ph: "VD: Máy móc thiết bị" },
+  { key: "routeFees", label: "Phí tuyến đường", hint: "định mức phí & dầu cho từng tuyến (tập kho) — vé trạm, tiền đường, trợ cấp, phí khác, lương CRU, km, dầu 2 cầu/1 cầu", ph: "", routefees: true },
+  { key: "fuelPrices", label: "Bảng giá dầu", hint: "đơn giá dầu (đồng/lít) theo khoảng ngày — link tính tiền dầu cho tuyến theo ngày của lô", ph: "", fuelprices: true },
+  { key: "__general", label: "Cấu hình chung", hint: "cấu hình dùng chung cho hệ thống — VAT mặc định, ngưỡng Free time… (mở rộng thêm sau)", general: true },
+];
