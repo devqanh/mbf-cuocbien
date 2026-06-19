@@ -226,7 +226,7 @@ function PointChain({ points }) {
 }
 
 // 1 hoạt động = 1 nút trên đường rail dọc (nối liền nhau thành lộ trình cả ngày)
-function TripNode({ l, isFirst, isLast, bks, href }) {
+function TripNode({ l, isFirst, isLast, bks, href, fuel }) {
   const m = MODE[l.mode] || MODE.self;
   // Xe không kéo cont → chỉ hiện NƠI LẤY (chỗ xe vào), không vẽ tới nơi hạ vì chưa giao cont nào.
   const pts = l.mode === "none" ? (l.points || []).filter((p) => p.kind === "pickup") : l.points;
@@ -267,6 +267,12 @@ function TripNode({ l, isFirst, isLast, bks, href }) {
           </div>
         </div>
         {(l.customer || l.booking) && <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 6 }}>{l.customer}{l.booking ? <span className="tnum"> · {l.booking}</span> : null}</div>}
+        {/* Dầu chuyến này = chi phí công ty (lít × giá dầu theo ngày) */}
+        {fuel ? (
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 6, padding: "2px 9px", fontSize: 11, fontWeight: 600, borderRadius: 999, background: "#eef4ff", color: "#2563eb", border: "1px solid #cfe0ff" }}>
+            <i className="bi bi-fuel-pump-fill" /> Dầu {fuel.axle} cầu: <span className="tnum">{fmtNum(fuel.liters)} lít × {fmtVND(fuel.unitPrice)}/lít = {fmtVND(fuel.amount)}</span> <span style={{ fontWeight: 400, color: "var(--ink-4)" }}>· công ty trả</span>
+          </div>
+        ) : null}
       </div>
     </a>
   );
@@ -404,7 +410,7 @@ function LoTrinhApp() {
                   {/* LỘ TRÌNH 1 NGÀY: timeline dọc nối liền các hoạt động */}
                   <div style={{ padding: "8px 12px 10px" }}>
                     {tr.legs.map((l, i) => (
-                      <TripNode key={i} l={l} isFirst={i === 0} isLast={i === tr.legs.length - 1} bks={tr.bks} href={ROUTES.shipment + (l.cont ? "?q=" + encodeURIComponent(l.cont) + "&open=1" : "")} />
+                      <TripNode key={i} l={l} isFirst={i === 0} isLast={i === tr.legs.length - 1} bks={tr.bks} fuel={(tr.payGroups || [])[i] && (tr.payGroups || [])[i].fuel} href={ROUTES.shipment + (l.cont ? "?q=" + encodeURIComponent(l.cont) + "&open=1" : "")} />
                     ))}
                   </div>
                 </div>
