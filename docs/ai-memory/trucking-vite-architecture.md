@@ -11,8 +11,10 @@ Trucking v2 (trang `/trucking-v2/*`) đã **migrate khỏi Babel in-browser** sa
 
 **Cấu trúc code React (resources/js/trucking2/):**
 - `lib.jsx` — helpers, fields, Combo, Modal, Money, calc*, fmt*, icons (cũ: `window.__lib`). Export named.
-- `pop.jsx` — **barrel** re-export (giữ `import ... from "@trk/pop.jsx"` cho mọi nơi). Code thực ở `components/`: `shared.jsx` (Field, ChkBox, FlagPicker, Seg, *Rows, colorHex, TRACK_COLORS — primitives), `popups.jsx` (CostPopup, RevenuePopup*, InfoPopup — popup lô), `config.jsx` (ConfigBody, CFG_GROUPS, RouteFees, FuelPrices, PriceList, CustomerManager — Cài đặt). Phụ thuộc: shared ← popups & config.
-- `ui.jsx` — Badge, TH/TD, makePricer, StatementForm, StatementDetailBody, SavedStatementPage, KePage, BangGiaPage… (cũ: `window.__ui`). Import từ lib + pop.
+- `pop.jsx` — **barrel** re-export (giữ `import ... from "@trk/pop.jsx"` cho mọi nơi). Code thực ở `components/`: `shared.jsx` (primitives), `popups.jsx` (popup lô), `price-list.jsx` (PriceList), `config.jsx` (ConfigBody/ConfigPopup/CFG_GROUPS — Cài đặt).
+- **`components/config/` (tách 2026-06, config.jsx 1256→500d):** `MapPicker.jsx` (AddrInput+MapPicker), `RouteFees.jsx`, `FuelPrices.jsx`, `CustomerManager.jsx`, `DriversManager.jsx`, `groups.js` (CFG_GROUPS). config.jsx chỉ còn ConfigBody+ConfigPopup, import lại từ config/ rồi re-export → call-site không đổi.
+- `ui.jsx` — **barrel** (tách 2026-06, 728→5d) re-export từ `ui/`: `primitives.jsx` (SortBtn/CellBtn/Badge/EditCell/TH/TD), `pricer.js` (makePricer — legacy), `statement.jsx` (StatementForm/StatementDetailBody/Saved*/KePage/DriftChip + CO consts), `bang-gia.jsx` (BangGiaPage). Mọi `import ... from "@trk/ui.jsx"` giữ nguyên.
+- **Tách file con = thuần component (không phải vite entry)** → KHÔNG sửa vite.config.js; chỉ entry ở `pages/` mới cần khai báo. Barrel giữ đường import cũ → an toàn.
 - `shared.js` — vanilla: `window.confirmAction`, `window.trkToast`, fit `#trk-root`. Mỗi page entry `import "@trk/shared.js"`.
 - `pages/<page>.jsx` — entry mỗi trang (lo-hang, bang-gia, bang-ke, bang-ke-tao, bang-ke-xem, cai-dat, **quan-ly-xe**): `import { createRoot } from "react-dom/client"` + mount `#trk-root`. Dữ liệu vẫn qua `window.__TRK` (blade @section content).
 

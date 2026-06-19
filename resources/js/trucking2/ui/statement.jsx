@@ -3,7 +3,6 @@ const { useState, useMemo, useEffect } = React;
 import { I, fmtVND, fmtNum, fmtShort, fmtDate, calcCost, calcRev, calcVeh, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, Combo, useIsMobile, DateField } from "@trk/lib.jsx";
 import { CostPopup, RevenuePopup, CostPopupICD, RevenuePopupICD, InfoPopup, ConfigPopup, PriceList, TRACK_COLORS, colorHex } from "@trk/pop.jsx";
 import { SortBtn, CellBtn, Badge, EditCell, TH, TD } from "./primitives.jsx";
-import { makePricer } from "./pricer.js";
 
 /* Thông tin công ty cho header bảng kê (màn hình + bản in). */
 const CO = (window.__TRK && window.__TRK.boot && window.__TRK.boot.company) || {};
