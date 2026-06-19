@@ -251,7 +251,7 @@ function TrackingApp() {
   const histRef = useRef({});      // vehKey → [{ts,speed}] lịch sử tốc độ (cửa sổ trượt 5' tính ETA)
   useEffect(() => {
     if (window.AppLoading && window.AppLoading.addSilentPattern) window.AppLoading.addSilentPattern(/tracking\/positions/i);
-    let timer = null, stopped = false, fails = 0;
+    let timer = null, stopped = false, fails = 0, gotData = false, emptyTries = 0;
     // Poll LIÊN TỤC kể cả tab ẩn. Nhịp thích ứng: có xe chạy → 15s; không xe nào chạy → 30s (đỡ tải).
     // Lỗi liên tiếp → backoff ×2 (cap 60s).
     const nextDelay = () => Math.min((runRef.current ? POLL_MS : POLL_MS * 2) * 2 ** fails, 60000);
@@ -282,12 +282,22 @@ function TrackingApp() {
               while (arr.length > 1 && arr[1].ts <= cutoff) arr.shift();
             });
             setPositions(next);
+            if (next.length) gotData = true;
+          } else if (verRef.current) {
+            gotData = true;   // unchanged = đã có dữ liệu từ lượt trước
           }
         }
       } catch (e) { /* giữ dữ liệu cũ */ }
       finally {
         // CHỈ tick mới nhất mới đặt lịch kế tiếp → tránh nhân đôi timer
-        if (my === reqId.current) { setLoading(false); fails = ok ? 0 : Math.min(fails + 1, 2); setStale(fails >= 2); schedule(); }
+        if (my === reqId.current && !stopped) {
+          setLoading(false); fails = ok ? 0 : Math.min(fails + 1, 2); setStale(fails >= 2);
+          // Chưa có xe nào (lần đầu rỗng / provider vừa relogin) → thử lại NHANH 3s (tối đa ~5 lần)
+          // để trang TỰ ĐẦY mà không cần reload tay; sau đó về nhịp bình thường.
+          const quick = ok && ! gotData && emptyTries < 5;
+          if (quick) emptyTries++;
+          clearTimeout(timer); timer = setTimeout(tick, quick ? 3000 : nextDelay());
+        }
       }
     }
     // Quay lại tab → refresh NGAY (không chờ hết chu kỳ); poll nền vẫn chạy nên data đã sẵn sàng.

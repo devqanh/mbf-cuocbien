@@ -31,10 +31,26 @@ class GpsTrackingService
         return $this->providers()[$key] ?? null;
     }
 
-    /** Vị trí + trạng thái provider, cache 10s. */
+    /**
+     * Vị trí + trạng thái provider.
+     * Cache 10s CHỈ KHI lấy được vị trí; nếu RỖNG/LỖI (token hết hạn, mạng chập…) chỉ cache 2s
+     * → reload thử lại ngay, KHÔNG bị "ghim" trạng thái trống 10s (lỗi load lần đầu phải reload nhiều lần).
+     */
     public function snapshot(): array
     {
-        return Cache::remember('gps.snapshot', 10, function () {
+        $cached = Cache::get('gps.snapshot');
+        if (is_array($cached)) return $cached;
+
+        $snap = $this->buildSnapshot();
+        $ok = ! empty($snap['positions']);
+        Cache::put('gps.snapshot', $snap, $ok ? 10 : 2);
+        return $snap;
+    }
+
+    /** Gọi mọi provider, gom vị trí + trạng thái (không cache — caller quyết định). */
+    protected function buildSnapshot(): array
+    {
+        {
             $positions = [];
             $status = [];
 
@@ -71,7 +87,7 @@ class GpsTrackingService
                 'ts'        => (int) (microtime(true) * 1000),
                 'version'   => substr(md5($sig), 0, 16),
             ];
-        });
+        }
     }
 
     /** Cấu hình các provider (đã ẩn password) cho trang cấu hình. */
