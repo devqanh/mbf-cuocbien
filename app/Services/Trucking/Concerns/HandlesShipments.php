@@ -396,7 +396,7 @@ trait HandlesShipments
             // Dầu = chi phí CÔNG TY (tách khỏi tiền lái) — tổng lít + tiền theo các chuyến trong ngày.
             $fuelTotal = 0; $fuelLiters = 0.0;
             foreach ($payGroups as $g) { if (! empty($g['fuel'])) { $fuelTotal += (int) ($g['fuel']['amount'] ?? 0); $fuelLiters += (float) ($g['fuel']['liters'] ?? 0); } }
-            $trucks[] = ['bks' => $bks, 'matched' => $matched, 'type' => $type, 'axle' => $axle, 'legs' => $ls,
+            $trucks[] = ['bks' => $bks, 'vehicleId' => $vid, 'matched' => $matched, 'type' => $type, 'axle' => $axle, 'legs' => $ls,
                 'payGroups' => $payGroups, 'payTotal' => $payTotal, 'payrollTotal' => $payrollTotal, 'payWarn' => $payWarn,
                 'fuelTotal' => $fuelTotal, 'fuelLiters' => round($fuelLiters, 1),
                 'frozen' => $frozen,
@@ -602,7 +602,7 @@ trait HandlesShipments
             foreach ($day['trucks'] as $t) {
                 $bks = $t['bks'];
                 if (! isset($byBks[$bks])) {
-                    $byBks[$bks] = ['bks' => $bks, 'type' => $t['type'], 'axle' => $t['axle'],
+                    $byBks[$bks] = ['bks' => $bks, 'vehicleId' => $t['vehicleId'] ?? null, 'type' => $t['type'], 'axle' => $t['axle'],
                         'drivers' => [], 'days' => 0, 'trips' => 0, 'paidDaily' => 0, 'payroll' => 0, 'lines' => []];
                 }
                 $byBks[$bks]['days']++;

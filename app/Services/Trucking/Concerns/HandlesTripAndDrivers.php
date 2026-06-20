@@ -918,6 +918,7 @@ trait HandlesTripAndDrivers
             $pd       = (int) round((float) ($r['paidDaily'] ?? 0));
             $lines[] = [
                 'bks'       => $bks,
+                'vehicleId' => is_numeric($r['vehicleId'] ?? null) ? (int) $r['vehicleId'] : null,
                 'driver'    => $this->str($r['driver'] ?? null) ?? '',
                 'days'      => (int) ($r['days'] ?? 0),
                 'trips'     => (int) ($r['trips'] ?? 0),
@@ -1020,6 +1021,7 @@ trait HandlesTripAndDrivers
         foreach ($ships as $sh) {
             $plate = trim((string) ($sh->vehicle_id ? ($vehPlate[$sh->vehicle_id] ?? $sh->bks_vao) : $sh->bks_vao)) ?: '—';
             $byPlate[$plate] ??= ['cost' => 0, 'trips' => 0];
+            if ($sh->vehicle_id && ! isset($byPlate[$plate]['vehicleId'])) $byPlate[$plate]['vehicleId'] = (int) $sh->vehicle_id;
             $byPlate[$plate]['revenue'] = ($byPlate[$plate]['revenue'] ?? 0) + (int) round((float) ($revByShip[$sh->id] ?? 0));
             $byPlate[$plate]['conts'] = ($byPlate[$plate]['conts'] ?? 0) + 1;
             $rk = trim(($sh->from_loc ?? '') . ' → ' . ($sh->to_loc ?? ''), ' →') ?: '(chưa rõ)';
@@ -1037,7 +1039,7 @@ trait HandlesTripAndDrivers
         $fleet = [];
         foreach ($byPlate as $bks => $v) {
             $rev = (int) ($v['revenue'] ?? 0); $cost = (int) $v['cost'];
-            $fleet[] = ['bks' => $bks, 'revenue' => $rev, 'cost' => $cost, 'profit' => $rev - $cost,
+            $fleet[] = ['bks' => $bks, 'vehicleId' => $v['vehicleId'] ?? null, 'revenue' => $rev, 'cost' => $cost, 'profit' => $rev - $cost,
                 'trips' => $v['trips'], 'conts' => (int) ($v['conts'] ?? 0),
                 'perTrip' => $v['trips'] ? (int) round($cost / $v['trips']) : 0,
                 'costRatio' => $rev ? round($cost * 100 / $rev, 1) : 0];
