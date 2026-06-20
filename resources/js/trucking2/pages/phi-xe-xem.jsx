@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import "@trk/shared.js";
 
 const { useState } = React;
-import { I, Btn, Txt, Combo, fmtVND, fmtDate, toNum } from "@trk/lib.jsx";
+import { I, Btn, Txt, Combo, DateField, fmtVND, fmtDate, toNum } from "@trk/lib.jsx";
 import { PayrollDetail, ExtraPayEditor, PaymentsEditor, payrollSumsFromDetail } from "@trk/components/payroll-detail.jsx";
 
 const lbl = (t) => <div style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>{t}</div>;
@@ -20,6 +20,8 @@ function ViewPayrollApp() {
 
   const [no, setNo] = useState(batch.no || "");
   const [name, setName] = useState(batch.name || "");
+  const [from, setFrom] = useState(batch.from || "");
+  const [to, setTo] = useState(batch.to || "");
   const [locked, setLocked] = useState(!!batch.locked);
   // Chuẩn hóa LÚC NẠP: loại dầu (chi phí công ty) khỏi payroll/paidDaily — suy từ detail; snapshot cũ chưa "Tính lại" cũng đúng,
   // và khi bấm Lưu sẽ ghi đè số đã trừ dầu vào DB (sửa luôn trang danh sách).
@@ -48,7 +50,7 @@ function ViewPayrollApp() {
 
   const save = async (lk = locked) => {
     if (busy) return; setBusy(true);
-    const res = await api("PUT", ROUTES.update + idUrl, { batch: { no, name, from: batch.from, to: batch.to, locked: lk, rows } });
+    const res = await api("PUT", ROUTES.update + idUrl, { batch: { no, name, from, to, locked: lk, rows } });
     setBusy(false);
     if (res && res.ok) { setDirty(false); window.trkToast && window.trkToast("Đã lưu kỳ lương"); return true; }
     window.trkToast && window.trkToast("Lưu thất bại", "error"); return false;
@@ -116,7 +118,7 @@ function ViewPayrollApp() {
                 <span className="tnum">Kỳ lương {no || ""}</span>
                 {locked && <span style={{ fontSize: 10.5, fontWeight: 700, color: "#2563eb", background: "#e7efff", padding: "2px 8px", borderRadius: 999 }}><i className="bi bi-lock-fill" /> Đã chốt</span>}
               </div>
-              <div style={{ fontSize: 12.5, color: "var(--ink-3)" }} className="tnum">{fmtDate(batch.from) || "?"} → {fmtDate(batch.to) || "?"} · {rows.length} xe</div>
+              <div style={{ fontSize: 12.5, color: "var(--ink-3)" }} className="tnum">{fmtDate(from) || "?"} → {fmtDate(to) || "?"} · {rows.length} xe</div>
             </div>
           </div>
           <div style={{ textAlign: "right", marginRight: 8 }}>
@@ -139,6 +141,8 @@ function ViewPayrollApp() {
           <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "14px 16px", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
             <div style={{ width: 150 }}>{lbl("Số kỳ")}<Txt value={no} onChange={(v) => { setNo(v); setDirty(true); }} /></div>
             <div style={{ flex: 1, minWidth: 180 }}>{lbl("Tên / ghi chú kỳ")}<Txt value={name} onChange={(v) => { setName(v); setDirty(true); }} /></div>
+            <div>{lbl("Từ ngày")}<DateField value={from} onChange={(v) => { setFrom(v); setDirty(true); }} /></div>
+            <div>{lbl("Đến ngày")}<DateField value={to} onChange={(v) => { setTo(v); setDirty(true); }} /></div>
           </div>
           <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
             <div style={{ overflowX: "auto" }}>
