@@ -267,20 +267,62 @@ trait HandlesPricingAndImport
         }
     }
 
+    /**
+     * Chuẩn hóa biển kiểm soát: viết hoa, bỏ dấu chấm, tự chèn gạch nếu thiếu (29E72123 → 29E-72123).
+     * Trả chuỗi đã chuẩn hóa; null nếu hoàn toàn rỗng.
+     */
+    public function normalizePlate(string $raw): ?string
+    {
+        $p = mb_strtoupper(preg_replace('/[.\s]+/u', '', trim($raw)));
+        // Tự chèn gạch ngang: 29E72123 → 29E-72123
+        if ($p !== '' && ! str_contains($p, '-') && preg_match('/^(\d{2}[A-Z]{1,2})(\d+)$/', $p, $m)) {
+            $p = $m[1] . '-' . $m[2];
+        }
+        return $p !== '' ? $p : null;
+    }
+
     private function reconcileVehicles(array $cfg): void
     {
-        $plates = array_values(array_filter(array_map('trim', $cfg['vehicles'] ?? []), fn ($v) => $v !== ''));
-        TruckingVehicle::whereNotIn('plate', $plates ?: [''])->delete();
-        $usedGps = [];   // 1 xe GPS chỉ gán cho 1 xe — giữ xe gán đầu, bỏ gán các xe sau nếu trùng
+        $raw = array_values(array_filter(array_map('trim', $cfg['vehicles'] ?? []), fn ($v) => $v !== ''));
+        // Chuẩn hóa (viết hoa, bỏ chấm, tự chèn gạch)
+        $plates = [];
+        foreach ($raw as $r) { $p = $this->normalizePlate($r); if ($p && ! in_array($p, $plates, true)) $plates[] = $p; }
+
+        // Phát hiện ĐỔI BIỂN SỐ: so biển cũ/mới bằng dạng chuẩn hóa (bỏ gạch/cách) — nếu khớp
+        // nhưng viết khác → RENAME (giữ vehicle_id) + CẬP NHẬT plate ở Lô hàng + route_pays.
+        $normP  = fn ($v) => preg_replace('/[\s\-.,]/u', '', mb_strtoupper(trim((string) $v)));
+        $newByN = []; foreach ($plates as $p) $newByN[$normP($p)] = $p;
+        $matchedIds = [];   // id xe đã match
+        foreach (TruckingVehicle::all() as $old) {
+            $n = $normP($old->plate);
+            if (isset($newByN[$n])) {
+                $newPlate = $newByN[$n];
+                if ($old->plate !== $newPlate) {
+                    // plate format đổi → propagate ra Lô hàng + route_pays
+                    TruckingShipment::where('vehicle_id', $old->id)->where('bks_vao', $old->plate)->update(['bks_vao' => $newPlate]);
+                    TruckingShipment::where('bks_ra', $old->plate)->update(['bks_ra' => $newPlate]);
+                    \App\Models\TruckingRoutePay::where('vehicle_id', $old->id)->update(['bks' => $newPlate]);
+                    $old->update(['plate' => $newPlate]);
+                }
+                $matchedIds[] = $old->id;
+                unset($newByN[$n]);
+            }
+        }
+        // Xóa xe KHÔNG match (biển xóa hẳn)
+        TruckingVehicle::whereNotIn('id', $matchedIds ?: [0])->whereNotIn('plate', $plates ?: [''])->delete();
+
+        // Tạo / cập nhật attrs (type/axle/gps) — updateOrCreate theo plate (giờ plate đã đồng bộ)
+        $usedGps = [];
         foreach ($plates as $plate) {
-            $type = $cfg['vehicleType'][$plate] ?? 'MBF';
-            // Số cầu chỉ áp dụng cho xe MBF (xe ngoài không cần)
-            $axle = $type === 'MBF' ? (($cfg['vehicleAxle'][$plate] ?? null) ?: null) : null;
+            // Lookup attrs by current plate HOẶC plate gốc (trước khi chuẩn hóa) — vì frontend gửi key cũ
+            $lookupKeys = [$plate, str_replace('-', '', $plate)];
+            $first = fn ($map) => collect($lookupKeys)->map(fn ($k) => $map[$k] ?? null)->filter()->first();
+            $type = $first($cfg['vehicleType'] ?? []) ?? 'MBF';
+            $axle = $type === 'MBF' ? ($first($cfg['vehicleAxle'] ?? []) ?: null) : null;
             $attrs = ['type' => $type, 'axle' => $axle];
-            // gps_ref (liên kết xe GPS) chỉ áp xe MBF; chỉ ghi khi payload có gửi 'vehicleGps' (tránh xóa nhầm).
             if (array_key_exists('vehicleGps', $cfg)) {
-                $ref = $type === 'MBF' ? (trim((string) ($cfg['vehicleGps'][$plate] ?? '')) ?: null) : null;
-                if ($ref !== null && isset($usedGps[$ref])) $ref = null;   // đã gán cho xe khác → bỏ qua
+                $ref = $type === 'MBF' ? ($first($cfg['vehicleGps'] ?? []) ?: null) : null;
+                if ($ref !== null && isset($usedGps[$ref])) $ref = null;
                 if ($ref !== null) $usedGps[$ref] = $plate;
                 $attrs['gps_ref'] = $ref;
             }
