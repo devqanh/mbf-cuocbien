@@ -12,6 +12,7 @@ use App\Models\TruckingLocation;
 use App\Models\TruckingPayer;
 use App\Models\TruckingPriceRow;
 use App\Models\TruckingFuelPrice;
+use App\Models\TruckingFuelRefill;
 use App\Models\TruckingRevenueItem;
 use App\Models\TruckingRouteFee;
 use App\Models\TruckingSalaryItem;
@@ -393,6 +394,126 @@ trait HandlesVehicleDetail
     {
         $this->deleteAttachment($attachmentId, TruckingVehicle::class, $v->id);
         return $this->vehicleDocsOut($v);
+    }
+
+    // ===================================================================
+    // THEO DÕI LƯỢNG DẦU (phiếu đổ dầu + tiêu thụ lý thuyết từ Lộ trình)
+    // ===================================================================
+
+    /** Danh sách phiếu đổ dầu của 1 xe (mới nhất trước). */
+    public function fuelRefills(TruckingVehicle $v): array
+    {
+        return TruckingFuelRefill::where('vehicle_id', $v->id)->orderByDesc('refill_date')->orderByDesc('id')
+            ->get()->map(fn ($r) => [
+                'id'        => $r->id,
+                'date'      => $this->outDate($r->refill_date),
+                'liters'    => (float) $r->liters,
+                'unitPrice' => $r->unit_price ? (int) round((float) $r->unit_price) : null,
+                'totalCost' => $r->total_cost ? (int) round((float) $r->total_cost) : null,
+                'odometerKm' => $r->odometer_km ? (float) $r->odometer_km : null,
+                'station'   => $r->station ?? '',
+                'note'      => $r->note ?? '',
+            ])->all();
+    }
+
+    /** Tạo / sửa phiếu đổ dầu. */
+    public function saveFuelRefill(TruckingVehicle $v, array $data, ?TruckingFuelRefill $existing = null): TruckingFuelRefill
+    {
+        $liters = (float) ($this->inNum($data['liters'] ?? null) ?? 0);
+        $unitPrice = $this->inMoney($data['unitPrice'] ?? null);
+        $attrs = [
+            'vehicle_id'  => $v->id,
+            'refill_date' => $this->inDate($data['date'] ?? null) ?: now()->format('Y-m-d'),
+            'liters'      => $liters,
+            'unit_price'  => $unitPrice,
+            'total_cost'  => $unitPrice !== null && $liters > 0 ? (int) round($liters * (float) $unitPrice) : $this->inMoney($data['totalCost'] ?? null),
+            'odometer_km' => $this->inNum($data['odometerKm'] ?? null),
+            'station'     => $this->str($data['station'] ?? null),
+            'note'        => $this->str($data['note'] ?? null),
+        ];
+        if ($existing) { $existing->update($attrs); return $existing; }
+        $attrs['created_by'] = auth()->id();
+        return TruckingFuelRefill::create($attrs);
+    }
+
+    /** Xóa phiếu đổ dầu. */
+    public function deleteFuelRefill(TruckingFuelRefill $refill): void { $refill->delete(); }
+
+    /**
+     * THEO DÕI DẦU 1 XE: phiếu đổ + tiêu thụ lý thuyết (từ Lộ trình fuelLiters) → ước tính còn lại.
+     * Giữa mỗi 2 lần đổ: đổ vào − Σ tiêu thụ = còn lại. Khoảng cuối (đến hôm nay) = ước tính hiện tại.
+     */
+    public function fuelTracker(TruckingVehicle $v): array
+    {
+        $refills = TruckingFuelRefill::where('vehicle_id', $v->id)->orderBy('refill_date')->orderBy('id')->get();
+        if ($refills->isEmpty()) return ['refills' => [], 'periods' => [], 'currentRemaining' => null];
+
+        $today = now()->format('Y-m-d');
+        $plate = $v->plate;
+
+        // Gom fuelLiters/ngày từ route_pays (đã tính qua routeTripByDate) — nhanh hơn loop từng ngày.
+        // frozen_data có payGroups.fuel.liters; nếu chưa frozen thì tính live.
+        // Đơn giản: loop ngày từ lần đổ đầu → hôm nay, gom từ routeTripByDate per day.
+        // Tối ưu: chỉ loop các ngày xe CÓ chuyến (shipments with gio_xe_ra).
+        $firstDate = $refills->first()->refill_date->format('Y-m-d');
+        $dailyFuel = $this->fuelByDayForVehicle($plate, $v->id, $firstDate, $today);
+
+        $periods = [];
+        foreach ($refills as $i => $rf) {
+            $from = $rf->refill_date->format('Y-m-d');
+            $next = isset($refills[$i + 1]) ? $refills[$i + 1]->refill_date->format('Y-m-d') : $today;
+            // Tiêu thụ lý thuyết giữa 2 lần đổ (ngày đổ inclusive → ngày trước lần đổ tiếp)
+            $consumed = 0.0; $trips = 0;
+            foreach ($dailyFuel as $d => $f) {
+                if ($d >= $from && $d < $next) { $consumed += $f['liters']; $trips += $f['trips']; }
+            }
+            // Nếu khoảng cuối (đến hôm nay), include hôm nay
+            if (! isset($refills[$i + 1]) && isset($dailyFuel[$today])) {
+                $consumed += $dailyFuel[$today]['liters']; $trips += $dailyFuel[$today]['trips'];
+            }
+            $periods[] = [
+                'from'      => $from,
+                'to'        => $next,
+                'refilled'  => (float) $rf->liters,
+                'consumed'  => round($consumed, 1),
+                'trips'     => $trips,
+                'remaining' => round((float) $rf->liters - $consumed, 1),
+                'isLast'    => ! isset($refills[$i + 1]),
+            ];
+        }
+        $current = end($periods);
+        return [
+            'refills'          => $this->fuelRefills($v),
+            'periods'          => $periods,
+            'currentRemaining' => $current ? $current['remaining'] : null,
+        ];
+    }
+
+    /**
+     * Gom fuelLiters theo ngày cho 1 xe (plate/vehicleId) trong khoảng [from..to].
+     * Dùng routeTripByDate per day — chỉ loop ngày xe CÓ CHUYẾN (query shipments trước để biết ngày).
+     */
+    private function fuelByDayForVehicle(string $plate, int $vehicleId, string $from, string $to): array
+    {
+        // Tìm ngày xe có gio_xe_ra (bằng SQL, nhanh)
+        $dates = \App\Models\TruckingShipment::where(function ($q) use ($plate, $vehicleId) {
+                $q->where('vehicle_id', $vehicleId)->orWhere('bks_vao', $plate);
+            })
+            ->whereNotNull('gio_xe_ra')
+            ->whereDate('gio_xe_ra', '>=', $from)->whereDate('gio_xe_ra', '<=', $to)
+            ->selectRaw("DISTINCT DATE(gio_xe_ra) d")->pluck('d')->all();
+
+        $out = [];
+        foreach ($dates as $d) {
+            $day = $this->routeTripByDate((string) $d);
+            foreach ($day['trucks'] as $t) {
+                if ($t['vehicleId'] === $vehicleId || $t['bks'] === $plate) {
+                    $out[(string) $d] = ['liters' => (float) ($t['fuelLiters'] ?? 0), 'trips' => count($t['legs'])];
+                    break;
+                }
+            }
+        }
+        return $out;
     }
 
 }

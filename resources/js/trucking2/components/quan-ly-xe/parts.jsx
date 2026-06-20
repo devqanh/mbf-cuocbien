@@ -7,8 +7,8 @@ const num = (v) => parseFloat((v ?? "").toString().replace(/[^\d.-]/g, "")) || 0
 const daysUsed = (iso) => { if (!iso) return 0; const s = new Date(iso + "T00:00:00"); const now = new Date(); const d = Math.floor((now - s) / 86400000); return d > 0 ? d : 0; };
 const COST_KINDS = [["fixed", "Cố định"], ["recurring", "Định kỳ"]];
 const normKind = (k) => (k === "fixed" ? "fixed" : "recurring");   // gộp monthly/yearly cũ → recurring
-const TAB_KEYS = ["info", "allowance", "deprec", "usage", "cost"];
-const SECTION_OF = { deprec: "depreciations", usage: "usages", cost: "costs" };   // tab → nhóm lazy-load (allowance + info nằm trong base)
+const TAB_KEYS = ["info", "allowance", "deprec", "usage", "cost", "fuel"];
+const SECTION_OF = { deprec: "depreciations", usage: "usages", cost: "costs" };   // tab → nhóm lazy-load (allowance + info nằm trong base; fuel lazy riêng)
 
 // Ngưỡng cảnh báo "sắp hết hạn" (số ngày) — cấu hình ở Cài đặt → Cấu hình chung
 const WARN_DAYS = (() => { try { const n = parseInt((window.__TRK || {}).boot?.dueWarnDays, 10); return n > 0 ? n : 30; } catch (e) { return 30; } })();

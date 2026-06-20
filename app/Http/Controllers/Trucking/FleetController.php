@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Trucking;
 
+use App\Models\TruckingFuelRefill;
 use App\Models\TruckingSetting;
 use App\Models\TruckingVehicle;
 use App\Models\TruckingVehicleCost;
@@ -115,5 +116,39 @@ class FleetController extends BaseTruckingController
     public function deleteDoc(TruckingVehicle $vehicle, int $idx): JsonResponse
     {
         return response()->json(['ok' => true, 'docs' => $this->svc->deleteVehicleDoc($vehicle, $idx)]);   // $idx = id attachment
+    }
+
+    // ---- Theo dõi dầu (phiếu đổ dầu + tiêu thụ) ----
+
+    /** Dữ liệu tab Dầu: phiếu đổ + theo dõi tiêu thụ/còn lại. */
+    public function fuelData(TruckingVehicle $vehicle): JsonResponse
+    {
+        return response()->json(['ok' => true] + $this->svc->fuelTracker($vehicle));
+    }
+
+    /** Tạo/sửa phiếu đổ dầu. */
+    public function saveFuelRefill(Request $request, TruckingVehicle $vehicle): JsonResponse
+    {
+        $data = $request->validate([
+            'id'         => ['nullable', 'integer'],
+            'date'       => ['required', 'string'],
+            'liters'     => ['required'],
+            'unitPrice'  => ['nullable'],
+            'totalCost'  => ['nullable'],
+            'odometerKm' => ['nullable'],
+            'station'    => ['nullable', 'string'],
+            'note'       => ['nullable', 'string'],
+        ]);
+        $existing = ! empty($data['id']) ? TruckingFuelRefill::where('vehicle_id', $vehicle->id)->findOrFail($data['id']) : null;
+        $this->svc->saveFuelRefill($vehicle, $data, $existing);
+        return response()->json(['ok' => true] + $this->svc->fuelTracker($vehicle));
+    }
+
+    /** Xóa phiếu đổ dầu. */
+    public function deleteFuelRefill(TruckingVehicle $vehicle, TruckingFuelRefill $refill): JsonResponse
+    {
+        abort_if((int) $refill->vehicle_id !== (int) $vehicle->id, 403);
+        $this->svc->deleteFuelRefill($refill);
+        return response()->json(['ok' => true] + $this->svc->fuelTracker($vehicle));
     }
 }

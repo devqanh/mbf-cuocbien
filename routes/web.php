@@ -259,6 +259,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/quan-ly-tai-san-list',       [FleetController::class, 'assetList'])->name('asset.list');   // lazy-load tab Tài sản
             Route::get('/quan-ly-xe/{vehicle}/data',  [FleetController::class, 'vehicleData'])->name('fleet.data');
             Route::get('/quan-ly-xe/{vehicle}/section/{section}', [FleetController::class, 'vehicleSection'])->name('fleet.section');
+            Route::get('/quan-ly-xe/{vehicle}/fuel', [FleetController::class, 'fuelData'])->name('fleet.fuel');
         });
         Route::middleware('permission:fleet.manage')->group(function () {
             Route::put('/quan-ly-xe/{vehicle}', [FleetController::class, 'saveVehicle'])->name('fleet.save');
@@ -267,6 +268,8 @@ Route::middleware('auth')->group(function () {
             Route::post('/quan-ly-xe/{vehicle}/cost-photo', [FleetController::class, 'uploadCostPhotos'])->name('fleet.costPhoto.upload');
             Route::post('/quan-ly-xe/{vehicle}/docs', [FleetController::class, 'uploadDocs'])->name('fleet.docs.upload');
             Route::delete('/quan-ly-xe/{vehicle}/docs/{idx}', [FleetController::class, 'deleteDoc'])->name('fleet.docs.delete')->whereNumber('idx');
+            Route::post('/quan-ly-xe/{vehicle}/fuel',   [FleetController::class, 'saveFuelRefill'])->name('fleet.fuel.save');
+            Route::delete('/quan-ly-xe/{vehicle}/fuel/{refill}', [FleetController::class, 'deleteFuelRefill'])->name('fleet.fuel.delete');
             // Tài sản (kind='asset')
             Route::post('/quan-ly-tai-san',          [FleetController::class, 'createAsset'])->name('asset.create');
             Route::post('/quan-ly-tai-san-category', [FleetController::class, 'addAssetCategory'])->name('asset.category');

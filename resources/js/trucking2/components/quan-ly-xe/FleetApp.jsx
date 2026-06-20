@@ -3,6 +3,7 @@ const { useState, useEffect, useRef } = React;
 import { I, Money, Num, Txt, Combo, DateField, Btn, Modal, fmtVND, fmtNum, fmtDate, toNum, useIsMobile } from "@trk/lib.jsx";
 import { ChkBox } from "@trk/pop.jsx";
 import { num, daysUsed, COST_KINDS, normKind, TAB_KEYS, SECTION_OF, WARN_DAYS, DUE_NONE, dueStatus, vehRank, DueCell, StatChip, lbl, delBtn, addBtn, DeprecTab, UsageTab, today10, esc, blankCost, PAY_METHODS, PayModal, CostModal, CostTab, VEH_DOC_TYPES, DocsBlock, InfoTab, AllowanceTab, PendingCostsModal } from "./parts.jsx";
+import { FuelTab } from "./fuel-tab.jsx";
 
 function FleetApp({ modeSwitch }) {
   const isMobile = useIsMobile();
@@ -367,7 +368,7 @@ function FleetApp({ modeSwitch }) {
   }
 
   // ---------- CHI TIẾT XE ----------
-  const TABS = [["info", "Thông tin xe"], ["allowance", "Định mức"], ["deprec", "Khấu hao"], ["usage", "Thời gian sử dụng"], ["cost", "Chi phí"]];
+  const TABS = [["info", "Thông tin xe"], ["allowance", "Định mức"], ["deprec", "Khấu hao"], ["usage", "Thời gian sử dụng"], ["cost", "Chi phí"], ["fuel", "Dầu"]];
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
       <div className="trk-head" style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 22px", background: "#fff", borderBottom: "1px solid var(--line)" }}>
@@ -402,6 +403,7 @@ function FleetApp({ modeSwitch }) {
             : tab === "allowance" ? <AllowanceTab rows={detail.allowances || []} onChange={(rows) => upd({ allowances: rows })} costItems={costItems} addCostItem={addCostItem} />
             : tab === "deprec" ? <DeprecTab rows={detail.depreciations || []} onChange={(rows) => upd({ depreciations: rows })} />
             : tab === "usage" ? <UsageTab rows={detail.usages || []} onChange={(rows) => upd({ usages: rows })} drivers={detail.drivers || []} />
+            : tab === "fuel" ? <FuelTab vehicleId={selId} hashid={selHash.current} routes={ROUTES} />
             : <CostTab rows={detail.costs || []} onChange={saveCosts} saving={costSaving} costTypes={detail.costTypes || []} onUploadPhotos={uploadCostPhotos} highlightId={hlCost} onCancel={cancelCost} />}
         </div>
       </div>
