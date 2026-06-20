@@ -8,12 +8,42 @@ export const IMP_COLS = ["Khách hàng *", "SỐ BOOKING/BILL *", "NHẬP/XUẤT
 export const loCountOf = (rows) => (rows || []).reduce((a, r) => { const cs = String(r.contNo || "").split(/[\r\n;,]+/).map((s) => s.trim()).filter(Boolean); return a + (cs.length || Math.max(1, parseInt(String(r.qty || "").replace(/[^\d]/g, ""), 10) || 1)); }, 0);
 
 const normH = (s) => String(s == null ? "" : s).trim().toLowerCase().replace(/\s+/g, " ");
-const toIsoDate = (s) => { const m = /(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/.exec(String(s || "")); if (!m) return ""; let [, d, mo, y] = m; if (y.length === 2) y = "20" + y; return `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`; };
-const toHm = (s) => { const m = /(\d{1,2}):(\d{2})/.exec(String(s || "")); return m ? `${m[1].padStart(2, "0")}:${m[2]}` : ""; };
+const p2 = (n) => String(n).padStart(2, "0");
 
-// Parse 1 sheet Excel → mảng dòng lô (khớp cột theo từ khóa header). wb = workbook đã đọc, sheetName = tên sheet.
+// --- Xử lý ngày/giờ an toàn cho mọi dạng ô Excel (Date object, serial number, text dd/mm/yyyy) ---
+// Excel + cellDates:true → Date object tường minh, không phụ thuộc locale. Text giữ dd/mm/yyyy (file mẫu).
+function cellDate(v) {
+  if (v == null || v === "") return { iso: "", display: "" };
+  if (v instanceof Date && !isNaN(v)) {
+    const y = v.getFullYear(), m = v.getMonth() + 1, d = v.getDate();
+    if (y < 2000 || y > 2099) return { iso: "", display: String(v) };   // năm vô lý → cảnh báo
+    return { iso: `${y}-${p2(m)}-${p2(d)}`, display: `${p2(d)}/${p2(m)}/${y}` };
+  }
+  if (typeof v === "number" && v > 0 && v < 100000) {
+    // Serial date (fallback nếu cellDates miss)
+    try { const dt = XLSX.SSF.parse_date_code(v); if (dt && dt.y >= 2000 && dt.y <= 2099) return { iso: `${dt.y}-${p2(dt.m)}-${p2(dt.d)}`, display: `${p2(dt.d)}/${p2(dt.m)}/${dt.y}` }; } catch (e) {}
+    return { iso: "", display: String(v) };
+  }
+  // Text: parse dd/mm/yyyy (format file mẫu)
+  const s = String(v).trim();
+  const mx = /(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/.exec(s);
+  if (!mx) return { iso: "", display: s };
+  let [, d, mo, y] = mx;
+  if (y.length === 2) y = "20" + y;
+  if (+y < 2000 || +y > 2099 || +mo < 1 || +mo > 12 || +d < 1 || +d > 31) return { iso: "", display: s };
+  return { iso: `${y}-${p2(+mo)}-${p2(+d)}`, display: s };
+}
+function cellTime(v) {
+  if (v == null || v === "") return "";
+  if (v instanceof Date && !isNaN(v)) return `${p2(v.getHours())}:${p2(v.getMinutes())}`;
+  const m = /(\d{1,2}):(\d{2})/.exec(String(v));
+  return m ? `${p2(+m[1])}:${m[2]}` : "";
+}
+
+// Parse 1 sheet Excel → mảng dòng lô (khớp cột theo từ khóa header). wb = workbook đã đọc (cellDates:true), sheetName = tên sheet.
 export function parseImportRows(wb, sheetName) {
-  const aoa = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, raw: false, defval: "" });
+  // raw:true để nhận Date objects từ cellDates:true (tường minh, không phụ thuộc locale); text cells vẫn là string.
+  const aoa = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, raw: true, defval: "" });
   let hi = aoa.findIndex((r) => (r || []).some((c) => { const h = normH(c); return h.includes("khách") || h.includes("nhà máy"); }));
   if (hi < 0) hi = 0;
   const header = (aoa[hi] || []).map(normH);
@@ -21,13 +51,18 @@ export function parseImportRows(wb, sheetName) {
   const C = { customer: col("khách", "nhà máy"), booking: col("booking", "bill"), io: col("nhập", "xuất"), qty: col("lượng"), contType: col("loại"), contNo: col("container", "tên cont", "số cont"), cutOff: col("máng"), from: col("lấy"), to: col("hạ"), ngay: col("ngày"), gio: col("giờ"), kho: col("kho"), inv: col("invoice", "inv") };
   const out = [];
   for (let r = hi + 1; r < aoa.length; r++) {
-    const row = aoa[r] || []; const g = (i) => (i >= 0 ? String(row[i] == null ? "" : row[i]).trim() : "");
+    const row = aoa[r] || [];
+    // Text getter (an toàn với Date objects — toString cho display, nhưng ngày/giờ dùng hàm riêng bên dưới).
+    const g = (i) => { if (i < 0) return ""; const v = row[i]; return v instanceof Date ? "" : String(v == null ? "" : v).trim(); };
     if (!g(C.customer) && !g(C.booking) && !g(C.from) && !g(C.to)) continue;
-    const ngayIso = toIsoDate(g(C.ngay)); const hm = toHm(g(C.gio));
-    const gioDenDuKien = ngayIso ? `${ngayIso}T${hm || "00:00"}` : "";
-    const cmRaw = g(C.cutOff); const cmDate = toIsoDate(cmRaw); const cmHm = toHm(cmRaw);
-    const cutOff = cmDate ? `${cmDate}T${cmHm || "00:00"}` : cmRaw;
-    out.push({ customer: g(C.customer), booking: g(C.booking), io: g(C.io), qty: g(C.qty).replace(/[^\d]/g, ""), qtyRaw: g(C.qty), contType: g(C.contType), contNo: g(C.contNo), cutOff, cutOffRaw: cmRaw, from: g(C.from), to: g(C.to), kho: g(C.kho), inv: g(C.inv), gioDenDuKien, ngayRaw: g(C.ngay), gioRaw: g(C.gio) });
+    // Ngày: Date object → tường minh; text → dd/mm/yyyy; năm ngoài 2000-2099 → lỗi.
+    const ngay = cellDate(C.ngay >= 0 ? row[C.ngay] : null);
+    const hm = cellTime(C.gio >= 0 ? row[C.gio] : null);
+    const gioDenDuKien = ngay.iso ? `${ngay.iso}T${hm || "00:00"}` : "";
+    const cm = cellDate(C.cutOff >= 0 ? row[C.cutOff] : null);
+    const cmHm = cellTime(C.cutOff >= 0 ? row[C.cutOff] : null);
+    const cutOff = cm.iso ? `${cm.iso}T${cmHm || "00:00"}` : "";
+    out.push({ customer: g(C.customer), booking: g(C.booking), io: g(C.io), qty: String(row[C.qty] == null ? "" : row[C.qty]).replace(/[^\d]/g, ""), qtyRaw: g(C.qty) || String(row[C.qty] ?? ""), contType: g(C.contType), contNo: g(C.contNo), cutOff, cutOffRaw: cm.display || g(C.cutOff), from: g(C.from), to: g(C.to), kho: g(C.kho), inv: g(C.inv), gioDenDuKien, ngayRaw: ngay.display || g(C.ngay), gioRaw: hm || g(C.gio) });
   }
   return out;
 }

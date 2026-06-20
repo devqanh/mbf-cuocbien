@@ -305,7 +305,7 @@ function ShipmentsApp() {
     if (typeof XLSX === "undefined") { setImpMsg("Thư viện Excel chưa tải xong."); return; }
     setImpMsg(""); setImpCheck(null); setImpRows([]);
     const rd = new FileReader();
-    rd.onload = () => { const wb = XLSX.read(rd.result, { type: "array" }); setImpWb({ names: wb.SheetNames, wb }); setImpSheet(wb.SheetNames[0] || ""); };
+    rd.onload = () => { const wb = XLSX.read(rd.result, { type: "array", cellDates: true }); setImpWb({ names: wb.SheetNames, wb }); setImpSheet(wb.SheetNames[0] || ""); };
     rd.readAsArrayBuffer(f);
   };
   const doCheck = async () => {

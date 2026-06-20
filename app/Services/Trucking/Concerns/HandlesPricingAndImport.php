@@ -462,10 +462,18 @@ trait HandlesPricingAndImport
     /** Có chứa NGÀY hợp lệ (dd/mm/yyyy, chấp nhận - . / và năm 2 số) không. */
     private function isValidDateStr(string $s): bool
     {
-        if (! preg_match('#(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})#', $s, $m)) return false;
-        [, $d, $mo, $y] = $m;
-        if (strlen($y) === 2) $y = '20' . $y;
-        return checkdate((int) $mo, (int) $d, (int) $y);
+        // Hỗ trợ dd/mm/yyyy (file mẫu) VÀ yyyy-mm-dd (ISO từ frontend).
+        if (preg_match('#^(\d{4})-(\d{1,2})-(\d{1,2})#', $s, $m)) {
+            $y = (int) $m[1]; $mo = (int) $m[2]; $d = (int) $m[3];
+        } elseif (preg_match('#(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})#', $s, $m)) {
+            $d = (int) $m[1]; $mo = (int) $m[2]; $y = (int) $m[3];
+            if ($y < 100) $y += 2000;
+        } else {
+            return false;
+        }
+        // Năm ngoài 2000–2099 gần chắc sai (serial Excel, lỗi gõ) → từ chối.
+        if ($y < 2000 || $y > 2099) return false;
+        return checkdate($mo, $d, $y);
     }
 
     /** Có chứa GIỜ hợp lệ (HH:MM, 00–23 : 00–59) không. */
