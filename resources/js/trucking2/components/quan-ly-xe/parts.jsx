@@ -558,4 +558,4 @@ function PendingCostsModal({ items, onClose, onOpen }) {
 }
 
 
-export { num, daysUsed, COST_KINDS, normKind, TAB_KEYS, SECTION_OF, WARN_DAYS, DUE_NONE, dueStatus, vehRank, DueCell, StatChip, lbl, delBtn, addBtn, DeprecTab, UsageTab, today10, esc, blankCost, PAY_METHODS, PayModal, CostModal, CostTab, VEH_DOC_TYPES, DocsBlock, InfoTab, AllowanceTab, PendingCostsModal };
+export { num, daysUsed, COST_KINDS, normKind, TAB_KEYS, SECTION_OF, WARN_DAYS, DUE_NONE, dueStatus, vehRank, DueCell, StatChip, lbl, delBtn, addBtn, card, DeprecTab, UsageTab, today10, esc, blankCost, PAY_METHODS, PayModal, CostModal, CostTab, VEH_DOC_TYPES, DocsBlock, InfoTab, AllowanceTab, PendingCostsModal };

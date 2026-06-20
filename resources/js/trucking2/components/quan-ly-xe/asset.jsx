@@ -2,7 +2,7 @@ import React from "react";
 const { useState, useEffect, useRef } = React;
 import { I, Money, Num, Txt, Combo, DateField, Btn, Modal, fmtVND, fmtNum, fmtDate, toNum, useIsMobile } from "@trk/lib.jsx";
 import { ChkBox } from "@trk/pop.jsx";
-import { num, daysUsed, COST_KINDS, normKind, TAB_KEYS, SECTION_OF, WARN_DAYS, DUE_NONE, dueStatus, vehRank, DueCell, StatChip, lbl, delBtn, addBtn, DeprecTab, UsageTab, today10, esc, blankCost, PAY_METHODS, PayModal, CostModal, CostTab, VEH_DOC_TYPES, DocsBlock, InfoTab, AllowanceTab, PendingCostsModal } from "./parts.jsx";
+import { num, daysUsed, COST_KINDS, normKind, TAB_KEYS, SECTION_OF, WARN_DAYS, DUE_NONE, dueStatus, vehRank, DueCell, StatChip, lbl, delBtn, addBtn, card, DeprecTab, UsageTab, today10, esc, blankCost, PAY_METHODS, PayModal, CostModal, CostTab, VEH_DOC_TYPES, DocsBlock, InfoTab, AllowanceTab, PendingCostsModal } from "./parts.jsx";
 
 const ASSET_TAB_KEYS = ["info", "deprec", "cost", "docs"];
 const ASSET_SECTION_OF = { deprec: "depreciations", cost: "costs" };
