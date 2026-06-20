@@ -123,10 +123,13 @@ trait HandlesShipments
         $dir     = ((int) ($p['dir'] ?? 1)) < 0 ? 'desc' : 'asc';
         $all     = ! empty($p['all']);
 
-        // Khoản chi phí "theo dõi" (có màu trong danh mục) → tên + hex
-        $followItems = TruckingCostItem::whereNotNull('color')->where('color', '!=', '')->get(['name', 'color']);
-        $followNames = $followItems->pluck('name')->all();
+        // Khoản chi phí "theo dõi" (có màu trong danh mục) → id + tên + hex.
+        // Lọc theo cost_item_id (FK ổn định) thay vì item text (đổi tên sẽ sót dòng cũ).
+        $followItems = TruckingCostItem::whereNotNull('color')->where('color', '!=', '')->get(['id', 'name', 'color']);
+        $followIds   = $followItems->pluck('id')->all();
+        $followNames = $followItems->pluck('name')->all();        // giữ tên cho followStats display
         $nameHex     = $followItems->mapWithKeys(fn ($i) => [$i->name => $this->colorHex($i->color)])->all();
+        $idHex       = $followItems->mapWithKeys(fn ($i) => [$i->id => $this->colorHex($i->color)])->all();
 
         // Áp tìm kiếm (khách / container / booking / invoice / tờ khai) lên 1 builder lô.
         $applySearch = function ($b) use ($q) {
@@ -172,15 +175,15 @@ trait HandlesShipments
         } elseif ($filter === 'notout') {
             $applyNotOut($list);
         }
-        if ($followNames) {
+        if ($followIds) {
             if ($follow === 'any') {
-                $list->whereHas('costLines', fn ($c) => $c->whereIn('item', $followNames));
+                $list->whereHas('costLines', fn ($c) => $c->whereIn('cost_item_id', $followIds));
             } elseif ($follow === 'missing') {
-                $list->whereHas('costLines', fn ($c) => $c->whereIn('item', $followNames)
+                $list->whereHas('costLines', fn ($c) => $c->whereIn('cost_item_id', $followIds)
                     ->where(fn ($x) => $x->whereNull('amount')->orWhere('amount', 0)));
             } elseif (str_starts_with($follow, '#')) {
-                $names = array_keys(array_filter($nameHex, fn ($h) => $h === $follow));
-                $list->whereHas('costLines', fn ($c) => $c->whereIn('item', $names ?: ['']));
+                $ids = array_keys(array_filter($idHex, fn ($h) => $h === $follow));
+                $list->whereHas('costLines', fn ($c) => $c->whereIn('cost_item_id', $ids ?: [0]));
             }
         }
 
@@ -617,7 +620,9 @@ trait HandlesShipments
 
         $rows = [];
         foreach ($byBks as $r) {
-            $r['driver'] = implode(', ', array_keys($r['drivers']));   // lái auto theo thời điểm
+            $driverNames = array_keys($r['drivers']);
+            $r['driver'] = implode(', ', $driverNames);   // lái auto theo thời điểm
+            $r['driverId'] = count($driverNames) === 1 ? $this->resolveDriverId($driverNames[0]) : null;
             unset($r['drivers']);
             $r['total'] = $r['payroll'];                               // lương phải trả đợt
             $rows[] = $r;
@@ -641,10 +646,14 @@ trait HandlesShipments
     private function followStats($shipQuery, array $followNames, array $nameHex): array
     {
         if (! $followNames) return ['anyShips' => 0, 'missShips' => 0, 'byColor' => []];
+        // Dùng cost_item_id (FK) để thống kê, không phụ thuộc item text (đổi tên vẫn đúng).
+        $followIds = TruckingCostItem::whereNotNull('color')->where('color', '!=', '')->pluck('id')->all();
+        $idToHex = TruckingCostItem::whereNotNull('color')->where('color', '!=', '')->get(['id', 'color'])
+            ->mapWithKeys(fn ($i) => [$i->id => $this->colorHex($i->color)])->all();
 
         $lines = TruckingCostLine::whereIn('shipment_id', $shipQuery->select('id'))
-            ->whereIn('item', $followNames)
-            ->get(['shipment_id', 'item', 'amount'])
+            ->whereIn('cost_item_id', $followIds)
+            ->get(['shipment_id', 'cost_item_id', 'amount'])
             ->groupBy('shipment_id');
 
         $anyShips = 0; $missShips = 0; $buckets = [];
@@ -653,7 +662,7 @@ trait HandlesShipments
             $shipHasMiss = false;
             $seen = [];   // hex => có-dòng-thiếu-tiền-trong-lô-này
             foreach ($shipLines as $l) {
-                $hex = $nameHex[$l->item] ?? '';
+                $hex = $idToHex[$l->cost_item_id] ?? '';
                 if ($hex === '') continue;
                 $miss = ((int) round((float) $l->amount)) === 0;
                 if ($miss) $shipHasMiss = true;

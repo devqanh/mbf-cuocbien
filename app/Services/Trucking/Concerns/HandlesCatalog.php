@@ -149,6 +149,23 @@ trait HandlesCatalog
     }
 
     /** Đếm số mục mỗi danh mục — cho badge sidebar Cài đặt (không hydrate, rất nhẹ). */
+    /** Danh sách code (ký hiệu) đang được Phí tuyến dùng → code => số tuyến. */
+    public function routeFeeUsedCodes(): array
+    {
+        $norm = fn ($v) => mb_strtoupper(preg_replace('/\s+/u', '', trim(\Illuminate\Support\Str::ascii((string) $v))) ?? '');
+        $codeMap = $this->normalizedCodeMap();
+        $used = [];
+        foreach (TruckingRouteFee::pluck('route') as $route) {
+            $parts = preg_split('/\s*(?:,|→|->|–|—|\s-\s)\s*/u', trim((string) $route)) ?: [];
+            foreach ($parts as $p) {
+                $p = trim($p); if ($p === '') continue;
+                $code = $codeMap[$norm($p)] ?? $norm($p);
+                $used[$code] = ($used[$code] ?? 0) + 1;
+            }
+        }
+        return $used;
+    }
+
     public function catalogCounts(): array
     {
         $c = [];
@@ -188,6 +205,10 @@ trait HandlesCatalog
                 if ($key === 'locations') {
                     $lockedIds = TruckingPriceRow::query()->whereNotNull('location_id')->distinct()->pluck('location_id');
                     $out['locationLocked'] = TruckingLocation::whereIn('id', $lockedIds)->pluck('name')->all();
+                }
+                // Codes đang được Phí tuyến tham chiếu — cảnh báo nếu đổi code sẽ làm lệch tuyến.
+                if ($key === 'locations' || $key === 'warehouses') {
+                    $out['routeFeeUsedCodes'] = $this->routeFeeUsedCodes();
                 }
             }
             if ($priced) {

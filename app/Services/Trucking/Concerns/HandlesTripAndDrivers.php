@@ -803,6 +803,15 @@ trait HandlesTripAndDrivers
         return ['ok' => true, 'created' => $created, 'updated' => $updated, 'skipped' => $skipped] + $analysis;
     }
 
+    /** Resolve tên lái xe → driver_id (dùng driverIdMap đã memoize). */
+    private function resolveDriverId($name): ?int
+    {
+        $name = $this->str($name ?? null);
+        if (! $name) return null;
+        $key = mb_strtolower(preg_replace('/\s+/u', ' ', trim($name)) ?? '');
+        return $key !== '' ? ($this->driverIdMap()[$key] ?? null) : null;
+    }
+
     /** Chuẩn hóa khóa so khớp nhãn (bỏ dấu cách + viết thường). */
     private function normKey(string $v): string
     {
@@ -920,6 +929,7 @@ trait HandlesTripAndDrivers
                 'bks'       => $bks,
                 'vehicleId' => is_numeric($r['vehicleId'] ?? null) ? (int) $r['vehicleId'] : null,
                 'driver'    => $this->str($r['driver'] ?? null) ?? '',
+                'driverId'  => is_numeric($r['driverId'] ?? null) ? (int) $r['driverId'] : $this->resolveDriverId($r['driver'] ?? null),
                 'days'      => (int) ($r['days'] ?? 0),
                 'trips'     => (int) ($r['trips'] ?? 0),
                 'paidDaily' => $pd,
