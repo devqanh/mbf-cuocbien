@@ -17,6 +17,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
   const list = cfg[sel] || [];
   const locked = new Set(cfg.locationLocked || []);
   const g = CFG_GROUPS.find((x) => x.key === sel);
+  const [vehFilter, setVehFilter] = useState("MBF");   // MBF | Ngoài | all — lọc đội xe
   const prices = cfg.prices || {};
   const setPrice = (name, val) => setCfg("prices", { ...prices, [name]: val });
   const vehType = cfg.vehicleType || {};
@@ -360,8 +361,16 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                   : null;   // đội xe (fleet) render dạng THẺ, không dùng header lưới
                 return head && <div style={{ display: "grid", gridTemplateColumns: grid, gap: 8, padding: "0 0 4px", fontSize: 11, fontWeight: 600, color: "var(--ink-4)", textTransform: "uppercase", letterSpacing: "0.04em" }}>{head}</div>;
               })()}
+              {/* Bộ lọc xe MBF / Ngoài — mặc định MBF, sắp xếp MBF trước */}
+              {g.fleet && (() => {
+                const mbfN = list.filter((p) => (vehType[p] || "MBF") === "MBF").length;
+                const extN = list.length - mbfN;
+                const fb = (val, lbl, n) => <button type="button" onClick={() => setVehFilter(val)} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 12px", fontSize: 12, fontWeight: 700, borderRadius: 8, cursor: "pointer", border: "1px solid " + (vehFilter === val ? "var(--accent)" : "var(--line)"), background: vehFilter === val ? "var(--accent-weak)" : "#fff", color: vehFilter === val ? "var(--accent)" : "var(--ink-3)" }}>{lbl} <span style={{ fontSize: 11, fontWeight: 400, opacity: .7 }}>({n})</span></button>;
+                return <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>{fb("MBF", "Xe MBF", mbfN)}{fb("Ngoài", "Xe ngoài", extN)}{fb("all", "Tất cả", list.length)}</div>;
+              })()}
               <div style={{ display: "flex", flexDirection: "column", gap: g.fleet ? 8 : 2, maxHeight: g.fleet ? 420 : 300, overflowY: "auto", paddingRight: g.fleet ? 2 : 0 }}>
-                {list.map((it, i) => {
+                {(g.fleet ? list.map((it, i) => ({ it, i })).sort((a, b) => ((vehType[a.it] || "MBF") === "MBF" ? 0 : 1) - ((vehType[b.it] || "MBF") === "MBF" ? 0 : 1))
+                    .filter((x) => vehFilter === "all" || (vehType[x.it] || "MBF") === vehFilter) : list.map((it, i) => ({ it, i }))).map(({ it, i }) => {
                   // Đội xe (fleet): render dạng THẺ gọn — biển số + loại xe + số cầu + GPS, không nhồi vào 1 dòng lưới.
                   if (g.fleet) {
                     const isMbf = (vehType[it] || "MBF") === "MBF";
