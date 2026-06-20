@@ -491,24 +491,21 @@ trait HandlesVehicleDetail
 
     /**
      * Gom fuelLiters theo ngày cho 1 xe (plate/vehicleId) trong khoảng [from..to].
-     * Dùng routeTripByDate per day — chỉ loop ngày xe CÓ CHUYẾN (query shipments trước để biết ngày).
+     * Loop từng ngày gọi routeTripByDate — bắt cả xe chạy trực tiếp LẪN kéo cont khác ra (mode other).
      */
     private function fuelByDayForVehicle(string $plate, int $vehicleId, string $from, string $to): array
     {
-        // Tìm ngày xe có gio_xe_ra (bằng SQL, nhanh)
-        $dates = \App\Models\TruckingShipment::where(function ($q) use ($plate, $vehicleId) {
-                $q->where('vehicle_id', $vehicleId)->orWhere('bks_vao', $plate);
-            })
-            ->whereNotNull('gio_xe_ra')
-            ->whereDate('gio_xe_ra', '>=', $from)->whereDate('gio_xe_ra', '<=', $to)
-            ->selectRaw("DISTINCT DATE(gio_xe_ra) d")->pluck('d')->all();
-
         $out = [];
-        foreach ($dates as $d) {
-            $day = $this->routeTripByDate((string) $d);
+        $start = \Carbon\Carbon::parse($from); $end = \Carbon\Carbon::parse($to);
+        for ($d = $start->copy(); $d->lte($end); $d->addDay()) {
+            $ds = $d->format('Y-m-d');
+            $day = $this->routeTripByDate($ds);
             foreach ($day['trucks'] as $t) {
-                if ($t['vehicleId'] === $vehicleId || $t['bks'] === $plate) {
-                    $out[(string) $d] = ['liters' => (float) ($t['fuelLiters'] ?? 0), 'trips' => count($t['legs'])];
+                if (($t['vehicleId'] !== null && (int) $t['vehicleId'] === $vehicleId) || $t['bks'] === $plate) {
+                    $liters = (float) ($t['fuelLiters'] ?? 0);
+                    if ($liters > 0 || count($t['legs']) > 0) {
+                        $out[$ds] = ['liters' => $liters, 'trips' => count($t['legs'])];
+                    }
                     break;
                 }
             }
