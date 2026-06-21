@@ -530,6 +530,8 @@ function ShipmentsApp() {
                       {s.inv && <span className="tnum" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", padding: "1px 8px", borderRadius: 7 }}><span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: ".04em", opacity: .75 }}>INV</span> {s.inv}</span>}
                     </div>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 7 }}>
+                      {s.gioDenDuKien && <span className="tnum" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, color: "var(--accent)", background: "var(--accent-weak-2)" }}>
+                        <i className="bi bi-calendar-check" />KH đến · {fmtCM(s.gioDenDuKien)}</span>}
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, color: out ? "var(--good)" : "var(--warn)", background: out ? "var(--good-weak)" : "#fcf3e2" }}>
                         <span style={{ width: 6, height: 6, borderRadius: 999, background: "currentColor" }} />{out ? ("Đã ra" + (fmtRa(s.gioXeRa) ? " · " + fmtRa(s.gioXeRa) : "") + (s.bksRa && s.bksRa.trim() ? " · " + s.bksRa : "")) : "Chưa ra"}</span>
                       {ft && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, color: ft.connect ? "var(--good)" : "var(--danger)", background: ft.connect ? "var(--good-weak)" : "#fce8e8" }}>
@@ -616,6 +618,11 @@ function ShipmentsApp() {
                     </TD>
                     <TD>
                       <EditCell onClick={() => openModal({ id: s.id, type: "info" })}>
+                        {s.gioDenDuKien ? (
+                          <div style={{ fontSize: 12.5, color: "var(--accent)", fontWeight: 700, marginBottom: 2 }} className="tnum">
+                            <i className="bi bi-calendar-check" style={{ fontSize: 11, marginRight: 4 }} />KH đến: {fmtCM(s.gioDenDuKien)}
+                          </div>
+                        ) : null}
                         {isHph ? (
                           <>
                             <div style={{ fontSize: 12.5, color: "var(--ink-2)" }} className="tnum">Tàu: {fmtDate(s.sailDate) || "—"}</div>
