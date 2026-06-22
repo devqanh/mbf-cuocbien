@@ -508,9 +508,9 @@ function ShipmentsApp() {
                   style={{ ...pillBase, background: isOn("all") ? "#fff" : "transparent", color: isOn("all") ? "var(--ink)" : "var(--ink-3)", boxShadow: isOn("all") ? "0 1px 2px rgba(16,19,23,.12)" : "none" }}>
                   Tất cả
                 </button>
-                <button type="button" onClick={() => setFollowP("missing")} title="Lô có khoản gắn theo dõi nhưng chưa điền số tiền"
+                <button type="button" onClick={() => setFollowP("missing")} title="Lô có khoản gắn theo dõi nhưng chưa điền số hóa đơn"
                   style={{ ...pillBase, background: isOn("missing") ? "#fff" : "transparent", color: isOn("missing") ? "var(--warn)" : "var(--ink-3)", boxShadow: isOn("missing") ? "0 1px 2px rgba(16,19,23,.12)" : "none" }}>
-                  Chưa điền tiền
+                  Chưa có số HĐ
                   <span className="tnum" style={{ fontSize: 11, fontWeight: 700, color: isOn("missing") ? "#fff" : "var(--ink-4)", background: isOn("missing") ? "var(--warn)" : "var(--line-2)", padding: "0 6px", borderRadius: 999, minWidth: 16, textAlign: "center" }}>{followStats.missShips}</span>
                 </button>
                 <button type="button" onClick={() => setFollowP("any")} title="Lô có ít nhất 1 khoản gắn theo dõi"

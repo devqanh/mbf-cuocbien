@@ -281,7 +281,7 @@ function CostLineRows({ rows = [], onChange, options = [], onCreate, payers = []
       {rows.map((e) => {
         const locked = !!e.src;
         const hex = colorHex(costColors[e.item] || "");
-        const missing = !!hex && !toNum(e.amount);
+        const missing = !!hex && !String(e.invoiceNo || "").trim();   // theo dõi: thiếu SỐ HÓA ĐƠN
         return (
         <div key={e.id} style={{ display: "grid", gridTemplateColumns: cols, gap: 9, alignItems: "center", padding: "5px 0", background: locked ? "var(--accent-weak-2)" : (e.billable ? "var(--good-weak)" : "transparent"), borderRadius: 8 }}>
           {locked
@@ -293,7 +293,7 @@ function CostLineRows({ rows = [], onChange, options = [], onCreate, payers = []
           <DateField value={e.date} onChange={(x) => set(e.id, { date: x })} />
           <div style={{ display: "flex", justifyContent: "center" }}><ChkBox checked={!!e.billable} onChange={(v) => set(e.id, { billable: v })} /></div>
           <div style={{ display: "flex", justifyContent: "center" }}
-            title={hex ? ("Màu theo dõi gắn cho khoản này ở Cài đặt" + (missing ? " · chưa điền tiền → hiện nhắc ngoài bảng" : " · đã điền")) : "Khoản này chưa gắn màu theo dõi (chỉnh ở Cài đặt → Khoản chi phí)"}>
+            title={hex ? ("Màu theo dõi gắn cho khoản này ở Cài đặt" + (missing ? " · chưa có số hóa đơn → hiện nhắc ngoài bảng" : " · đã có số HĐ")) : "Khoản này chưa gắn màu theo dõi (chỉnh ở Cài đặt → Khoản chi phí)"}>
             <span style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 7px", border: "1px solid var(--line)", borderRadius: 999, background: hex ? "#fff" : "var(--line-2)" }}>
               <span style={{ width: 11, height: 11, borderRadius: 999, background: hex || "transparent", border: hex ? "none" : "1.5px dashed var(--ink-4)" }} />
               {missing && <span style={{ fontSize: 9.5, fontWeight: 700, color: "var(--warn)" }}>!</span>}
@@ -312,7 +312,7 @@ function CostLineRows({ rows = [], onChange, options = [], onCreate, payers = []
       {!rows.length && <div style={{ fontSize: 13, color: "var(--ink-4)", padding: "10px 0" }}>Chưa có khoản chi phí nào.</div>}
       </div>
       </div>
-      <div style={{ fontSize: 11.5, color: "var(--ink-4)", padding: "2px 0 0" }}>Màu <b style={{ color: "var(--ink-3)" }}>Theo dõi</b> được gắn sẵn cho từng khoản tại <b style={{ color: "var(--ink-3)" }}>Cài đặt → Khoản chi phí</b>. Khoản có gắn màu mà <b style={{ color: "var(--ink-3)" }}>chưa điền số tiền</b> sẽ hiện nhắc ngoài bảng lô; điền rồi thì ẩn.</div>
+      <div style={{ fontSize: 11.5, color: "var(--ink-4)", padding: "2px 0 0" }}>Màu <b style={{ color: "var(--ink-3)" }}>Theo dõi</b> được gắn sẵn cho từng khoản tại <b style={{ color: "var(--ink-3)" }}>Cài đặt → Khoản chi phí</b>. Khoản có gắn màu mà <b style={{ color: "var(--ink-3)" }}>chưa điền số hóa đơn</b> sẽ hiện nhắc ngoài bảng lô; điền rồi thì ẩn.</div>
       <button type="button" onClick={add}
         style={{ display: "inline-flex", alignItems: "center", gap: 7, margin: "8px 0 2px", padding: "6px 10px 6px 7px", background: "transparent", border: "none", cursor: "pointer", color: "var(--accent)", fontSize: 13, fontWeight: 600, borderRadius: 8 }}
         onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent-weak-2)")}

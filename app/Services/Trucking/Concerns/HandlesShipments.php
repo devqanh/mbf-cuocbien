@@ -219,8 +219,9 @@ trait HandlesShipments
             if ($follow === 'any') {
                 $list->whereHas('costLines', fn ($c) => $c->whereIn('cost_item_id', $followIds));
             } elseif ($follow === 'missing') {
+                // "Chưa điền" = khoản theo dõi nhưng CHƯA có SỐ HÓA ĐƠN (trước đây xét theo số tiền).
                 $list->whereHas('costLines', fn ($c) => $c->whereIn('cost_item_id', $followIds)
-                    ->where(fn ($x) => $x->whereNull('amount')->orWhere('amount', 0)));
+                    ->where(fn ($x) => $x->whereNull('invoice_no')->orWhere('invoice_no', '')));
             } elseif (str_starts_with($follow, '#')) {
                 $ids = array_keys(array_filter($idHex, fn ($h) => $h === $follow));
                 $list->whereHas('costLines', fn ($c) => $c->whereIn('cost_item_id', $ids ?: [0]));
@@ -696,18 +697,18 @@ trait HandlesShipments
 
         $lines = TruckingCostLine::whereIn('shipment_id', $shipQuery->select('id'))
             ->whereIn('cost_item_id', $followIds)
-            ->get(['shipment_id', 'cost_item_id', 'amount'])
+            ->get(['shipment_id', 'cost_item_id', 'invoice_no'])
             ->groupBy('shipment_id');
 
         $anyShips = 0; $missShips = 0; $buckets = [];
         foreach ($lines as $shipLines) {
             $anyShips++;
             $shipHasMiss = false;
-            $seen = [];   // hex => có-dòng-thiếu-tiền-trong-lô-này
+            $seen = [];   // hex => có-dòng-CHƯA-CÓ-SỐ-HÓA-ĐƠN-trong-lô-này
             foreach ($shipLines as $l) {
                 $hex = $idToHex[$l->cost_item_id] ?? '';
                 if ($hex === '') continue;
-                $miss = ((int) round((float) $l->amount)) === 0;
+                $miss = trim((string) $l->invoice_no) === '';   // thiếu số hóa đơn
                 if ($miss) $shipHasMiss = true;
                 if (! isset($seen[$hex])) $seen[$hex] = $miss;
                 elseif ($miss) $seen[$hex] = true;
