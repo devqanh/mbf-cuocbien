@@ -58,6 +58,50 @@ function Picker({ value, onChange, options, placeholder, icon }) {
   );
 }
 
+// Chọn nhà cung cấp: gõ tìm trong danh mục đã có, HOẶC gõ mới (lưu lại để lần sau gợi ý). Không bắt buộc.
+function SupplierInput({ value, onChange, options }) {
+  const { useState, useRef, useEffect } = React;
+  const [open, setOpen] = useState(false);
+  const box = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => { if (box.current && !box.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+  const ql = (value || "").trim().toLowerCase();
+  const list = (options || []).filter((o) => o && (!ql || o.toLowerCase().includes(ql))).slice(0, 12);
+  const showCreate = ql && !(options || []).some((o) => String(o).toLowerCase() === ql);
+  return (
+    <div ref={box} style={{ position: "relative" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 14px", border: `1px solid ${open ? "#2a6fdb" : "#d9dee7"}`, borderRadius: 12, background: "#fff", boxShadow: open ? "0 0 0 3px rgba(42,111,219,.12)" : "none", minHeight: 50 }}>
+        <i className="bi bi-shop" style={{ fontSize: 17, color: "#6b7585" }} />
+        <input value={value || ""} onChange={(e) => { onChange(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)}
+          placeholder="Chọn hoặc gõ nhà cung cấp…" style={{ flex: 1, minWidth: 0, border: "none", outline: "none", fontSize: 16, color: "#1b2330", background: "transparent" }} />
+        {value
+          ? <i className="bi bi-x-circle-fill" onMouseDown={(e) => { e.preventDefault(); onChange(""); }} style={{ fontSize: 15, color: "#c4cbd6", cursor: "pointer" }} />
+          : <i className="bi bi-chevron-down" onMouseDown={(e) => { e.preventDefault(); setOpen((o) => !o); }} style={{ fontSize: 13, color: "#9aa3b2", cursor: "pointer" }} />}
+      </div>
+      {open && (list.length > 0 || showCreate) && (
+        <div style={{ position: "absolute", zIndex: 30, top: "calc(100% + 6px)", left: 0, right: 0, background: "#fff", border: "1px solid #e3e7ee", borderRadius: 12, boxShadow: "0 10px 30px rgba(16,24,40,.16)", overflow: "hidden", maxHeight: 260, overflowY: "auto" }}>
+          {list.map((o) => (
+            <div key={o} onMouseDown={(e) => e.preventDefault()} onClick={() => { onChange(o); setOpen(false); }}
+              style={{ padding: "12px 14px", fontSize: 15.5, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, color: String(o).toLowerCase() === ql ? "#2a6fdb" : "#1b2330", fontWeight: String(o).toLowerCase() === ql ? 700 : 500 }}>
+              <i className="bi bi-shop" style={{ color: "#9aa3b2", fontSize: 14 }} /> <span style={{ flex: 1 }}>{o}</span>
+            </div>
+          ))}
+          {showCreate && (
+            <div onMouseDown={(e) => e.preventDefault()} onClick={() => setOpen(false)}
+              style={{ padding: "12px 14px", fontSize: 14.5, cursor: "pointer", color: "#1f8a5b", fontWeight: 700, borderTop: list.length ? "1px solid #eef1f6" : "none" }}>
+              <i className="bi bi-plus-circle" /> Dùng “{value.trim()}” (mới)
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const HIST_PAGE_SIZE = 6;   // số phiếu mỗi trang lịch sử
 
 function App() {
@@ -66,6 +110,7 @@ function App() {
   const assets = B.assets || [];
   const hasAssets = assets.length > 0;
   const costItems = B.costItems || [];
+  const suppliers = B.suppliers || [];   // nhà cung cấp đã từng nhập (gợi ý select; gõ mới tự lưu)
   const auth = B.auth || {};
   const [tab, setTab] = useState("form");   // 'form' | 'history'
   const [history, setHistory] = useState([]);
@@ -98,6 +143,7 @@ function App() {
   const [date, setDate] = useState(today10());
   const [amount, setAmount] = useState("");
   const [km, setKm] = useState("");
+  const [supplier, setSupplier] = useState("");
   const [note, setNote] = useState("");
   const [photos, setPhotos] = useState([]);   // [{file?:File mới, ref?:basename ảnh cũ, url, name}]
   const [busy, setBusy] = useState(false);
@@ -111,14 +157,14 @@ function App() {
 
   const resetForm = () => {
     photos.forEach((p) => { if (p.file && p.url) { try { URL.revokeObjectURL(p.url); } catch (e) {} } });
-    setEditId(null); setEditHash(null); setCostItem(""); setDate(today10()); setAmount(""); setKm(""); setNote(""); setPhotos([]);
+    setEditId(null); setEditHash(null); setCostItem(""); setDate(today10()); setAmount(""); setKm(""); setSupplier(""); setNote(""); setPhotos([]);
     setTarget("vehicle"); setVehicleId(vehicles.length === 1 ? String(vehicles[0].id) : ""); setResult(null);
   };
   const startEdit = (h) => {
     const asAsset = assets.some((a) => String(a.id) === String(h.vehicleId));
     setTarget(asAsset ? "asset" : "vehicle");
     setEditId(h.id); setEditHash(h.hashid || h.id); setVehicleId(String(h.vehicleId || "")); setCostItem(h.name || "");
-    setDate(h.date || today10()); setAmount(h.amount || ""); setKm(h.km || ""); setNote(h.note || "");
+    setDate(h.date || today10()); setAmount(h.amount || ""); setKm(h.km || ""); setSupplier(h.supplier || ""); setNote(h.note || "");
     setPhotos((h.photos || []).map((p) => ({ ref: p.id, url: p.url, name: p.name })));
     setResult(null); setTab("form");
     try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (e) {}
@@ -146,6 +192,7 @@ function App() {
       fd.append("date", date);
       fd.append("amount", amt);
       fd.append("km", km.replace(/[^\d]/g, ""));
+      fd.append("supplier", supplier.trim());
       fd.append("note", note);
       photos.filter((p) => p.file).forEach((p) => fd.append("photos[]", p.file));
       if (editId) photos.filter((p) => p.ref).forEach((p) => fd.append("keep[]", p.ref));
@@ -247,6 +294,11 @@ function App() {
         </div>
 
         <div style={field}>
+          <label style={label}>Nhà cung cấp <span style={{ color: "#9aa3b2", fontWeight: 400 }}>(chọn hoặc gõ mới)</span></label>
+          <SupplierInput value={supplier} onChange={setSupplier} options={suppliers} />
+        </div>
+
+        <div style={field}>
           <label style={label}>Ghi chú / giải trình <span style={{ color: "#9aa3b2", fontWeight: 400 }}>(để kế toán hiểu rõ)</span></label>
           <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="VD: thay lốp sau bị thủng, mua tại garage gần KCN…"
             style={{ ...input, resize: "vertical", minHeight: 56, lineHeight: 1.5, fontFamily: "inherit" }} />
@@ -313,7 +365,7 @@ function App() {
                         ); })()}
                         <div style={{ fontSize: 14.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: h.status === "cancelled" ? "line-through" : "none" }}>{h.name}</div>
                       </div>
-                      <div style={{ fontSize: 12, color: "#9aa3b2", marginTop: 2 }}>{h.targetName || h.plate} · {dmy(h.date)}{h.invoiceNo ? " · " + h.invoiceNo : ""}{(h.photos || []).length ? " · 📷 " + h.photos.length : ""}</div>
+                      <div style={{ fontSize: 12, color: "#9aa3b2", marginTop: 2 }}>{h.targetName || h.plate} · {dmy(h.date)}{h.invoiceNo ? " · " + h.invoiceNo : ""}{h.supplier ? " · 🏪 " + h.supplier : ""}{(h.photos || []).length ? " · 📷 " + h.photos.length : ""}</div>
                     </div>
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
                       {(() => {

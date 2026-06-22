@@ -73,7 +73,17 @@ trait HandlesSpendRequests
                 ->map(fn ($v) => ['id' => $v->id, 'code' => $v->plate, 'name' => (is_array($v->info) ? ($v->info['name'] ?? '') : '') ?: $v->plate])->all(),
             // Loại chi phí = danh mục LOẠI CHI PHÍ XE (cai-dat#vehicleCostTypes) — đồng bộ với phiếu chi xe & định mức km.
             'costItems' => $this->vehicleCostTypesOut(),
+            // Nhà cung cấp = các giá trị ĐÃ TỪNG nhập (tự tích lũy, không cần danh mục riêng) — gợi ý select, gõ mới tự lưu.
+            'suppliers' => $this->supplierSuggestions(),
         ];
+    }
+
+    /** Nhà cung cấp đã từng nhập (distinct, bỏ rỗng) — gợi ý select cho yêu cầu chi & phiếu chi. */
+    public function supplierSuggestions(): array
+    {
+        return TruckingVehicleCost::whereNotNull('supplier')->where('supplier', '!=', '')
+            ->distinct()->orderBy('supplier')->pluck('supplier')
+            ->map(fn ($s) => trim((string) $s))->filter()->unique()->values()->all();
     }
 
     /** Tạo YÊU CẦU CHI (phiếu chi chờ duyệt) từ trang public — xe (CHECK định mức km) hoặc tài sản. */
@@ -107,7 +117,8 @@ trait HandlesSpendRequests
             'name' => $item, 'created_by' => auth()->id(), 'invoice_no' => $this->nextCostInvoiceNo(), 'kind' => 'fixed',
             'spend_date' => $this->inDate($in['date'] ?? null) ?? now()->toDateString(),
             // est_amount = số DỰ KIẾN lái xe gửi; amount tạm = dự kiến, kế toán sửa thành THỰC TẾ khi duyệt/chi.
-            'amount' => $amount, 'est_amount' => $amount, 'current_km' => $km, 'note' => trim((string) ($in['note'] ?? '')),
+            'amount' => $amount, 'est_amount' => $amount, 'current_km' => $km,
+            'supplier' => $this->str($in['supplier'] ?? null), 'note' => trim((string) ($in['note'] ?? '')),
             'approved' => false, 'paid' => false, 'sort' => $sort,
         ]);
         if ($files) { $cost->photos = array_map(fn ($p) => $p['id'], $this->storeCostPhotos($v, $files)); $cost->save(); }
@@ -155,6 +166,7 @@ trait HandlesSpendRequests
                     'note' => $c->note ?? '',
                     'invoiceNo' => $c->invoice_no ?? '', 'amount' => $this->outMoney($c->amount),
                     'estAmount' => $c->est_amount !== null ? $this->outMoney($c->est_amount) : null,   // dự kiến lái xe gửi
+                    'supplier' => $c->supplier ?? '',
                     'date' => $this->outDate($c->spend_date), 'km' => $this->outNum($c->current_km),
                     'status' => $st['code'], 'statusLabel' => $st['label'],
                     'canCancel' => $st['code'] === 'pending', 'canEdit' => $st['code'] === 'pending',   // chưa duyệt mới sửa/hủy được
@@ -214,7 +226,8 @@ trait HandlesSpendRequests
 
         $c->forceFill([
             // Lái xe sửa khi CHỜ DUYỆT → cập nhật dự kiến; amount mirror dự kiến (kế toán sẽ chốt thực tế lúc duyệt/chi).
-            'name' => $item, 'amount' => $amount, 'est_amount' => $amount, 'current_km' => $km, 'note' => trim((string) ($in['note'] ?? '')),
+            'name' => $item, 'amount' => $amount, 'est_amount' => $amount, 'current_km' => $km,
+            'supplier' => $this->str($in['supplier'] ?? null), 'note' => trim((string) ($in['note'] ?? '')),
             'spend_date' => $this->inDate($in['date'] ?? null) ?? $c->spend_date,
             'photos' => array_merge($keptIds, $newIds),
         ])->save();
