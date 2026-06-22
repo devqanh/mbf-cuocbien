@@ -122,6 +122,7 @@ trait HandlesShipments
         $sortKey = in_array($sortKey, ['default', 'customer', 'cost'], true) ? $sortKey : 'default';
         $dir     = ((int) ($p['dir'] ?? 1)) < 0 ? 'desc' : 'asc';
         $all     = ! empty($p['all']);
+        $toLoc   = trim((string) ($p['toLoc'] ?? ''));   // lọc theo NƠI HẠ (to_loc — ký hiệu)
 
         // Khoản chi phí "theo dõi" (có màu trong danh mục) → id + tên + hex.
         // Lọc theo cost_item_id (FK ổn định) thay vì item text (đổi tên sẽ sót dòng cũ).
@@ -144,9 +145,10 @@ trait HandlesShipments
             });
         };
         // Builder lô của tập "đã tìm" (chỉ áp q) — dùng cho aggregate.
-        $searched = function () use ($sheet, $applySearch) {
+        $searched = function () use ($sheet, $applySearch, $toLoc) {
             $b = TruckingShipment::ofSheet($sheet);
             $applySearch($b);
+            if ($toLoc !== '') $b->where('to_loc', $toLoc);   // lọc nơi hạ (áp cho cả đếm + danh sách)
             return $b;
         };
 
@@ -215,6 +217,9 @@ trait HandlesShipments
             'filterCounts' => $filterCounts,
             'followStats'  => $followStats,
             'sibs'         => $this->siblingsList($sheet),
+            // Danh sách NƠI HẠ (to_loc) thực có để đổ vào bộ lọc — toàn sheet (không theo filter) nên option ổn định.
+            'toLocs'       => TruckingShipment::ofSheet($sheet)->whereNotNull('to_loc')->where('to_loc', '!=', '')
+                                  ->distinct()->orderBy('to_loc')->pluck('to_loc')->all(),
         ];
     }
 

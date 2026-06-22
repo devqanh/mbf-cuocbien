@@ -34,7 +34,7 @@ class ShipmentController extends BaseTruckingController
     /** Trang Lô hàng — 1 trang (20 lô) + aggregate toàn cục. JSON cho client fetch. */
     public function page(Request $request): JsonResponse
     {
-        $params = $request->only(['page', 'q', 'filter', 'follow', 'sort', 'dir', 'all']);
+        $params = $request->only(['page', 'q', 'filter', 'follow', 'sort', 'dir', 'all', 'toLoc']);
         return response()->json(['ok' => true] + $this->svc->pagedShipments('icd', $params));
     }
 
