@@ -122,8 +122,21 @@ trait HandlesShipments
         $sortKey = in_array($sortKey, ['default', 'customer', 'cost'], true) ? $sortKey : 'default';
         $dir     = ((int) ($p['dir'] ?? 1)) < 0 ? 'desc' : 'asc';
         $all     = ! empty($p['all']);
-        // Lọc theo NƠI HẠ (to_loc) — CHỌN NHIỀU (mảng) → OR (whereIn). Nhận cả string đơn lẫn mảng.
+        // Lọc theo NƠI HẠ theo KÝ HIỆU (vd HPP) — CHỌN NHIỀU = OR. Map to_loc → ký hiệu để gom option + lọc.
         $toLocSel = array_values(array_filter(array_map(fn ($x) => trim((string) $x), (array) ($p['toLoc'] ?? [])), fn ($x) => $x !== ''));
+        $codeMap = $this->normalizedCodeMap();
+        $normLoc = fn ($v) => mb_strtoupper(preg_replace('/\s+/u', '', trim(\Illuminate\Support\Str::ascii((string) $v))) ?? '');
+        $rawByCode = [];   // KÝ HIỆU => [các giá trị to_loc thực có]
+        foreach (TruckingShipment::ofSheet($sheet)->whereNotNull('to_loc')->where('to_loc', '!=', '')->distinct()->pluck('to_loc') as $raw) {
+            $code = $codeMap[$normLoc($raw)] ?? $normLoc($raw);
+            $rawByCode[$code][] = $raw;
+        }
+        $toLocCodes = array_keys($rawByCode); sort($toLocCodes);
+        $toLocRaw = [];   // ký hiệu đã chọn → các giá trị to_loc thực để whereIn
+        foreach ($toLocSel as $code) foreach ($rawByCode[$code] ?? [$code] as $raw) $toLocRaw[] = $raw;
+
+        // Lọc theo GIỜ ĐẾN KẾ HOẠCH (gio_den_du_kien) — chọn 1 NGÀY.
+        $denDate = trim((string) ($p['denDate'] ?? ''));
 
         // Khoản chi phí "theo dõi" (có màu trong danh mục) → id + tên + hex.
         // Lọc theo cost_item_id (FK ổn định) thay vì item text (đổi tên sẽ sót dòng cũ).
@@ -146,10 +159,11 @@ trait HandlesShipments
             });
         };
         // Builder lô của tập "đã tìm" (chỉ áp q) — dùng cho aggregate.
-        $searched = function () use ($sheet, $applySearch, $toLocSel) {
+        $searched = function () use ($sheet, $applySearch, $toLocSel, $toLocRaw, $denDate) {
             $b = TruckingShipment::ofSheet($sheet);
             $applySearch($b);
-            if ($toLocSel) $b->whereIn('to_loc', $toLocSel);   // OR nhiều nơi hạ (áp cho cả đếm + danh sách)
+            if ($toLocSel) $b->whereIn('to_loc', $toLocRaw ?: ['\\0__none__']);   // OR nhiều ký hiệu nơi hạ (đếm + danh sách)
+            if ($denDate !== '') $b->whereDate('gio_den_du_kien', $denDate);       // lô có Giờ đến KH = ngày chọn
             return $b;
         };
 
@@ -218,9 +232,8 @@ trait HandlesShipments
             'filterCounts' => $filterCounts,
             'followStats'  => $followStats,
             'sibs'         => $this->siblingsList($sheet),
-            // Danh sách NƠI HẠ (to_loc) thực có để đổ vào bộ lọc — toàn sheet (không theo filter) nên option ổn định.
-            'toLocs'       => TruckingShipment::ofSheet($sheet)->whereNotNull('to_loc')->where('to_loc', '!=', '')
-                                  ->distinct()->orderBy('to_loc')->pluck('to_loc')->all(),
+            // Danh sách KÝ HIỆU nơi hạ thực có (vd HPP) để đổ vào bộ lọc — gom theo ký hiệu, ổn định.
+            'toLocs'       => $toLocCodes,
         ];
     }
 

@@ -13,8 +13,8 @@ const locOptions = (cfg) => (cfg.locations || []).map((n) => {
   const c = (cfg.locationCode || {})[n];
   return c ? { value: c, label: `${n} — ${c}` } : { value: n, label: n };
 });
-// Kho (nhà máy): danh sách MÃ kho (MultiCombo lưu chuỗi = mã); tên kho chỉ để báo cáo.
-const whCodes = (cfg) => (cfg.warehouses || []).map((n) => (cfg.warehouseCode || {})[n] || n);
+// Kho (nhà máy): danh sách MÃ kho DEDUPE (1 ký hiệu có thể nhiều tên → chỉ hiện 1 mã); MultiCombo lưu chuỗi = mã.
+const whCodes = (cfg) => [...new Set((cfg.warehouses || []).map((n) => (cfg.warehouseCode || {})[n] || n).filter(Boolean))];
 
 function CostPopup({ ship, patch, onSave, isDirty, onClose, cfg = {}, addCfg }) {
   const payerOpts = cfg.payers || [];

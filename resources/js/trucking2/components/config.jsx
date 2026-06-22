@@ -17,6 +17,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
   const list = cfg[sel] || [];
   const locked = new Set(cfg.locationLocked || []);
   const g = CFG_GROUPS.find((x) => x.key === sel);
+  const noun = ((g && g.codeNameLabel) || "Tên mục").replace(/^Tên\s+/i, "");   // "kho" | "địa điểm" — cho nhãn UI gom nhóm
   const [vehFilter, setVehFilter] = useState("MBF");   // MBF | Ngoài | all — lọc đội xe
   const prices = cfg.prices || {};
   const setPrice = (name, val) => setCfg("prices", { ...prices, [name]: val });
@@ -92,6 +93,9 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
     setCfg(sel, [...list, (name || "").trim()]);
     const a = [...codeArr]; while (a.length < list.length) a.push(""); a.push((code || "").trim()); setCfg(codeArrKey, a);
     const ia = [...idArr]; while (ia.length < list.length) ia.push(null); ia.push(null); setCfg(idArrKey, ia);   // dòng mới: chưa có id
+    // Kho (addressed/geo): đẩy thêm ô địa chỉ + tọa độ rỗng để mảng thẳng hàng theo CHỈ SỐ với codeArr/idArr.
+    if (g && g.addressed) { const aa = [...addrArr]; while (aa.length < list.length) aa.push(""); aa.push(""); setCfg(addrArrKey, aa); }
+    if (g && g.geo) { const ga = [...geoArr]; while (ga.length < list.length) ga.push(""); ga.push(""); setCfg(geoArrKey, ga); }
   };
   // Đổi ký hiệu cho TẤT CẢ dòng trong 1 nhóm (sửa ở header nhóm → áp cho mọi tên cùng nhóm).
   const setGroupCode = (indices, code) => {
@@ -286,7 +290,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                 list.forEach((nm, i) => { const raw = codeArr[i] || ""; const key = normCode(raw); if (!gm.has(key)) gm.set(key, { key, code: raw, idxs: [] }); gm.get(key).idxs.push(i); });
                 let groups = [...gm.values()];
                 groups = groups.filter((x) => x.key !== "").concat(groups.filter((x) => x.key === ""));
-                if (!groups.length) return <div style={{ padding: "20px 4px", fontSize: 13, color: "var(--ink-4)" }}>Chưa có địa điểm nào — thêm ở trên.</div>;
+                if (!groups.length) return <div style={{ padding: "20px 4px", fontSize: 13, color: "var(--ink-4)" }}>Chưa có {noun} nào — thêm ở trên.</div>;
                 return (
                   <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: 430, overflowY: "auto", paddingRight: 2 }}>
                     {groups.map((grp) => {
@@ -303,8 +307,8 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                             title={codeSaved ? "Ký hiệu đã lưu — không sửa để giữ khớp import/bảng giá" : ""}
                             style={{ width: 130, padding: "5px 9px", fontSize: 13, fontWeight: 700, textTransform: "uppercase", border: "1px solid var(--line)", borderRadius: 7, outline: "none", background: codeSaved ? "var(--line-2)" : "#fff", color: codeSaved ? "var(--ink-3)" : "var(--ink)", cursor: codeSaved ? "not-allowed" : "text" }}
                             onFocus={(e) => { if (!codeSaved) e.target.style.borderColor = "var(--accent)"; }} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
-                          <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--ink-4)" }}>{grp.idxs.length} địa điểm</span>
-                          <button type="button" onClick={() => addRow(grp.code, "")} title="Thêm 1 tên địa điểm vào nhóm này"
+                          <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--ink-4)" }}>{grp.idxs.length} {noun}</span>
+                          <button type="button" onClick={() => addRow(grp.code, "")} title={"Thêm 1 " + noun + " vào nhóm này"}
                             style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer", borderRadius: 7, border: "1px solid var(--accent)", background: "#fff", color: "var(--accent)" }}>
                             <I.plus /> Thêm tên
                           </button>
@@ -313,19 +317,51 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                         <div style={{ display: "flex", flexDirection: "column", padding: "4px 8px 8px" }}>
                           {grp.idxs.map((i) => {
                             const linkedToPrice = locked.has(list[i]);
+                            // Kho (addressed/geo): mỗi TÊN có địa chỉ + ghim GPS riêng → grid rộng hơn, mobile xuống dòng.
+                            const wide = !!(g.addressed || g.geo);
+                            const grid = wide
+                              ? (isMobile ? "22px 1fr 28px" : "22px 1fr 1.4fr 116px 28px")
+                              : "22px 1fr 28px";
+                            const nameInput = (
+                              <input value={list[i]} onChange={(e) => rename(i, e.target.value)} placeholder={(g && g.codeNameLabel) || "Tên địa điểm"}
+                                style={{ width: "100%", padding: "7px 10px", fontSize: 13.5, border: "1px solid transparent", borderRadius: 8, outline: "none", background: "transparent" }}
+                                onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.background = "#fff"; }}
+                                onBlur={(e) => { e.target.style.borderColor = "transparent"; e.target.style.background = "transparent"; }} />
+                            );
+                            const addrCell = g.addressed && (
+                              <AddrInput value={addrArr[i] || ""} onChange={(v) => setAddr(i, v)}
+                                onPlace={g.geo ? (lat, lng) => setGeo(i, lat.toFixed(7) + "," + lng.toFixed(7)) : () => {}}
+                                mapsKey={mapsKey} placeholder="Gõ địa chỉ — gợi ý Google Maps (tự lấy tọa độ)" />
+                            );
+                            const geoCell = g.geo && (() => { const pinned = !!parseGeo(geoArr[i]); return (
+                              <button type="button" onClick={() => setPickIdx(i)} title={pinned ? `Đã ghim: ${geoArr[i]} — bấm để sửa` : "Ghim tọa độ kho trên bản đồ"}
+                                style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "7px 8px", fontSize: 12, fontWeight: 600, cursor: "pointer", borderRadius: 8, whiteSpace: "nowrap",
+                                  border: `1px solid ${pinned ? "var(--good)" : "var(--line)"}`, background: pinned ? "var(--good-weak)" : "#fff", color: pinned ? "var(--good)" : "var(--ink-2)" }}>
+                                <i className={"bi " + (pinned ? "bi-geo-alt-fill" : "bi-geo-alt")} /> {pinned ? "Đã ghim" : "Ghim BĐ"}
+                              </button>
+                            ); })();
+                            const delBtn = (
+                              <button type="button" onClick={() => remove(i)} title="Xóa"
+                                style={{ width: 28, height: 28, display: "grid", placeItems: "center", border: "none", borderRadius: 7, background: "transparent", color: "var(--ink-4)", cursor: "pointer" }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = "#fce8e8"; e.currentTarget.style.color = "var(--danger)"; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--ink-4)"; }}>
+                                <I.trash />
+                              </button>
+                            );
+                            const icon = <span style={{ color: linkedToPrice ? "var(--accent)" : "var(--ink-4)", display: "inline-flex" }} title={linkedToPrice ? noun + " — đang dùng trong bảng giá" : noun}><i className="bi bi-geo-alt-fill" style={{ fontSize: 14 }} /></span>;
+                            // Mobile + có địa chỉ: dòng 1 = icon|tên|xóa; dòng 2 = địa chỉ + ghim (xuống dưới).
                             return (
-                              <div key={i} style={{ display: "grid", gridTemplateColumns: "22px 1fr 28px", gap: 8, alignItems: "center", padding: "2px 0" }}>
-                                <span style={{ color: linkedToPrice ? "var(--accent)" : "var(--ink-4)", display: "inline-flex" }} title={linkedToPrice ? "Địa điểm — đang dùng trong bảng giá" : "Địa điểm"}><i className="bi bi-geo-alt-fill" style={{ fontSize: 14 }} /></span>
-                                <input value={list[i]} onChange={(e) => rename(i, e.target.value)} placeholder="Tên địa điểm"
-                                  style={{ width: "100%", padding: "7px 10px", fontSize: 13.5, border: "1px solid transparent", borderRadius: 8, outline: "none", background: "transparent" }}
-                                  onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.background = "#fff"; }}
-                                  onBlur={(e) => { e.target.style.borderColor = "transparent"; e.target.style.background = "transparent"; }} />
-                                <button type="button" onClick={() => remove(i)} title="Xóa"
-                                  style={{ width: 28, height: 28, display: "grid", placeItems: "center", border: "none", borderRadius: 7, background: "transparent", color: "var(--ink-4)", cursor: "pointer" }}
-                                  onMouseEnter={(e) => { e.currentTarget.style.background = "#fce8e8"; e.currentTarget.style.color = "var(--danger)"; }}
-                                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--ink-4)"; }}>
-                                  <I.trash />
-                                </button>
+                              <div key={i} style={{ padding: "2px 0" }}>
+                                <div style={{ display: "grid", gridTemplateColumns: grid, gap: 8, alignItems: "center" }}>
+                                  {icon}{nameInput}
+                                  {wide && !isMobile ? <>{addrCell}{geoCell}</> : null}
+                                  {delBtn}
+                                </div>
+                                {wide && isMobile && (
+                                  <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "4px 0 6px 30px" }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>{addrCell}</div>{geoCell}
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
@@ -476,16 +512,17 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                 ); })}
                 {!list.length && <div style={{ padding: "20px 4px", fontSize: 13, color: "var(--ink-4)" }}>Chưa có mục nào — thêm ở trên.</div>}
               </div>
-              {pickIdx != null && (
-                <MapPicker initial={parseGeo(geoArr[pickIdx])} address={addrArr[pickIdx] || ""} mapsKey={mapsKey}
-                  onClose={() => setPickIdx(null)}
-                  onPick={({ lat, lng, address }) => {
-                    setGeo(pickIdx, lat.toFixed(7) + "," + lng.toFixed(7));
-                    if (address && !((addrArr[pickIdx] || "").trim())) setAddr(pickIdx, address);
-                    setPickIdx(null);
-                  }} />
-              )}
             </>
+          )}
+          {/* MapPicker dùng chung cho cả 2 nhánh coded (đơn & gom nhóm theo ký hiệu) — Kho ghim tọa độ GPS */}
+          {pickIdx != null && (
+            <MapPicker initial={parseGeo(geoArr[pickIdx])} address={addrArr[pickIdx] || ""} mapsKey={mapsKey}
+              onClose={() => setPickIdx(null)}
+              onPick={({ lat, lng, address }) => {
+                setGeo(pickIdx, lat.toFixed(7) + "," + lng.toFixed(7));
+                if (address && !((addrArr[pickIdx] || "").trim())) setAddr(pickIdx, address);
+                setPickIdx(null);
+              }} />
           )}
         </div>
       </div>

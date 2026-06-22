@@ -41,8 +41,9 @@ function ShipmentsApp() {
   const [filter, setFilter] = useState("all");
   // Bộ lọc theo "follow": 'all' | 'any' | 'missing' | '#hex' (lọc theo màu cụ thể)
   const [followFilter, setFollowFilter] = useState("all");
-  const [toLocSel, setToLocSel] = useState([]);   // lọc theo NƠI HẠ — CHỌN NHIỀU (OR)
-  const [toLocs, setToLocs] = useState(P0.toLocs || []);   // danh sách nơi hạ thực có (options)
+  const [toLocSel, setToLocSel] = useState([]);   // lọc theo NƠI HẠ theo KÝ HIỆU — CHỌN NHIỀU (OR)
+  const [toLocs, setToLocs] = useState(P0.toLocs || []);   // danh sách KÝ HIỆU nơi hạ thực có (options)
+  const [denDate, setDenDate] = useState("");     // lọc theo Giờ đến kế hoạch (gio_den_du_kien) — chọn 1 NGÀY
   const [sort, setSort] = useState({ key: "default", dir: 1 });
   const [showExport, setShowExport] = useState(false);
   const [exporting, setExporting] = useState(false);   // chống bấm Xuất Excel nhiều lần
@@ -66,7 +67,8 @@ function ShipmentsApp() {
     if (qDeb.trim()) p.set("q", qDeb.trim());
     if (filter !== "all") p.set("filter", filter);
     if (followFilter !== "all") p.set("follow", followFilter);
-    (toLocSel || []).forEach((v) => p.append("toLoc[]", v));   // chọn nhiều nơi hạ → OR
+    (toLocSel || []).forEach((v) => p.append("toLoc[]", v));   // chọn nhiều ký hiệu nơi hạ → OR
+    if (denDate) p.set("denDate", denDate);
     if (sort.key !== "default") { p.set("sort", sort.key); p.set("dir", String(sort.dir)); }
     return p;
   };
@@ -104,7 +106,7 @@ function ShipmentsApp() {
   useEffect(() => {
     if (skipFirst.current) { skipFirst.current = false; return; }
     load();
-  }, [page, qDeb, filter, followFilter, toLocSel, sort]);
+  }, [page, qDeb, filter, followFilter, toLocSel, denDate, sort]);
   // Mở từ Lộ trình/Bảng kê (?q/?open): boot là danh sách CHƯA lọc → tải lại theo q ngay + tự mở popup.
   useEffect(() => { if (_initSp.get("q") || _initSp.get("open")) { skipFirst.current = false; load(); } }, []);
 
@@ -343,7 +345,8 @@ function ShipmentsApp() {
   const toggleSort = (key) => { setSort((s) => s.key === key ? { key, dir: -s.dir } : { key, dir: 1 }); setPage(1); };
   const setFilterP = (f) => { setFilter(f); setPage(1); };
   const setFollowP = (f) => { setFollowFilter(f); setPage(1); };
-  const setToLocP = (arr) => { setToLocSel(arr); setPage(1); };   // chọn nhiều nơi hạ (OR)
+  const setToLocP = (arr) => { setToLocSel(arr); setPage(1); };   // chọn nhiều ký hiệu nơi hạ (OR)
+  const setDenDateP = (v) => { setDenDate(v); setPage(1); };      // lọc theo Giờ đến kế hoạch (1 ngày)
   const minW = 880;
   // Dãy số trang có dấu "…" — kiểu phân trang gọn (luôn hiện trang đầu/cuối + lân cận trang hiện tại)
   const pageList = (cur, last) => {
@@ -444,12 +447,18 @@ function ShipmentsApp() {
             );
           })}
         </div>
-        {/* Lọc theo NƠI HẠ (to_loc) — chọn NHIỀU = OR */}
+        {/* Lọc theo NƠI HẠ theo KÝ HIỆU (vd HPP) — chọn NHIỀU = OR */}
         <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 12.5, color: "var(--ink-3)", fontWeight: 500, whiteSpace: "nowrap" }}><i className="bi bi-geo-alt" /> Nơi hạ:</span>
-          <div style={{ width: isMobile ? 200 : 280 }}>
-            <MultiCombo values={toLocSel} onChange={setToLocP} options={toLocs} placeholder="Tất cả nơi hạ" strict max={50} />
+          <span style={{ fontSize: 12.5, color: "var(--ink-3)", fontWeight: 500, whiteSpace: "nowrap" }}><i className="bi bi-geo-alt" /> Nơi hạ (ký hiệu):</span>
+          <div style={{ width: isMobile ? 200 : 240 }}>
+            <MultiCombo values={toLocSel} onChange={setToLocP} options={toLocs} placeholder="Tất cả ký hiệu" strict max={50} />
           </div>
+        </div>
+        {/* Lọc theo GIỜ ĐẾN KẾ HOẠCH (gio_den_du_kien) — chọn 1 ngày */}
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 12.5, color: "var(--ink-3)", fontWeight: 500, whiteSpace: "nowrap" }}><i className="bi bi-calendar-event" /> Giờ đến KH:</span>
+          <div style={{ width: 140 }}><DateField value={denDate} onChange={setDenDateP} placeholder="Chọn ngày" /></div>
+          {denDate && <button type="button" onClick={() => setDenDateP("")} title="Bỏ lọc ngày" style={{ border: "none", background: "transparent", color: "var(--ink-4)", cursor: "pointer", padding: 2 }}><i className="bi bi-x-circle" /></button>}
         </div>
         {/* Theo dõi (follow color) — chỉ hiện khi có ít nhất 1 lô gắn follow */}
         {followStats.anyShips > 0 && (() => {
