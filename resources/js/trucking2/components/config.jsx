@@ -450,12 +450,12 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                         <FlagPicker value={costColors[it] || ""} onChange={(c) => setColor(it, c)} />
                       </div>
                     )}
-                    {g.coded && <><input value={codeArr[i] || ""} readOnly={codeLocked} onChange={(e) => { if (!codeLocked) setCode(i, e.target.value); }} placeholder="Bắt buộc · VD: TV"
+                    {g.coded && <div style={{ position: "relative" }}><input value={codeArr[i] || ""} readOnly={codeLocked} onChange={(e) => { if (!codeLocked) setCode(i, e.target.value); }} placeholder="Bắt buộc · VD: TV"
                       title={codeLocked ? "Ký hiệu đã lưu — không sửa để giữ khớp import/bảng giá" + (rfUsed ? ` · đang dùng bởi ${rfUsed} phí tuyến` : "") : (emptyCode ? "Bắt buộc nhập ký hiệu" : (dupCode ? "Ký hiệu bị trùng với mục khác" : (rfUsed ? `Đang dùng bởi ${rfUsed} phí tuyến — đổi sẽ lệch tuyến!` : "")))}
-                      style={{ width: "100%", padding: "7px 10px", fontSize: 13, fontWeight: 600, border: `1px solid ${badCode ? "var(--danger)" : "var(--line)"}`, borderRadius: 8, outline: "none", textTransform: "uppercase", background: codeLocked ? "var(--line-2)" : (badCode ? "#fce8e8" : "#fff"), color: codeLocked ? "var(--ink-3)" : (badCode ? "var(--danger)" : "var(--ink)"), cursor: codeLocked ? "not-allowed" : "text" }}
+                      style={{ width: "100%", padding: "7px 10px", paddingRight: rfUsed > 0 ? 26 : 10, fontSize: 13, fontWeight: 600, border: `1px solid ${badCode ? "var(--danger)" : "var(--line)"}`, borderRadius: 8, outline: "none", textTransform: "uppercase", background: codeLocked ? "var(--line-2)" : (badCode ? "#fce8e8" : "#fff"), color: codeLocked ? "var(--ink-3)" : (badCode ? "var(--danger)" : "var(--ink)"), cursor: codeLocked ? "not-allowed" : "text" }}
                       onFocus={(e) => { if (!codeLocked) e.target.style.borderColor = "var(--accent)"; }} onBlur={(e) => (e.target.style.borderColor = badCode ? "var(--danger)" : "var(--line)")} />
-                    {rfUsed > 0 && <span title={`${rfUsed} phí tuyến đang dùng code này — đổi sẽ lệch tuyến!`} style={{ position: "relative", top: -1, marginLeft: -22, fontSize: 11, color: "#e08600" }}><i className="bi bi-exclamation-triangle-fill" /></span>}
-                    </>}
+                    {rfUsed > 0 && <span title={`${rfUsed} phí tuyến đang dùng code này — đổi sẽ lệch tuyến!`} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", fontSize: 11, color: "#e08600", pointerEvents: "none" }}><i className="bi bi-exclamation-triangle-fill" /></span>}
+                    </div>}
                     {g.addressed && <AddrInput value={addrArr[i] || ""} onChange={(v) => setAddr(i, v)}
                       onPlace={g.geo ? (lat, lng) => setGeo(i, lat.toFixed(7) + "," + lng.toFixed(7)) : () => {}}
                       mapsKey={mapsKey} placeholder="Gõ địa chỉ — gợi ý Google Maps (tự lấy tọa độ)" />}
