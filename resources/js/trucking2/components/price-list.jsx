@@ -40,7 +40,8 @@ function PriceList({ rows = [], onChange, onImported, cfg = {}, customer }) {
     } catch (err) { setBusy(false); setMsg("Copy lỗi kết nối."); }
   };
   // Gộp danh mục địa điểm + mọi "Điểm Hạ" đang có trong bảng giá (kể cả ký hiệu mới import) để select luôn hiển thị
-  const locOpts = [...new Set([...(cfg.locations || []), ...rows.map((r) => r.loc).filter(Boolean)])];
+  // Địa điểm hạ dùng KÝ HIỆU (code) cho gọn: options = ký hiệu trong danh mục + ký hiệu đã có trên dòng.
+  const locOpts = [...new Set([...Object.values(cfg.locationCode || {}), ...rows.map((r) => r.loc).filter(Boolean)])].sort();
   const blank = { distance: "", transFee40: "", transFee20: "", fuelFee40: "", fuelFee20: "" };
   const set = (id, np) => onChange(rows.map((e) => (e.id === id ? { ...e, ...np } : e)));
   const del = (id) => onChange(rows.filter((e) => e.id !== id));
@@ -194,13 +195,8 @@ function PriceList({ rows = [], onChange, onImported, cfg = {}, customer }) {
             {/* location super-header: location select + connect/disconnect select */}
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
               <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--ink-4)", textTransform: "uppercase", letterSpacing: "0.04em" }}>Địa điểm hạ</span>
-              <div style={{ position: "relative", minWidth: 200 }}>
-                <select value={g.loc} onChange={(e) => setLocField(g.key, { loc: e.target.value })}
-                  style={{ width: "100%", appearance: "none", WebkitAppearance: "none", padding: "8px 28px 8px 11px", fontSize: 13.5, fontWeight: 700, color: g.loc ? "var(--ink)" : "var(--ink-4)", background: "#fff", border: "1px solid var(--line)", borderRadius: 9, cursor: "pointer" }}>
-                  <option value="">— Chọn địa điểm hạ —</option>
-                  {locOpts.map((l) => <option key={l} value={l}>{l}</option>)}
-                </select>
-                <span style={{ position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)", color: "var(--ink-3)", pointerEvents: "none" }}><I.chev /></span>
+              <div style={{ minWidth: 220 }}>
+                <Combo value={g.loc} onChange={(v) => setLocField(g.key, { loc: v })} options={locOpts} placeholder="Chọn ký hiệu địa điểm hạ…" />
               </div>
               <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 9, padding: 3 }}>
                 {["Connect", "Disconnect", "Non"].map((opt) => {
