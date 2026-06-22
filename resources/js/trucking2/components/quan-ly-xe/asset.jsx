@@ -2,7 +2,7 @@ import React from "react";
 const { useState, useEffect, useRef } = React;
 import { I, Money, Num, Txt, Combo, DateField, Btn, Modal, fmtVND, fmtNum, fmtDate, toNum, useIsMobile } from "@trk/lib.jsx";
 import { ChkBox } from "@trk/pop.jsx";
-import { num, daysUsed, COST_KINDS, normKind, TAB_KEYS, SECTION_OF, WARN_DAYS, DUE_NONE, dueStatus, vehRank, DueCell, StatChip, lbl, delBtn, addBtn, card, DeprecTab, DeprecMonthlyTab, UsageTab, today10, esc, blankCost, PAY_METHODS, PayModal, CostModal, CostTab, VEH_DOC_TYPES, DocsBlock, InfoTab, AllowanceTab, PendingCostsModal } from "./parts.jsx";
+import { num, daysUsed, COST_KINDS, normKind, TAB_KEYS, SECTION_OF, WARN_DAYS, DUE_NONE, dueStatus, vehRank, DueCell, StatChip, lbl, delBtn, addBtn, card, Pager, DeprecTab, DeprecMonthlyTab, UsageTab, today10, esc, blankCost, PAY_METHODS, PayModal, CostModal, CostTab, VEH_DOC_TYPES, DocsBlock, InfoTab, AllowanceTab, PendingCostsModal } from "./parts.jsx";
 
 const ASSET_TAB_KEYS = ["info", "deprec", "deprecMonthly", "cost", "docs"];
 const ASSET_SECTION_OF = { deprec: "depreciations", deprecMonthly: "depreciations", cost: "costs" };
@@ -108,6 +108,9 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
 
   const [vFilter, setVFilter] = useState("all");   // all | expired | soon | ok
   const [vQuery, setVQuery] = useState("");
+  const [aPage, setAPage] = useState(1);           // phân trang client 30 dòng/trang
+  const PER = 30;
+  useEffect(() => { setAPage(1); }, [vFilter, vQuery]);   // đổi lọc/tìm → về trang 1
   const [showCreate, setShowCreate] = useState(false);
   const [selId, setSelId] = useState(null);
   const [detail, setDetail] = useState(null);
@@ -272,6 +275,9 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
       if (vFilter === "ok") return assetRank(a) === 1;
       return true;
     });
+    const lastPage = Math.max(1, Math.ceil(list.length / PER));
+    const curPage = Math.min(aPage, lastPage);
+    const pageList = list.slice((curPage - 1) * PER, curPage * PER);
     const FILTERS = [["all", "Tất cả", assets.length, "var(--ink-2)"], ["expired", "Hết hạn", expiredCount, "var(--danger)"], ["soon", "Sắp hết hạn", soonCount, "var(--warn)"], ["ok", "Còn hạn", okCount, "var(--good)"]];
     const th = (t, align) => <th style={{ textAlign: align || "left", padding: "10px 12px", fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "1px solid var(--line)", whiteSpace: "nowrap" }}>{t}</th>;
 
@@ -322,7 +328,7 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
                       {th("Tài sản")}{th("Loại")}{th("Vị trí · Tình trạng")}{th("Bảo hành · Kiểm định")}{th("Hồ sơ", "center")}{th("Khấu hao/tháng", "right")}{th("Khấu hao · Chi phí", "center")}{th("", "right")}
                     </tr></thead>
                     <tbody>
-                      {list.map((a) => {
+                      {pageList.map((a) => {
                         const r = assetRank(a);
                         const stripe = r === 3 ? "var(--danger)" : r === 2 ? "var(--warn)" : "transparent";
                         return (
@@ -356,10 +362,11 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
                           </tr>
                         );
                       })}
-                      {list.length === 0 && <tr><td colSpan={7} style={{ padding: "32px", textAlign: "center", color: "var(--ink-4)", fontSize: 13 }}>Không có tài sản nào khớp bộ lọc.</td></tr>}
+                      {list.length === 0 && <tr><td colSpan={8} style={{ padding: "32px", textAlign: "center", color: "var(--ink-4)", fontSize: 13 }}>Không có tài sản nào khớp bộ lọc.</td></tr>}
                     </tbody>
                   </table>
                 </div>
+                <Pager page={curPage} perPage={PER} total={list.length} onPage={setAPage} />
               </div>
             )}
         </div>

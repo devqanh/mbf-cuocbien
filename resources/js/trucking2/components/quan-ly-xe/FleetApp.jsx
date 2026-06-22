@@ -2,7 +2,7 @@ import React from "react";
 const { useState, useEffect, useRef } = React;
 import { I, Money, Num, Txt, Combo, DateField, Btn, Modal, fmtVND, fmtNum, fmtDate, toNum, useIsMobile } from "@trk/lib.jsx";
 import { ChkBox } from "@trk/pop.jsx";
-import { num, daysUsed, COST_KINDS, normKind, TAB_KEYS, SECTION_OF, WARN_DAYS, DUE_NONE, dueStatus, vehRank, DueCell, StatChip, lbl, delBtn, addBtn, DeprecTab, DeprecMonthlyTab, UsageTab, today10, esc, blankCost, PAY_METHODS, PayModal, CostModal, CostTab, VEH_DOC_TYPES, DocsBlock, InfoTab, AllowanceTab, PendingCostsModal } from "./parts.jsx";
+import { num, daysUsed, COST_KINDS, normKind, TAB_KEYS, SECTION_OF, WARN_DAYS, DUE_NONE, dueStatus, vehRank, DueCell, StatChip, lbl, delBtn, addBtn, Pager, DeprecTab, DeprecMonthlyTab, UsageTab, today10, esc, blankCost, PAY_METHODS, PayModal, CostModal, CostTab, VEH_DOC_TYPES, DocsBlock, InfoTab, AllowanceTab, PendingCostsModal } from "./parts.jsx";
 import { FuelTab } from "./fuel-tab.jsx";
 
 function FleetApp({ modeSwitch }) {
@@ -27,6 +27,8 @@ function FleetApp({ modeSwitch }) {
   const [showPending, setShowPending] = useState(false);
   const [vFilter, setVFilter] = useState("all");   // all | expired | soon | ok
   const [vQuery, setVQuery] = useState("");
+  const [vPage, setVPage] = useState(1);           // phân trang client 30 dòng/trang
+  const PER = 30;
   const [selId, setSelId] = useState(null);
   const selHash = useRef(null);   // hashid xe đang mở → dùng dựng URL (id số giữ cho so khớp/hash deep-link)
   const [detail, setDetail] = useState(null);
@@ -177,6 +179,7 @@ function FleetApp({ modeSwitch }) {
     const t = setTimeout(() => setHlCost(null), 2800);
     return () => clearTimeout(t);
   }, [detail, tab]);
+  useEffect(() => { setVPage(1); }, [vFilter, vQuery]);   // đổi lọc/tìm → về trang 1
 
   // ---------- DANH SÁCH XE ----------
   if (!selId) {
@@ -200,6 +203,9 @@ function FleetApp({ modeSwitch }) {
       if (vFilter === "ok") return vehRank(v) === 1;
       return true;
     }).sort((a, b) => vehRank(b) - vehRank(a) || dueKey(a).localeCompare(dueKey(b)));   // hết hạn → sắp hết → còn hạn; cùng mức: gần hết trước
+    const lastPage = Math.max(1, Math.ceil(list.length / PER));
+    const curPage = Math.min(vPage, lastPage);
+    const pageList = list.slice((curPage - 1) * PER, curPage * PER);
     const FILTERS = [["all", "Tất cả", vehicles.length, "var(--ink-2)"], ["expired", "Hết hạn", expiredCount, "var(--danger)"], ["soon", "Sắp hết hạn", soonCount, "var(--warn)"], ["ok", "Còn hạn", okCount, "var(--good)"]];
     const th = (t, align) => <th style={{ textAlign: align || "left", padding: "10px 12px", fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "1px solid var(--line)", whiteSpace: "nowrap" }}>{t}</th>;
 
@@ -297,7 +303,7 @@ function FleetApp({ modeSwitch }) {
                       {th("Biển số")}{th("Hạn đăng kiểm")}{th("Hạn bảo hiểm")}{th("Hồ sơ", "center")}{th("Khấu hao/tháng", "right")}{th("Khấu hao · Chi phí · Lượt dùng", "center")}{th("", "right")}
                     </tr></thead>
                     <tbody>
-                      {list.map((v) => {
+                      {pageList.map((v) => {
                         const r = vehRank(v);
                         const stripe = r === 3 ? "var(--danger)" : r === 2 ? "var(--warn)" : "transparent";
                         return (
@@ -333,10 +339,11 @@ function FleetApp({ modeSwitch }) {
                           </tr>
                         );
                       })}
-                      {list.length === 0 && <tr><td colSpan={6} style={{ padding: "32px", textAlign: "center", color: "var(--ink-4)", fontSize: 13 }}>Không có xe nào khớp bộ lọc.</td></tr>}
+                      {list.length === 0 && <tr><td colSpan={7} style={{ padding: "32px", textAlign: "center", color: "var(--ink-4)", fontSize: 13 }}>Không có xe nào khớp bộ lọc.</td></tr>}
                     </tbody>
                   </table>
                 </div>
+                <Pager page={curPage} perPage={PER} total={list.length} onPage={setVPage} />
               </div>
             )}
         </div>

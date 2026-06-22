@@ -62,6 +62,30 @@ const addBtn = (onClick, text) => (
   </button>
 );
 
+/* Phân trang client-side dùng chung (Xe / Tài sản) — hiện X–Y/Tổng + nút trang. */
+function Pager({ page, perPage, total, onPage }) {
+  const last = Math.max(1, Math.ceil(total / perPage));
+  if (last <= 1) return null;
+  const from = total ? (page - 1) * perPage + 1 : 0, to = Math.min(total, page * perPage);
+  const nums = [];
+  const win = 2;   // số trang quanh trang hiện tại
+  for (let p = 1; p <= last; p++) { if (p === 1 || p === last || (p >= page - win && p <= page + win)) nums.push(p); else if (nums[nums.length - 1] !== "…") nums.push("…"); }
+  const btn = (label, p, dis, on) => (
+    <button type="button" key={label + p} disabled={dis} onClick={() => !dis && onPage(p)}
+      style={{ minWidth: 30, height: 30, padding: "0 8px", border: "1px solid " + (on ? "var(--accent)" : "var(--line)"), borderRadius: 8, background: on ? "var(--accent)" : "#fff", color: on ? "#fff" : (dis ? "var(--ink-4)" : "var(--ink-2)"), cursor: dis ? "default" : "pointer", fontSize: 12.5, fontWeight: 600 }}>{label}</button>
+  );
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 14px", borderTop: "1px solid var(--line-2)", flexWrap: "wrap" }}>
+      <span style={{ fontSize: 12.5, color: "var(--ink-4)" }} className="tnum">{from}–{to} / {total}</span>
+      <div style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+        {btn("‹", page - 1, page <= 1, false)}
+        {nums.map((n, i) => n === "…" ? <span key={"d" + i} style={{ color: "var(--ink-4)", padding: "0 2px" }}>…</span> : btn(String(n), n, false, n === page))}
+        {btn("›", page + 1, page >= last, false)}
+      </div>
+    </div>
+  );
+}
+
 /* ---- Tab: Thông tin xe / Khấu hao ---- */
 function DeprecTab({ rows, onChange }) {
   const set = (i, np) => onChange(rows.map((r, j) => (j === i ? { ...r, ...np } : r)));
@@ -649,4 +673,4 @@ function PendingCostsModal({ items, onClose, onOpen }) {
 }
 
 
-export { num, daysUsed, COST_KINDS, normKind, TAB_KEYS, SECTION_OF, WARN_DAYS, DUE_NONE, dueStatus, vehRank, DueCell, StatChip, lbl, delBtn, addBtn, card, DeprecTab, DeprecMonthlyTab, UsageTab, today10, esc, blankCost, PAY_METHODS, PayModal, CostModal, CostTab, VEH_DOC_TYPES, DocsBlock, InfoTab, AllowanceTab, PendingCostsModal };
+export { num, daysUsed, COST_KINDS, normKind, TAB_KEYS, SECTION_OF, WARN_DAYS, DUE_NONE, dueStatus, vehRank, DueCell, StatChip, lbl, delBtn, addBtn, card, Pager, DeprecTab, DeprecMonthlyTab, UsageTab, today10, esc, blankCost, PAY_METHODS, PayModal, CostModal, CostTab, VEH_DOC_TYPES, DocsBlock, InfoTab, AllowanceTab, PendingCostsModal };
