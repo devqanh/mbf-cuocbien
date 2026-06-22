@@ -191,13 +191,15 @@ function FleetApp({ modeSwitch }) {
     const needApproveAmt = needApprove.reduce((a, c) => a + (c.amount || 0), 0);
     const needPayAmt     = needPay.reduce((a, c) => a + (c.amount || 0), 0);
     const q = vQuery.trim().toLowerCase();
+    // Ngày hết hạn GẦN NHẤT của xe (đăng kiểm/bảo hiểm) — xe không có hạn xếp cuối.
+    const dueKey = (v) => { const ds = [v.registrationDue, v.insuranceDue].filter(Boolean).sort(); return ds[0] || "9999-12-31"; };
     const list = vehicles.filter((v) => {
       if (q && !(v.plate || "").toLowerCase().includes(q)) return false;
       if (vFilter === "expired") return vehRank(v) === 3;
       if (vFilter === "soon") return vehRank(v) === 2;
       if (vFilter === "ok") return vehRank(v) === 1;
       return true;
-    });
+    }).sort((a, b) => vehRank(b) - vehRank(a) || dueKey(a).localeCompare(dueKey(b)));   // hết hạn → sắp hết → còn hạn; cùng mức: gần hết trước
     const FILTERS = [["all", "Tất cả", vehicles.length, "var(--ink-2)"], ["expired", "Hết hạn", expiredCount, "var(--danger)"], ["soon", "Sắp hết hạn", soonCount, "var(--warn)"], ["ok", "Còn hạn", okCount, "var(--good)"]];
     const th = (t, align) => <th style={{ textAlign: align || "left", padding: "10px 12px", fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "1px solid var(--line)", whiteSpace: "nowrap" }}>{t}</th>;
 

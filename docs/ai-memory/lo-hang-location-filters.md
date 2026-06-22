@@ -10,7 +10,7 @@ metadata:
 Bộ lọc trang Lô hàng (`pagedShipments` sheet `icd`, ShipmentsApp.jsx) cho kế toán:
 
 - **Nơi hạ / Nơi lấy theo KÝ HIỆU** (không theo tên dài): options gom từ to_loc/from_loc thực qua `normalizedCodeMap` (norm(tên|mã)→mã). Lọc gửi ký hiệu → backend mở rộng ra các giá trị raw (`whereIn`). Output `toLocs`/`fromLocs` = list ký hiệu.
-- **Nơi hạ** = GỒM (whereIn). **Nơi lấy** có 2 chế độ: `fromMode` include→whereIn; exclude→whereNotIn + orWhereNull (giữ lô KHÔNG có nơi lấy). Use case kế toán: "lọc nơi hạ HPP, LOẠI TRỪ nơi lấy nội bộ" (vd ICDQV). Params `toLoc[]`, `fromLoc[]`, `fromMode`.
+- **CẢ Nơi hạ + Nơi lấy đều có chế độ GỒM/LOẠI TRỪ** (`toMode`/`fromMode`): include→whereIn; exclude→whereNotIn + orWhereNull (giữ lô KHÔNG có địa điểm). Helper chung `applyLoc($b,$col,$sel,$raw,$mode)`. Mặc định Nơi hạ=include, Nơi lấy=exclude. Use case kế toán: "lọc nơi hạ HPP, LOẠI TRỪ nơi lấy nội bộ". Params `toLoc[]`/`toMode`, `fromLoc[]`/`fromMode`. FE: component `ModeToggle` dùng chung 2 khối.
 - **Ngày đóng hàng** = **Giờ đến kế hoạch** (`gio_den_du_kien`, cột dateTime indexed) — CHỌN 1 NGÀY (param `denDate` → `whereDate`). KHÔNG phải cut_off (cắt máng).
 
 Tất cả áp trong closure `$searched` nên cả ĐẾM (filterCounts/total) + danh sách đều đúng. ShipmentController::page truyền `toLoc,fromLoc,fromMode,denDate`.
