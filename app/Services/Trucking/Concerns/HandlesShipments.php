@@ -135,6 +135,18 @@ trait HandlesShipments
         $toLocRaw = [];   // ký hiệu đã chọn → các giá trị to_loc thực để whereIn
         foreach ($toLocSel as $code) foreach ($rawByCode[$code] ?? [$code] as $raw) $toLocRaw[] = $raw;
 
+        // Lọc theo NƠI LẤY theo KÝ HIỆU — có chế độ GỒM / LOẠI TRỪ (kế toán: lọc nơi hạ + trừ nơi lấy).
+        $fromSel  = array_values(array_filter(array_map(fn ($x) => trim((string) $x), (array) ($p['fromLoc'] ?? [])), fn ($x) => $x !== ''));
+        $fromMode = (($p['fromMode'] ?? 'exclude') === 'include') ? 'include' : 'exclude';
+        $fromByCode = [];
+        foreach (TruckingShipment::ofSheet($sheet)->whereNotNull('from_loc')->where('from_loc', '!=', '')->distinct()->pluck('from_loc') as $raw) {
+            $code = $codeMap[$normLoc($raw)] ?? $normLoc($raw);
+            $fromByCode[$code][] = $raw;
+        }
+        $fromCodes = array_keys($fromByCode); sort($fromCodes);
+        $fromRaw = [];
+        foreach ($fromSel as $code) foreach ($fromByCode[$code] ?? [$code] as $raw) $fromRaw[] = $raw;
+
         // Lọc theo GIỜ ĐẾN KẾ HOẠCH (gio_den_du_kien) — chọn 1 NGÀY.
         $denDate = trim((string) ($p['denDate'] ?? ''));
 
@@ -159,10 +171,18 @@ trait HandlesShipments
             });
         };
         // Builder lô của tập "đã tìm" (chỉ áp q) — dùng cho aggregate.
-        $searched = function () use ($sheet, $applySearch, $toLocSel, $toLocRaw, $denDate) {
+        $searched = function () use ($sheet, $applySearch, $toLocSel, $toLocRaw, $fromSel, $fromRaw, $fromMode, $denDate) {
             $b = TruckingShipment::ofSheet($sheet);
             $applySearch($b);
             if ($toLocSel) $b->whereIn('to_loc', $toLocRaw ?: ['\\0__none__']);   // OR nhiều ký hiệu nơi hạ (đếm + danh sách)
+            if ($fromSel) {
+                if ($fromMode === 'include') {
+                    $b->whereIn('from_loc', $fromRaw ?: ['\\0__none__']);          // GỒM: chỉ lấy từ các ký hiệu chọn
+                } elseif ($fromRaw) {
+                    // LOẠI TRỪ: bỏ lô lấy từ ký hiệu chọn (giữ cả lô không có nơi lấy).
+                    $b->where(fn ($w) => $w->whereNotIn('from_loc', $fromRaw)->orWhereNull('from_loc'));
+                }
+            }
             if ($denDate !== '') $b->whereDate('gio_den_du_kien', $denDate);       // lô có Giờ đến KH = ngày chọn
             return $b;
         };
@@ -232,8 +252,9 @@ trait HandlesShipments
             'filterCounts' => $filterCounts,
             'followStats'  => $followStats,
             'sibs'         => $this->siblingsList($sheet),
-            // Danh sách KÝ HIỆU nơi hạ thực có (vd HPP) để đổ vào bộ lọc — gom theo ký hiệu, ổn định.
+            // Danh sách KÝ HIỆU nơi hạ / nơi lấy thực có để đổ vào bộ lọc — gom theo ký hiệu, ổn định.
             'toLocs'       => $toLocCodes,
+            'fromLocs'     => $fromCodes,
         ];
     }
 
