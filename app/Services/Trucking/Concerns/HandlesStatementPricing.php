@@ -32,18 +32,20 @@ trait HandlesStatementPricing
     /** Free time của 1 lô — null nếu thiếu dữ liệu. (port calcFreeTime) */
     private function freeTimeOf(TruckingShipment $s, $thresholdH): ?array
     {
-        $ra = $s->gio_xe_ra; $den = $s->gio_xe_den; $duKien = $s->gio_den_du_kien;
-        if (! $ra || (! $den && ! $duKien)) return null;
-        try {
-            $dRa = Carbon::parse($ra);
-            if ($den && $duKien) {
-                $dDen = Carbon::parse($den); $dDk = Carbon::parse($duKien);
-                if ($dDen->gt($dDk)) { $start = $dDen; $basis = 'Giờ xe đến'; } else { $start = $dDk; $basis = 'Giờ đến kế hoạch'; }
-            } else { $start = Carbon::parse($den ?: $duKien); $basis = $den ? 'Giờ xe đến' : 'Giờ đến kế hoạch'; }
-        } catch (\Throwable) { return null; }
+        // Free time = Giờ xe ra − Giờ xe đến (follow theo XE ra). Giờ xe ra theo ra_mode:
+        //  self→cont này ra (gio_xe_ra); none→xe đầu kéo (gio_xe_ra_xe); other→cont KHÁC thực sự ra (raOther.gio_xe_ra).
+        $ra = match ($s->ra_mode ?? 'self') {
+            'none'  => $s->gio_xe_ra_xe,
+            'other' => $s->raOther?->gio_xe_ra,
+            default => $s->gio_xe_ra,
+        };
+        $den = $s->gio_xe_den;
+        if (! $ra || ! $den) return null;
+        try { $dRa = Carbon::parse($ra); $start = Carbon::parse($den); }
+        catch (\Throwable) { return null; }
         $hours = ($dRa->getTimestamp() - $start->getTimestamp()) / 3600;
-        $th = $this->freeTimeThresholdForDate($dRa, $thresholdH);   // ngưỡng theo NGÀY cont ra (quy tắc khoảng ngày), fallback mặc định
-        return ['hours' => $hours, 'connect' => $hours > $th, 'threshold' => $th, 'basis' => $basis];
+        $th = $this->freeTimeThresholdForDate($dRa, $thresholdH);   // ngưỡng theo NGÀY xe ra (quy tắc khoảng ngày), fallback mặc định
+        return ['hours' => $hours, 'connect' => $hours > $th, 'threshold' => $th, 'basis' => 'Giờ xe đến'];
     }
 
     /** Ngưỡng free time (giờ) theo NGÀY cont ra: khớp quy tắc khoảng ngày (free_time_rules) → fallback mặc định. */
@@ -258,7 +260,7 @@ trait HandlesStatementPricing
         // ============================================================
         // SCALE: đẩy lọc kỳ vào SQL (dùng index gio_xe_ra / sail_date) — KHÔNG nạp toàn bộ lô của khách.
         // ICD lọc gio_xe_ra trong [from 00:00, to 23:59]; HPH fallback sail_date. Lọc PHP bên dưới giữ làm chốt chặn.
-        $q = TruckingShipment::where('customer_id', $custId)->with('costLines');
+        $q = TruckingShipment::where('customer_id', $custId)->with(['costLines', 'raOther:id,gio_xe_ra']);
         if ($from || $to) {
             $lo = $from ? $from . ' 00:00:00' : null; $hi = $to ? $to . ' 23:59:59' : null;
             $q->where(function ($w) use ($lo, $hi, $from, $to) {
@@ -321,7 +323,7 @@ trait HandlesStatementPricing
         );
 
         $ids = $st->lines->map(fn ($l) => $l->shipment_id)->filter()->all();
-        $ships = TruckingShipment::whereIn('id', $ids)->with('costLines')->get()->keyBy('id');
+        $ships = TruckingShipment::whereIn('id', $ids)->with(['costLines', 'raOther:id,gio_xe_ra'])->get()->keyBy('id');
 
         $out = [];
         foreach ($ids as $id) {
@@ -369,7 +371,7 @@ trait HandlesStatementPricing
                 ->filter()->unique()->values()->all();
             $ships = empty($allIds)
                 ? collect()
-                : TruckingShipment::whereIn('id', $allIds)->with('costLines')->get()->keyBy('id');
+                : TruckingShipment::whereIn('id', $allIds)->with(['costLines', 'raOther:id,gio_xe_ra'])->get()->keyBy('id');
 
             foreach ($statements as $st) {
                 // Ưu tiên customer_id (bền); name là fallback.

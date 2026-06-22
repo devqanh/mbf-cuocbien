@@ -94,7 +94,7 @@ trait HandlesShipments
     public function shipments(string $sheet): array
     {
         return TruckingShipment::ofSheet($sheet)
-            ->with(['customer', 'costLines', 'revenueLines', 'payments'])
+            ->with(['customer', 'costLines', 'revenueLines', 'payments', 'raOther:id,gio_xe_ra'])
             ->orderBy('id')
             ->get()
             ->map(fn ($s) => $this->shipmentToArray($s))
@@ -201,7 +201,7 @@ trait HandlesShipments
             $list->orderBy('id', 'desc');   // mặc định: lô MỚI NHẬP lên đầu (id giảm dần)
         }
 
-        $list->with(['customer', 'costLines', 'revenueLines', 'payments']);
+        $list->with(['customer', 'costLines', 'revenueLines', 'payments', 'raOther:id,gio_xe_ra']);
         if (! $all) $list->forPage($page, $perPage);
         $data = $list->get()->map(fn ($s) => $this->shipmentToArray($s))->all();
 
@@ -696,7 +696,7 @@ trait HandlesShipments
         if (! $ids) return [];
 
         return TruckingShipment::whereIn('id', $ids)
-            ->with(['customer', 'costLines', 'revenueLines', 'payments'])
+            ->with(['customer', 'costLines', 'revenueLines', 'payments', 'raOther:id,gio_xe_ra'])
             ->get()
             ->map(fn ($s) => $this->shipmentToArray($s))
             ->all();
@@ -757,6 +757,12 @@ trait HandlesShipments
             'gioXeDen'     => $this->outDateTime($s->gio_xe_den),
             'gioXeRa'      => $this->outDateTime($s->gio_xe_ra),
             'gioXeRaXe'    => $this->outDateTime($s->gio_xe_ra_xe),   // giờ XE ra (khi không kéo cont) — cột riêng
+            // Giờ xe ra HIỆU LỰC cho Free time theo ra_mode: self→cont này ra; none→xe (đầu kéo) ra; other→cont KHÁC thực sự ra.
+            'gioXeRaEff'   => $this->outDateTime(match ($s->ra_mode ?? 'self') {
+                'none'  => $s->gio_xe_ra_xe,
+                'other' => $s->raOther?->gio_xe_ra,
+                default => $s->gio_xe_ra,
+            }),
             'cost'         => [
                 'items' => $s->costLines->map(fn ($c) => [
                     'id'       => $c->id,

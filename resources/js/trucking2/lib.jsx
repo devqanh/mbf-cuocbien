@@ -513,19 +513,26 @@ function freeTimeThresholdFor(dRa, thresholdH, rules) {
   }
   return def;
 }
+// Giờ XE RA hiệu lực cho Free time theo ra_mode (follow theo XE đó ra):
+//  self  → Giờ xe ra (của cont)           gioXeRa
+//  none  → Giờ xe ra (của XE — đầu kéo)    gioXeRaXe
+//  other → giờ ra của cont KHÁC thực sự ra (mục "Giờ ra & biển số"): raOtherGioXeRa (popup, live) | gioXeRaEff (list, từ backend)
+function freeTimeRaOf(s) {
+  if (!s) return "";
+  const mode = s.raMode || "self";
+  if (mode === "none")  return s.gioXeRaXe || "";
+  if (mode === "other") return s.raOtherGioXeRa || s.gioXeRaEff || "";
+  return s.gioXeRa || "";
+}
 function calcFreeTime(s, thresholdH, rules) {
-  const den = s && s.gioXeDen, duKien = s && s.gioDenDuKien, ra = s && s.gioXeRa;
-  if (!ra || (!den && !duKien)) return null;
-  const dRa = new Date(ra);
-  let start, basis;
-  if (den && duKien) {
-    const dDen = new Date(den), dDk = new Date(duKien);
-    if (dDen > dDk) { start = dDen; basis = "Giờ xe đến"; } else { start = dDk; basis = "Giờ đến kế hoạch"; }
-  } else { start = new Date(den || duKien); basis = den ? "Giờ xe đến" : "Giờ đến kế hoạch"; }
-  if (isNaN(dRa.getTime()) || isNaN(start.getTime())) return null;
-  const hours = (dRa - start) / 3600000;
-  const th = freeTimeThresholdFor(dRa, thresholdH, rules);   // ngưỡng theo NGÀY cont ra
-  return { hours, connect: hours > th, threshold: th, basis };
+  const den = s && s.gioXeDen;
+  const ra = freeTimeRaOf(s);
+  if (!ra || !den) return null;
+  const dRa = new Date(ra), dDen = new Date(den);
+  if (isNaN(dRa.getTime()) || isNaN(dDen.getTime())) return null;
+  const hours = (dRa - dDen) / 3600000;            // Free time = Giờ xe ra − Giờ xe đến
+  const th = freeTimeThresholdFor(dRa, thresholdH, rules);   // ngưỡng theo NGÀY xe ra
+  return { hours, connect: hours > th, threshold: th, basis: "Giờ xe đến" };
 }
 const fmtHours = (h) => {
   if (h == null) return "—";

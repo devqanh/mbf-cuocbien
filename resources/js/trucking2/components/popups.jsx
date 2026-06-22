@@ -463,7 +463,7 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
         const ft = calcFreeTime(ship, (cfg.freeTimeHours == null ? "4" : cfg.freeTimeHours), cfg.freeTimeRules);
         return (
           <Section title="Free time & kết nối">
-            <div style={{ fontSize: 11.5, color: "var(--ink-4)", padding: "2px 0 6px" }}>Free time = Giờ xe ra − (Giờ đến kế hoạch hoặc Giờ xe đến, lấy giờ muộn hơn). Ngưỡng <b style={{ color: "var(--ink-3)" }}>{ft ? ft.threshold : (cfg.freeTimeHours || 4)}h</b> chỉnh trong Cấu hình. Có thể để trống nếu chưa có giờ.</div>
+            <div style={{ fontSize: 11.5, color: "var(--ink-4)", padding: "2px 0 6px", lineHeight: 1.5 }}>Free time = <b style={{ color: "var(--ink-3)" }}>Giờ xe ra − Giờ xe đến</b> (follow theo xe ra). Giờ xe ra lấy theo lựa chọn dưới: <b>chính cont này</b> → Giờ xe ra (của cont); <b>cont khác ra</b> → giờ ra cont kia; <b>không kéo cont</b> → Giờ xe ra (của XE). Ngưỡng <b style={{ color: "var(--ink-3)" }}>{ft ? ft.threshold : (cfg.freeTimeHours || 4)}h</b> chỉnh trong Cấu hình. <span style={{ color: "var(--ink-4)" }}>(Giờ đến kế hoạch chỉ để theo dõi kế hoạch, KHÔNG tính free time.)</span></div>
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr", gap: 12, padding: "4px 0 6px" }}>
               <Field label="Giờ đến kế hoạch"><DTField value={ship.gioDenDuKien} onChange={(x) => set({ gioDenDuKien: x })} /></Field>
               <Field label="Giờ xe đến"><DTField value={ship.gioXeDen} onChange={(x) => set({ gioXeDen: x })} /></Field>

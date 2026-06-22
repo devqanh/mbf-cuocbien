@@ -54,6 +54,12 @@ class TruckingShipment extends Model
         return $this->belongsTo(TruckingCustomer::class, 'customer_id');
     }
 
+    /** Lô "cont khác ra" (ra_mode=other) trỏ tới: cont thực sự rời đi — dùng giờ xe ra của nó cho Free time. */
+    public function raOther(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'ra_other_id');
+    }
+
     public function costLines(): HasMany
     {
         return $this->hasMany(TruckingCostLine::class, 'shipment_id')->orderBy('sort');
