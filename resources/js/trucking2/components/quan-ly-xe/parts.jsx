@@ -141,12 +141,23 @@ const PAY_METHODS = ["Chuyển khoản", "Tiền mặt", "Khác"];
 /* Modal DUYỆT THANH TOÁN — kế toán điền thông tin rồi mới duyệt */
 function PayModal({ row, onConfirm, onClose }) {
   const { useState } = React;
-  const [d, setD] = useState({ paidDate: row.paidDate || today10(), paidMethod: row.paidMethod || "Chuyển khoản", paidRef: row.paidRef || "", paidNote: row.paidNote || "" });
+  // amount = số THỰC TẾ chi (mặc định = số hiện có, vốn = dự kiến nếu phiếu từ yêu cầu chi). estAmount = dự kiến lái xe gửi.
+  const [d, setD] = useState({ amount: row.amount || "", paidDate: row.paidDate || today10(), paidMethod: row.paidMethod || "Chuyển khoản", paidRef: row.paidRef || "", paidNote: row.paidNote || "" });
   const set = (np) => setD((x) => ({ ...x, ...np }));
+  const [err, setErr] = useState("");
+  const confirm = () => { if (toNum(d.amount) <= 0) return setErr("Vui lòng nhập số tiền thực tế (lớn hơn 0)."); setErr(""); onConfirm(d); };
   return (
-    <Modal title="Duyệt thanh toán" subtitle={`${row.name || "(phiếu chi)"}${row.invoiceNo ? " · # " + row.invoiceNo : ""} · ${fmtVND(toNum(row.amount))}`} width={560} icon={<I.check />} onClose={onClose}
-      footer={<div style={{ display: "flex", justifyContent: "flex-end", gap: 10, width: "100%" }}><Btn onClick={onClose}>Hủy</Btn><Btn variant="primary" onClick={() => onConfirm(d)}>Xác nhận đã thanh toán</Btn></div>}>
+    <Modal title="Duyệt thanh toán" subtitle={`${row.name || "(phiếu chi)"}${row.invoiceNo ? " · # " + row.invoiceNo : ""}`} width={560} icon={<I.check />} onClose={onClose}
+      footer={<div style={{ display: "flex", justifyContent: "flex-end", gap: 10, width: "100%" }}><Btn onClick={onClose}>Hủy</Btn><Btn variant="primary" onClick={confirm}>Xác nhận đã thanh toán</Btn></div>}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: "6px 0 2px" }}>
+        {err && <div style={{ gridColumn: "1 / -1", display: "flex", gap: 7, alignItems: "center", fontSize: 12.5, color: "#b42318", background: "#fdecec", border: "1px solid #f3c9c9", borderRadius: 9, padding: "8px 12px" }}><i className="bi bi-exclamation-triangle-fill" /> {err}</div>}
+        <div style={{ gridColumn: "1 / -1" }}>{lbl("Số tiền thực tế (chi)")}
+          <Money value={d.amount} onChange={(x) => set({ amount: x })} dim />
+          {row.estAmount != null && <div style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 5, fontSize: 11.5, fontWeight: 600, color: "var(--accent)" }}>
+            <i className="bi bi-receipt" /> Dự kiến lái xe gửi: <span className="tnum">{fmtVND(row.estAmount)}</span>
+            {toNum(d.amount) !== toNum(row.estAmount) && <button type="button" onClick={() => set({ amount: row.estAmount })} style={{ border: "none", background: "transparent", color: "var(--ink-4)", cursor: "pointer", fontSize: 11, textDecoration: "underline", padding: 0 }}>dùng số này</button>}
+          </div>}
+        </div>
         <div>{lbl("Ngày thanh toán")}<DateField value={d.paidDate} onChange={(x) => set({ paidDate: x })} /></div>
         <div>{lbl("Hình thức")}
           <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 8, padding: 2, flexWrap: "wrap" }}>
