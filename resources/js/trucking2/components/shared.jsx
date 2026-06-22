@@ -266,16 +266,16 @@ function CostLineRows({ rows = [], onChange, options = [], onCreate, payers = []
   const isMobile = useIsMobile();
   const set = (id, np) => onChange(rows.map((e) => (e.id === id ? { ...e, ...np } : e)));
   const pickItem = (e, item) => set(e.id, { item, amount: toNum(e.amount) ? e.amount : (prices[item] || "") });
-  const add = () => onChange([...rows, { id: Date.now() + Math.random(), item: "", amount: "", payer: "", date: "", billable: false }]);
+  const add = () => onChange([...rows, { id: Date.now() + Math.random(), item: "", amount: "", invoiceNo: "", payer: "", date: "", billable: false }]);
   const del = (id) => onChange(rows.filter((e) => e.id !== id));
-  const cols = "1fr 124px 118px 124px 92px 44px 28px";
+  const cols = "1fr 116px 124px 116px 118px 80px 44px 28px";
   return (
     <div style={{ padding: "4px 0 0" }}>
       <div style={{ overflowX: isMobile ? "auto" : "visible", WebkitOverflowScrolling: "touch" }}>
-      <div style={{ minWidth: isMobile ? 660 : undefined }}>
+      <div style={{ minWidth: isMobile ? 780 : undefined }}>
       <div style={{ display: "grid", gridTemplateColumns: cols, gap: 9, padding: "8px 0 5px" }}>
-        {["Khoản chi phí", "Số tiền", "Người chi", "Ngày hóa đơn", "Chi hộ", "Theo dõi", ""].map((h, i) => (
-          <div key={i} style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-4)", textTransform: "uppercase", letterSpacing: "0.04em", textAlign: i === 1 ? "right" : (i === 4 || i === 5) ? "center" : "left" }}>{h}</div>
+        {["Khoản chi phí", "Số tiền", "Số hóa đơn", "Người chi", "Ngày hóa đơn", "Chi hộ", "Theo dõi", ""].map((h, i) => (
+          <div key={i} style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-4)", textTransform: "uppercase", letterSpacing: "0.04em", textAlign: i === 1 ? "right" : (i === 5 || i === 6) ? "center" : "left" }}>{h}</div>
         ))}
       </div>
       {rows.map((e) => {
@@ -288,6 +288,7 @@ function CostLineRows({ rows = [], onChange, options = [], onCreate, payers = []
             ? <div title="Khoản liên kết từ Thông tin lô — sửa số tiền được, không xóa được ở đây (gỡ ở Thông tin lô)" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "var(--ink-2)", padding: "0 4px", minWidth: 0 }}><span style={{ color: "var(--accent)", flexShrink: 0 }}><I.link /></span><span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.item || "Cước xe ngoài"}</span></div>
             : <Combo value={e.item} onChange={(x) => pickItem(e, x)} options={options} onCreate={onCreate} placeholder="Chọn khoản chi phí…" small />}
           <Money value={e.amount} onChange={(x) => set(e.id, { amount: x })} dim />
+          <Txt value={e.invoiceNo} onChange={(x) => set(e.id, { invoiceNo: x })} placeholder="Số HĐ…" />
           <Combo value={e.payer} onChange={(x) => set(e.id, { payer: x })} options={payers} onCreate={onCreatePayer} placeholder="Người chi…" small />
           <DateField value={e.date} onChange={(x) => set(e.id, { date: x })} />
           <div style={{ display: "flex", justifyContent: "center" }}><ChkBox checked={!!e.billable} onChange={(v) => set(e.id, { billable: v })} /></div>

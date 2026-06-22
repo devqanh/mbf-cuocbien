@@ -811,6 +811,7 @@ trait HandlesShipments
                     'id'       => $c->id,
                     'item'     => $c->item ?? '',
                     'amount'   => $this->outMoney($c->amount),
+                    'invoiceNo' => $c->invoice_no ?? '',
                     'payer'    => $c->payer ?? '',
                     'date'     => $this->outDate($c->date),
                     'billable' => (bool) $c->billable,
@@ -941,6 +942,7 @@ trait HandlesShipments
                 $s->costLines()->create([
                     'item'     => $this->str($c['item'] ?? null),
                     'amount'   => $this->inMoney($c['amount'] ?? null),
+                    'invoice_no' => $this->str($c['invoiceNo'] ?? null),
                     'payer'    => $this->str($c['payer'] ?? null),
                     'date'     => $this->inDate($c['date'] ?? null),
                     'billable' => ! empty($c['billable']),
