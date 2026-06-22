@@ -557,6 +557,13 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
           </Section>
         );
       })()}
+
+      <Section title="Ghi chú lô hàng">
+        <textarea value={ship.infoNote || ""} onChange={(e) => set({ infoNote: e.target.value })} rows={3} placeholder="Ghi chú tự do cho lô hàng…"
+          style={{ width: "100%", padding: "9px 11px", fontSize: 13.5, border: "1px solid var(--line)", borderRadius: 9, outline: "none", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5, marginTop: 4 }}
+          onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.boxShadow = "0 0 0 3px var(--accent-weak)"; }}
+          onBlur={(e) => { e.target.style.borderColor = "var(--line)"; e.target.style.boxShadow = "none"; }} />
+      </Section>
     </Modal>
   );
 }
