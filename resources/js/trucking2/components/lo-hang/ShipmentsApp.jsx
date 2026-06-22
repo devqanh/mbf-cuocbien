@@ -1,6 +1,6 @@
 import React from "react";
 const { useState, useMemo, useEffect, useRef } = React;
-import { I, fmtVND, fmtShort, fmtDate, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, Combo, useIsMobile, DateField } from "@trk/lib.jsx";
+import { I, fmtVND, fmtShort, fmtDate, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, MultiCombo, useIsMobile, DateField } from "@trk/lib.jsx";
 import { CostPopup, InfoPopup, colorHex } from "@trk/pop.jsx";
 import { SortBtn, CellBtn, Badge, EditCell, TH, TD } from "@trk/ui.jsx";
 import { loCountOf, parseImportRows, buildTemplateWb } from "./excel.js";
@@ -41,7 +41,7 @@ function ShipmentsApp() {
   const [filter, setFilter] = useState("all");
   // Bộ lọc theo "follow": 'all' | 'any' | 'missing' | '#hex' (lọc theo màu cụ thể)
   const [followFilter, setFollowFilter] = useState("all");
-  const [toLoc, setToLoc] = useState("");   // lọc theo NƠI HẠ (mã to_loc)
+  const [toLocSel, setToLocSel] = useState([]);   // lọc theo NƠI HẠ — CHỌN NHIỀU (OR)
   const [toLocs, setToLocs] = useState(P0.toLocs || []);   // danh sách nơi hạ thực có (options)
   const [sort, setSort] = useState({ key: "default", dir: 1 });
   const [showExport, setShowExport] = useState(false);
@@ -66,7 +66,7 @@ function ShipmentsApp() {
     if (qDeb.trim()) p.set("q", qDeb.trim());
     if (filter !== "all") p.set("filter", filter);
     if (followFilter !== "all") p.set("follow", followFilter);
-    if (toLoc) p.set("toLoc", toLoc);
+    (toLocSel || []).forEach((v) => p.append("toLoc[]", v));   // chọn nhiều nơi hạ → OR
     if (sort.key !== "default") { p.set("sort", sort.key); p.set("dir", String(sort.dir)); }
     return p;
   };
@@ -104,7 +104,7 @@ function ShipmentsApp() {
   useEffect(() => {
     if (skipFirst.current) { skipFirst.current = false; return; }
     load();
-  }, [page, qDeb, filter, followFilter, toLoc, sort]);
+  }, [page, qDeb, filter, followFilter, toLocSel, sort]);
   // Mở từ Lộ trình/Bảng kê (?q/?open): boot là danh sách CHƯA lọc → tải lại theo q ngay + tự mở popup.
   useEffect(() => { if (_initSp.get("q") || _initSp.get("open")) { skipFirst.current = false; load(); } }, []);
 
@@ -343,11 +343,7 @@ function ShipmentsApp() {
   const toggleSort = (key) => { setSort((s) => s.key === key ? { key, dir: -s.dir } : { key, dir: 1 }); setPage(1); };
   const setFilterP = (f) => { setFilter(f); setPage(1); };
   const setFollowP = (f) => { setFollowFilter(f); setPage(1); };
-  const setToLocP = (v) => { setToLoc(v); setPage(1); };
-  // Options nơi hạ: mã to_loc THỰC CÓ (backend trả `toLocs`); kèm tên nếu cfg đã nạp (mở popup), không thì hiện mã.
-  const codeName = useRef({});
-  if (cfg.locationCode) { const m = {}; Object.entries(cfg.locationCode).forEach(([n, c]) => { if (c) m[c] = n; }); codeName.current = m; }
-  const toLocOptions = (toLocs || []).map((c) => ({ value: c, label: codeName.current[c] ? `${codeName.current[c]} — ${c}` : c }));
+  const setToLocP = (arr) => { setToLocSel(arr); setPage(1); };   // chọn nhiều nơi hạ (OR)
   const minW = 880;
   // Dãy số trang có dấu "…" — kiểu phân trang gọn (luôn hiện trang đầu/cuối + lân cận trang hiện tại)
   const pageList = (cur, last) => {
@@ -448,11 +444,11 @@ function ShipmentsApp() {
             );
           })}
         </div>
-        {/* Lọc theo NƠI HẠ (to_loc) */}
+        {/* Lọc theo NƠI HẠ (to_loc) — chọn NHIỀU = OR */}
         <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           <span style={{ fontSize: 12.5, color: "var(--ink-3)", fontWeight: 500, whiteSpace: "nowrap" }}><i className="bi bi-geo-alt" /> Nơi hạ:</span>
-          <div style={{ width: isMobile ? 160 : 210 }}>
-            <Combo value={toLoc} onChange={setToLocP} options={toLocOptions} placeholder="Tất cả nơi hạ" small strict clearable />
+          <div style={{ width: isMobile ? 200 : 280 }}>
+            <MultiCombo values={toLocSel} onChange={setToLocP} options={toLocs} placeholder="Tất cả nơi hạ" strict max={50} />
           </div>
         </div>
         {/* Theo dõi (follow color) — chỉ hiện khi có ít nhất 1 lô gắn follow */}

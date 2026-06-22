@@ -122,7 +122,8 @@ trait HandlesShipments
         $sortKey = in_array($sortKey, ['default', 'customer', 'cost'], true) ? $sortKey : 'default';
         $dir     = ((int) ($p['dir'] ?? 1)) < 0 ? 'desc' : 'asc';
         $all     = ! empty($p['all']);
-        $toLoc   = trim((string) ($p['toLoc'] ?? ''));   // lọc theo NƠI HẠ (to_loc — ký hiệu)
+        // Lọc theo NƠI HẠ (to_loc) — CHỌN NHIỀU (mảng) → OR (whereIn). Nhận cả string đơn lẫn mảng.
+        $toLocSel = array_values(array_filter(array_map(fn ($x) => trim((string) $x), (array) ($p['toLoc'] ?? [])), fn ($x) => $x !== ''));
 
         // Khoản chi phí "theo dõi" (có màu trong danh mục) → id + tên + hex.
         // Lọc theo cost_item_id (FK ổn định) thay vì item text (đổi tên sẽ sót dòng cũ).
@@ -145,10 +146,10 @@ trait HandlesShipments
             });
         };
         // Builder lô của tập "đã tìm" (chỉ áp q) — dùng cho aggregate.
-        $searched = function () use ($sheet, $applySearch, $toLoc) {
+        $searched = function () use ($sheet, $applySearch, $toLocSel) {
             $b = TruckingShipment::ofSheet($sheet);
             $applySearch($b);
-            if ($toLoc !== '') $b->where('to_loc', $toLoc);   // lọc nơi hạ (áp cho cả đếm + danh sách)
+            if ($toLocSel) $b->whereIn('to_loc', $toLocSel);   // OR nhiều nơi hạ (áp cho cả đếm + danh sách)
             return $b;
         };
 
