@@ -47,6 +47,7 @@ class TruckingShipment extends Model
         'gio_xe_ra'       => 'datetime',
         'gio_xe_ra_xe'    => 'datetime',
         'vat_rate'        => 'decimal:2',
+        'tags'            => 'array',
     ];
 
     public function customer(): BelongsTo

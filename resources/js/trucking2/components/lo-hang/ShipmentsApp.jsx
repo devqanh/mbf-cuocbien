@@ -48,6 +48,8 @@ function ShipmentsApp() {
   const [fromMode, setFromMode] = useState("exclude");     // GỒM (include) | LOẠI TRỪ (exclude) nơi lấy
   const [fromLocs, setFromLocs] = useState(P0.fromLocs || []);
   const [denDate, setDenDate] = useState("");     // lọc theo Giờ đến kế hoạch (gio_den_du_kien) — chọn 1 NGÀY
+  const [tagSel, setTagSel] = useState([]);        // lọc theo NHÃN — chọn nhiều (OR)
+  const [tagOptions, setTagOptions] = useState(P0.tagOptions || []);
   const [sort, setSort] = useState({ key: "default", dir: 1 });
   const [showExport, setShowExport] = useState(false);
   const [exporting, setExporting] = useState(false);   // chống bấm Xuất Excel nhiều lần
@@ -76,6 +78,7 @@ function ShipmentsApp() {
     (fromLocSel || []).forEach((v) => p.append("fromLoc[]", v));
     if (fromLocSel && fromLocSel.length) p.set("fromMode", fromMode);
     if (denDate) p.set("denDate", denDate);
+    (tagSel || []).forEach((v) => p.append("tags[]", v));
     if (sort.key !== "default") { p.set("sort", sort.key); p.set("dir", String(sort.dir)); }
     return p;
   };
@@ -94,6 +97,7 @@ function ShipmentsApp() {
         setFollowStats(r.followStats || { anyShips: 0, missShips: 0, byColor: [] });
         if (r.toLocs) setToLocs(r.toLocs);
         if (r.fromLocs) setFromLocs(r.fromLocs);
+        if (r.tagOptions) setTagOptions(r.tagOptions);
         if (r.sibs) setSibs(r.sibs);
         if (r.page !== pg) setPage(r.page);
         // Tự mở popup lô (mở từ Lộ trình/Bảng kê với ?open) — chỉ 1 lần, dòng khớp cont (hoặc dòng đầu).
@@ -114,7 +118,7 @@ function ShipmentsApp() {
   useEffect(() => {
     if (skipFirst.current) { skipFirst.current = false; return; }
     load();
-  }, [page, qDeb, filter, followFilter, toLocSel, toMode, fromLocSel, fromMode, denDate, sort]);
+  }, [page, qDeb, filter, followFilter, toLocSel, toMode, fromLocSel, fromMode, denDate, tagSel, sort]);
   // Mở từ Lộ trình/Bảng kê (?q/?open): boot là danh sách CHƯA lọc → tải lại theo q ngay + tự mở popup.
   useEffect(() => { if (_initSp.get("q") || _initSp.get("open")) { skipFirst.current = false; load(); } }, []);
 
@@ -355,6 +359,7 @@ function ShipmentsApp() {
   const setFollowP = (f) => { setFollowFilter(f); setPage(1); };
   const setToLocP = (arr) => { setToLocSel(arr); setPage(1); };   // chọn nhiều ký hiệu nơi hạ (OR)
   const setDenDateP = (v) => { setDenDate(v); setPage(1); };      // lọc theo Giờ đến kế hoạch (1 ngày)
+  const setTagP = (arr) => { setTagSel(arr); setPage(1); };       // lọc theo nhãn
   const setToModeP = (m) => { setToMode(m); setPage(1); };
   const setFromLocP = (arr) => { setFromLocSel(arr); setPage(1); };
   const setFromModeP = (m) => { setFromMode(m); setPage(1); };
@@ -492,6 +497,13 @@ function ShipmentsApp() {
           <span style={{ fontSize: 12.5, color: "var(--ink-3)", fontWeight: 500, whiteSpace: "nowrap" }}><i className="bi bi-calendar-event" /> Ngày đóng hàng:</span>
           <div style={{ width: 140 }}><DateField value={denDate} onChange={setDenDateP} placeholder="Chọn ngày" /></div>
           {denDate && <button type="button" onClick={() => setDenDateP("")} title="Bỏ lọc ngày" style={{ border: "none", background: "transparent", color: "var(--ink-4)", cursor: "pointer", padding: 2 }}><i className="bi bi-x-circle" /></button>}
+        </div>
+        {/* Lọc theo NHÃN (tags) — chọn nhiều = OR */}
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 12.5, color: "var(--ink-3)", fontWeight: 500, whiteSpace: "nowrap" }}><i className="bi bi-tags" /> Nhãn:</span>
+          <div style={{ width: isMobile ? 180 : 220 }}>
+            <MultiCombo values={tagSel} onChange={setTagP} options={tagOptions} placeholder="Tất cả nhãn" strict max={50} />
+          </div>
         </div>
         {/* Theo dõi (follow color) — chỉ hiện khi có ít nhất 1 lô gắn follow */}
         {followStats.anyShips > 0 && (() => {
@@ -785,7 +797,7 @@ function ShipmentsApp() {
       </div>
 
       {active && modal.type === "cost" && <CostPopup ship={active} patch={(np) => patch(active.id, np)} onSave={() => commitDirty()} isDirty={isDirty} onClose={() => setModal(null)} cfg={cfg} addCfg={addCfg} />}
-      {active && modal.type === "info" && <InfoPopup ship={active} isHph={isHph} patch={(np) => patch(active.id, np)} patchOther={(id, np) => patch(id, np)} onSave={() => commitDirty()} isDirty={isDirty} siblings={sibs.filter((x) => x.id !== active.id)} onClose={closeInfo} onDelete={active._new ? null : () => delShip(active.id)} canDelete={T.canDelete} cfg={cfg} addCfg={addCfg} />}
+      {active && modal.type === "info" && <InfoPopup ship={active} isHph={isHph} patch={(np) => patch(active.id, np)} patchOther={(id, np) => patch(id, np)} onSave={() => commitDirty()} isDirty={isDirty} siblings={sibs.filter((x) => x.id !== active.id)} onClose={closeInfo} onDelete={active._new ? null : () => delShip(active.id)} canDelete={T.canDelete} cfg={cfg} addCfg={addCfg} tagOptions={tagOptions} />}
 
       {showImport && (
         <Modal title="Import lô hàng từ Excel" subtitle="Cột có (*) là BẮT BUỘC: Khách hàng, Số booking, Số lượng cont · Nơi lấy/hạ + Kho không bắt buộc nhưng nhập sai danh mục sẽ báo lỗi · file mẫu có sheet Hướng dẫn + danh mục hợp lệ · kiểm tra trước, 1 lỗi là không import gì cả" width={720} icon={<I.truck />}

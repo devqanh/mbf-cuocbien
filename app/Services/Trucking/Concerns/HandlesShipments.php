@@ -151,6 +151,14 @@ trait HandlesShipments
         // Lọc theo GIỜ ĐẾN KẾ HOẠCH (gio_den_du_kien) — chọn 1 NGÀY.
         $denDate = trim((string) ($p['denDate'] ?? ''));
 
+        // Lọc theo NHÃN (tags) — chọn nhiều = OR. Danh sách nhãn thực có để đổ vào bộ lọc.
+        $tagSel = array_values(array_filter(array_map(fn ($x) => trim((string) $x), (array) ($p['tags'] ?? [])), fn ($x) => $x !== ''));
+        $tagOptions = [];
+        foreach (TruckingShipment::ofSheet($sheet)->whereNotNull('tags')->pluck('tags') as $arr) {
+            foreach ((array) $arr as $t) { $t = trim((string) $t); if ($t !== '' && ! in_array($t, $tagOptions, true)) $tagOptions[] = $t; }
+        }
+        sort($tagOptions);
+
         // Khoản chi phí "theo dõi" (có màu trong danh mục) → id + tên + hex.
         // Lọc theo cost_item_id (FK ổn định) thay vì item text (đổi tên sẽ sót dòng cũ).
         $followItems = TruckingCostItem::whereNotNull('color')->where('color', '!=', '')->get(['id', 'name', 'color']);
@@ -181,12 +189,13 @@ trait HandlesShipments
                 $b->whereIn($col, $raw ?: ['\\0__none__']);
             }
         };
-        $searched = function () use ($sheet, $applySearch, $applyLoc, $toLocSel, $toLocRaw, $toMode, $fromSel, $fromRaw, $fromMode, $denDate) {
+        $searched = function () use ($sheet, $applySearch, $applyLoc, $toLocSel, $toLocRaw, $toMode, $fromSel, $fromRaw, $fromMode, $denDate, $tagSel) {
             $b = TruckingShipment::ofSheet($sheet);
             $applySearch($b);
             $applyLoc($b, 'to_loc', $toLocSel, $toLocRaw, $toMode);
             $applyLoc($b, 'from_loc', $fromSel, $fromRaw, $fromMode);
             if ($denDate !== '') $b->whereDate('gio_den_du_kien', $denDate);       // lô có Giờ đến KH = ngày chọn
+            if ($tagSel) $b->where(function ($w) use ($tagSel) { foreach ($tagSel as $t) $w->orWhereJsonContains('tags', $t); });   // OR nhiều nhãn
             return $b;
         };
 
@@ -259,6 +268,7 @@ trait HandlesShipments
             // Danh sách KÝ HIỆU nơi hạ / nơi lấy thực có để đổ vào bộ lọc — gom theo ký hiệu, ổn định.
             'toLocs'       => $toLocCodes,
             'fromLocs'     => $fromCodes,
+            'tagOptions'   => $tagOptions,
         ];
     }
 
@@ -796,6 +806,7 @@ trait HandlesShipments
             'sailDate'     => $this->outDate($s->sail_date),
             'cutOff'       => $s->cut_off ?? '',
             'infoNote'     => $s->info_note ?? '',
+            'tags'         => is_array($s->tags) ? array_values($s->tags) : [],
             'contDen'      => $this->outDate($s->cont_den),
             'contRa'       => $this->outDate($s->cont_ra),
             'gioDenDuKien' => $this->outDateTime($s->gio_den_du_kien),
@@ -909,6 +920,12 @@ trait HandlesShipments
             ];
             foreach ($cols as $key => [$col, $val]) {
                 if ($apply($key)) $s->{$col} = $val;
+            }
+            // Nhãn (tags) — mảng chuỗi, chuẩn hóa: trim + bỏ rỗng + bỏ trùng (giữ thứ tự).
+            if ($apply('tags')) {
+                $tags = [];
+                foreach ((array) ($data['tags'] ?? []) as $t) { $t = trim((string) $t); if ($t !== '' && ! in_array($t, $tags, true)) $tags[] = $t; }
+                $s->tags = $tags;
             }
             // Đăng ký KÝ HIỆU địa điểm mới gõ tay vào danh mục — bảng kê khớp giá qua codeMap
             // (port từ registerLocationCode dùng cho import bảng giá). Idempotent: đã có → no-op.

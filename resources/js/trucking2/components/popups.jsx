@@ -258,7 +258,7 @@ function RevenuePopupICD({ ship, patch, onSave, isDirty, onClose, cfg = {}, addC
 
 /* ===================== INFO EDIT POPUP (khách / cont / tuyến / lịch) ===================== */
 
-function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], onClose, onDelete, canDelete, isHph, cfg = {}, addCfg }) {
+function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], onClose, onDelete, canDelete, isHph, cfg = {}, addCfg, tagOptions = [] }) {
   const isMobile = useIsMobile();
   const set = (np) => patch(np);
   const add = (k, v) => addCfg && addCfg(k, v);
@@ -558,9 +558,13 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
         );
       })()}
 
-      <Section title="Ghi chú lô hàng">
+      <Section title="Nhãn & ghi chú">
+        <div style={{ padding: "4px 0 2px" }}>
+          <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>Nhãn <span style={{ color: "var(--ink-4)", fontWeight: 400 }}>(chọn hoặc gõ tạo mới, chọn nhiều)</span></div>
+          <MultiCombo values={ship.tags || []} onChange={(arr) => set({ tags: arr })} options={tagOptions} placeholder="Thêm nhãn…" max={20} />
+        </div>
         <textarea value={ship.infoNote || ""} onChange={(e) => set({ infoNote: e.target.value })} rows={3} placeholder="Ghi chú tự do cho lô hàng…"
-          style={{ width: "100%", padding: "9px 11px", fontSize: 13.5, border: "1px solid var(--line)", borderRadius: 9, outline: "none", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5, marginTop: 4 }}
+          style={{ width: "100%", padding: "9px 11px", fontSize: 13.5, border: "1px solid var(--line)", borderRadius: 9, outline: "none", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5, marginTop: 10 }}
           onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.boxShadow = "0 0 0 3px var(--accent-weak)"; }}
           onBlur={(e) => { e.target.style.borderColor = "var(--line)"; e.target.style.boxShadow = "none"; }} />
       </Section>
