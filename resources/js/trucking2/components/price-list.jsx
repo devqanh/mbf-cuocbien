@@ -106,18 +106,21 @@ function PriceList({ rows = [], onChange, onImported, cfg = {}, customer }) {
     } catch (err) { setBusy(false); setMsg("Xóa lỗi kết nối."); }
   };
 
-  // ---- top group = Địa điểm (location) ; each loc-group has its own conn (Connect/Disconnect) ----
-  const locKey = (r) => (r.loc || "") + "¦" + (r.conn || "Connect");
+  // ---- top group = Địa điểm (location) ; mỗi nhóm có conn riêng (Connect/Disconnect/Non) ----
+  // Nhóm MỚI mang `gid` riêng → sửa Địa điểm/conn KHÔNG bị gộp nhầm với nhóm sẵn có (cùng loc+conn).
+  // Dòng cũ (từ DB, chưa có gid) gom theo loc¦conn như cũ; lưu xong reload sẽ gom lại theo loc¦conn.
+  const locKey = (r) => (r.gid ? "g:" + r.gid : (r.loc || "") + "¦" + (r.conn || "Connect"));
   const locGroups = [];
-  rows.forEach((r) => { const k = locKey(r); if (!locGroups.some((g) => g.key === k)) locGroups.push({ key: k, loc: r.loc || "", conn: r.conn || "Connect" }); });
+  rows.forEach((r) => { const k = locKey(r); if (!locGroups.some((g) => g.key === k)) locGroups.push({ key: k, loc: r.loc || "", conn: r.conn || "Connect", gid: r.gid }); });
   if (!locGroups.length) locGroups.push({ key: "¦Connect", loc: "", conn: "Connect" });
   const setLocField = (oldKey, np) => onChange(rows.map((r) => (locKey(r) === oldKey ? { ...r, ...np } : r)));
-  const addLoc = () => onChange([...rows, { id: Date.now() + Math.random(), loc: "", conn: "Connect", kind: "Chưa phân nhóm", from: "", to1: "", to2: "", to3: "", to4: "", ...blank }]);
+  const newGid = () => "n" + Date.now() + Math.round(Math.random() * 1e6);
+  const addLoc = () => onChange([...rows, { id: Date.now() + Math.random(), gid: newGid(), loc: "", conn: "Connect", kind: "Chưa phân nhóm", from: "", to1: "", to2: "", to3: "", to4: "", ...blank }]);
   // kinds within a loc-group
   const kindsIn = (g) => { const out = []; rows.filter((r) => locKey(r) === g.key).forEach((r) => { const k = r.kind || "Chưa phân nhóm"; if (!out.includes(k)) out.push(k); }); return out.length ? out : ["Chưa phân nhóm"]; };
   const renameKind = (gKey, oldK, newK) => onChange(rows.map((r) => (locKey(r) === gKey && (r.kind || "Chưa phân nhóm") === oldK ? { ...r, kind: newK || "Chưa phân nhóm" } : r)));
-  const addRowTo = (g, k) => onChange([...rows, { id: Date.now() + Math.random(), loc: g.loc, conn: g.conn, kind: k, from: "", to1: "", to2: "", to3: "", to4: "", ...blank }]);
-  const addKind = (g) => { const ks = kindsIn(g); const base = "Nhóm mới"; let n = base, i = 1; while (ks.includes(n)) n = base + " " + (++i); onChange([...rows, { id: Date.now() + Math.random(), loc: g.loc, conn: g.conn, kind: n, from: "", to1: "", to2: "", to3: "", to4: "", ...blank }]); };
+  const addRowTo = (g, k) => onChange([...rows, { id: Date.now() + Math.random(), gid: g.gid, loc: g.loc, conn: g.conn, kind: k, from: "", to1: "", to2: "", to3: "", to4: "", ...blank }]);
+  const addKind = (g) => { const ks = kindsIn(g); const base = "Nhóm mới"; let n = base, i = 1; while (ks.includes(n)) n = base + " " + (++i); onChange([...rows, { id: Date.now() + Math.random(), gid: g.gid, loc: g.loc, conn: g.conn, kind: n, from: "", to1: "", to2: "", to3: "", to4: "", ...blank }]); };
   // Tra cứu: lọc dòng theo điểm hạ / FROM / TO / KIND
   const ql = (query || "").trim().toLowerCase();
   const matchRow = (r) => !ql || [r.from, r.to1, r.to2, r.to3, r.to4, r.kind, r.loc, r.conn].filter(Boolean).join(" ").toLowerCase().includes(ql);
