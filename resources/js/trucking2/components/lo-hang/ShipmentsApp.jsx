@@ -43,6 +43,7 @@ function ShipmentsApp() {
   const [followFilter, setFollowFilter] = useState("all");
   const [toLocSel, setToLocSel] = useState([]);   // lọc theo NƠI HẠ theo KÝ HIỆU — CHỌN NHIỀU (OR)
   const [toLocs, setToLocs] = useState(P0.toLocs || []);   // danh sách KÝ HIỆU nơi hạ thực có (options)
+  const [toMode, setToMode] = useState("include");         // GỒM | LOẠI TRỪ nơi hạ
   const [fromLocSel, setFromLocSel] = useState([]);        // lọc theo NƠI LẤY (ký hiệu) — chọn nhiều
   const [fromMode, setFromMode] = useState("exclude");     // GỒM (include) | LOẠI TRỪ (exclude) nơi lấy
   const [fromLocs, setFromLocs] = useState(P0.fromLocs || []);
@@ -71,6 +72,7 @@ function ShipmentsApp() {
     if (filter !== "all") p.set("filter", filter);
     if (followFilter !== "all") p.set("follow", followFilter);
     (toLocSel || []).forEach((v) => p.append("toLoc[]", v));   // chọn nhiều ký hiệu nơi hạ → OR
+    if (toLocSel && toLocSel.length) p.set("toMode", toMode);
     (fromLocSel || []).forEach((v) => p.append("fromLoc[]", v));
     if (fromLocSel && fromLocSel.length) p.set("fromMode", fromMode);
     if (denDate) p.set("denDate", denDate);
@@ -112,7 +114,7 @@ function ShipmentsApp() {
   useEffect(() => {
     if (skipFirst.current) { skipFirst.current = false; return; }
     load();
-  }, [page, qDeb, filter, followFilter, toLocSel, fromLocSel, fromMode, denDate, sort]);
+  }, [page, qDeb, filter, followFilter, toLocSel, toMode, fromLocSel, fromMode, denDate, sort]);
   // Mở từ Lộ trình/Bảng kê (?q/?open): boot là danh sách CHƯA lọc → tải lại theo q ngay + tự mở popup.
   useEffect(() => { if (_initSp.get("q") || _initSp.get("open")) { skipFirst.current = false; load(); } }, []);
 
@@ -353,8 +355,22 @@ function ShipmentsApp() {
   const setFollowP = (f) => { setFollowFilter(f); setPage(1); };
   const setToLocP = (arr) => { setToLocSel(arr); setPage(1); };   // chọn nhiều ký hiệu nơi hạ (OR)
   const setDenDateP = (v) => { setDenDate(v); setPage(1); };      // lọc theo Giờ đến kế hoạch (1 ngày)
+  const setToModeP = (m) => { setToMode(m); setPage(1); };
   const setFromLocP = (arr) => { setFromLocSel(arr); setPage(1); };
   const setFromModeP = (m) => { setFromMode(m); setPage(1); };
+  // Toggle Gồm/Loại trừ dùng chung cho Nơi hạ + Nơi lấy
+  const ModeToggle = ({ mode, onMode }) => (
+    <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 8, padding: 2 }}>
+      {[["exclude", "Loại trừ"], ["include", "Gồm"]].map(([m, label]) => {
+        const on = mode === m;
+        return (
+          <button key={m} type="button" onClick={() => onMode(m)} title={m === "exclude" ? "Bỏ các lô khớp ký hiệu chọn" : "Chỉ lô khớp ký hiệu chọn"}
+            style={{ border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 700, padding: "4px 9px", borderRadius: 6,
+              background: on ? "#fff" : "transparent", color: on ? (m === "exclude" ? "var(--danger)" : "var(--ink)") : "var(--ink-4)", boxShadow: on ? "0 1px 2px rgba(16,19,23,.12)" : "none" }}>{label}</button>
+        );
+      })}
+    </div>
+  );
   const minW = 880;
   // Dãy số trang có dấu "…" — kiểu phân trang gọn (luôn hiện trang đầu/cuối + lân cận trang hiện tại)
   const pageList = (cur, last) => {
@@ -455,27 +471,19 @@ function ShipmentsApp() {
             );
           })}
         </div>
-        {/* Lọc theo NƠI HẠ theo KÝ HIỆU (vd HPP) — chọn NHIỀU = OR */}
+        {/* Lọc theo NƠI HẠ theo KÝ HIỆU (vd HPP) — chế độ GỒM / LOẠI TRỪ */}
         <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 12.5, color: "var(--ink-3)", fontWeight: 500, whiteSpace: "nowrap" }}><i className="bi bi-geo-alt-fill" /> Nơi hạ (ký hiệu):</span>
-          <div style={{ width: isMobile ? 180 : 220 }}>
-            <MultiCombo values={toLocSel} onChange={setToLocP} options={toLocs} placeholder="Tất cả ký hiệu" strict max={50} />
+          <span style={{ fontSize: 12.5, color: "var(--ink-3)", fontWeight: 500, whiteSpace: "nowrap" }}><i className="bi bi-geo-alt-fill" /> Nơi hạ:</span>
+          <ModeToggle mode={toMode} onMode={setToModeP} />
+          <div style={{ width: isMobile ? 170 : 210 }}>
+            <MultiCombo values={toLocSel} onChange={setToLocP} options={toLocs} placeholder={toMode === "exclude" ? "Không trừ gì" : "Tất cả ký hiệu"} strict max={50} />
           </div>
         </div>
         {/* Lọc theo NƠI LẤY (ký hiệu) — chế độ GỒM / LOẠI TRỪ */}
         <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           <span style={{ fontSize: 12.5, color: "var(--ink-3)", fontWeight: 500, whiteSpace: "nowrap" }}><i className="bi bi-box-arrow-up-right" /> Nơi lấy:</span>
-          <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 8, padding: 2 }}>
-            {[["exclude", "Loại trừ"], ["include", "Gồm"]].map(([m, label]) => {
-              const on = fromMode === m;
-              return (
-                <button key={m} type="button" onClick={() => setFromModeP(m)} title={m === "exclude" ? "Bỏ các lô LẤY từ ký hiệu chọn" : "Chỉ lô LẤY từ ký hiệu chọn"}
-                  style={{ border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 700, padding: "4px 9px", borderRadius: 6,
-                    background: on ? "#fff" : "transparent", color: on ? (m === "exclude" ? "var(--danger)" : "var(--ink)") : "var(--ink-4)", boxShadow: on ? "0 1px 2px rgba(16,19,23,.12)" : "none" }}>{label}</button>
-              );
-            })}
-          </div>
-          <div style={{ width: isMobile ? 180 : 220 }}>
+          <ModeToggle mode={fromMode} onMode={setFromModeP} />
+          <div style={{ width: isMobile ? 170 : 210 }}>
             <MultiCombo values={fromLocSel} onChange={setFromLocP} options={fromLocs} placeholder={fromMode === "exclude" ? "Không trừ gì" : "Tất cả ký hiệu"} strict max={50} />
           </div>
         </div>

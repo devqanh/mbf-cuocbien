@@ -131,6 +131,7 @@ trait HandlesShipments
             $code = $codeMap[$normLoc($raw)] ?? $normLoc($raw);
             $rawByCode[$code][] = $raw;
         }
+        $toMode = (($p['toMode'] ?? 'include') === 'exclude') ? 'exclude' : 'include';   // Nơi hạ: GỒM/LOẠI TRỪ
         $toLocCodes = array_keys($rawByCode); sort($toLocCodes);
         $toLocRaw = [];   // ký hiệu đã chọn → các giá trị to_loc thực để whereIn
         foreach ($toLocSel as $code) foreach ($rawByCode[$code] ?? [$code] as $raw) $toLocRaw[] = $raw;
@@ -171,18 +172,20 @@ trait HandlesShipments
             });
         };
         // Builder lô của tập "đã tìm" (chỉ áp q) — dùng cho aggregate.
-        $searched = function () use ($sheet, $applySearch, $toLocSel, $toLocRaw, $fromSel, $fromRaw, $fromMode, $denDate) {
+        // Lọc địa điểm theo ký hiệu, có chế độ GỒM/LOẠI TRỪ. exclude giữ lô KHÔNG có địa điểm (orWhereNull).
+        $applyLoc = function ($b, $col, $sel, $raw, $mode) {
+            if (! $sel) return;
+            if ($mode === 'exclude') {
+                if ($raw) $b->where(fn ($w) => $w->whereNotIn($col, $raw)->orWhereNull($col));
+            } else {
+                $b->whereIn($col, $raw ?: ['\\0__none__']);
+            }
+        };
+        $searched = function () use ($sheet, $applySearch, $applyLoc, $toLocSel, $toLocRaw, $toMode, $fromSel, $fromRaw, $fromMode, $denDate) {
             $b = TruckingShipment::ofSheet($sheet);
             $applySearch($b);
-            if ($toLocSel) $b->whereIn('to_loc', $toLocRaw ?: ['\\0__none__']);   // OR nhiều ký hiệu nơi hạ (đếm + danh sách)
-            if ($fromSel) {
-                if ($fromMode === 'include') {
-                    $b->whereIn('from_loc', $fromRaw ?: ['\\0__none__']);          // GỒM: chỉ lấy từ các ký hiệu chọn
-                } elseif ($fromRaw) {
-                    // LOẠI TRỪ: bỏ lô lấy từ ký hiệu chọn (giữ cả lô không có nơi lấy).
-                    $b->where(fn ($w) => $w->whereNotIn('from_loc', $fromRaw)->orWhereNull('from_loc'));
-                }
-            }
+            $applyLoc($b, 'to_loc', $toLocSel, $toLocRaw, $toMode);
+            $applyLoc($b, 'from_loc', $fromSel, $fromRaw, $fromMode);
             if ($denDate !== '') $b->whereDate('gio_den_du_kien', $denDate);       // lô có Giờ đến KH = ngày chọn
             return $b;
         };
