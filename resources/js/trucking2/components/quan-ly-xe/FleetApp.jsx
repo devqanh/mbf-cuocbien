@@ -294,7 +294,7 @@ function FleetApp({ modeSwitch }) {
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
                     <thead><tr style={{ background: "#fafbfc" }}>
-                      {th("Biển số")}{th("Hạn đăng kiểm")}{th("Hạn bảo hiểm")}{th("Hồ sơ", "center")}{th("Khấu hao · Chi phí · Lượt dùng", "center")}{th("", "right")}
+                      {th("Biển số")}{th("Hạn đăng kiểm")}{th("Hạn bảo hiểm")}{th("Hồ sơ", "center")}{th("Khấu hao/tháng", "right")}{th("Khấu hao · Chi phí · Lượt dùng", "center")}{th("", "right")}
                     </tr></thead>
                     <tbody>
                       {list.map((v) => {
@@ -315,6 +315,11 @@ function FleetApp({ modeSwitch }) {
                             <td style={{ padding: "9px 12px", textAlign: "center" }} className="tnum">
                               {v.docCount > 0
                                 ? <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, color: "var(--ink-2)" }}><i className="bi bi-paperclip" />{v.docCount}</span>
+                                : <span style={{ fontSize: 12, color: "var(--ink-4)" }}>—</span>}
+                            </td>
+                            <td style={{ padding: "9px 12px", textAlign: "right" }} className="tnum">
+                              {(v.depMonthly > 0 || v.depOrig > 0)
+                                ? <div><div style={{ fontSize: 13.5, fontWeight: 700, color: "var(--ink-1)" }}>{fmtVND(v.depMonthly)}</div><div style={{ fontSize: 10.5, color: "var(--ink-4)" }}>còn {fmtVND(v.depRemain)}</div></div>
                                 : <span style={{ fontSize: 12, color: "var(--ink-4)" }}>—</span>}
                             </td>
                             <td style={{ padding: "9px 12px" }} className="tnum">

@@ -46,13 +46,16 @@ trait HandlesFleetAssets
     // QUẢN LÝ XE (xe MBF nội bộ)
     // ===================================================================
 
-    /** Danh sách xe MBF + đếm để hiện badge. */
+    /** Danh sách xe MBF + đếm để hiện badge + tóm tắt KHẤU HAO (tháng/đã KH đến nay/còn lại). */
     public function mbfVehicles(): array
     {
+        $nowIdx = (int) now()->format('Y') * 12 + ((int) now()->format('n') - 1);
         return TruckingVehicle::where('type', 'MBF')
             ->withCount(['vehicleUsages', 'vehicleCosts', 'vehicleDepreciations'])
-            ->orderBy('plate')->get()->map(function ($v) {
+            ->with(['vehicleDepreciations:id,vehicle_id,orig_price,start_date,months'])
+            ->orderBy('plate')->get()->map(function ($v) use ($nowIdx) {
                 $info = is_array($v->info) ? $v->info : [];
+                $dep = $this->depSummary($v->vehicleDepreciations, $nowIdx);   // khấu hao theo tháng đến nay
                 return [
                     'id'              => $v->id,
                     'hashid'          => Hashid::encode($v->id),
@@ -64,8 +67,30 @@ trait HandlesFleetAssets
                     'usageCount'      => (int) $v->vehicle_usages_count,
                     'costCount'       => (int) $v->vehicle_costs_count,
                     'depCount'        => (int) $v->vehicle_depreciations_count,
+                    'depMonthly'      => $dep['monthly'],   // khấu hao tháng hiện tại
+                    'depAccrued'      => $dep['accrued'],   // đã khấu hao đến nay
+                    'depRemain'       => $dep['remain'],    // giá trị còn lại
+                    'depOrig'         => $dep['orig'],      // tổng nguyên giá
                 ];
             })->all();
+    }
+
+    /** Tóm tắt khấu hao đều/tháng (CHỈ tính tới tháng hiện tại $nowIdx) cho 1 tập hạng mục. */
+    private function depSummary($deps, int $nowIdx): array
+    {
+        $orig = 0.0; $monthly = 0.0; $accrued = 0.0;
+        foreach ($deps as $d) {
+            $o = (float) $d->orig_price; $m = (int) $d->months;
+            if ($o <= 0 || $m <= 0 || ! $d->start_date) continue;
+            try { $c = \Carbon\Carbon::parse($d->start_date); } catch (\Throwable) { continue; }
+            $orig += $o;
+            $startIdx = (int) $c->format('Y') * 12 + ((int) $c->format('n') - 1);
+            $per = $o / $m;
+            $elapsed = max(0, min($m, $nowIdx - $startIdx + 1));   // số tháng đã khấu hao tới nay (gồm tháng này)
+            $accrued += $per * $elapsed;
+            if ($nowIdx >= $startIdx && $nowIdx <= $startIdx + $m - 1) $monthly += $per;   // tháng này còn khấu hao
+        }
+        return ['orig' => (int) round($orig), 'monthly' => (int) round($monthly), 'accrued' => (int) round($accrued), 'remain' => (int) round(max(0, $orig - $accrued))];
     }
 
     /**
