@@ -84,7 +84,7 @@
                     <li class="nav-item">
                         <a class="nav-link {{ request()->routeIs('trucking2.costManagement') ? 'active' : '' }}"
                            href="{{ route('trucking2.costManagement') }}">
-                            <i class="bi bi-receipt-cutoff"></i> Quản lý chi phí
+                            <i class="bi bi-receipt-cutoff"></i> Duyệt chi phí
                         </a>
                     </li>
                     @endcan
