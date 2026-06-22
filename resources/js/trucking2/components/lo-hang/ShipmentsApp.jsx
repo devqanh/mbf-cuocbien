@@ -456,7 +456,7 @@ function ShipmentsApp() {
         </div>
         {/* Lọc theo GIỜ ĐẾN KẾ HOẠCH (gio_den_du_kien) — chọn 1 ngày */}
         <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 12.5, color: "var(--ink-3)", fontWeight: 500, whiteSpace: "nowrap" }}><i className="bi bi-calendar-event" /> Giờ đến KH:</span>
+          <span style={{ fontSize: 12.5, color: "var(--ink-3)", fontWeight: 500, whiteSpace: "nowrap" }}><i className="bi bi-calendar-event" /> Ngày đóng hàng:</span>
           <div style={{ width: 140 }}><DateField value={denDate} onChange={setDenDateP} placeholder="Chọn ngày" /></div>
           {denDate && <button type="button" onClick={() => setDenDateP("")} title="Bỏ lọc ngày" style={{ border: "none", background: "transparent", color: "var(--ink-4)", cursor: "pointer", padding: 2 }}><i className="bi bi-x-circle" /></button>}
         </div>
