@@ -195,7 +195,8 @@ trait HandlesShipments
             $applyLoc($b, 'to_loc', $toLocSel, $toLocRaw, $toMode);
             $applyLoc($b, 'from_loc', $fromSel, $fromRaw, $fromMode);
             if ($denDate !== '') $b->whereDate('gio_den_du_kien', $denDate);       // lô có Giờ đến KH = ngày chọn
-            if ($tagSel) $b->where(function ($w) use ($tagSel) { foreach ($tagSel as $t) $w->orWhereJsonContains('tags', $t); });   // OR nhiều nhãn
+            // Lọc nhãn = OR. Dùng JSON_SEARCH (khớp được trên MariaDB + JSON lưu unicode escaped, whereJsonContains fail).
+            if ($tagSel) $b->where(function ($w) use ($tagSel) { foreach ($tagSel as $t) $w->orWhereRaw('JSON_SEARCH(tags, \'one\', ?) IS NOT NULL', [$t]); });
             return $b;
         };
 
