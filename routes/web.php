@@ -260,9 +260,13 @@ Route::middleware('auth')->group(function () {
             Route::get('/quan-ly-xe/{vehicle}/data',  [FleetController::class, 'vehicleData'])->name('fleet.data');
             Route::get('/quan-ly-xe/{vehicle}/section/{section}', [FleetController::class, 'vehicleSection'])->name('fleet.section');
             Route::get('/quan-ly-xe/{vehicle}/fuel', [FleetController::class, 'fuelData'])->name('fleet.fuel');
+            // Quản lý chi phí — tổng hợp mọi phiếu chi (xe + tài sản)
+            Route::get('/quan-ly-chi-phi',      [FleetController::class, 'costManagement'])->name('costManagement');
+            Route::get('/quan-ly-chi-phi/list', [FleetController::class, 'costList'])->name('costManagement.list');
         });
         Route::middleware('permission:fleet.manage')->group(function () {
             Route::put('/quan-ly-xe/{vehicle}', [FleetController::class, 'saveVehicle'])->name('fleet.save');
+            Route::put('/quan-ly-xe/cost/{cost}', [FleetController::class, 'updateCost'])->name('fleet.updateCost');
             Route::put('/quan-ly-xe/cost/{cost}/cancel', [FleetController::class, 'adminCancelCost'])->name('fleet.cancelCost');
             Route::post('/quan-ly-xe-cost-item', [FleetController::class, 'addCostItem'])->name('fleet.costItem');
             Route::post('/quan-ly-xe/{vehicle}/cost-photo', [FleetController::class, 'uploadCostPhotos'])->name('fleet.costPhoto.upload');

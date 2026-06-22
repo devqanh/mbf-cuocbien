@@ -25,6 +25,7 @@ export default defineConfig(({ mode }) => {
                     'resources/js/trucking2/pages/bang-ke-xem.jsx',
                     'resources/js/trucking2/pages/cai-dat.jsx',
                     'resources/js/trucking2/pages/quan-ly-xe.jsx',
+                    'resources/js/trucking2/pages/quan-ly-chi-phi.jsx',
                     'resources/js/trucking2/pages/yeu-cau-chi.jsx',
                     'resources/js/trucking2/pages/phi-xe.jsx',
                     'resources/js/trucking2/pages/phi-xe-tao.jsx',

@@ -64,6 +64,43 @@ class FleetController extends BaseTruckingController
         return response()->json($this->svc->cancelVehicleCost($cost, auth()->id()));
     }
 
+    /** Trang Quản lý chi phí — tổng hợp MỌI phiếu chi (xe + tài sản) để duyệt/thanh toán tập trung. */
+    public function costManagement()
+    {
+        return view('trucking2.quan-ly-chi-phi', $this->pageData([
+            'costTypes' => $this->svc->vehicleCostTypesOut(),
+            'suppliers' => $this->svc->supplierSuggestions(),
+            'initial'   => $this->svc->costManagementData(['status' => 'action', 'page' => 1]),
+        ], 'fleet.manage', 'fleet.manage'));
+    }
+
+    /** JSON: danh sách phiếu chi theo bộ lọc (status/kind/q/page). */
+    public function costList(Request $request): JsonResponse
+    {
+        return response()->json(['ok' => true] + $this->svc->costManagementData([
+            'status'  => (string) $request->query('status', 'action'),
+            'kind'    => (string) $request->query('kind', 'all'),
+            'q'       => (string) $request->query('q', ''),
+            'page'    => (int) $request->query('page', 1),
+            'perPage' => (int) $request->query('perPage', 20),
+        ]));
+    }
+
+    /** Cập nhật 1 phiếu chi (duyệt/thanh toán/sửa) — trả lại dòng đã cập nhật. */
+    public function updateCost(Request $request, TruckingVehicleCost $cost): JsonResponse
+    {
+        $d = $request->validate([
+            'name' => ['nullable', 'string', 'max:255'], 'kind' => ['nullable', 'string'],
+            'amount' => ['nullable'], 'spendDate' => ['nullable', 'string'], 'dueDate' => ['nullable', 'string'],
+            'currentKm' => ['nullable'], 'supplier' => ['nullable', 'string', 'max:255'], 'note' => ['nullable', 'string'],
+            'approved' => ['nullable', 'boolean'], 'paid' => ['nullable', 'boolean'],
+            'paidDate' => ['nullable', 'string'], 'paidMethod' => ['nullable', 'string', 'max:64'],
+            'paidRef' => ['nullable', 'string', 'max:120'], 'paidNote' => ['nullable', 'string'],
+            'photos' => ['nullable', 'array'],
+        ]);
+        return response()->json($this->svc->updateVehicleCost($cost, $d));
+    }
+
     /** Upload ảnh thực tế cho phiếu chi (CostModal) → trả danh sách (kèm id + url). */
     public function uploadCostPhotos(Request $request, TruckingVehicle $vehicle): JsonResponse
     {

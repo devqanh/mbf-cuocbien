@@ -81,6 +81,12 @@
                             <i class="bi bi-truck-front"></i> Quản lý tài sản
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link {{ request()->routeIs('trucking2.costManagement') ? 'active' : '' }}"
+                           href="{{ route('trucking2.costManagement') }}">
+                            <i class="bi bi-receipt-cutoff"></i> Quản lý chi phí
+                        </a>
+                    </li>
                     @endcan
                     @can('settings.view')
                     <li class="nav-item">

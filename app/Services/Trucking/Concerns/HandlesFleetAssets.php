@@ -128,6 +128,109 @@ trait HandlesFleetAssets
         return $out;
     }
 
+    /**
+     * QUẢN LÝ CHI PHÍ — tổng hợp MỌI phiếu chi (xe MBF + tài sản) để duyệt/thanh toán/sửa/hủy tập trung.
+     * $f: status (action|pending|pay|paid|cancelled|all), kind (all|vehicle|asset), q, page, perPage.
+     * Trả rows (đã map) + total (theo filter) + counts (theo q/kind, KHÔNG theo status — cho badge tab).
+     */
+    public function costManagementData(array $f): array
+    {
+        $status = (string) ($f['status'] ?? 'action');
+        $kind   = (string) ($f['kind'] ?? 'all');
+        $q      = trim((string) ($f['q'] ?? ''));
+        $page   = max(1, (int) ($f['page'] ?? 1));
+        $per    = min(100, max(5, (int) ($f['perPage'] ?? 20)));
+
+        $base = TruckingVehicleCost::query()->with(['vehicle:id,plate,kind,info', 'creator:id,name']);
+        if ($kind === 'vehicle')     $base->whereHas('vehicle', fn ($w) => $w->where('kind', '!=', 'asset'));
+        elseif ($kind === 'asset')   $base->whereHas('vehicle', fn ($w) => $w->where('kind', 'asset'));
+        if ($q !== '') {
+            $like = '%' . $q . '%';
+            $base->where(fn ($w) => $w->where('name', 'like', $like)->orWhere('invoice_no', 'like', $like)
+                ->orWhere('supplier', 'like', $like)->orWhereHas('vehicle', fn ($v) => $v->where('plate', 'like', $like)));
+        }
+        // Badge từng tab (theo q/kind hiện tại)
+        $cnt = fn (callable $cb) => tap(clone $base, $cb)->count();
+        $counts = [
+            'all'       => (clone $base)->count(),
+            'pending'   => $cnt(fn ($c) => $c->whereNull('cancelled_at')->where('approved', false)),
+            'pay'       => $cnt(fn ($c) => $c->whereNull('cancelled_at')->where('approved', true)->where('paid', false)),
+            'paid'      => $cnt(fn ($c) => $c->where('paid', true)->whereNull('cancelled_at')),
+            'cancelled' => $cnt(fn ($c) => $c->whereNotNull('cancelled_at')),
+            'action'    => $cnt(fn ($c) => $c->whereNull('cancelled_at')->where(fn ($w) => $w->where('approved', false)->orWhere('paid', false))),
+        ];
+
+        $list = clone $base;
+        match ($status) {
+            'pending'   => $list->whereNull('cancelled_at')->where('approved', false),
+            'pay'       => $list->whereNull('cancelled_at')->where('approved', true)->where('paid', false),
+            'paid'      => $list->where('paid', true)->whereNull('cancelled_at'),
+            'cancelled' => $list->whereNotNull('cancelled_at'),
+            'action'    => $list->whereNull('cancelled_at')->where(fn ($w) => $w->where('approved', false)->orWhere('paid', false)),
+            default     => $list,
+        };
+        $total = (clone $list)->count();
+        $rows = $list->orderByDesc('id')->forPage($page, $per)->get()->map(fn ($c) => $this->costMgmtRow($c))->all();
+
+        return ['rows' => $rows, 'total' => $total, 'page' => $page, 'perPage' => $per, 'counts' => $counts];
+    }
+
+    /** Map 1 phiếu chi cho trang Quản lý chi phí (kèm thông tin xe/tài sản + người gửi + trạng thái). */
+    private function costMgmtRow(TruckingVehicleCost $c): array
+    {
+        $v = $c->vehicle;
+        $isAsset = ($v?->kind ?? 'vehicle') === 'asset';
+        $vinfo = is_array($v?->info) ? $v->info : [];
+        $st = $this->vehicleCostStatus($c);
+        return [
+            'id' => $c->id, 'hashid' => \App\Support\Hashid::encode($c->id),
+            'vehicleId' => $c->vehicle_id, 'vehicleHashid' => $v ? \App\Support\Hashid::encode($v->id) : null,
+            'plate' => $v?->plate ?? '', 'kind' => $isAsset ? 'asset' : 'vehicle',
+            'targetName' => $isAsset ? (($vinfo['name'] ?? '') ?: ($v?->plate ?? '')) : ($v?->plate ?? ''),
+            'name' => $c->name ?? '', 'invoiceNo' => $c->invoice_no ?? '',
+            'kindCost' => ($c->kind === 'fixed' ? 'fixed' : 'recurring'),
+            'spendDate' => $this->outDate($c->spend_date), 'dueDate' => $this->outDate($c->due_date),
+            'amount' => $this->outMoney($c->amount),
+            'estAmount' => $c->est_amount !== null ? $this->outMoney($c->est_amount) : null,
+            'currentKm' => $this->outNum($c->current_km), 'supplier' => $c->supplier ?? '', 'note' => $c->note ?? '',
+            'paid' => (bool) $c->paid, 'approved' => (bool) $c->approved,
+            'paidDate' => $this->outDate($c->paid_date), 'paidMethod' => $c->paid_method ?? '', 'paidRef' => $c->paid_ref ?? '', 'paidNote' => $c->paid_note ?? '',
+            'requester' => $c->creator?->name ?? '', 'status' => $st['code'], 'statusLabel' => $st['label'],
+            'cancelled' => (bool) $c->cancelled_at, 'canCancel' => (! $c->cancelled_at && ! $c->paid),
+            'photos' => $this->costPhotosOut(is_array($c->photos) ? $c->photos : [], $c->vehicle_id),
+        ];
+    }
+
+    /** Cập nhật 1 PHIẾU CHI đơn lẻ (duyệt/thanh toán/sửa) — KHÔNG đụng est_amount/created_by/cancelled. */
+    public function updateVehicleCost(TruckingVehicleCost $c, array $in): array
+    {
+        if ($c->cancelled_at) return ['ok' => false, 'message' => 'Phiếu đã hủy — không thể sửa.'];
+        $approved = ! empty($in['approved']);
+        $paid     = $approved && ! empty($in['paid']);   // chưa duyệt thì không thể "đã chi"
+        $amount   = $this->inMoney($in['amount'] ?? null) ?? 0;
+        if ($amount <= 0) return ['ok' => false, 'message' => 'Số tiền thực tế phải lớn hơn 0.'];
+        $name = $this->str($in['name'] ?? null) ?? $c->name;
+        $typeId = $name !== null ? \App\Models\TruckingVehicleCostType::where('name', $name)->value('id') : null;
+        $c->forceFill([
+            'name' => $name, 'cost_type_id' => $typeId,
+            'kind' => ((($in['kind'] ?? $c->kind)) === 'recurring') ? 'recurring' : 'fixed',
+            'spend_date' => $this->inDate($in['spendDate'] ?? null) ?? $c->spend_date,
+            'due_date'   => array_key_exists('dueDate', $in) ? $this->inDate($in['dueDate']) : $c->due_date,
+            'amount'     => $amount,
+            'current_km' => array_key_exists('currentKm', $in) ? $this->inNum($in['currentKm']) : $c->current_km,
+            'supplier'   => array_key_exists('supplier', $in) ? $this->str($in['supplier']) : $c->supplier,
+            'note'       => array_key_exists('note', $in) ? $this->str($in['note']) : $c->note,
+            'photos'     => array_key_exists('photos', $in) ? $this->cleanCostPhotos($in['photos']) : ($c->photos ?? []),
+            'approved'   => $approved,
+            'paid'       => $paid,
+            'paid_date'   => $paid ? ($this->inDate($in['paidDate'] ?? null) ?: now()->toDateString()) : null,
+            'paid_method' => $paid ? $this->str($in['paidMethod'] ?? null) : null,
+            'paid_ref'    => $paid ? $this->str($in['paidRef'] ?? null) : null,
+            'paid_note'   => $paid ? $this->str($in['paidNote'] ?? null) : null,
+        ])->save();
+        return ['ok' => true, 'row' => $this->costMgmtRow($c->fresh(['vehicle', 'creator']))];
+    }
+
     /** Danh mục Khoản chi phí (dùng cho Combo tên phiếu chi xe + báo cáo theo khoản). */
     public function costItemNames(): array
     {

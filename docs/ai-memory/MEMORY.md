@@ -36,3 +36,4 @@
 - [GPS tracking](gps-tracking.md) — Theo dõi xe realtime đa nhà cung cấp (Viettel/dvbk) qua proxy backend + adapter + auto-login (chỉ login lại khi fetch hỏng), map biển số→trucking_vehicles, Google Maps, poll 15s
 - [Product tour](product-tour.md) — tour onboarding tái dùng bằng driver.js (helper @trk/tour.js + data-tour + steps); áp cho mọi trang, lazy-load, có nút Bỏ qua toàn bộ
 - [VietQR bank](vietqr-bank.md) — chọn NH lái xe từ API VietQR (lưu bin) qua banks.js; popup "chi cho lái" /lo-trinh hiện STK+copy+QR chuyển khoản (amount=tổng chi)
+- [Quản lý chi phí](cost-management-page.md) — trang /quan-ly-chi-phi gom mọi phiếu chi xe+tài sản (tabs/filter/search) duyệt-thanh toán-sửa-hủy tập trung; endpoint per-phiếu updateVehicleCost + tái dùng PayModal/CostModal
