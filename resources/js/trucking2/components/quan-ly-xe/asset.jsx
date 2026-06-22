@@ -319,7 +319,7 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
                     <thead><tr style={{ background: "#fafbfc" }}>
-                      {th("Tài sản")}{th("Loại")}{th("Vị trí · Tình trạng")}{th("Bảo hành · Kiểm định")}{th("Hồ sơ", "center")}{th("Khấu hao · Chi phí", "center")}{th("", "right")}
+                      {th("Tài sản")}{th("Loại")}{th("Vị trí · Tình trạng")}{th("Bảo hành · Kiểm định")}{th("Hồ sơ", "center")}{th("Khấu hao/tháng", "right")}{th("Khấu hao · Chi phí", "center")}{th("", "right")}
                     </tr></thead>
                     <tbody>
                       {list.map((a) => {
@@ -340,6 +340,11 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
                             <td style={{ padding: "9px 12px" }}><AssetDueCell warranty={a.warrantyDue} inspection={a.inspectionDue} /></td>
                             <td style={{ padding: "9px 12px", textAlign: "center" }} className="tnum">
                               {a.docCount > 0 ? <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, color: "var(--ink-2)" }}><i className="bi bi-paperclip" />{a.docCount}</span> : <span style={{ fontSize: 12, color: "var(--ink-4)" }}>—</span>}
+                            </td>
+                            <td style={{ padding: "9px 12px", textAlign: "right" }} className="tnum">
+                              {(a.depMonthly > 0 || a.depOrig > 0)
+                                ? <div><div style={{ fontSize: 13.5, fontWeight: 700, color: "var(--ink-1)" }}>{fmtVND(a.depMonthly)}</div><div style={{ fontSize: 10.5, color: "var(--ink-4)" }}>còn {fmtVND(a.depRemain)}</div></div>
+                                : <span style={{ fontSize: 12, color: "var(--ink-4)" }}>—</span>}
                             </td>
                             <td style={{ padding: "9px 12px" }} className="tnum">
                               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14 }}>

@@ -50,10 +50,14 @@ trait HandlesFleetAssets
     public function mbfVehicles(): array
     {
         $nowIdx = (int) now()->format('Y') * 12 + ((int) now()->format('n') - 1);
-        return TruckingVehicle::where('type', 'MBF')
+        $rows = TruckingVehicle::where('type', 'MBF')
             ->withCount(['vehicleUsages', 'vehicleCosts', 'vehicleDepreciations'])
             ->with(['vehicleDepreciations:id,vehicle_id,orig_price,start_date,months'])
-            ->orderBy('plate')->get()->map(function ($v) use ($nowIdx) {
+            ->orderBy('plate')->get();
+        // Đếm hồ sơ (attachments group='doc') 1 query gộp → tránh N+1 (docs lưu ở trucking_attachments, không phải cột JSON cũ).
+        $docCounts = TruckingAttachment::where('owner_type', TruckingVehicle::class)->where('group', 'doc')
+            ->whereIn('owner_id', $rows->pluck('id'))->selectRaw('owner_id, COUNT(*) c')->groupBy('owner_id')->pluck('c', 'owner_id');
+        return $rows->map(function ($v) use ($nowIdx, $docCounts) {
                 $info = is_array($v->info) ? $v->info : [];
                 $dep = $this->depSummary($v->vehicleDepreciations, $nowIdx);   // khấu hao theo tháng đến nay
                 return [
@@ -63,7 +67,7 @@ trait HandlesFleetAssets
                     'axle'            => $v->axle ?? '',
                     'registrationDue' => $info['registrationDue'] ?? '',   // YYYY-MM-DD (hạn đăng kiểm)
                     'insuranceDue'    => $info['insuranceDue'] ?? '',       // YYYY-MM-DD (hạn bảo hiểm)
-                    'docCount'        => is_array($v->documents) ? count($v->documents) : 0,
+                    'docCount'        => (int) ($docCounts[$v->id] ?? 0),
                     'usageCount'      => (int) $v->vehicle_usages_count,
                     'costCount'       => (int) $v->vehicle_costs_count,
                     'depCount'        => (int) $v->vehicle_depreciations_count,
@@ -297,6 +301,8 @@ trait HandlesFleetAssets
     private function assetListRow(TruckingVehicle $v, int $docCount = 0): array
     {
         $info = is_array($v->info) ? $v->info : [];
+        $nowIdx = (int) now()->format('Y') * 12 + ((int) now()->format('n') - 1);
+        $dep = $this->depSummary($v->relationLoaded('vehicleDepreciations') ? $v->vehicleDepreciations : collect(), $nowIdx);
         return [
             'id'            => $v->id,
             'hashid'        => Hashid::encode($v->id),
@@ -310,6 +316,10 @@ trait HandlesFleetAssets
             'docCount'      => $docCount,
             'costCount'     => (int) ($v->vehicle_costs_count ?? 0),
             'depCount'      => (int) ($v->vehicle_depreciations_count ?? 0),
+            'depMonthly'    => $dep['monthly'],
+            'depAccrued'    => $dep['accrued'],
+            'depRemain'     => $dep['remain'],
+            'depOrig'       => $dep['orig'],
         ];
     }
 
@@ -318,6 +328,7 @@ trait HandlesFleetAssets
     {
         $rows = TruckingVehicle::where('kind', 'asset')
             ->withCount(['vehicleCosts', 'vehicleDepreciations'])
+            ->with(['vehicleDepreciations:id,vehicle_id,orig_price,start_date,months'])
             ->orderBy('plate')->get();
         // Đếm tài liệu (attachments group='doc') 1 query gộp → tránh N+1
         $docCounts = TruckingAttachment::where('owner_type', TruckingVehicle::class)->where('group', 'doc')
