@@ -74,7 +74,7 @@ function PriceList({ rows = [], onChange, onImported, cfg = {}, customer }) {
       const connRaw = txt(g(C.conn)).toUpperCase(); const loc = txt(g(C.loc));
       const from = txt(g(C.from));
       if (!connRaw && !loc && !from) continue;
-      const conn = connRaw.includes("DISCON") ? "Disconnect" : (connRaw.includes("CON") ? "Connect" : (connRaw || "Connect"));
+      const conn = connRaw.includes("NON") ? "Non" : (connRaw.includes("DISCON") ? "Disconnect" : (connRaw.includes("CON") ? "Connect" : (connRaw || "Connect")));
       out.push({ conn, loc, kind: txt(g(C.kind)), from, to1: txt(g(C.to1)), to2: txt(g(C.to2)), to3: txt(g(C.to3)), to4: txt(g(C.to4)), distance: num(g(C.distance)), transFee40: num(g(C.transFee40)), transFee20: num(g(C.transFee20)), fuelFee40: num(g(C.fuelFee40)), fuelFee20: num(g(C.fuelFee20)) });
     }
     if (!out.length) { setBusy(false); setMsg("Sheet không có dòng dữ liệu hợp lệ."); return; }
@@ -200,12 +200,14 @@ function PriceList({ rows = [], onChange, onImported, cfg = {}, customer }) {
                 <span style={{ position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)", color: "var(--ink-3)", pointerEvents: "none" }}><I.chev /></span>
               </div>
               <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 9, padding: 3 }}>
-                {["Connect", "Disconnect"].map((opt) => {
+                {["Connect", "Disconnect", "Non"].map((opt) => {
                   const on = g.conn === opt;
+                  const onColor = opt === "Connect" ? "var(--good)" : opt === "Disconnect" ? "var(--danger)" : "var(--ink-1)";
                   return (
                     <button key={opt} type="button" onClick={() => setLocField(g.key, { conn: opt })}
+                      title={opt === "Non" ? "Áp cho MỌI trạng thái (không phân biệt connect/disconnect)" : ""}
                       style={{ border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, padding: "6px 14px", borderRadius: 7,
-                        background: on ? "#fff" : "transparent", color: on ? (opt === "Connect" ? "var(--good)" : "var(--danger)") : "var(--ink-3)", boxShadow: on ? "0 1px 2px rgba(16,19,23,.12)" : "none", transition: "all .12s" }}>
+                        background: on ? "#fff" : "transparent", color: on ? onColor : "var(--ink-3)", boxShadow: on ? "0 1px 2px rgba(16,19,23,.12)" : "none", transition: "all .12s" }}>
                       {opt}
                     </button>
                   );

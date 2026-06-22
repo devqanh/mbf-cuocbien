@@ -105,7 +105,7 @@ trait HandlesStatementPricing
 
         // Linear scan trên priceList ĐÃ PRECOMPUTE rcFrom/rcDrop/rcKho/nkKind/conn (pricingContext)
         // → không có chuẩn hóa per-row trong vòng lặp; chỉ so chuỗi đã chuẩn.
-        $p = null; $fallback = null;
+        $p = null; $fallback = null; $nonMatch = null;
         foreach ($priceList as $r) {
             if ($loFrom !== '' && $r['rcFrom'] !== '' && $r['rcFrom'] !== $loFrom) continue;
             if ($loDrop !== '' && $r['rcDrop'] !== '' && $r['rcDrop'] !== $loDrop) continue;
@@ -116,9 +116,11 @@ trait HandlesStatementPricing
             if ($r['nkKind'] !== '' && $r['nkKind'] !== $nkKind) continue;
 
             if ($fallback === null) $fallback = $r['row'];   // base match, để fallback nếu không có conn khớp
-            if (! $conn || $r['conn'] === $conn) { $p = $r['row']; break; }
+            // "Non" = áp cho MỌI trạng thái (không phân biệt connect/disconnect) — ưu tiên SAU khớp đúng conn.
+            if ($r['conn'] === 'Non') { if ($nonMatch === null) $nonMatch = $r['row']; continue; }
+            if (! $conn || $r['conn'] === $conn) { $p = $r['row']; break; }   // khớp đúng connect → ưu tiên nhất
         }
-        if (! $p) $p = $fallback;
+        if (! $p) $p = $nonMatch ?? $fallback;   // không có conn khớp → ưu tiên Non, rồi mới base
 
         $cuoc = $p ? (int) ($cont20 ? $p['transFee20'] : $p['transFee40']) : 0;
         $dau  = $p ? (int) ($cont20 ? $p['fuelFee20'] : $p['fuelFee40']) : 0;
