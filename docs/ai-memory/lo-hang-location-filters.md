@@ -13,6 +13,10 @@ Bộ lọc trang Lô hàng (`pagedShipments` sheet `icd`, ShipmentsApp.jsx) cho 
 - **CẢ Nơi hạ + Nơi lấy đều có chế độ GỒM/LOẠI TRỪ** (`toMode`/`fromMode`): include→whereIn; exclude→whereNotIn + orWhereNull (giữ lô KHÔNG có địa điểm). Helper chung `applyLoc($b,$col,$sel,$raw,$mode)`. Mặc định Nơi hạ=include, Nơi lấy=exclude. Use case kế toán: "lọc nơi hạ HPP, LOẠI TRỪ nơi lấy nội bộ". Params `toLoc[]`/`toMode`, `fromLoc[]`/`fromMode`. FE: component `ModeToggle` dùng chung 2 khối.
 - **Ngày đóng hàng** = **Giờ đến kế hoạch** (`gio_den_du_kien`, cột dateTime indexed) — CHỌN 1 NGÀY (param `denDate` → `whereDate`). KHÔNG phải cut_off (cắt máng).
 
-Tất cả áp trong closure `$searched` nên cả ĐẾM (filterCounts/total) + danh sách đều đúng. ShipmentController::page truyền `toLoc,fromLoc,fromMode,denDate`.
+- **Nhãn (tags)**: cột `shipments.tags` (json, cast array). InfoPopup MultiCombo "Nhãn" (chọn/gõ tạo mới); chip nhãn hiện ngoài bảng (desktop row + card mobile). Lọc `tags[]` OR — **DÙNG `JSON_SEARCH(tags,'one',?) IS NOT NULL`** (KHÔNG dùng whereJsonContains: laragon = MariaDB 11.4, JSON lưu unicode escaped `\uXXXX` nên whereJsonContains/LIKE FAIL). `tagOptions` gom bằng PHP (pluck+loop, không đụng JSON func).
+
+Tất cả áp trong closure `$searched` nên cả ĐẾM (filterCounts/total) + danh sách đều đúng. ShipmentController::page truyền `toLoc,toMode,fromLoc,fromMode,denDate,tags`.
+
+**Field lô mới (cùng đợt):** `cost_lines.invoice_no` (Số hóa đơn từng khoản ở popup Chi phí); `shipments.info_note` (textarea Ghi chú lô, tách khỏi `ghi_chu` kế toán). **"Theo dõi" (follow)** nay phát hiện "Chưa có số HĐ" = khoản gắn màu theo dõi mà `invoice_no` trống (TRƯỚC: xét tiền=0) — áp ở follow=missing + followStats + chấm "!" CostLineRows.
 
 Liên quan [[coded-catalog-edit]], [[ra-status-rule]], [[trucking-report-schema]].
