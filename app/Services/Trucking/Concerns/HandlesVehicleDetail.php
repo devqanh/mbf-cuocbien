@@ -74,6 +74,7 @@ trait HandlesVehicleDetail
             return [
             'id' => $c->id, 'hashid' => Hashid::encode($c->id), 'name' => $c->name ?? '', 'costTypeId' => $c->cost_type_id, 'invoiceNo' => $c->invoice_no ?? '', 'kind' => ($c->kind === 'fixed' ? 'fixed' : 'recurring'),
             'spendDate' => $this->outDate($c->spend_date), 'dueDate' => $this->outDate($c->due_date), 'amount' => $this->outMoney($c->amount),
+            'estAmount' => $c->est_amount !== null ? $this->outMoney($c->est_amount) : null,   // dự kiến (lái xe gửi qua yêu cầu chi)
             'currentKm' => $this->outNum($c->current_km), 'supplier' => $c->supplier ?? '', 'note' => $c->note ?? '',
             'paid' => (bool) $c->paid, 'approved' => (bool) $c->approved,
             'paidDate' => $this->outDate($c->paid_date), 'paidMethod' => $c->paid_method ?? '', 'paidRef' => $c->paid_ref ?? '', 'paidNote' => $c->paid_note ?? '',
@@ -317,7 +318,7 @@ trait HandlesVehicleDetail
 
                 $typeId = TruckingVehicleCostType::pluck('id', 'name');
                 // GIỮ LẠI người yêu cầu + trạng thái hủy qua delete+recreate (khớp theo id dòng cũ)
-                $preserve = $v->vehicleCosts()->get(['id', 'created_by', 'cancelled_at', 'cancelled_by', 'created_at'])->keyBy('id');
+                $preserve = $v->vehicleCosts()->get(['id', 'created_by', 'cancelled_at', 'cancelled_by', 'created_at', 'est_amount'])->keyBy('id');
                 $v->vehicleCosts()->delete();
                 foreach ($costRows as $i => $c) {
                     $inv = trim((string) ($c['invoiceNo'] ?? ''));
@@ -330,6 +331,7 @@ trait HandlesVehicleDetail
                         'created_by'   => $old?->created_by,
                         'cancelled_at' => $old?->cancelled_at,
                         'cancelled_by' => $old?->cancelled_by,
+                        'est_amount'   => $old?->est_amount,   // dự kiến do lái xe gửi — kế toán không sửa, giữ nguyên
                         'invoice_no' => $inv,
                         'kind' => (($c['kind'] ?? '') === 'recurring') ? 'recurring' : 'fixed',
                         'spend_date' => $this->inDate($c['spendDate'] ?? null),

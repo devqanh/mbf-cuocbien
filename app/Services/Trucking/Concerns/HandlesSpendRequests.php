@@ -106,7 +106,8 @@ trait HandlesSpendRequests
         $cost = $v->vehicleCosts()->create([
             'name' => $item, 'created_by' => auth()->id(), 'invoice_no' => $this->nextCostInvoiceNo(), 'kind' => 'fixed',
             'spend_date' => $this->inDate($in['date'] ?? null) ?? now()->toDateString(),
-            'amount' => $amount, 'current_km' => $km, 'note' => trim((string) ($in['note'] ?? '')),
+            // est_amount = số DỰ KIẾN lái xe gửi; amount tạm = dự kiến, kế toán sửa thành THỰC TẾ khi duyệt/chi.
+            'amount' => $amount, 'est_amount' => $amount, 'current_km' => $km, 'note' => trim((string) ($in['note'] ?? '')),
             'approved' => false, 'paid' => false, 'sort' => $sort,
         ]);
         if ($files) { $cost->photos = array_map(fn ($p) => $p['id'], $this->storeCostPhotos($v, $files)); $cost->save(); }
@@ -153,6 +154,7 @@ trait HandlesSpendRequests
                     'targetName' => $isAsset ? (($vinfo['name'] ?? '') ?: ($c->vehicle?->plate ?? '')) : ($c->vehicle?->plate ?? ''),
                     'note' => $c->note ?? '',
                     'invoiceNo' => $c->invoice_no ?? '', 'amount' => $this->outMoney($c->amount),
+                    'estAmount' => $c->est_amount !== null ? $this->outMoney($c->est_amount) : null,   // dự kiến lái xe gửi
                     'date' => $this->outDate($c->spend_date), 'km' => $this->outNum($c->current_km),
                     'status' => $st['code'], 'statusLabel' => $st['label'],
                     'canCancel' => $st['code'] === 'pending', 'canEdit' => $st['code'] === 'pending',   // chưa duyệt mới sửa/hủy được
@@ -211,7 +213,8 @@ trait HandlesSpendRequests
         $newIds = $files ? array_map(fn ($p) => $p['id'], $this->storeCostPhotos($v, $files)) : [];
 
         $c->forceFill([
-            'name' => $item, 'amount' => $amount, 'current_km' => $km, 'note' => trim((string) ($in['note'] ?? '')),
+            // Lái xe sửa khi CHỜ DUYỆT → cập nhật dự kiến; amount mirror dự kiến (kế toán sẽ chốt thực tế lúc duyệt/chi).
+            'name' => $item, 'amount' => $amount, 'est_amount' => $amount, 'current_km' => $km, 'note' => trim((string) ($in['note'] ?? '')),
             'spend_date' => $this->inDate($in['date'] ?? null) ?? $c->spend_date,
             'photos' => array_merge($keptIds, $newIds),
         ])->save();

@@ -238,11 +238,12 @@ function App() {
         </div>
 
         <div style={field}>
-          <label style={label}>Số tiền (đ) <span style={{ color: "#e0533d" }}>*</span></label>
+          <label style={label}>Số tiền dự kiến (đ) <span style={{ color: "#e0533d" }}>*</span></label>
           <div style={{ position: "relative" }}>
             <input inputMode="numeric" style={{ ...input, textAlign: "right", fontWeight: 800, fontSize: 19, paddingRight: 42, fontVariantNumeric: "tabular-nums" }} value={group(amount)} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
             <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 14, fontWeight: 700, color: "#9aa3b2" }}>đ</span>
           </div>
+          <div style={{ fontSize: 12, color: "#9aa3b2", marginTop: 5 }}>Số tiền dự kiến đề nghị — kế toán sẽ điền số <b>thực tế</b> khi duyệt/thanh toán.</div>
         </div>
 
         <div style={field}>
@@ -315,7 +316,15 @@ function App() {
                       <div style={{ fontSize: 12, color: "#9aa3b2", marginTop: 2 }}>{h.targetName || h.plate} · {dmy(h.date)}{h.invoiceNo ? " · " + h.invoiceNo : ""}{(h.photos || []).length ? " · 📷 " + h.photos.length : ""}</div>
                     </div>
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
-                      <div style={{ fontSize: 15.5, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{group(h.amount)} đ</div>
+                      {(() => {
+                        const dig = (x) => String(x == null ? "" : x).replace(/\D/g, "");
+                        const est = h.estAmount != null ? h.estAmount : h.amount;   // số lái xe đề nghị (dự kiến)
+                        const diff = h.estAmount != null && dig(h.amount) !== dig(h.estAmount);   // kế toán đã chốt thực tế khác
+                        return (<>
+                          <div style={{ fontSize: 15.5, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{group(est)} đ</div>
+                          {diff && <div style={{ fontSize: 11.5, fontWeight: 700, color: "#1f8a5b", fontVariantNumeric: "tabular-nums", marginTop: 1 }}>Thực chi: {group(h.amount)} đ</div>}
+                        </>);
+                      })()}
                       <span style={{ display: "inline-block", marginTop: 3, fontSize: 11, fontWeight: 700, color: st[0], background: st[1], padding: "2px 9px", borderRadius: 999 }}>{h.statusLabel}</span>
                     </div>
                   </div>

@@ -198,7 +198,13 @@ function CostModal({ data, isNew, onChange, onSave, onClose, costTypes = [], onU
         ))}
         {f("# Hóa đơn (tự sinh)", <div style={{ padding: "8px 11px", fontSize: 13.5, fontWeight: 600, border: "1px dashed var(--line)", borderRadius: 9, background: "#fafbfc", color: d.invoiceNo ? "var(--ink-2)" : "var(--ink-4)" }} className="tnum">{d.invoiceNo || "Tự sinh khi lưu"}</div>)}
         {f("Ngày chi", <DateField value={d.spendDate} onChange={(x) => set({ spendDate: x })} />)}
-        {f(reqLbl("Số tiền"), <Money value={d.amount} onChange={(x) => set({ amount: x })} dim />)}
+        {f(reqLbl(d.estAmount != null ? "Số tiền thực tế (chi)" : "Số tiền"), <>
+          <Money value={d.amount} onChange={(x) => set({ amount: x })} dim />
+          {d.estAmount != null && <div style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 5, fontSize: 11.5, fontWeight: 600, color: "var(--accent)" }}>
+            <i className="bi bi-receipt" /> Dự kiến lái xe gửi: <span className="tnum">{fmtVND(d.estAmount)}</span>
+            {toNum(d.amount) !== toNum(d.estAmount) && <button type="button" onClick={() => set({ amount: d.estAmount })} title="Dùng số dự kiến làm thực tế" style={{ border: "none", background: "transparent", color: "var(--ink-4)", cursor: "pointer", fontSize: 11, textDecoration: "underline", padding: 0 }}>dùng số này</button>}
+          </div>}
+        </>)}
         {rec && f(<span style={{ color: "var(--accent)" }}>Ngày hết hạn ★</span>, <DateField value={d.dueDate} onChange={(x) => set({ dueDate: x })} />)}
         {f("Nhà cung cấp", <Txt value={d.supplier} onChange={(x) => set({ supplier: x })} placeholder="…" />)}
         {f("KM hiện tại", <Num value={d.currentKm} onChange={(x) => set({ currentKm: x })} suffix="km" />)}
