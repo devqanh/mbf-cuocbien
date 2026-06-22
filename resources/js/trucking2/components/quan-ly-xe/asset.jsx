@@ -2,10 +2,10 @@ import React from "react";
 const { useState, useEffect, useRef } = React;
 import { I, Money, Num, Txt, Combo, DateField, Btn, Modal, fmtVND, fmtNum, fmtDate, toNum, useIsMobile } from "@trk/lib.jsx";
 import { ChkBox } from "@trk/pop.jsx";
-import { num, daysUsed, COST_KINDS, normKind, TAB_KEYS, SECTION_OF, WARN_DAYS, DUE_NONE, dueStatus, vehRank, DueCell, StatChip, lbl, delBtn, addBtn, card, DeprecTab, UsageTab, today10, esc, blankCost, PAY_METHODS, PayModal, CostModal, CostTab, VEH_DOC_TYPES, DocsBlock, InfoTab, AllowanceTab, PendingCostsModal } from "./parts.jsx";
+import { num, daysUsed, COST_KINDS, normKind, TAB_KEYS, SECTION_OF, WARN_DAYS, DUE_NONE, dueStatus, vehRank, DueCell, StatChip, lbl, delBtn, addBtn, card, DeprecTab, DeprecMonthlyTab, UsageTab, today10, esc, blankCost, PAY_METHODS, PayModal, CostModal, CostTab, VEH_DOC_TYPES, DocsBlock, InfoTab, AllowanceTab, PendingCostsModal } from "./parts.jsx";
 
-const ASSET_TAB_KEYS = ["info", "deprec", "cost", "docs"];
-const ASSET_SECTION_OF = { deprec: "depreciations", cost: "costs" };
+const ASSET_TAB_KEYS = ["info", "deprec", "deprecMonthly", "cost", "docs"];
+const ASSET_SECTION_OF = { deprec: "depreciations", deprecMonthly: "depreciations", cost: "costs" };
 const ASSET_STATUS = ["Đang dùng", "Đang bảo trì", "Hỏng", "Ngừng dùng", "Đã thanh lý"];
 const ASSET_DOC_TYPES = ["Hóa đơn mua", "Hợp đồng", "Bảo hành", "Kiểm định", "Ảnh tài sản", "Khác"];
 const assetRank = (a) => Math.max(dueStatus(a.warrantyDue).rank, dueStatus(a.inspectionDue).rank);
@@ -364,7 +364,7 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
   }
 
   // ---------- CHI TIẾT TÀI SẢN ----------
-  const TABS = [["info", "Thông tin"], ["deprec", "Khấu hao"], ["cost", "Chi phí"], ["docs", "Tài liệu"]];
+  const TABS = [["info", "Thông tin"], ["deprec", "Khấu hao"], ["deprecMonthly", "Theo dõi KH"], ["cost", "Chi phí"], ["docs", "Tài liệu"]];
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
       <div className="trk-head" style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 22px", background: "#fff", borderBottom: "1px solid var(--line)" }}>
@@ -394,6 +394,7 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
             ? <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "30px 4px", color: "var(--ink-4)", fontSize: 13.5 }}><span style={{ width: 15, height: 15, border: "2px solid var(--line)", borderTopColor: "var(--accent)", borderRadius: "50%", display: "inline-block", animation: "trk-spin .7s linear infinite" }} /> Đang tải dữ liệu…</div>
             : tab === "info" ? <AssetInfoTab info={detail.info} onChange={(info) => upd({ info })} categories={categories} addCategory={addCategory} />
             : tab === "deprec" ? <DeprecTab rows={detail.depreciations || []} onChange={(rows) => upd({ depreciations: rows })} />
+            : tab === "deprecMonthly" ? <DeprecMonthlyTab rows={detail.depreciations || []} />
             : tab === "cost" ? <CostTab rows={detail.costs || []} onChange={saveCosts} saving={costSaving} costTypes={detail.costTypes || []} onUploadPhotos={uploadCostPhotos} onCancel={cancelCost} highlightId={hlCost} />
             : <div style={card}><DocsBlock docs={detail.docs || []} busy={docBusy} docType={docType} setDocType={setDocType} onPick={uploadDocs} onDelete={deleteDoc} canEdit={canEdit} docTypes={ASSET_DOC_TYPES} hint="Tài liệu tài sản (hóa đơn mua, hợp đồng, bảo hành, ảnh… — ảnh / PDF / Word / Excel)" /></div>}
         </div>
