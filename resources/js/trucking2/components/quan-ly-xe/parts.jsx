@@ -7,8 +7,8 @@ const num = (v) => parseFloat((v ?? "").toString().replace(/[^\d.-]/g, "")) || 0
 const daysUsed = (iso) => { if (!iso) return 0; const s = new Date(iso + "T00:00:00"); const now = new Date(); const d = Math.floor((now - s) / 86400000); return d > 0 ? d : 0; };
 const COST_KINDS = [["fixed", "Cố định"], ["recurring", "Định kỳ"]];
 const normKind = (k) => (k === "fixed" ? "fixed" : "recurring");   // gộp monthly/yearly cũ → recurring
-const TAB_KEYS = ["info", "allowance", "deprec", "usage", "cost", "fuel"];
-const SECTION_OF = { deprec: "depreciations", usage: "usages", cost: "costs" };   // tab → nhóm lazy-load (allowance + info nằm trong base; fuel lazy riêng)
+const TAB_KEYS = ["info", "allowance", "deprec", "deprecMonthly", "usage", "cost", "fuel"];
+const SECTION_OF = { deprec: "depreciations", deprecMonthly: "depreciations", usage: "usages", cost: "costs" };   // tab → nhóm lazy-load (allowance + info nằm trong base; fuel lazy riêng)
 
 // Ngưỡng cảnh báo "sắp hết hạn" (số ngày) — cấu hình ở Cài đặt → Cấu hình chung
 const WARN_DAYS = (() => { try { const n = parseInt((window.__TRK || {}).boot?.dueWarnDays, 10); return n > 0 ? n : 30; } catch (e) { return 30; } })();
@@ -107,6 +107,70 @@ function DeprecTab({ rows, onChange }) {
     </div>
   );
 }
+
+/* ---- Tab: Theo dõi khấu hao THEO THÁNG (read-only) — lịch khấu hao đều/tháng từ tháng bắt đầu ---- */
+function DeprecMonthlyTab({ rows }) {
+  const ymOf = (iso) => { const p = (iso || "").split("-"); return p.length >= 2 ? parseInt(p[0], 10) * 12 + (parseInt(p[1], 10) - 1) : null; };
+  const ymLabel = (idx) => `${String(idx % 12 + 1).padStart(2, "0")}/${Math.floor(idx / 12)}`;
+  const items = (rows || []).filter((r) => num(r.origPrice) > 0 && num(r.months) > 0 && ymOf(r.startDate) !== null);
+  if (!items.length) return <div style={{ padding: "14px 2px", fontSize: 12.5, color: "var(--ink-4)" }}>Chưa có hạng mục khấu hao nào (cần Nguyên giá + Ngày bắt đầu + Số tháng). Thêm ở tab <b>Khấu hao</b>.</div>;
+
+  // Khấu hao ĐỀU theo tháng: mỗi tháng = nguyên giá ÷ số tháng; tháng cuối bù phần lẻ.
+  const perMonth = {}; let minIdx = Infinity, maxIdx = -Infinity, totalOrig = 0;
+  items.forEach((it) => {
+    const orig = num(it.origPrice), months = num(it.months), start = ymOf(it.startDate);
+    totalOrig += orig;
+    const monthly = Math.round(orig / months);
+    for (let k = 0; k < months; k++) {
+      const idx = start + k;
+      const amt = k === months - 1 ? orig - monthly * (months - 1) : monthly;
+      perMonth[idx] = (perMonth[idx] || 0) + amt;
+      if (idx < minIdx) minIdx = idx; if (idx > maxIdx) maxIdx = idx;
+    }
+  });
+  const nowIdx = ymOf(today10());
+  const list = []; let acc = 0;
+  for (let idx = minIdx; idx <= maxIdx; idx++) { const amt = perMonth[idx] || 0; acc += amt; list.push({ idx, amt, acc, remain: Math.max(0, totalOrig - acc) }); }
+  const accNow = list.filter((r) => r.idx <= nowIdx).reduce((a, r) => a + r.amt, 0);
+
+  const cell = { padding: "7px 10px", fontSize: 13, borderBottom: "1px solid var(--line-2)", textAlign: "right" };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.5 }}>Khấu hao <b>đều theo tháng</b> = Nguyên giá ÷ Số tháng, tính từ <b>tháng bắt đầu sử dụng</b>. Tháng hiện tại được tô đậm.</div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 12.5 }}>
+        <span style={dmChip("var(--ink-2)")}>Nguyên giá: {fmtVND(totalOrig)}</span>
+        <span style={dmChip("var(--accent)")}>Đã KH đến {ymLabel(nowIdx)}: {fmtVND(accNow)}</span>
+        <span style={dmChip("var(--good)")}>Còn lại: {fmtVND(Math.max(0, totalOrig - accNow))}</span>
+      </div>
+      <div style={{ border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
+        <div style={{ maxHeight: 360, overflowY: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr style={{ background: "#fafbfc" }}>
+              <th style={{ padding: "8px 10px", fontSize: 11, fontWeight: 700, color: "var(--ink-4)", textAlign: "left", borderBottom: "1px solid var(--line)" }}>Tháng</th>
+              <th style={{ ...cell, fontSize: 11, fontWeight: 700, color: "var(--ink-4)", borderBottom: "1px solid var(--line)" }}>Khấu hao tháng</th>
+              <th style={{ ...cell, fontSize: 11, fontWeight: 700, color: "var(--ink-4)", borderBottom: "1px solid var(--line)" }}>Lũy kế</th>
+              <th style={{ ...cell, fontSize: 11, fontWeight: 700, color: "var(--ink-4)", borderBottom: "1px solid var(--line)" }}>Còn lại</th>
+            </tr></thead>
+            <tbody>
+              {list.map((r) => {
+                const isNow = r.idx === nowIdx, past = r.idx < nowIdx;
+                return (
+                  <tr key={r.idx} style={{ background: isNow ? "var(--accent-weak-2)" : "transparent" }}>
+                    <td style={{ padding: "7px 10px", fontSize: 13, borderBottom: "1px solid var(--line-2)", fontWeight: isNow ? 800 : 600, color: isNow ? "var(--accent)" : "var(--ink-2)" }} className="tnum">{ymLabel(r.idx)}{isNow ? " ◀ nay" : ""}</td>
+                    <td style={{ ...cell, fontWeight: isNow ? 800 : 600 }} className="tnum">{fmtVND(r.amt)}</td>
+                    <td style={{ ...cell, color: past || isNow ? "var(--accent)" : "var(--ink-4)" }} className="tnum">{fmtVND(r.acc)}</td>
+                    <td style={{ ...cell, color: "var(--ink-3)" }} className="tnum">{fmtVND(r.remain)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+const dmChip = (c) => ({ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 10px", borderRadius: 999, fontWeight: 700, color: c, background: c === "var(--ink-2)" ? "var(--line-2)" : c + "1f" });
 
 /* ---- Tab: Thời gian sử dụng xe ---- */
 function UsageTab({ rows, onChange, drivers }) {
@@ -571,4 +635,4 @@ function PendingCostsModal({ items, onClose, onOpen }) {
 }
 
 
-export { num, daysUsed, COST_KINDS, normKind, TAB_KEYS, SECTION_OF, WARN_DAYS, DUE_NONE, dueStatus, vehRank, DueCell, StatChip, lbl, delBtn, addBtn, card, DeprecTab, UsageTab, today10, esc, blankCost, PAY_METHODS, PayModal, CostModal, CostTab, VEH_DOC_TYPES, DocsBlock, InfoTab, AllowanceTab, PendingCostsModal };
+export { num, daysUsed, COST_KINDS, normKind, TAB_KEYS, SECTION_OF, WARN_DAYS, DUE_NONE, dueStatus, vehRank, DueCell, StatChip, lbl, delBtn, addBtn, card, DeprecTab, DeprecMonthlyTab, UsageTab, today10, esc, blankCost, PAY_METHODS, PayModal, CostModal, CostTab, VEH_DOC_TYPES, DocsBlock, InfoTab, AllowanceTab, PendingCostsModal };
