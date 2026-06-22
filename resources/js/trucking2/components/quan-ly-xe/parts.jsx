@@ -108,69 +108,83 @@ function DeprecTab({ rows, onChange }) {
   );
 }
 
-/* ---- Tab: Theo dõi khấu hao THEO THÁNG (read-only) — lịch khấu hao đều/tháng từ tháng bắt đầu ---- */
+/* ---- Tab: Theo dõi khấu hao THEO THÁNG (read-only) — gom theo NĂM, CHỈ tính đến tháng hiện tại ---- */
+const DmStat = ({ label, val, color }) => (
+  <div style={{ flex: 1, minWidth: 150, background: "#fff", border: "1px solid var(--line)", borderRadius: 11, padding: "11px 14px" }}>
+    <div style={{ fontSize: 11, color: "var(--ink-4)", fontWeight: 600, textTransform: "uppercase", letterSpacing: ".03em" }}>{label}</div>
+    <div className="tnum" style={{ fontSize: 18, fontWeight: 800, marginTop: 3, color }}>{val}</div>
+  </div>
+);
 function DeprecMonthlyTab({ rows }) {
   const ymOf = (iso) => { const p = (iso || "").split("-"); return p.length >= 2 ? parseInt(p[0], 10) * 12 + (parseInt(p[1], 10) - 1) : null; };
-  const ymLabel = (idx) => `${String(idx % 12 + 1).padStart(2, "0")}/${Math.floor(idx / 12)}`;
+  const mLabel = (idx) => String(idx % 12 + 1).padStart(2, "0");
   const items = (rows || []).filter((r) => num(r.origPrice) > 0 && num(r.months) > 0 && ymOf(r.startDate) !== null);
   if (!items.length) return <div style={{ padding: "14px 2px", fontSize: 12.5, color: "var(--ink-4)" }}>Chưa có hạng mục khấu hao nào (cần Nguyên giá + Ngày bắt đầu + Số tháng). Thêm ở tab <b>Khấu hao</b>.</div>;
 
-  // Khấu hao ĐỀU theo tháng: mỗi tháng = nguyên giá ÷ số tháng; tháng cuối bù phần lẻ.
-  const perMonth = {}; let minIdx = Infinity, maxIdx = -Infinity, totalOrig = 0;
+  const nowIdx = ymOf(today10());
+  // Khấu hao đều/tháng = nguyên giá ÷ số tháng (tháng cuối bù lẻ). CHỈ tính tới tháng HIỆN TẠI.
+  const perMonth = {}; let totalOrig = 0;
   items.forEach((it) => {
     const orig = num(it.origPrice), months = num(it.months), start = ymOf(it.startDate);
     totalOrig += orig;
     const monthly = Math.round(orig / months);
     for (let k = 0; k < months; k++) {
       const idx = start + k;
-      const amt = k === months - 1 ? orig - monthly * (months - 1) : monthly;
-      perMonth[idx] = (perMonth[idx] || 0) + amt;
-      if (idx < minIdx) minIdx = idx; if (idx > maxIdx) maxIdx = idx;
+      if (idx > nowIdx) break;   // không tính tương lai (chưa tới thì chưa khấu hao)
+      perMonth[idx] = (perMonth[idx] || 0) + (k === months - 1 ? orig - monthly * (months - 1) : monthly);
     }
   });
-  const nowIdx = ymOf(today10());
-  const list = []; let acc = 0;
-  for (let idx = minIdx; idx <= maxIdx; idx++) { const amt = perMonth[idx] || 0; acc += amt; list.push({ idx, amt, acc, remain: Math.max(0, totalOrig - acc) }); }
-  const accNow = list.filter((r) => r.idx <= nowIdx).reduce((a, r) => a + r.amt, 0);
+  const idxs = Object.keys(perMonth).map(Number).sort((a, b) => a - b);
+  const accNow = idxs.reduce((a, i) => a + perMonth[i], 0);
+  const remain = Math.max(0, totalOrig - accNow);
+  const pct = totalOrig > 0 ? Math.min(100, Math.round(accNow * 100 / totalOrig)) : 0;
+  const nowLabel = `${mLabel(nowIdx)}/${Math.floor(nowIdx / 12)}`;
 
-  const cell = { padding: "7px 10px", fontSize: 13, borderBottom: "1px solid var(--line-2)", textAlign: "right" };
+  if (! idxs.length) return <div style={{ padding: "14px 2px", fontSize: 12.5, color: "var(--ink-4)" }}>Chưa phát sinh khấu hao đến tháng <b>{nowLabel}</b> (các hạng mục bắt đầu ở tương lai).</div>;
+
+  // Gom theo NĂM, năm mới nhất lên trước.
+  const byYear = {};
+  idxs.forEach((i) => { const y = Math.floor(i / 12); (byYear[y] = byYear[y] || []).push(i); });
+  const years = Object.keys(byYear).map(Number).sort((a, b) => b - a);
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.5 }}>Khấu hao <b>đều theo tháng</b> = Nguyên giá ÷ Số tháng, tính từ <b>tháng bắt đầu sử dụng</b>. Tháng hiện tại được tô đậm.</div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 12.5 }}>
-        <span style={dmChip("var(--ink-2)")}>Nguyên giá: {fmtVND(totalOrig)}</span>
-        <span style={dmChip("var(--accent)")}>Đã KH đến {ymLabel(nowIdx)}: {fmtVND(accNow)}</span>
-        <span style={dmChip("var(--good)")}>Còn lại: {fmtVND(Math.max(0, totalOrig - accNow))}</span>
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <DmStat label="Nguyên giá" val={fmtVND(totalOrig)} color="var(--ink-1)" />
+        <DmStat label={`Đã khấu hao đến ${nowLabel}`} val={fmtVND(accNow)} color="var(--accent)" />
+        <DmStat label="Giá trị còn lại" val={fmtVND(remain)} color="var(--good)" />
       </div>
-      <div style={{ border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
-        <div style={{ maxHeight: 360, overflowY: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr style={{ background: "#fafbfc" }}>
-              <th style={{ padding: "8px 10px", fontSize: 11, fontWeight: 700, color: "var(--ink-4)", textAlign: "left", borderBottom: "1px solid var(--line)" }}>Tháng</th>
-              <th style={{ ...cell, fontSize: 11, fontWeight: 700, color: "var(--ink-4)", borderBottom: "1px solid var(--line)" }}>Khấu hao tháng</th>
-              <th style={{ ...cell, fontSize: 11, fontWeight: 700, color: "var(--ink-4)", borderBottom: "1px solid var(--line)" }}>Lũy kế</th>
-              <th style={{ ...cell, fontSize: 11, fontWeight: 700, color: "var(--ink-4)", borderBottom: "1px solid var(--line)" }}>Còn lại</th>
-            </tr></thead>
-            <tbody>
-              {list.map((r) => {
-                const isNow = r.idx === nowIdx, past = r.idx < nowIdx;
+      <div>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "var(--ink-4)", marginBottom: 4 }}><span>Tiến độ khấu hao</span><span className="tnum" style={{ fontWeight: 700, color: "var(--accent)" }}>{pct}%</span></div>
+        <div style={{ height: 8, background: "var(--line-2)", borderRadius: 999, overflow: "hidden" }}><div style={{ width: pct + "%", height: "100%", background: "var(--accent)", borderRadius: 999 }} /></div>
+      </div>
+      {years.map((y) => {
+        const yIdxs = byYear[y];
+        const yTotal = yIdxs.reduce((a, i) => a + perMonth[i], 0);
+        return (
+          <div key={y} style={{ border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 14px", background: "#fafbfc", borderBottom: "1px solid var(--line-2)" }}>
+              <span style={{ fontWeight: 700, fontSize: 13.5 }}><i className="bi bi-calendar3" style={{ color: "var(--accent)", marginRight: 6 }} />Năm {y}</span>
+              <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Khấu hao trong năm: <b className="tnum" style={{ color: "var(--accent)" }}>{fmtVND(yTotal)}</b></span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(118px, 1fr))", gap: 8, padding: 12 }}>
+              {yIdxs.map((i) => {
+                const isNow = i === nowIdx;
                 return (
-                  <tr key={r.idx} style={{ background: isNow ? "var(--accent-weak-2)" : "transparent" }}>
-                    <td style={{ padding: "7px 10px", fontSize: 13, borderBottom: "1px solid var(--line-2)", fontWeight: isNow ? 800 : 600, color: isNow ? "var(--accent)" : "var(--ink-2)" }} className="tnum">{ymLabel(r.idx)}{isNow ? " ◀ nay" : ""}</td>
-                    <td style={{ ...cell, fontWeight: isNow ? 800 : 600 }} className="tnum">{fmtVND(r.amt)}</td>
-                    <td style={{ ...cell, color: past || isNow ? "var(--accent)" : "var(--ink-4)" }} className="tnum">{fmtVND(r.acc)}</td>
-                    <td style={{ ...cell, color: "var(--ink-3)" }} className="tnum">{fmtVND(r.remain)}</td>
-                  </tr>
+                  <div key={i} style={{ padding: "8px 10px", borderRadius: 9, border: "1px solid " + (isNow ? "var(--accent)" : "var(--line)"), background: isNow ? "var(--accent-weak-2)" : "#fff" }}>
+                    <div style={{ fontSize: 11, color: isNow ? "var(--accent)" : "var(--ink-4)", fontWeight: 700 }} className="tnum">Tháng {mLabel(i)}{isNow ? " · nay" : ""}</div>
+                    <div className="tnum" style={{ fontSize: 14, fontWeight: 700, marginTop: 2 }}>{fmtVND(perMonth[i])}</div>
+                  </div>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+            </div>
+          </div>
+        );
+      })}
+      <div style={{ fontSize: 11.5, color: "var(--ink-4)" }}>Khấu hao <b>đều theo tháng</b> = Nguyên giá ÷ Số tháng, tính từ <b>tháng bắt đầu sử dụng</b>. Chỉ tính đến tháng hiện tại ({nowLabel}).</div>
     </div>
   );
 }
-const dmChip = (c) => ({ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 10px", borderRadius: 999, fontWeight: 700, color: c, background: c === "var(--ink-2)" ? "var(--line-2)" : c + "1f" });
 
 /* ---- Tab: Thời gian sử dụng xe ---- */
 function UsageTab({ rows, onChange, drivers }) {
