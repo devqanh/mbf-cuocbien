@@ -476,7 +476,7 @@ function InfoTab({ info, onChange, canEdit, docsProps }) {
 }
 
 /* ---- Tab: Định mức km theo loại chi phí (chặn tạo yêu cầu chi quá sớm) ---- */
-function AllowanceTab({ rows, onChange, costItems, addCostItem }) {
+function AllowanceTab({ rows, onChange, costTypes }) {
   const isMobile = useIsMobile();
   const set = (i, np) => onChange(rows.map((r, j) => (j === i ? { ...r, ...np } : r)));
   const add = () => onChange([...(rows || []), { costItem: "", km: "" }]);
@@ -484,12 +484,12 @@ function AllowanceTab({ rows, onChange, costItems, addCostItem }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.55, background: "#eef4ff", border: "1px solid #d6e3fb", borderRadius: 10, padding: "10px 13px" }}>
-        <i className="bi bi-info-circle-fill" style={{ color: "var(--accent)" }} /> Định mức <b>KM tối thiểu</b> giữa 2 lần cùng loại chi phí. Khi tài xế gửi <b>yêu cầu chi</b> qua link công khai, hệ thống <b>chặn</b> nếu KM chưa tăng đủ định mức so với phiếu <b>đã duyệt</b> gần nhất cùng loại. (Để trống / 0 = không giới hạn.)
+        <i className="bi bi-info-circle-fill" style={{ color: "var(--accent)" }} /> Định mức <b>KM tối thiểu</b> giữa 2 lần cùng loại chi phí. Khi tài xế gửi <b>yêu cầu chi</b> qua link công khai, hệ thống <b>chặn</b> nếu KM chưa tăng đủ định mức so với phiếu <b>đã duyệt</b> gần nhất cùng loại. (Để trống / 0 = không giới hạn.) Loại chi phí lấy từ danh mục <b>Loại chi phí xe</b> (Cài đặt).
       </div>
-      {(rows || []).length === 0 && <div style={{ padding: "10px 2px", fontSize: 12.5, color: "var(--ink-4)" }}>Chưa có định mức — bấm <b>+ Thêm định mức</b>.</div>}
+      {(rows || []).length === 0 &&<div style={{ padding: "10px 2px", fontSize: 12.5, color: "var(--ink-4)" }}>Chưa có định mức — bấm <b>+ Thêm định mức</b>.</div>}
       {(rows || []).map((r, i) => (
         <div key={i} style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 170px 40px", gap: 10, alignItems: "end", ...card }}>
-          <div>{lbl("Loại chi phí")}<Combo value={r.costItem} onChange={(x) => set(i, { costItem: x })} options={costItems || []} onCreate={(v) => { set(i, { costItem: v }); addCostItem && addCostItem(v); }} placeholder="Chọn loại chi phí…" /></div>
+          <div>{lbl("Loại chi phí")}<Combo value={r.costItem} onChange={(x) => set(i, { costItem: x })} options={costTypes || []} placeholder="Chọn loại chi phí xe…" strict /></div>
           <div>{lbl("Định mức (km)")}<Num value={r.km} onChange={(x) => set(i, { km: x })} suffix="km" /></div>
           {delBtn(() => del(i))}
         </div>

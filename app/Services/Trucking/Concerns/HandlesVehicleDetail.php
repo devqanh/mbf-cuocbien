@@ -253,7 +253,7 @@ trait HandlesVehicleDetail
         };
     }
 
-    private function vehicleCostTypesOut(): array
+    public function vehicleCostTypesOut(): array
     {
         return TruckingVehicleCostType::orderBy('sort')->orderBy('name')->pluck('name')->all();
     }

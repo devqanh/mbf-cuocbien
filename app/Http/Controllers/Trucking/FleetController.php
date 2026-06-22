@@ -20,6 +20,7 @@ class FleetController extends BaseTruckingController
             'expiringCosts'   => $this->svc->expiringVehicleCosts(),
             'pendingCosts'    => $this->svc->pendingVehicleCosts(),
             'costItems'       => $this->svc->costItemNames(),
+            'vehicleCostTypes' => $this->svc->vehicleCostTypesOut(),   // định mức km dùng đúng danh mục Loại chi phí xe
             'dueWarnDays'     => (int) TruckingSetting::get('due_warn_days', '30'),
         ], 'fleet.manage', 'fleet.manage'));
     }

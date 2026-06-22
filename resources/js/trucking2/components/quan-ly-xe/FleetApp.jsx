@@ -14,6 +14,7 @@ function FleetApp({ modeSwitch }) {
   const copyPublic = () => { try { navigator.clipboard && navigator.clipboard.writeText(publicUrl); window.trkToast && window.trkToast("Đã sao chép link"); } catch (e) {} };
 
   const [vehicles] = useState(B.vehicles || []);
+  const vehicleCostTypes = B.vehicleCostTypes || [];   // danh mục Loại chi phí xe (cai-dat#vehicleCostTypes) — cho Định mức + khớp yêu cầu chi
   const [costItems, setCostItems] = useState(B.costItems || []);   // danh mục Khoản chi phí (Combo tên phiếu)
   const addCostItem = async (name) => {
     name = (name || "").trim(); if (!name) return;
@@ -400,7 +401,7 @@ function FleetApp({ modeSwitch }) {
             ? <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "30px 4px", color: "var(--ink-4)", fontSize: 13.5 }}><span style={{ width: 15, height: 15, border: "2px solid var(--line)", borderTopColor: "var(--accent)", borderRadius: "50%", display: "inline-block", animation: "trk-spin .7s linear infinite" }} /> Đang tải dữ liệu…</div>
             : tab === "info" ? <InfoTab info={detail.info} onChange={(info) => upd({ info })} canEdit={canEdit}
                 docsProps={{ docs: detail.docs || [], busy: docBusy, docType, setDocType, onPick: uploadDocs, onDelete: deleteDoc }} />
-            : tab === "allowance" ? <AllowanceTab rows={detail.allowances || []} onChange={(rows) => upd({ allowances: rows })} costItems={costItems} addCostItem={addCostItem} />
+            : tab === "allowance" ? <AllowanceTab rows={detail.allowances || []} onChange={(rows) => upd({ allowances: rows })} costTypes={vehicleCostTypes} />
             : tab === "deprec" ? <DeprecTab rows={detail.depreciations || []} onChange={(rows) => upd({ depreciations: rows })} />
             : tab === "usage" ? <UsageTab rows={detail.usages || []} onChange={(rows) => upd({ usages: rows })} drivers={detail.drivers || []} />
             : tab === "fuel" ? <FuelTab vehicleId={selId} hashid={selHash.current} routes={ROUTES} />

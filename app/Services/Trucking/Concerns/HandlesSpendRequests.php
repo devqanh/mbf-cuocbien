@@ -71,7 +71,8 @@ trait HandlesSpendRequests
                 ->map(fn ($v) => ['id' => $v->id, 'plate' => $v->plate])->all(),
             'assets'    => TruckingVehicle::where('kind', 'asset')->orderBy('plate')->get(['id', 'plate', 'info'])
                 ->map(fn ($v) => ['id' => $v->id, 'code' => $v->plate, 'name' => (is_array($v->info) ? ($v->info['name'] ?? '') : '') ?: $v->plate])->all(),
-            'costItems' => $this->costItemNames(),
+            // Loại chi phí = danh mục LOẠI CHI PHÍ XE (cai-dat#vehicleCostTypes) — đồng bộ với phiếu chi xe & định mức km.
+            'costItems' => $this->vehicleCostTypesOut(),
         ];
     }
 
@@ -82,7 +83,7 @@ trait HandlesSpendRequests
             ->where(fn ($q) => $q->where('type', 'MBF')->orWhere('kind', 'asset'))->first();
         if (! $v) return ['ok' => false, 'message' => 'Đối tượng không hợp lệ.'];
         $item = trim((string) ($in['costItem'] ?? ''));
-        if ($item === '' || ! in_array($item, $this->costItemNames(), true)) return ['ok' => false, 'message' => 'Loại chi phí không hợp lệ.'];
+        if ($item === '' || ! in_array($item, $this->vehicleCostTypesOut(), true)) return ['ok' => false, 'message' => 'Loại chi phí không hợp lệ.'];
         $amount = $this->inMoney($in['amount'] ?? null) ?? 0;
         if ($amount <= 0) return ['ok' => false, 'message' => 'Vui lòng nhập số tiền.'];
         $km = (isset($in['km']) && $in['km'] !== '') ? (float) preg_replace('/[^\d.]/', '', (string) $in['km']) : null;
@@ -182,7 +183,7 @@ trait HandlesSpendRequests
         if (! $v) return ['ok' => false, 'message' => 'Xe không hợp lệ.'];
 
         $item = trim((string) ($in['costItem'] ?? ''));
-        if ($item === '' || ! in_array($item, $this->costItemNames(), true)) return ['ok' => false, 'message' => 'Loại chi phí không hợp lệ.'];
+        if ($item === '' || ! in_array($item, $this->vehicleCostTypesOut(), true)) return ['ok' => false, 'message' => 'Loại chi phí không hợp lệ.'];
         $amount = $this->inMoney($in['amount'] ?? null) ?? 0;
         if ($amount <= 0) return ['ok' => false, 'message' => 'Vui lòng nhập số tiền.'];
         $km = (isset($in['km']) && $in['km'] !== '') ? (float) preg_replace('/[^\d.]/', '', (string) $in['km']) : null;
