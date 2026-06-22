@@ -81,10 +81,15 @@
                             <i class="bi bi-truck-front"></i> Quản lý tài sản
                         </a>
                     </li>
+                    @php
+                        // Số phiếu chi CHỜ DUYỆT (chưa hủy + chưa duyệt) — hiện badge cho lãnh đạo dễ thấy
+                        $pendingCostCount = \App\Models\TruckingVehicleCost::whereNull('cancelled_at')->where('approved', false)->count();
+                    @endphp
                     <li class="nav-item">
                         <a class="nav-link {{ request()->routeIs('trucking2.costManagement') ? 'active' : '' }}"
                            href="{{ route('trucking2.costManagement') }}">
                             <i class="bi bi-receipt-cutoff"></i> Duyệt chi phí
+                            <span class="menu-badge {{ $pendingCostCount > 0 ? '' : 'd-none' }}">{{ $pendingCostCount > 99 ? '99+' : $pendingCostCount }}</span>
                         </a>
                     </li>
                     @endcan
