@@ -13,10 +13,11 @@ const locOptions = (cfg) => (cfg.locations || []).map((n) => {
   const c = (cfg.locationCode || {})[n];
   return c ? { value: c, label: `${n} — ${c}` } : { value: n, label: n };
 });
-// Địa điểm theo KÝ HIỆU (chỉ mã, dedupe) — value & label đều là ký hiệu; cho ô cần chọn theo mã (vd Nơi hạ sà lan).
-const locCodeOptions = (cfg) => [...new Set(Object.values(cfg.locationCode || {}).filter(Boolean))].sort().map((c) => ({ value: c, label: c }));
 // Loại cont sà lan SUY TỪ Loại cont: reefer (RF/RHC) → NOR, còn lại → DRY (vd 40HC→DRY, 40RF/40RHC→NOR).
 const bargeKindOf = (ct) => /R(F|HC|EEF)/i.test(String(ct || "")) ? "NOR" : "DRY";
+// Nơi hạ sà lan: CHỈ 2 cảng hạ sà lan (HPP, LHP). Giữ luôn giá trị đang lưu nếu khác (lô cũ).
+const BARGE_DROPS = ["HPP", "LHP"];
+const bargeDropOptions = (cur) => [...new Set([...BARGE_DROPS, ...(cur ? [cur] : [])])].map((c) => ({ value: c, label: c }));
 // Kho (nhà máy): danh sách MÃ kho DEDUPE (1 ký hiệu có thể nhiều tên → chỉ hiện 1 mã); MultiCombo lưu chuỗi = mã.
 const whCodes = (cfg) => [...new Set((cfg.warehouses || []).map((n) => (cfg.warehouseCode || {})[n] || n).filter(Boolean))];
 
@@ -431,11 +432,11 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
         <div style={{ padding: "10px 12px", marginTop: 8, borderRadius: 9, background: ship.bargeDrop ? "var(--accent-weak-2)" : "#fafbfc", border: "1px solid " + (ship.bargeDrop ? "var(--accent-weak)" : "var(--line-2)") }}>
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, alignItems: "end" }}>
             <Field label="Nơi hạ sà lan (điểm đến)">
-              <Combo value={ship.bargeDrop} onChange={(x) => set({ bargeDrop: x })} options={locCodeOptions(cfg)} placeholder="Chọn ký hiệu điểm hạ sà lan…" clearable strict />
+              <Combo value={ship.bargeDrop} onChange={(x) => set({ bargeDrop: x })} options={bargeDropOptions(ship.bargeDrop)} placeholder="Chọn cảng hạ sà lan (HPP / LHP)…" clearable strict />
             </Field>
             <div style={{ fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.5, paddingBottom: 4 }}>
               {ship.bargeDrop ? (
-                <><i className="bi bi-water" style={{ color: "var(--accent)" }} /> <b style={{ color: "var(--accent)" }}>Đi sà lan</b> · loại <b>{bargeKindOf(ship.contType)} CONTAINER</b> (theo Loại cont {ship.contType || "—"}). Phí sà lan = <b>khoản riêng</b>, tra nhóm Non theo tuyến <b>Nơi hạ (cảng) → Nơi hạ sà lan</b>.</>
+                <><i className="bi bi-water" style={{ color: "var(--accent)" }} /> <b style={{ color: "var(--accent)" }}>Đi sà lan</b> · loại <b>{bargeKindOf(ship.contType)} CONTAINER</b> (theo <a href="/trucking-v2/cai-dat#contTypes" target="_blank" rel="noopener" style={{ color: "var(--accent)" }}>Loại cont</a> {ship.contType || "—"}). Phí sà lan = <b>khoản riêng</b>, tra nhóm Non theo tuyến <b>Nơi hạ (cảng) → Nơi hạ sà lan</b>.</>
               ) : (
                 <>Chọn <b>Nơi hạ sà lan</b> để cont đi sà lan — tự tính <b>phí sà lan riêng</b> (loại DRY/NOR suy từ Loại cont, không cần chọn thêm).</>
               )}
