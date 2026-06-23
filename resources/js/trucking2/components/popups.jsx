@@ -349,26 +349,6 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
           <Field label="Số INV" hint="hóa đơn"><Txt value={ship.inv} onChange={(x) => set({ inv: x })} placeholder="VD: INV-2026-0142" /></Field>
           <Field label="Nhập / Xuất"><div style={{ marginTop: 2 }}><Seg value={ship.io} onChange={(x) => set({ io: x })} options={["Nhập", "Xuất", "Khác"]} /></div></Field>
         </div>
-        <div style={{ padding: "6px 0 2px" }}>
-          <ChkBox checked={!!ship.cru} onChange={(v) => set({ cru: v })} label="Hàng CRU" />
-          <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 4, paddingLeft: 25, lineHeight: 1.5 }}>
-            Quyết định KIND khi lấy giá: <b style={{ color: "var(--ink-3)" }}>CRU + Xuất</b> → External CRU · <b style={{ color: "var(--ink-3)" }}>CRU + Nhập</b> → Internal CRU · <b style={{ color: "var(--ink-3)" }}>không CRU</b> → Transportation 1 way.
-          </div>
-        </div>
-        <div style={{ padding: "6px 0 2px", borderTop: "1px dashed var(--line-2)", marginTop: 4 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-            <ChkBox checked={!!ship.isBarge} onChange={(v) => set({ isBarge: v, bargeCont: v ? (ship.bargeCont || "DRY") : "" })} label="Đi sà lan" />
-            {ship.isBarge && (
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Loại cont:</span>
-                <Seg value={ship.bargeCont || "DRY"} onChange={(x) => set({ bargeCont: x })} options={["DRY", "NOR"]} />
-              </div>
-            )}
-          </div>
-          {ship.isBarge && <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 6, paddingLeft: 25, lineHeight: 1.5 }}>
-            Lấy giá theo nhóm <b style={{ color: "var(--ink-3)" }}>Non · {ship.bargeCont === "NOR" ? "NOR" : "DRY"} CONTAINER</b> ở Bảng giá (khớp theo nơi hạ + kho), bỏ qua KIND theo CRU.
-          </div>}
-        </div>
       </Section>
 
       <Section title="Container">
@@ -428,21 +408,43 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
         )}
       </div>
 
-      <Section title="Thuê xe ngoài">
-        <div style={{ padding: "8px 0 2px" }}>
-          <ChkBox checked={extHired} onChange={toggleExt} label="Có thuê xe ngoài cho lô này" />
+      <Section title="Phân loại & tùy chọn">
+        {/* Gom 3 tùy chọn ảnh hưởng định giá vào 1 khu cho dễ chọn */}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", padding: "10px 0 6px" }}>
+          {[
+            { on: !!ship.cru, set: (v) => set({ cru: v }), icon: "bi-recycle", label: "Hàng CRU" },
+            { on: !!ship.isBarge, set: (v) => set({ isBarge: v, bargeCont: v ? (ship.bargeCont || "DRY") : "" }), icon: "bi-water", label: "Đi sà lan" },
+            { on: extHired, set: toggleExt, icon: "bi-truck", label: "Thuê xe ngoài" },
+          ].map((o, i) => (
+            <button key={i} type="button" onClick={() => o.set(!o.on)}
+              style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "9px 14px", borderRadius: 10, cursor: "pointer", fontSize: 13.5, fontWeight: 600,
+                border: "1px solid " + (o.on ? "var(--accent)" : "var(--line)"), background: o.on ? "var(--accent-weak-2)" : "#fff", color: o.on ? "var(--accent)" : "var(--ink-2)" }}>
+              <span style={{ width: 18, height: 18, borderRadius: 5, display: "grid", placeItems: "center", border: "1.5px solid " + (o.on ? "var(--accent)" : "var(--line-2)"), background: o.on ? "var(--accent)" : "#fff", color: "#fff", fontSize: 11 }}>{o.on ? <i className="bi bi-check-lg" /> : null}</span>
+              <i className={"bi " + o.icon} style={{ opacity: .7 }} /> {o.label}
+            </button>
+          ))}
         </div>
-        {extHired && (
-          <>
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "220px 1fr", gap: 12, padding: "10px 0 4px", alignItems: "end" }}>
-              <Field label="Số tiền (cước xe ngoài)"><Money value={extLine.amount} onChange={(x) => setExt({ amount: x })} dim /></Field>
-              <Field label="Ghi chú thông tin nhà xe"><Txt value={extLine.note} onChange={(x) => setExt({ note: x })} placeholder="Tên nhà xe, SĐT, biển số…" /></Field>
-            </div>
-            <div style={{ fontSize: 11.5, color: "var(--ink-4)", padding: "2px 0 6px", display: "flex", alignItems: "center", gap: 6, lineHeight: 1.5 }}>
-              <I.link /> Số tiền này là khoản <b style={{ color: "var(--ink-3)" }}>“Cước xe ngoài”</b> trong <b style={{ color: "var(--ink-3)" }}>Chi phí lô hàng</b> — kế toán sửa được ở đó nhưng không xóa được. Bỏ tích ở đây để gỡ khoản này.
-            </div>
-          </>
+        {/* Chi tiết theo tùy chọn đã bật */}
+        {ship.isBarge && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", marginTop: 6, background: "var(--accent-weak-2)", borderRadius: 9, flexWrap: "wrap" }}>
+            <i className="bi bi-water" style={{ color: "var(--accent)" }} />
+            <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Sà lan · loại cont:</span>
+            <Seg value={ship.bargeCont || "DRY"} onChange={(x) => set({ bargeCont: x })} options={["DRY", "NOR"]} />
+            <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>→ giá theo nhóm <b>Non · {ship.bargeCont === "NOR" ? "NOR" : "DRY"} CONTAINER</b></span>
+          </div>
         )}
+        {extHired && (
+          <div style={{ padding: "8px 12px", marginTop: 6, background: "#fafbfc", border: "1px solid var(--line-2)", borderRadius: 9 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "200px 1fr", gap: 12, alignItems: "end" }}>
+              <Field label="Cước xe ngoài"><Money value={extLine.amount} onChange={(x) => setExt({ amount: x })} dim /></Field>
+              <Field label="Ghi chú nhà xe"><Txt value={extLine.note} onChange={(x) => setExt({ note: x })} placeholder="Tên nhà xe, SĐT, biển số…" /></Field>
+            </div>
+            <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}><I.link /> Khoản <b style={{ color: "var(--ink-3)" }}>“Cước xe ngoài”</b> trong Chi phí lô hàng; bỏ tích để gỡ.</div>
+          </div>
+        )}
+        <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 8, lineHeight: 1.5 }}>
+          <b style={{ color: "var(--ink-3)" }}>CRU</b> quyết KIND lấy giá (CRU+Xuất→External · CRU+Nhập→Internal · không CRU→Transport 1 way). <b style={{ color: "var(--ink-3)" }}>Sà lan</b> ép giá theo nhóm Non DRY/NOR (bỏ qua CRU).
+        </div>
       </Section>
 
       <Section title="Tuyến" >
