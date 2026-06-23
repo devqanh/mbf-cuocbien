@@ -86,15 +86,10 @@ trait HandlesStatementPricing
 
         $cont20   = str_contains((string) $s->cont_type, '20');
         $isExport = str_contains(mb_strtolower((string) $s->io), 'xu');
-        // SÀ LAN: ép KIND theo loại cont (DRY/NOR) → khớp nhóm "Non · DRY/NOR CONTAINER" ở bảng giá,
-        // bỏ qua kind theo CRU. Tên KIND phải trùng "DRY CONTAINER"/"NOR CONTAINER".
-        if ($s->is_barge) {
-            $kind = (mb_strtoupper((string) $s->barge_cont) === 'NOR') ? 'NOR CONTAINER' : 'DRY CONTAINER';
-        } else {
-            $kind = $s->cru
-                ? ($isExport ? 'External CRU transportation' : 'Internal CRU transportation')
-                : 'Transportation 1 way of Import/Export';
-        }
+        // KIND theo CRU. (SÀ LAN không còn ép kind — giá cont giữ nguyên; phí sà lan là khoản RIÊNG tính bên dưới.)
+        $kind = $s->cru
+            ? ($isExport ? 'External CRU transportation' : 'Internal CRU transportation')
+            : 'Transportation 1 way of Import/Export';
         $nkKind = $nk($kind);
 
         $ft = $this->freeTimeOf($s, $threshold);
@@ -109,27 +104,28 @@ trait HandlesStatementPricing
         $khoCodes = [];
         foreach (preg_split('/\s*(?:,|→|->|–|—|\s-\s)\s*/u', (string) $s->kho) ?: [] as $k) { $c = $rc($k); if ($c !== '') $khoCodes[] = $c; }
 
-        // Linear scan trên priceList ĐÃ PRECOMPUTE rcFrom/rcDrop/rcKho/nkKind/conn (pricingContext)
-        // → không có chuẩn hóa per-row trong vòng lặp; chỉ so chuỗi đã chuẩn.
-        $p = null; $fallback = null; $nonMatch = null;
-        foreach ($priceList as $r) {
-            if ($loFrom !== '' && $r['rcFrom'] !== '' && $r['rcFrom'] !== $loFrom) continue;
-            if ($loDrop !== '' && $r['rcDrop'] !== '' && $r['rcDrop'] !== $loDrop) continue;
-            if (empty($khoCodes) || empty($r['rcKho'])) continue;   // kho rỗng = không khớp (giữ semantic cũ)
-            $khoOk = false;
-            foreach ($r['rcKho'] as $k) if (in_array($k, $khoCodes, true)) { $khoOk = true; break; }
-            if (! $khoOk) continue;
-            if ($r['nkKind'] !== '' && $r['nkKind'] !== $nkKind) continue;
-
-            if ($fallback === null) $fallback = $r['row'];   // base match, để fallback nếu không có conn khớp
-            // "Non" = áp cho MỌI trạng thái (không phân biệt connect/disconnect) — ưu tiên SAU khớp đúng conn.
-            if ($r['conn'] === 'Non') { if ($nonMatch === null) $nonMatch = $r['row']; continue; }
-            if (! $conn || $r['conn'] === $conn) { $p = $r['row']; break; }   // khớp đúng connect → ưu tiên nhất
-        }
-        if (! $p) $p = $nonMatch ?? $fallback;   // không có conn khớp → ưu tiên Non, rồi mới base
+        // Giá CONT: khớp theo đi + nhà máy + hạ + KIND + kết nối (giữ ràng buộc kho).
+        $p = $this->matchPriceRow($priceList, $loFrom, $loDrop, $khoCodes, $nkKind, $conn, true, false);
 
         $cuoc = $p ? (int) ($cont20 ? $p['transFee20'] : $p['transFee40']) : 0;
         $dau  = $p ? (int) ($cont20 ? $p['fuelFee20'] : $p['fuelFee40']) : 0;
+
+        // ===== PHÍ SÀ LAN (khoản RIÊNG) =====
+        // Sà lan chở cont từ NƠI HẠ CỦA CONT (cảng) → NƠI HẠ SÀ LAN. Tra nhóm "Non · DRY/NOR CONTAINER":
+        //   bảng giá from = nơi hạ cont (to_loc) · loc = nơi hạ sà lan (barge_drop). BỎ ràng buộc kho.
+        $bargeCuoc = 0; $bargeDau = 0; $bargeMatched = false; $bargeKind = null; $bargeDropCode = ''; $bp = null;
+        if ($s->is_barge) {
+            $bargeKind = (mb_strtoupper((string) $s->barge_cont) === 'NOR') ? 'NOR CONTAINER' : 'DRY CONTAINER';
+            $bargeDropCode = $rc($s->barge_drop);
+            if ($bargeDropCode !== '') {
+                $bp = $this->matchPriceRow($priceList, $loDrop, $bargeDropCode, [], $nk($bargeKind), $conn, false, true);
+                if ($bp) {
+                    $bargeMatched = true;
+                    $bargeCuoc = (int) ($cont20 ? $bp['transFee20'] : $bp['transFee40']);
+                    $bargeDau  = (int) ($cont20 ? $bp['fuelFee20'] : $bp['fuelFee40']);
+                }
+            }
+        }
 
         $choHoItems = []; $costItems = [];
         foreach ($s->costLines as $c) {
@@ -141,6 +137,8 @@ trait HandlesStatementPricing
         // Tuyến hiển thị: ĐI → NHÀ MÁY → HẠ (theo tên cho rõ; ký hiệu là khóa link)
         $nameOf = function ($v) use ($codeToName) { $v = trim((string) $v); return $codeToName[$v] ?? $v; };
         $route = $p ? (($nameOf($p['from'] ?? '') ?: '?') . ' → ' . ($nameOf($p['to1'] ?? '') ?: '?') . ' → ' . ($nameOf($p['loc'] ?? '') ?: '?')) : null;
+        // Tuyến sà lan: nơi hạ cont → nơi hạ sà lan (theo tên cho rõ)
+        $bargeRoute = $bp ? (($nameOf($bp['from'] ?? '') ?: '?') . ' → ' . ($nameOf($bp['loc'] ?? '') ?: '?')) : null;
 
         $diag = [
             'hasPrice' => count($priceList) > 0,
@@ -156,8 +154,41 @@ trait HandlesStatementPricing
             'cuoc' => $cuoc, 'dau' => $dau, 'chiHo' => $chiHo, 'choHoItems' => $choHoItems, 'costItems' => $costItems,
             'route' => $route, 'loTrinh' => $loTrinh, 'kho' => trim((string) $s->kho), 'noDrop' => $noDrop, 'diag' => $diag,
             'ftHours' => $ft['hours'] ?? null, 'ftThreshold' => $ft['threshold'] ?? null, 'ftBasis' => $ft['basis'] ?? null,
-            'phaiThu' => $cuoc + $dau + $chiHo,
+            // Sà lan: khoản RIÊNG (cước + dầu sà lan), tra theo nơi hạ cont → nơi hạ sà lan, nhóm Non DRY/NOR.
+            'isBarge' => (bool) $s->is_barge, 'bargeCont' => $s->barge_cont ?? '', 'bargeDrop' => $s->barge_drop ?? '',
+            'bargeMatched' => $bargeMatched, 'bargeKind' => $bargeKind, 'bargeRoute' => $bargeRoute,
+            'bargeCuoc' => $bargeCuoc, 'bargeDau' => $bargeDau,
+            'phaiThu' => $cuoc + $dau + $chiHo + $bargeCuoc + $bargeDau,
         ];
+    }
+
+    /**
+     * Quét bảng giá ĐÃ PRECOMPUTE (rcFrom/rcDrop/rcKho/nkKind/conn) → trả dòng giá khớp (hoặc null).
+     *  - $requireKho: bắt buộc khớp 1 nhà máy (giá cont). false = bỏ qua kho (phí sà lan).
+     *  - $preferNon: ưu tiên dòng "Non" (áp mọi trạng thái) — dùng cho sà lan; false giữ logic cũ
+     *    (khớp đúng conn trước, rồi Non, rồi base).
+     */
+    private function matchPriceRow(array $priceList, string $loFrom, string $loDrop, array $khoCodes, string $nkKind, ?string $conn, bool $requireKho = true, bool $preferNon = false): ?array
+    {
+        $p = null; $fallback = null; $nonMatch = null;
+        foreach ($priceList as $r) {
+            if ($loFrom !== '' && $r['rcFrom'] !== '' && $r['rcFrom'] !== $loFrom) continue;
+            if ($loDrop !== '' && $r['rcDrop'] !== '' && $r['rcDrop'] !== $loDrop) continue;
+            if ($requireKho) {
+                if (empty($khoCodes) || empty($r['rcKho'])) continue;   // kho rỗng = không khớp (giữ semantic cũ)
+                $khoOk = false;
+                foreach ($r['rcKho'] as $k) if (in_array($k, $khoCodes, true)) { $khoOk = true; break; }
+                if (! $khoOk) continue;
+            }
+            if ($r['nkKind'] !== '' && $r['nkKind'] !== $nkKind) continue;
+
+            if ($fallback === null) $fallback = $r['row'];   // base match, fallback nếu không có conn khớp
+            // "Non" = áp cho MỌI trạng thái — ưu tiên SAU khớp đúng conn (giá cont), hoặc ưu tiên nhất (sà lan).
+            if ($r['conn'] === 'Non') { if ($nonMatch === null) $nonMatch = $r['row']; continue; }
+            if (! $preferNon && (! $conn || $r['conn'] === $conn)) { $p = $r['row']; break; }   // khớp đúng connect
+        }
+        if (! $p) $p = $nonMatch ?? $fallback;   // ưu tiên Non rồi mới base
+        return $p;
     }
 
     /** [tên địa điểm => ký hiệu] cho codeOf. Memoize per-request. */

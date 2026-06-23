@@ -17,7 +17,13 @@ Bộ lọc trang Lô hàng (`pagedShipments` sheet `icd`, ShipmentsApp.jsx) cho 
 
 Tất cả áp trong closure `$searched` nên cả ĐẾM (filterCounts/total) + danh sách đều đúng. ShipmentController::page truyền `toLoc,toMode,fromLoc,fromMode,denDate,tags`.
 
-**Sà lan + giá "Non" (định giá):** bảng giá có conn thứ 3 = **Non** (áp mọi trạng thái, ưu tiên sau Connect/Disconnect đúng, trước fallback; priceShipment dùng `JSON_SEARCH`-free logic — chỉ là conn string). Nhóm Non thường có KIND "DRY CONTAINER"/"NOR CONTAINER". Lô có `is_barge` + `barge_cont` (DRY|NOR) → priceShipment ÉP `$kind`="DRY/NOR CONTAINER" (bỏ KIND theo CRU) → khớp dòng Non theo nơi hạ+kho; bảng kê tự ra giá đúng. UI: InfoPopup khu **"Phân loại & tùy chọn"** gom 3 toggle CRU / Đi sà lan (Seg DRY/NOR) / Thuê xe ngoài (trước nằm rải rác). Bảng giá: ô địa điểm hạ dùng KÝ HIỆU + Combo tìm kiếm; nhóm mới có `gid` riêng để không bị gộp khi đang sửa (gid không lưu DB).
+**Sà lan = PHÍ RIÊNG (KHÔNG ép giá cont):** bảng giá có conn thứ 3 = **Non** (áp mọi trạng thái, ưu tiên sau Connect/Disconnect đúng, trước fallback). Nhóm Non có KIND "DRY CONTAINER"/"NOR CONTAINER".
+
+Lô `is_barge` + `barge_cont` (DRY|NOR) + **`barge_drop`** (ký hiệu NƠI HẠ SÀ LAN — cột mới, migration 2026_06_23): giá cont **GIỮ NGUYÊN** (theo CRU như thường), priceShipment tính THÊM **cước+dầu sà lan** là khoản riêng. Khớp phí sà lan: bảng giá `from` = **nơi hạ CONT (to_loc, cảng)**, `loc` = **nơi hạ sà lan (barge_drop)**, kind = Non DRY/NOR, **BỎ ràng buộc kho** (lô đi sà lan không khớp kho). Tuyến sà lan = nơi hạ cont → nơi hạ sà lan. `phaiThu = cuoc+dau+chiHo+bargeCuoc+bargeDau`. pr trả thêm `isBarge/bargeCont/bargeDrop/bargeMatched/bargeKind/bargeRoute/bargeCuoc/bargeDau`.
+
+Refactor: helper chung **`matchPriceRow($priceList,$loFrom,$loDrop,$khoCodes,$nkKind,$conn,$requireKho,$preferNon)`** (HandlesStatementPricing) — cont gọi `requireKho=true,preferNon=false` (logic cũ y nguyên); sà lan `requireKho=false,preferNon=true` (ưu tiên dòng Non). Test read-only PASS: Canon Quế Võ, to_loc=ICDTP + barge_drop=HPP → DRY 3.315.432+541.167; lô thường 77/92 khớp (không đổi).
+
+UI: InfoPopup khu **"Phân loại & tùy chọn"** gom 3 toggle CRU / Đi sà lan / Thuê xe ngoài; tích sà lan hiện Seg DRY/NOR + Combo **"Nơi hạ sà lan"** (locOptions). Label route đổi **"Nơi hạ" → "Nơi hạ (cảng)"**. Bảng kê (statement.jsx) hiện dòng **"+ Cước sà lan"** riêng (candidate preview + detail), cảnh báo ⚠ khi chưa khớp / thiếu nơi hạ sà lan. Bảng giá: ô địa điểm hạ dùng KÝ HIỆU + Combo tìm kiếm; nhóm mới có `gid` riêng để không bị gộp khi đang sửa (gid không lưu DB).
 
 **Field lô mới (cùng đợt):** `cost_lines.invoice_no` (Số hóa đơn từng khoản ở popup Chi phí); `shipments.info_note` (textarea Ghi chú lô, tách khỏi `ghi_chu` kế toán). **"Theo dõi" (follow)** nay phát hiện "Chưa có số HĐ" = khoản gắn màu theo dõi mà `invoice_no` trống (TRƯỚC: xét tiền=0) — áp ở follow=missing + followStats + chấm "!" CostLineRows.
 

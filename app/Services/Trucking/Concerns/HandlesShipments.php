@@ -792,6 +792,7 @@ trait HandlesShipments
             'cru'          => (bool) $s->cru,
             'isBarge'      => (bool) $s->is_barge,
             'bargeCont'    => $s->barge_cont ?? '',
+            'bargeDrop'    => $s->barge_drop ?? '',
             'qty'          => $s->qty,
             'contType'     => $s->cont_type ?? '',
             'contNo'       => $s->cont_no ?? '',
@@ -898,6 +899,7 @@ trait HandlesShipments
                 'cru'          => ['cru', ! empty($data['cru'])],
                 'isBarge'      => ['is_barge', ! empty($data['isBarge'])],
                 'bargeCont'    => ['barge_cont', $this->str($data['bargeCont'] ?? null)],
+                'bargeDrop'    => ['barge_drop', $this->str($data['bargeDrop'] ?? null)],
                 'qty'          => ['qty', isset($data['qty']) && $data['qty'] !== '' ? (int) $data['qty'] : null],
                 'contType'     => ['cont_type', $this->str($data['contType'] ?? null)],
                 'contNo'       => ['cont_no', $this->str($data['contNo'] ?? null)],
@@ -936,6 +938,7 @@ trait HandlesShipments
             // (port từ registerLocationCode dùng cho import bảng giá). Idempotent: đã có → no-op.
             if ($apply('from')) $this->registerLocationCode($data['from'] ?? null);
             if ($apply('to'))   $this->registerLocationCode($data['to'] ?? null);
+            if ($apply('bargeDrop')) $this->registerLocationCode($data['bargeDrop'] ?? null);
             // rev scalars (VAT / hạn TT / ghi chú) đi cùng nhóm 'rev'
             if ($apply('rev')) {
                 $s->vat_rate = $this->inNum($data['rev']['vatRate'] ?? null);

@@ -426,11 +426,20 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
         </div>
         {/* Chi tiết theo tùy chọn đã bật */}
         {ship.isBarge && (
-          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", marginTop: 6, background: "var(--accent-weak-2)", borderRadius: 9, flexWrap: "wrap" }}>
-            <i className="bi bi-water" style={{ color: "var(--accent)" }} />
-            <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Sà lan · loại cont:</span>
-            <Seg value={ship.bargeCont || "DRY"} onChange={(x) => set({ bargeCont: x })} options={["DRY", "NOR"]} />
-            <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>→ giá theo nhóm <b>Non · {ship.bargeCont === "NOR" ? "NOR" : "DRY"} CONTAINER</b></span>
+          <div style={{ padding: "10px 12px", marginTop: 6, background: "var(--accent-weak-2)", borderRadius: 9 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <i className="bi bi-water" style={{ color: "var(--accent)" }} />
+              <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Sà lan · loại cont:</span>
+              <Seg value={ship.bargeCont || "DRY"} onChange={(x) => set({ bargeCont: x })} options={["DRY", "NOR"]} />
+            </div>
+            <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, alignItems: "end" }}>
+              <Field label="Nơi hạ sà lan (điểm đến)">
+                <Combo value={ship.bargeDrop} onChange={(x) => set({ bargeDrop: x })} options={locOptions(cfg)} placeholder="Chọn điểm hạ sà lan (trong Cài đặt)…" clearable strict />
+              </Field>
+              <div style={{ fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.5, paddingBottom: 4 }}>
+                Phí sà lan = <b>khoản riêng</b> cộng vào bảng kê (không đổi giá cont). Tra nhóm <b>Non · {ship.bargeCont === "NOR" ? "NOR" : "DRY"} CONTAINER</b> theo tuyến <b>Nơi hạ (cảng) → Nơi hạ sà lan</b>.
+              </div>
+            </div>
           </div>
         )}
         {extHired && (
@@ -443,7 +452,7 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
           </div>
         )}
         <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 8, lineHeight: 1.5 }}>
-          <b style={{ color: "var(--ink-3)" }}>CRU</b> quyết KIND lấy giá (CRU+Xuất→External · CRU+Nhập→Internal · không CRU→Transport 1 way). <b style={{ color: "var(--ink-3)" }}>Sà lan</b> ép giá theo nhóm Non DRY/NOR (bỏ qua CRU).
+          <b style={{ color: "var(--ink-3)" }}>CRU</b> quyết KIND lấy giá (CRU+Xuất→External · CRU+Nhập→Internal · không CRU→Transport 1 way). <b style={{ color: "var(--ink-3)" }}>Sà lan</b> giữ nguyên giá cont, thêm <b>phí sà lan riêng</b> (nhóm Non DRY/NOR theo Nơi hạ cont → Nơi hạ sà lan).
         </div>
       </Section>
 
@@ -452,7 +461,7 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
         <div style={{ display: "grid", gridTemplateColumns: "1fr 36px 1fr", gap: 10, alignItems: "end", padding: "8px 0 10px" }}>
           <Field label="Nơi lấy (cảng)"><Combo value={ship.from} onChange={(x) => set({ from: x })} options={locOptions(cfg)} placeholder="Chọn cảng/điểm lấy (trong Cài đặt)…" clearable strict /></Field>
           <div style={{ display: "grid", placeItems: "center", color: "var(--accent)", paddingBottom: 9 }}><I.arrow /></div>
-          <Field label="Nơi hạ"><Combo value={ship.to} onChange={(x) => set({ to: x })} options={locOptions(cfg)} placeholder="Chọn điểm hạ (trong Cài đặt)…" clearable strict /></Field>
+          <Field label="Nơi hạ (cảng)"><Combo value={ship.to} onChange={(x) => set({ to: x })} options={locOptions(cfg)} placeholder="Chọn điểm hạ/cảng (trong Cài đặt)…" clearable strict /></Field>
         </div>
       </Section>
 
