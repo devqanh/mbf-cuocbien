@@ -57,6 +57,7 @@ function ShipmentsApp() {
   const [exporting, setExporting] = useState(false);   // chống bấm Xuất Excel nhiều lần
   const [expFrom, setExpFrom] = useState("");
   const [expTo, setExpTo] = useState("");
+  const [expNotOut, setExpNotOut] = useState(false);   // chỉ xuất cont CHƯA RA
   const [showImport, setShowImport] = useState(false);
   const [impWb, setImpWb] = useState(null);   // {names, wb}
   const [impSheet, setImpSheet] = useState("");
@@ -286,7 +287,8 @@ function ShipmentsApp() {
     // Xuất TẤT CẢ lô (không chỉ trang hiện tại) — lấy qua endpoint với all=1, rồi lọc theo ngày.
     let allShips = [];
     try {
-      const r = await window.trkApi("GET", ROUTES.shipmentsPage + "?all=1");
+      // filter=notout → server trả CHỈ cont chưa ra (cùng quy tắc tab "Chưa ra")
+      const r = await window.trkApi("GET", ROUTES.shipmentsPage + "?all=1" + (expNotOut ? "&filter=notout" : ""));
       if (r && r.ok) allShips = r.data || [];
     } catch (e) { window.trkToast && window.trkToast("Lỗi tải dữ liệu xuất Excel", "error"); return; }
     const list = allShips.filter((s) => {
@@ -453,6 +455,10 @@ function ShipmentsApp() {
                     <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>Đến ngày</div>
                       <DateField value={expTo} onChange={setExpTo} /></div>
                   </div>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11, cursor: "pointer", fontSize: 12.5, color: "var(--ink-2)", fontWeight: 500 }}>
+                    <input type="checkbox" checked={expNotOut} onChange={(e) => setExpNotOut(e.target.checked)} style={{ width: 16, height: 16, accentColor: "var(--accent)", cursor: "pointer" }} />
+                    Chỉ xuất cont <b style={{ color: "var(--warn)" }}>chưa ra</b>
+                  </label>
                   <button type="button" onClick={exportExcel} disabled={exporting}
                     style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "9px 0", fontSize: 13.5, fontWeight: 600, cursor: exporting ? "default" : "pointer", color: "#fff", background: "var(--good)", border: "none", borderRadius: 9, opacity: exporting ? 0.6 : 1 }}>
                     {exporting ? <><span style={{ width: 13, height: 13, border: "2px solid #fff", borderTopColor: "transparent", borderRadius: "50%", display: "inline-block", animation: "trk-spin .7s linear infinite" }} /> Đang xuất…</> : <><i className="bi bi-download" /> Tải file Excel</>}
