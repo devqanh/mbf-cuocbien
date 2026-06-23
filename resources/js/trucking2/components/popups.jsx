@@ -15,6 +15,8 @@ const locOptions = (cfg) => (cfg.locations || []).map((n) => {
 });
 // Địa điểm theo KÝ HIỆU (chỉ mã, dedupe) — value & label đều là ký hiệu; cho ô cần chọn theo mã (vd Nơi hạ sà lan).
 const locCodeOptions = (cfg) => [...new Set(Object.values(cfg.locationCode || {}).filter(Boolean))].sort().map((c) => ({ value: c, label: c }));
+// Loại cont sà lan SUY TỪ Loại cont: reefer (RF/RHC) → NOR, còn lại → DRY (vd 40HC→DRY, 40RF/40RHC→NOR).
+const bargeKindOf = (ct) => /R(F|HC|EEF)/i.test(String(ct || "")) ? "NOR" : "DRY";
 // Kho (nhà máy): danh sách MÃ kho DEDUPE (1 ký hiệu có thể nhiều tên → chỉ hiện 1 mã); MultiCombo lưu chuỗi = mã.
 const whCodes = (cfg) => [...new Set((cfg.warehouses || []).map((n) => (cfg.warehouseCode || {})[n] || n).filter(Boolean))];
 
@@ -411,11 +413,10 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
       </div>
 
       <Section title="Phân loại & tùy chọn">
-        {/* Gom 3 tùy chọn ảnh hưởng định giá vào 1 khu cho dễ chọn */}
+        {/* Tùy chọn ảnh hưởng định giá */}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", padding: "10px 0 6px" }}>
           {[
             { on: !!ship.cru, set: (v) => set({ cru: v }), icon: "bi-recycle", label: "Hàng CRU" },
-            { on: !!ship.isBarge, set: (v) => set({ isBarge: v, bargeCont: v ? (ship.bargeCont || "DRY") : "" }), icon: "bi-water", label: "Đi sà lan" },
             { on: extHired, set: toggleExt, icon: "bi-truck", label: "Thuê xe ngoài" },
           ].map((o, i) => (
             <button key={i} type="button" onClick={() => o.set(!o.on)}
@@ -426,24 +427,21 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
             </button>
           ))}
         </div>
-        {/* Chi tiết theo tùy chọn đã bật */}
-        {ship.isBarge && (
-          <div style={{ padding: "10px 12px", marginTop: 6, background: "var(--accent-weak-2)", borderRadius: 9 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <i className="bi bi-water" style={{ color: "var(--accent)" }} />
-              <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Sà lan · loại cont:</span>
-              <Seg value={ship.bargeCont || "DRY"} onChange={(x) => set({ bargeCont: x })} options={["DRY", "NOR"]} />
-            </div>
-            <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, alignItems: "end" }}>
-              <Field label="Nơi hạ sà lan (điểm đến)">
-                <Combo value={ship.bargeDrop} onChange={(x) => set({ bargeDrop: x })} options={locCodeOptions(cfg)} placeholder="Chọn ký hiệu điểm hạ sà lan…" clearable strict />
-              </Field>
-              <div style={{ fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.5, paddingBottom: 4 }}>
-                Phí sà lan = <b>khoản riêng</b> cộng vào bảng kê (không đổi giá cont). Tra nhóm <b>Non · {ship.bargeCont === "NOR" ? "NOR" : "DRY"} CONTAINER</b> theo tuyến <b>Nơi hạ (cảng) → Nơi hạ sà lan</b>.
-              </div>
+        {/* SÀ LAN: chỉ cần chọn Nơi hạ sà lan → cont tự đi sà lan; loại DRY/NOR suy từ Loại cont (không thao tác thêm). */}
+        <div style={{ padding: "10px 12px", marginTop: 8, borderRadius: 9, background: ship.bargeDrop ? "var(--accent-weak-2)" : "#fafbfc", border: "1px solid " + (ship.bargeDrop ? "var(--accent-weak)" : "var(--line-2)") }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, alignItems: "end" }}>
+            <Field label="Nơi hạ sà lan (điểm đến)">
+              <Combo value={ship.bargeDrop} onChange={(x) => set({ bargeDrop: x })} options={locCodeOptions(cfg)} placeholder="Chọn ký hiệu điểm hạ sà lan…" clearable strict />
+            </Field>
+            <div style={{ fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.5, paddingBottom: 4 }}>
+              {ship.bargeDrop ? (
+                <><i className="bi bi-water" style={{ color: "var(--accent)" }} /> <b style={{ color: "var(--accent)" }}>Đi sà lan</b> · loại <b>{bargeKindOf(ship.contType)} CONTAINER</b> (theo Loại cont {ship.contType || "—"}). Phí sà lan = <b>khoản riêng</b>, tra nhóm Non theo tuyến <b>Nơi hạ (cảng) → Nơi hạ sà lan</b>.</>
+              ) : (
+                <>Chọn <b>Nơi hạ sà lan</b> để cont đi sà lan — tự tính <b>phí sà lan riêng</b> (loại DRY/NOR suy từ Loại cont, không cần chọn thêm).</>
+              )}
             </div>
           </div>
-        )}
+        </div>
         {extHired && (
           <div style={{ padding: "8px 12px", marginTop: 6, background: "#fafbfc", border: "1px solid var(--line-2)", borderRadius: 9 }}>
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "200px 1fr", gap: 12, alignItems: "end" }}>
@@ -454,7 +452,7 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
           </div>
         )}
         <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 8, lineHeight: 1.5 }}>
-          <b style={{ color: "var(--ink-3)" }}>CRU</b> quyết KIND lấy giá (CRU+Xuất→External · CRU+Nhập→Internal · không CRU→Transport 1 way). <b style={{ color: "var(--ink-3)" }}>Sà lan</b> giữ nguyên giá cont, thêm <b>phí sà lan riêng</b> (nhóm Non DRY/NOR theo Nơi hạ cont → Nơi hạ sà lan).
+          <b style={{ color: "var(--ink-3)" }}>CRU</b> quyết KIND lấy giá (CRU+Xuất→External · CRU+Nhập→Internal · không CRU→Transport 1 way). <b style={{ color: "var(--ink-3)" }}>Sà lan</b>: có Nơi hạ sà lan = đi sà lan; giữ nguyên giá cont + thêm <b>phí sà lan riêng</b> (nhóm Non DRY/NOR, loại suy từ Loại cont).
         </div>
       </Section>
 

@@ -111,19 +111,20 @@ trait HandlesStatementPricing
         $dau  = $p ? (int) ($cont20 ? $p['fuelFee20'] : $p['fuelFee40']) : 0;
 
         // ===== PHÍ SÀ LAN (khoản RIÊNG) =====
+        // CÓ Nơi hạ sà lan = ĐI SÀ LAN (không cần cờ riêng). Loại DRY/NOR SUY TỪ Loại cont:
+        //   reefer (RF/RHC) → NOR, còn lại → DRY (vd 40HC→DRY, 40RF/40RHC→NOR).
         // Sà lan chở cont từ NƠI HẠ CỦA CONT (cảng) → NƠI HẠ SÀ LAN. Tra nhóm "Non · DRY/NOR CONTAINER":
         //   bảng giá from = nơi hạ cont (to_loc) · loc = nơi hạ sà lan (barge_drop). BỎ ràng buộc kho.
-        $bargeCuoc = 0; $bargeDau = 0; $bargeMatched = false; $bargeKind = null; $bargeDropCode = ''; $bp = null;
-        if ($s->is_barge) {
-            $bargeKind = (mb_strtoupper((string) $s->barge_cont) === 'NOR') ? 'NOR CONTAINER' : 'DRY CONTAINER';
-            $bargeDropCode = $rc($s->barge_drop);
-            if ($bargeDropCode !== '') {
-                $bp = $this->matchPriceRow($priceList, $loDrop, $bargeDropCode, [], $nk($bargeKind), $conn, false, true);
-                if ($bp) {
-                    $bargeMatched = true;
-                    $bargeCuoc = (int) ($cont20 ? $bp['transFee20'] : $bp['transFee40']);
-                    $bargeDau  = (int) ($cont20 ? $bp['fuelFee20'] : $bp['fuelFee40']);
-                }
+        $bargeCuoc = 0; $bargeDau = 0; $bargeMatched = false; $bargeKind = null; $bp = null;
+        $bargeDropCode = $rc($s->barge_drop);
+        $isBarge = ($bargeDropCode !== '');
+        if ($isBarge) {
+            $bargeKind = (preg_match('/R(F|HC|EEF)/i', (string) $s->cont_type) ? 'NOR' : 'DRY') . ' CONTAINER';
+            $bp = $this->matchPriceRow($priceList, $loDrop, $bargeDropCode, [], $nk($bargeKind), $conn, false, true);
+            if ($bp) {
+                $bargeMatched = true;
+                $bargeCuoc = (int) ($cont20 ? $bp['transFee20'] : $bp['transFee40']);
+                $bargeDau  = (int) ($cont20 ? $bp['fuelFee20'] : $bp['fuelFee40']);
             }
         }
 
@@ -155,7 +156,8 @@ trait HandlesStatementPricing
             'route' => $route, 'loTrinh' => $loTrinh, 'kho' => trim((string) $s->kho), 'noDrop' => $noDrop, 'diag' => $diag,
             'ftHours' => $ft['hours'] ?? null, 'ftThreshold' => $ft['threshold'] ?? null, 'ftBasis' => $ft['basis'] ?? null,
             // Sà lan: khoản RIÊNG (cước + dầu sà lan), tra theo nơi hạ cont → nơi hạ sà lan, nhóm Non DRY/NOR.
-            'isBarge' => (bool) $s->is_barge, 'bargeCont' => $s->barge_cont ?? '', 'bargeDrop' => $s->barge_drop ?? '',
+            // ĐI SÀ LAN = có Nơi hạ sà lan; loại suy từ Loại cont.
+            'isBarge' => $isBarge, 'bargeCont' => $bargeKind ? (str_contains($bargeKind, 'NOR') ? 'NOR' : 'DRY') : '', 'bargeDrop' => $s->barge_drop ?? '',
             'bargeMatched' => $bargeMatched, 'bargeKind' => $bargeKind, 'bargeRoute' => $bargeRoute,
             'bargeCuoc' => $bargeCuoc, 'bargeDau' => $bargeDau,
             'phaiThu' => $cuoc + $dau + $chiHo + $bargeCuoc + $bargeDau,

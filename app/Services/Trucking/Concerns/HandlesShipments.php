@@ -928,6 +928,13 @@ trait HandlesShipments
             foreach ($cols as $key => [$col, $val]) {
                 if ($apply($key)) $s->{$col} = $val;
             }
+            // SÀ LAN: CÓ Nơi hạ sà lan = đi sà lan; loại DRY/NOR SUY TỪ Loại cont (reefer RF/RHC→NOR, còn lại→DRY).
+            // Không còn cờ "Đi sà lan" / chọn DRur/NOR thủ công — derive khi sửa bargeDrop hoặc contType.
+            if ($apply('bargeDrop') || $apply('contType')) {
+                $hasBarge = trim((string) $s->barge_drop) !== '';
+                $s->is_barge   = $hasBarge;
+                $s->barge_cont = $hasBarge ? (preg_match('/R(F|HC|EEF)/i', (string) $s->cont_type) ? 'NOR' : 'DRY') : null;
+            }
             // Nhãn (tags) — mảng chuỗi, chuẩn hóa: trim + bỏ rỗng + bỏ trùng (giữ thứ tự).
             if ($apply('tags')) {
                 $tags = [];
