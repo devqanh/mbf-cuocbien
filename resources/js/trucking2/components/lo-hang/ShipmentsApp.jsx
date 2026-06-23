@@ -51,6 +51,7 @@ function ShipmentsApp() {
   const [denDate, setDenDate] = useState("");     // lọc theo Giờ đến kế hoạch (gio_den_du_kien) — chọn 1 NGÀY
   const [tagSel, setTagSel] = useState([]);        // lọc theo NHÃN — chọn nhiều (OR)
   const [tagOptions, setTagOptions] = useState(P0.tagOptions || []);
+  const [showFilters, setShowFilters] = useState(false);   // mở/thu panel bộ lọc chi tiết
   const [sort, setSort] = useState({ key: "default", dir: 1 });
   const [showExport, setShowExport] = useState(false);
   const [exporting, setExporting] = useState(false);   // chống bấm Xuất Excel nhiều lần
@@ -361,6 +362,23 @@ function ShipmentsApp() {
   const setToLocP = (arr) => { setToLocSel(arr); setPage(1); };   // chọn nhiều ký hiệu nơi hạ (OR)
   const setDenDateP = (v) => { setDenDate(v); setPage(1); };      // lọc theo Giờ đến kế hoạch (1 ngày)
   const setTagP = (arr) => { setTagSel(arr); setPage(1); };       // lọc theo nhãn
+  // Số bộ lọc chi tiết đang bật + xóa tất cả (để hiện badge / nút Xóa lọc)
+  const activeFilters = (toLocSel.length ? 1 : 0) + (fromLocSel.length ? 1 : 0) + (denDate ? 1 : 0) + (tagSel.length ? 1 : 0) + (followFilter !== "all" ? 1 : 0);
+  const clearFilters = () => { setToLocSel([]); setFromLocSel([]); setDenDate(""); setTagSel([]); setFollowFilter("all"); setPage(1); };
+  // 1 ô lọc trong panel: nhãn nhỏ phía trên + control phía dưới (gọn, thẳng hàng)
+  const FF = ({ label, icon, children }) => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-4)", textTransform: "uppercase", letterSpacing: ".03em" }}>{icon ? <i className={"bi " + icon} style={{ marginRight: 4 }} /> : null}{label}</span>
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>{children}</div>
+    </div>
+  );
+  // chip tóm tắt 1 bộ lọc đang bật (khi thu gọn) — bấm ✕ để bỏ
+  const FChip = ({ children, onClear }) => (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", padding: "3px 6px 3px 10px", borderRadius: 999 }}>
+      {children}
+      <button type="button" onClick={onClear} title="Bỏ lọc này" style={{ border: "none", background: "transparent", color: "var(--accent)", cursor: "pointer", display: "grid", placeItems: "center", padding: 0, width: 15, height: 15 }}><I.x /></button>
+    </span>
+  );
   const setToModeP = (m) => { setToMode(m); setPage(1); };
   const setFromLocP = (arr) => { setFromLocSel(arr); setPage(1); };
   const setFromModeP = (m) => { setFromMode(m); setPage(1); };
@@ -460,106 +478,109 @@ function ShipmentsApp() {
         ))}
       </div>
 
-      {/* filter bar */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#fff", borderBottom: "1px solid var(--line)", padding: isMobile ? "10px 14px" : "10px 22px", flexShrink: 0, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 12.5, color: "var(--ink-3)", fontWeight: 500 }}>Lọc:</span>
-        <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 9, padding: 3 }}>
-          {[["all", "Tất cả"], ["notout", "Chưa ra"], ["out", "Đã ra"]].map(([k, label]) => {
-            const on = filter === k;
-            const cnt = (filterCounts || {})[k] || 0;
-            return (
-              <button key={k} type="button" onClick={() => setFilterP(k)}
-                style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, padding: "6px 13px", borderRadius: 7,
-                  background: on ? "#fff" : "transparent", color: on ? (k === "notout" ? "var(--warn)" : "var(--ink)") : "var(--ink-3)", boxShadow: on ? "0 1px 2px rgba(16,19,23,.12)" : "none", transition: "all .12s" }}>
-                {label}
-                <span className="tnum" style={{ fontSize: 11, fontWeight: 700, color: on ? "var(--ink-3)" : "var(--ink-4)", background: on ? "var(--line-2)" : "transparent", padding: "0 6px", borderRadius: 999, minWidth: 16, textAlign: "center" }}>{cnt}</span>
-              </button>
-            );
-          })}
-        </div>
-        {/* Lọc theo NƠI HẠ theo KÝ HIỆU (vd HPP) — chế độ GỒM / LOẠI TRỪ */}
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 12.5, color: "var(--ink-3)", fontWeight: 500, whiteSpace: "nowrap" }}><i className="bi bi-geo-alt-fill" /> Nơi hạ:</span>
-          <ModeToggle mode={toMode} onMode={setToModeP} />
-          <div style={{ width: isMobile ? 170 : 210 }}>
-            <MultiCombo values={toLocSel} onChange={setToLocP} options={toLocs} placeholder={toMode === "exclude" ? "Không trừ gì" : "Tất cả ký hiệu"} strict max={50} />
-          </div>
-        </div>
-        {/* Lọc theo NƠI LẤY (ký hiệu) — chế độ GỒM / LOẠI TRỪ */}
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 12.5, color: "var(--ink-3)", fontWeight: 500, whiteSpace: "nowrap" }}><i className="bi bi-box-arrow-up-right" /> Nơi lấy:</span>
-          <ModeToggle mode={fromMode} onMode={setFromModeP} />
-          <div style={{ width: isMobile ? 170 : 210 }}>
-            <MultiCombo values={fromLocSel} onChange={setFromLocP} options={fromLocs} placeholder={fromMode === "exclude" ? "Không trừ gì" : "Tất cả ký hiệu"} strict max={50} />
-          </div>
-        </div>
-        {/* Lọc theo GIỜ ĐẾN KẾ HOẠCH (gio_den_du_kien) — chọn 1 ngày */}
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 12.5, color: "var(--ink-3)", fontWeight: 500, whiteSpace: "nowrap" }}><i className="bi bi-calendar-event" /> Ngày đóng hàng:</span>
-          <div style={{ width: 140 }}><DateField value={denDate} onChange={setDenDateP} placeholder="Chọn ngày" /></div>
-          {denDate && <button type="button" onClick={() => setDenDateP("")} title="Bỏ lọc ngày" style={{ border: "none", background: "transparent", color: "var(--ink-4)", cursor: "pointer", padding: 2 }}><i className="bi bi-x-circle" /></button>}
-        </div>
-        {/* Lọc theo NHÃN (tags) — chọn nhiều = OR */}
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 12.5, color: "var(--ink-3)", fontWeight: 500, whiteSpace: "nowrap" }}><i className="bi bi-tags" /> Nhãn:</span>
-          <div style={{ width: isMobile ? 180 : 220 }}>
-            <MultiCombo values={tagSel} onChange={setTagP} options={tagOptions} placeholder="Tất cả nhãn" strict max={50} />
-          </div>
-        </div>
-        {/* Theo dõi (follow color) — chỉ hiện khi có ít nhất 1 lô gắn follow */}
-        {followStats.anyShips > 0 && (() => {
-          const isOn = (k) => followFilter === k;
-          const pillBase = { display: "inline-flex", alignItems: "center", gap: 6, border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, padding: "6px 11px", borderRadius: 7, transition: "all .12s" };
-          return (
-            <>
-              <span style={{ width: 1, height: 22, background: "var(--line-2)", margin: "0 2px" }} />
-              <span style={{ fontSize: 12.5, color: "var(--ink-3)", fontWeight: 500, display: "inline-flex", alignItems: "center", gap: 5 }} title="Lọc theo cờ theo dõi gắn trên các khoản chi phí">
-                <span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 999, background: "var(--warn)" }} /> Theo dõi:
-              </span>
-              <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 9, padding: 3, gap: 1 }}>
-                <button type="button" onClick={() => setFollowP("all")}
-                  style={{ ...pillBase, background: isOn("all") ? "#fff" : "transparent", color: isOn("all") ? "var(--ink)" : "var(--ink-3)", boxShadow: isOn("all") ? "0 1px 2px rgba(16,19,23,.12)" : "none" }}>
-                  Tất cả
+      {/* filter bar — Hàng 1: trạng thái + nút Bộ lọc; Hàng 2 (thu gọn): bộ lọc chi tiết */}
+      <div style={{ background: "#fff", borderBottom: "1px solid var(--line)", padding: isMobile ? "10px 14px" : "10px 22px", flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 9, padding: 3 }}>
+            {[["all", "Tất cả"], ["notout", "Chưa ra"], ["out", "Đã ra"]].map(([k, label]) => {
+              const on = filter === k;
+              const cnt = (filterCounts || {})[k] || 0;
+              return (
+                <button key={k} type="button" onClick={() => setFilterP(k)}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, padding: "6px 13px", borderRadius: 7,
+                    background: on ? "#fff" : "transparent", color: on ? (k === "notout" ? "var(--warn)" : "var(--ink)") : "var(--ink-3)", boxShadow: on ? "0 1px 2px rgba(16,19,23,.12)" : "none", transition: "all .12s" }}>
+                  {label}
+                  <span className="tnum" style={{ fontSize: 11, fontWeight: 700, color: on ? "var(--ink-3)" : "var(--ink-4)", background: on ? "var(--line-2)" : "transparent", padding: "0 6px", borderRadius: 999, minWidth: 16, textAlign: "center" }}>{cnt}</span>
                 </button>
-                <button type="button" onClick={() => setFollowP("missing")} title="Lô có khoản gắn theo dõi nhưng chưa điền số hóa đơn"
-                  style={{ ...pillBase, background: isOn("missing") ? "#fff" : "transparent", color: isOn("missing") ? "var(--warn)" : "var(--ink-3)", boxShadow: isOn("missing") ? "0 1px 2px rgba(16,19,23,.12)" : "none" }}>
-                  Chưa có số HĐ
-                  <span className="tnum" style={{ fontSize: 11, fontWeight: 700, color: isOn("missing") ? "#fff" : "var(--ink-4)", background: isOn("missing") ? "var(--warn)" : "var(--line-2)", padding: "0 6px", borderRadius: 999, minWidth: 16, textAlign: "center" }}>{followStats.missShips}</span>
-                </button>
-                <button type="button" onClick={() => setFollowP("any")} title="Lô có ít nhất 1 khoản gắn theo dõi"
-                  style={{ ...pillBase, background: isOn("any") ? "#fff" : "transparent", color: isOn("any") ? "var(--ink)" : "var(--ink-3)", boxShadow: isOn("any") ? "0 1px 2px rgba(16,19,23,.12)" : "none" }}>
-                  Có theo dõi
-                  <span className="tnum" style={{ fontSize: 11, fontWeight: 700, color: isOn("any") ? "var(--ink-3)" : "var(--ink-4)", background: isOn("any") ? "var(--line-2)" : "transparent", padding: "0 6px", borderRadius: 999, minWidth: 16, textAlign: "center" }}>{followStats.anyShips}</span>
-                </button>
-              </div>
-              {followStats.byColor.length > 0 && (
-                <div style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
-                  {followStats.byColor.map((b) => {
-                    const on = followFilter === b.hex;
-                    return (
-                      <button key={b.hex} type="button" onClick={() => setFollowP(on ? "all" : b.hex)}
-                        title={`Màu ${b.hex} · ${b.miss} chưa điền / ${b.total} lô`}
-                        style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 9px", border: on ? `1.5px solid ${b.hex}` : "1px solid var(--line)", background: on ? "#fff" : "transparent", borderRadius: 999, cursor: "pointer", fontSize: 11.5, fontWeight: 600, color: "var(--ink-2)", transition: "all .12s" }}>
-                        <span style={{ width: 11, height: 11, borderRadius: 999, background: b.hex, boxShadow: on ? `0 0 0 2px #fff, 0 0 0 3px ${b.hex}` : "none" }} />
-                        <span className="tnum" style={{ color: b.miss > 0 ? "var(--warn)" : "var(--ink-3)" }}>{b.miss}</span>
-                        <span style={{ color: "var(--ink-4)" }} className="tnum">/ {b.total}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </>
-          );
-        })()}
-        {sort.key !== "default" && (
-          <button type="button" onClick={() => setSort({ key: "default", dir: 1 })}
-            style={{ marginLeft: 4, fontSize: 12, color: "var(--accent)", background: "transparent", border: "none", cursor: "pointer", fontWeight: 600 }}>
-            ↺ Bỏ sắp xếp
+              );
+            })}
+          </div>
+          {/* Nút mở panel bộ lọc chi tiết — badge = số bộ lọc đang bật */}
+          <button type="button" onClick={() => setShowFilters((v) => !v)}
+            style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "7px 12px", fontSize: 12.5, fontWeight: 600, borderRadius: 9, cursor: "pointer",
+              border: "1px solid " + (activeFilters || showFilters ? "var(--accent)" : "var(--line)"), background: activeFilters || showFilters ? "var(--accent-weak-2)" : "#fff", color: activeFilters || showFilters ? "var(--accent)" : "var(--ink-2)", transition: "all .12s" }}>
+            <i className="bi bi-funnel" /> Bộ lọc
+            {activeFilters > 0 && <span className="tnum" style={{ fontSize: 11, fontWeight: 700, background: "var(--accent)", color: "#fff", padding: "0 6px", borderRadius: 999, minWidth: 16, textAlign: "center" }}>{activeFilters}</span>}
+            <i className={"bi " + (showFilters ? "bi-chevron-up" : "bi-chevron-down")} style={{ fontSize: 10 }} />
           </button>
+          {activeFilters > 0 && (
+            <button type="button" onClick={clearFilters} style={{ fontSize: 12, color: "var(--danger)", background: "transparent", border: "none", cursor: "pointer", fontWeight: 600 }}>Xóa lọc</button>
+          )}
+          {/* Chip tóm tắt bộ lọc đang bật (chỉ khi thu gọn) */}
+          {!showFilters && activeFilters > 0 && (
+            <div style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+              {toLocSel.length > 0 && <FChip onClear={() => setToLocP([])}>{toMode === "exclude" ? "Hạ ⊘ " : "Hạ: "}{toLocSel.join(", ")}</FChip>}
+              {fromLocSel.length > 0 && <FChip onClear={() => setFromLocP([])}>{fromMode === "exclude" ? "Lấy ⊘ " : "Lấy: "}{fromLocSel.join(", ")}</FChip>}
+              {denDate && <FChip onClear={() => setDenDateP("")}>Đóng hàng {fmtDate(denDate)}</FChip>}
+              {tagSel.length > 0 && <FChip onClear={() => setTagP([])}>Nhãn: {tagSel.join(", ")}</FChip>}
+              {followFilter !== "all" && <FChip onClear={() => setFollowP("all")}>Theo dõi: {followFilter === "missing" ? "chưa số HĐ" : followFilter === "any" ? "có theo dõi" : "màu"}</FChip>}
+            </div>
+          )}
+          <div style={{ flex: 1 }} />
+          {loading && <span style={{ fontSize: 12, color: "var(--accent)", display: "inline-flex", alignItems: "center", gap: 5 }}><i className="bi bi-arrow-repeat" style={{ animation: "trk-spin 0.7s linear infinite" }} /> Đang tải…</span>}
+          {sort.key !== "default" && (
+            <button type="button" onClick={() => setSort({ key: "default", dir: 1 })}
+              style={{ fontSize: 12, color: "var(--accent)", background: "transparent", border: "none", cursor: "pointer", fontWeight: 600 }}>↺ Bỏ sắp xếp</button>
+          )}
+          <span style={{ fontSize: 12, color: "var(--ink-4)" }}>{pageInfo.total} lô · bấm tiêu đề cột để sắp xếp</span>
+        </div>
+
+        {/* Hàng 2: panel bộ lọc chi tiết (thu gọn được) */}
+        {showFilters && (
+          <div style={{ marginTop: 11, paddingTop: 12, borderTop: "1px solid var(--line-2)", display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <FF label="Nơi hạ" icon="bi-geo-alt-fill">
+              <ModeToggle mode={toMode} onMode={setToModeP} />
+              <div style={{ width: isMobile ? 170 : 200 }}><MultiCombo values={toLocSel} onChange={setToLocP} options={toLocs} placeholder={toMode === "exclude" ? "Không trừ gì" : "Tất cả ký hiệu"} strict max={50} /></div>
+            </FF>
+            <FF label="Nơi lấy" icon="bi-box-arrow-up-right">
+              <ModeToggle mode={fromMode} onMode={setFromModeP} />
+              <div style={{ width: isMobile ? 170 : 200 }}><MultiCombo values={fromLocSel} onChange={setFromLocP} options={fromLocs} placeholder={fromMode === "exclude" ? "Không trừ gì" : "Tất cả ký hiệu"} strict max={50} /></div>
+            </FF>
+            <FF label="Ngày đóng hàng" icon="bi-calendar-event">
+              <div style={{ width: 150 }}><DateField value={denDate} onChange={setDenDateP} placeholder="Chọn ngày" /></div>
+              {denDate && <button type="button" onClick={() => setDenDateP("")} title="Bỏ lọc ngày" style={{ border: "none", background: "transparent", color: "var(--ink-4)", cursor: "pointer", padding: 2 }}><i className="bi bi-x-circle" /></button>}
+            </FF>
+            <FF label="Nhãn" icon="bi-tags">
+              <div style={{ width: isMobile ? 180 : 220 }}><MultiCombo values={tagSel} onChange={setTagP} options={tagOptions} placeholder="Tất cả nhãn" strict max={50} /></div>
+            </FF>
+            {followStats.anyShips > 0 && (() => {
+              const isOn = (k) => followFilter === k;
+              const pillBase = { display: "inline-flex", alignItems: "center", gap: 6, border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, padding: "6px 11px", borderRadius: 7, transition: "all .12s" };
+              return (
+                <FF label="Theo dõi" icon="bi-flag">
+                  <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 9, padding: 3, gap: 1 }}>
+                    <button type="button" onClick={() => setFollowP("all")}
+                      style={{ ...pillBase, background: isOn("all") ? "#fff" : "transparent", color: isOn("all") ? "var(--ink)" : "var(--ink-3)", boxShadow: isOn("all") ? "0 1px 2px rgba(16,19,23,.12)" : "none" }}>Tất cả</button>
+                    <button type="button" onClick={() => setFollowP("missing")} title="Lô có khoản gắn theo dõi nhưng chưa điền số hóa đơn"
+                      style={{ ...pillBase, background: isOn("missing") ? "#fff" : "transparent", color: isOn("missing") ? "var(--warn)" : "var(--ink-3)", boxShadow: isOn("missing") ? "0 1px 2px rgba(16,19,23,.12)" : "none" }}>
+                      Chưa có số HĐ<span className="tnum" style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: isOn("missing") ? "#fff" : "var(--ink-4)", background: isOn("missing") ? "var(--warn)" : "var(--line-2)", padding: "0 6px", borderRadius: 999, minWidth: 16, textAlign: "center" }}>{followStats.missShips}</span>
+                    </button>
+                    <button type="button" onClick={() => setFollowP("any")} title="Lô có ít nhất 1 khoản gắn theo dõi"
+                      style={{ ...pillBase, background: isOn("any") ? "#fff" : "transparent", color: isOn("any") ? "var(--ink)" : "var(--ink-3)", boxShadow: isOn("any") ? "0 1px 2px rgba(16,19,23,.12)" : "none" }}>
+                      Có theo dõi<span className="tnum" style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: isOn("any") ? "var(--ink-3)" : "var(--ink-4)", background: isOn("any") ? "var(--line-2)" : "transparent", padding: "0 6px", borderRadius: 999, minWidth: 16, textAlign: "center" }}>{followStats.anyShips}</span>
+                    </button>
+                  </div>
+                  {followStats.byColor.length > 0 && (
+                    <div style={{ display: "inline-flex", gap: 4, alignItems: "center", marginLeft: 2 }}>
+                      {followStats.byColor.map((b) => {
+                        const on = followFilter === b.hex;
+                        return (
+                          <button key={b.hex} type="button" onClick={() => setFollowP(on ? "all" : b.hex)}
+                            title={`Màu ${b.hex} · ${b.miss} chưa điền / ${b.total} lô`}
+                            style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 9px", border: on ? `1.5px solid ${b.hex}` : "1px solid var(--line)", background: on ? "#fff" : "transparent", borderRadius: 999, cursor: "pointer", fontSize: 11.5, fontWeight: 600, color: "var(--ink-2)", transition: "all .12s" }}>
+                            <span style={{ width: 11, height: 11, borderRadius: 999, background: b.hex, boxShadow: on ? `0 0 0 2px #fff, 0 0 0 3px ${b.hex}` : "none" }} />
+                            <span className="tnum" style={{ color: b.miss > 0 ? "var(--warn)" : "var(--ink-3)" }}>{b.miss}</span>
+                            <span style={{ color: "var(--ink-4)" }} className="tnum">/ {b.total}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </FF>
+              );
+            })()}
+          </div>
         )}
-        <div style={{ flex: 1 }} />
-        {loading && <span style={{ fontSize: 12, color: "var(--accent)", display: "inline-flex", alignItems: "center", gap: 5 }}><i className="bi bi-arrow-repeat" style={{ animation: "trk-spin 0.7s linear infinite" }} /> Đang tải…</span>}
-        <span style={{ fontSize: 12, color: "var(--ink-4)" }}>{pageInfo.total} lô · bấm tiêu đề cột để sắp xếp</span>
       </div>
 
       {/* table */}
