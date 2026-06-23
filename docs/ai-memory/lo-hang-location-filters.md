@@ -17,6 +17,8 @@ Bộ lọc trang Lô hàng (`pagedShipments` sheet `icd`, ShipmentsApp.jsx) cho 
 
 Tất cả áp trong closure `$searched` nên cả ĐẾM (filterCounts/total) + danh sách đều đúng. ShipmentController::page truyền `toLoc,toMode,fromLoc,fromMode,denDate,tags`.
 
+**Sà lan + giá "Non" (định giá):** bảng giá có conn thứ 3 = **Non** (áp mọi trạng thái, ưu tiên sau Connect/Disconnect đúng, trước fallback; priceShipment dùng `JSON_SEARCH`-free logic — chỉ là conn string). Nhóm Non thường có KIND "DRY CONTAINER"/"NOR CONTAINER". Lô có `is_barge` + `barge_cont` (DRY|NOR) → priceShipment ÉP `$kind`="DRY/NOR CONTAINER" (bỏ KIND theo CRU) → khớp dòng Non theo nơi hạ+kho; bảng kê tự ra giá đúng. UI: InfoPopup khu **"Phân loại & tùy chọn"** gom 3 toggle CRU / Đi sà lan (Seg DRY/NOR) / Thuê xe ngoài (trước nằm rải rác). Bảng giá: ô địa điểm hạ dùng KÝ HIỆU + Combo tìm kiếm; nhóm mới có `gid` riêng để không bị gộp khi đang sửa (gid không lưu DB).
+
 **Field lô mới (cùng đợt):** `cost_lines.invoice_no` (Số hóa đơn từng khoản ở popup Chi phí); `shipments.info_note` (textarea Ghi chú lô, tách khỏi `ghi_chu` kế toán). **"Theo dõi" (follow)** nay phát hiện "Chưa có số HĐ" = khoản gắn màu theo dõi mà `invoice_no` trống (TRƯỚC: xét tiền=0) — áp ở follow=missing + followStats + chấm "!" CostLineRows.
 
 Liên quan [[coded-catalog-edit]], [[ra-status-rule]], [[trucking-report-schema]].
