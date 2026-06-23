@@ -13,6 +13,8 @@ const locOptions = (cfg) => (cfg.locations || []).map((n) => {
   const c = (cfg.locationCode || {})[n];
   return c ? { value: c, label: `${n} — ${c}` } : { value: n, label: n };
 });
+// Địa điểm theo KÝ HIỆU (chỉ mã, dedupe) — value & label đều là ký hiệu; cho ô cần chọn theo mã (vd Nơi hạ sà lan).
+const locCodeOptions = (cfg) => [...new Set(Object.values(cfg.locationCode || {}).filter(Boolean))].sort().map((c) => ({ value: c, label: c }));
 // Kho (nhà máy): danh sách MÃ kho DEDUPE (1 ký hiệu có thể nhiều tên → chỉ hiện 1 mã); MultiCombo lưu chuỗi = mã.
 const whCodes = (cfg) => [...new Set((cfg.warehouses || []).map((n) => (cfg.warehouseCode || {})[n] || n).filter(Boolean))];
 
@@ -434,7 +436,7 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
             </div>
             <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, alignItems: "end" }}>
               <Field label="Nơi hạ sà lan (điểm đến)">
-                <Combo value={ship.bargeDrop} onChange={(x) => set({ bargeDrop: x })} options={locOptions(cfg)} placeholder="Chọn điểm hạ sà lan (trong Cài đặt)…" clearable strict />
+                <Combo value={ship.bargeDrop} onChange={(x) => set({ bargeDrop: x })} options={locCodeOptions(cfg)} placeholder="Chọn ký hiệu điểm hạ sà lan…" clearable strict />
               </Field>
               <div style={{ fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.5, paddingBottom: 4 }}>
                 Phí sà lan = <b>khoản riêng</b> cộng vào bảng kê (không đổi giá cont). Tra nhóm <b>Non · {ship.bargeCont === "NOR" ? "NOR" : "DRY"} CONTAINER</b> theo tuyến <b>Nơi hạ (cảng) → Nơi hạ sà lan</b>.
