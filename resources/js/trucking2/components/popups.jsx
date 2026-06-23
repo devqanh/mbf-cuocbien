@@ -355,6 +355,20 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
             Quyết định KIND khi lấy giá: <b style={{ color: "var(--ink-3)" }}>CRU + Xuất</b> → External CRU · <b style={{ color: "var(--ink-3)" }}>CRU + Nhập</b> → Internal CRU · <b style={{ color: "var(--ink-3)" }}>không CRU</b> → Transportation 1 way.
           </div>
         </div>
+        <div style={{ padding: "6px 0 2px", borderTop: "1px dashed var(--line-2)", marginTop: 4 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            <ChkBox checked={!!ship.isBarge} onChange={(v) => set({ isBarge: v, bargeCont: v ? (ship.bargeCont || "DRY") : "" })} label="Đi sà lan" />
+            {ship.isBarge && (
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Loại cont:</span>
+                <Seg value={ship.bargeCont || "DRY"} onChange={(x) => set({ bargeCont: x })} options={["DRY", "NOR"]} />
+              </div>
+            )}
+          </div>
+          {ship.isBarge && <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 6, paddingLeft: 25, lineHeight: 1.5 }}>
+            Lấy giá theo nhóm <b style={{ color: "var(--ink-3)" }}>Non · {ship.bargeCont === "NOR" ? "NOR" : "DRY"} CONTAINER</b> ở Bảng giá (khớp theo nơi hạ + kho), bỏ qua KIND theo CRU.
+          </div>}
+        </div>
       </Section>
 
       <Section title="Container">

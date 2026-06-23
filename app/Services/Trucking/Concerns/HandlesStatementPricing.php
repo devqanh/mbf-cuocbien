@@ -86,9 +86,15 @@ trait HandlesStatementPricing
 
         $cont20   = str_contains((string) $s->cont_type, '20');
         $isExport = str_contains(mb_strtolower((string) $s->io), 'xu');
-        $kind = $s->cru
-            ? ($isExport ? 'External CRU transportation' : 'Internal CRU transportation')
-            : 'Transportation 1 way of Import/Export';
+        // SÀ LAN: ép KIND theo loại cont (DRY/NOR) → khớp nhóm "Non · DRY/NOR CONTAINER" ở bảng giá,
+        // bỏ qua kind theo CRU. Tên KIND phải trùng "DRY CONTAINER"/"NOR CONTAINER".
+        if ($s->is_barge) {
+            $kind = (mb_strtoupper((string) $s->barge_cont) === 'NOR') ? 'NOR CONTAINER' : 'DRY CONTAINER';
+        } else {
+            $kind = $s->cru
+                ? ($isExport ? 'External CRU transportation' : 'Internal CRU transportation')
+                : 'Transportation 1 way of Import/Export';
+        }
         $nkKind = $nk($kind);
 
         $ft = $this->freeTimeOf($s, $threshold);

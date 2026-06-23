@@ -582,6 +582,7 @@ function ShipmentsApp() {
                           <span className="tnum" style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{s.booking || "—"}</span>
                           {s.io ? <Badge tone={ioTone(s.io)}>{s.io}</Badge> : null}
                           {s.cru ? <Badge tone="amber">CRU</Badge> : null}
+                          {s.isBarge ? <Badge tone="blue">Sà lan{s.bargeCont ? " " + s.bargeCont : ""}</Badge> : null}
                         </div>
                       </div>
                       <span className="tnum" style={{ fontSize: 11.5, color: "var(--ink-4)", flexShrink: 0 }}>{String(s.id).startsWith("tmp") ? "mới" : ("#" + s.id)}</span>
@@ -649,6 +650,7 @@ function ShipmentsApp() {
                           <span style={{ fontSize: 12, color: "var(--ink-3)" }} className="tnum">{s.booking || "—"}</span>
                           {s.io ? <Badge tone={ioTone(s.io)}>{s.io}</Badge> : null}
                           {s.cru ? <Badge tone="amber">CRU</Badge> : null}
+                          {s.isBarge ? <Badge tone="blue">Sà lan{s.bargeCont ? " " + s.bargeCont : ""}</Badge> : null}
                         </div>
                       </EditCell>
                     </TD>

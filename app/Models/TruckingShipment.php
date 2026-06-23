@@ -35,6 +35,7 @@ class TruckingShipment extends Model
 
     protected $casts = [
         'cru'             => 'boolean',
+        'is_barge'        => 'boolean',
         'qty'             => 'integer',
         'ra_other_id'     => 'integer',
         'sail_date'       => 'date',
