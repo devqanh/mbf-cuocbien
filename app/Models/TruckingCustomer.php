@@ -20,6 +20,11 @@ class TruckingCustomer extends Model
         return $this->hasMany(TruckingPriceRow::class, 'customer_id')->orderBy('sort');
     }
 
+    public function priceBooks(): HasMany
+    {
+        return $this->hasMany(TruckingPriceBook::class, 'customer_id')->orderBy('period_from');
+    }
+
     public function shipments(): HasMany
     {
         return $this->hasMany(TruckingShipment::class, 'customer_id');

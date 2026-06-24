@@ -4,6 +4,7 @@ namespace App\Services\Trucking\Concerns;
 
 use App\Models\TruckingCustomer;
 use App\Models\TruckingLocation;
+use App\Models\TruckingPriceBook;
 use App\Models\TruckingSetting;
 use App\Models\TruckingShipment;
 use App\Models\TruckingStatement;
@@ -160,6 +161,8 @@ trait HandlesStatementPricing
             'isBarge' => $isBarge, 'bargeCont' => $bargeKind ? (str_contains($bargeKind, 'NOR') ? 'NOR' : 'DRY') : '', 'bargeDrop' => $s->barge_drop ?? '',
             'bargeMatched' => $bargeMatched, 'bargeKind' => $bargeKind, 'bargeRoute' => $bargeRoute,
             'bargeCuoc' => $bargeCuoc, 'bargeDau' => $bargeDau,
+            // Bảng giá (price book) đã dùng cho lô này (theo NGÀY cont ra) — hiển thị + cảnh báo ở bảng kê.
+            'priceBook' => $ctx['priceBook'] ?? null,
             'phaiThu' => $cuoc + $dau + $chiHo + $bargeCuoc + $bargeDau,
         ];
     }
@@ -236,14 +239,15 @@ trait HandlesStatementPricing
      *  - locCode / codeMap / threshold / codeToName chia sẻ.
      * Cache theo customer_id để cùng 1 khách qua nhiều lượt gọi chỉ build 1 lần.
      */
-    private function pricingContext(?int $customerId, ?string $customerName = null): array
+    private function pricingContext(?int $customerId, ?string $customerName = null, ?int $priceBookId = null, ?array $priceBook = null): array
     {
-        $key = $customerId ?: 0;
+        $key = ($customerId ?: 0) . ':' . ($priceBookId ?? 'none');
         if (isset($this->pricingCtxCache[$key])) return $this->pricingCtxCache[$key];
 
-        $priceList = $customerId
-            ? $this->customerPriceListById($customerId)
-            : ($customerName ? $this->customerPriceList($customerName) : []);
+        // Bảng giá theo BOOK (khoảng ngày). $priceBookId=null → không khớp kỳ nào → list rỗng.
+        $priceList = ($customerId && $priceBookId)
+            ? $this->customerPriceListById($customerId, $priceBookId)
+            : [];
 
         $locCode = $this->locationCodeMap();
         $codeMap = $this->normalizedCodeMap();
@@ -276,7 +280,59 @@ trait HandlesStatementPricing
             'codeMap'    => $codeMap,
             'codeToName' => $codeToName,
             'threshold'  => $this->freeTimeThreshold(),
+            'priceBook'  => $priceBook,   // meta bảng giá đã chọn (id/label/from/to) — để hiển thị ở bảng kê
         ];
+    }
+
+    /** @var array<int,array> per customer_id → list bảng giá [{id,label,from,to}] (memoize/request). */
+    private array $priceBooksCache = [];
+    /** Danh sách bảng giá của khách (memoize). from/to = 'Y-m-d' hoặc null (mở). */
+    private function customerPriceBooks(int $customerId): array
+    {
+        if (isset($this->priceBooksCache[$customerId])) return $this->priceBooksCache[$customerId];
+        $books = TruckingPriceBook::where('customer_id', $customerId)->get(['id', 'label', 'period_from', 'period_to'])
+            ->map(fn ($b) => [
+                'id'    => (int) $b->id,
+                'label' => $b->label,
+                'from'  => $b->period_from?->toDateString(),
+                'to'    => $b->period_to?->toDateString(),
+            ])->all();
+        return $this->priceBooksCache[$customerId] = $books;
+    }
+
+    /**
+     * Chọn BẢNG GIÁ phủ NGÀY của lô (Y-m-d). Phủ = (from null||from<=d) && (to null||d<=to).
+     * Nhiều book cùng phủ → ưu tiên book CỤ THỂ hơn (có from, from lớn nhất, id lớn nhất) → book có ngày
+     * thắng book mở. Không có book phủ → null (lô "chưa khớp bảng giá").
+     * Lô không có ngày → dùng book MỞ (from null & to null) nếu có (tương thích dữ liệu cũ).
+     */
+    private function pickPriceBook(int $customerId, ?string $date): ?array
+    {
+        if ($customerId <= 0) return null;
+        $books = $this->customerPriceBooks($customerId);
+        if (! $books) return null;
+        $d = $date ? substr($date, 0, 10) : '';
+        if ($d === '') {
+            foreach ($books as $b) if ($b['from'] === null && $b['to'] === null) return $b;
+            return null;
+        }
+        $cover = array_values(array_filter($books, fn ($b) =>
+            ($b['from'] === null || $b['from'] <= $d) && ($b['to'] === null || $d <= $b['to'])));
+        if (! $cover) return null;
+        usort($cover, function ($a, $b) {
+            $af = $a['from'] !== null ? 1 : 0; $bf = $b['from'] !== null ? 1 : 0;
+            if ($af !== $bf) return $bf - $af;                                  // có from (cụ thể) ưu tiên
+            if ($a['from'] !== $b['from']) return strcmp((string) $b['from'], (string) $a['from']);  // from mới hơn
+            return $b['id'] - $a['id'];                                          // id lớn hơn
+        });
+        return $cover[0];
+    }
+
+    /** Context định giá cho 1 lô theo NGÀY (tự chọn bảng giá phủ ngày). Cache theo (customer,book). */
+    private function pricingContextForDate(?int $customerId, ?string $customerName, ?string $date): array
+    {
+        $book = $customerId ? $this->pickPriceBook((int) $customerId, $date) : null;
+        return $this->pricingContext($customerId, $customerName, $book['id'] ?? null, $book);
     }
 
     /**
@@ -289,8 +345,6 @@ trait HandlesStatementPricing
         if ($cust === '') return ['candidates' => []];
         $custId = $this->customerIdByName($cust);
         if (! $custId) return ['candidates' => []];
-
-        $ctx = $this->pricingContext((int) $custId, $cust);
 
         // ============================================================
         // NGÀY KỲ BẢNG KÊ = NGÀY của "Giờ xe ra" (cột `gio_xe_ra`) — INPUT mà bộ lọc
@@ -326,6 +380,8 @@ trait HandlesStatementPricing
             if (($from || $to) && ! $date) continue;
             if ($from && $date && $date < $from) continue;
             if ($to && $date && $date > $to) continue;
+            // Định giá theo BẢNG GIÁ phủ NGÀY của LÔ (per-lô) — kỳ vắt qua mốc thì mỗi lô lấy đúng bảng giá.
+            $ctx = $this->pricingContextForDate((int) $custId, $cust, $date);
             $out[] = $this->candidateRow($s, $sheet, $date, $this->priceShipment($s, $ctx));
         }
         return ['candidates' => $out];
@@ -358,10 +414,8 @@ trait HandlesStatementPricing
     public function statementReprice(\App\Models\TruckingStatement $st): array
     {
         // Ưu tiên customer_id (bền khi khách đổi tên); name là fallback cho bảng kê cũ.
-        $ctx = $this->pricingContext(
-            $st->customer_id ? (int) $st->customer_id : null,
-            $st->customer_name ?? $st->customer?->name ?? ''
-        );
+        $custId   = $st->customer_id ? (int) $st->customer_id : null;
+        $custName = $st->customer_name ?? $st->customer?->name ?? '';
 
         $ids = $st->lines->map(fn ($l) => $l->shipment_id)->filter()->all();
         $ships = TruckingShipment::whereIn('id', $ids)->with(['costLines', 'raOther:id,gio_xe_ra'])->get()->keyBy('id');
@@ -373,6 +427,7 @@ trait HandlesStatementPricing
             $sheet = strtoupper((string) $s->sheet);
             // Ngày kỳ = ngày "Giờ xe ra" (gio_xe_ra) — đồng bộ với statementCandidates. HPH fallback sail_date.
             $date  = $this->outDate($s->gio_xe_ra) ?: ($sheet === 'HPH' ? $this->outDate($s->sail_date) : '');
+            $ctx   = $this->pricingContextForDate($custId, $custName, $date);   // bảng giá theo NGÀY của lô
             $out[(string) $id] = $this->candidateRow($s, $sheet, $date, $this->priceShipment($s, $ctx));
         }
         return ['repriced' => $out];
@@ -416,15 +471,15 @@ trait HandlesStatementPricing
 
             foreach ($statements as $st) {
                 // Ưu tiên customer_id (bền); name là fallback.
-                $ctx = $this->pricingContext(
-                    $st->customer_id ? (int) $st->customer_id : null,
-                    $st->customer_name ?? ''
-                );
+                $custId   = $st->customer_id ? (int) $st->customer_id : null;
+                $custName = $st->customer_name ?? '';
                 $changed = 0;
                 foreach ($st->lines as $l) {
                     $s = $l->shipment_id ? $ships->get($l->shipment_id) : null;
                     if (! $s) continue;   // lô đã xóa → giữ số đã lưu, không phải "phát sinh"
-                    $pr = $this->priceShipment($s, $ctx);
+                    $sheet = strtoupper((string) $s->sheet);
+                    $date  = $this->outDate($s->gio_xe_ra) ?: ($sheet === 'HPH' ? $this->outDate($s->sail_date) : '');
+                    $pr = $this->priceShipment($s, $this->pricingContextForDate($custId, $custName, $date));
                     if ((int) round((float) $pr['phaiThu']) !== (int) round((float) $l->phai_thu)) $changed++;
                 }
                 if ($changed > 0) $out[(string) $st->id] = ['changed' => $changed];

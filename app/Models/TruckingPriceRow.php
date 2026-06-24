@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class TruckingPriceRow extends Model
 {
     protected $fillable = [
-        'customer_id', 'location_id', 'loc', 'conn', 'kind',
+        'customer_id', 'price_book_id', 'location_id', 'loc', 'conn', 'kind',
         'from', 'to1', 'to2', 'to3', 'to4',
         'distance', 'trans_fee_40', 'trans_fee_20', 'fuel_fee_40', 'fuel_fee_20', 'sort',
     ];
@@ -30,5 +30,10 @@ class TruckingPriceRow extends Model
     public function location(): BelongsTo
     {
         return $this->belongsTo(TruckingLocation::class, 'location_id');
+    }
+
+    public function priceBook(): BelongsTo
+    {
+        return $this->belongsTo(TruckingPriceBook::class, 'price_book_id');
     }
 }

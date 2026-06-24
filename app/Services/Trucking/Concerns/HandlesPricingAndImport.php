@@ -62,11 +62,13 @@ trait HandlesPricingAndImport
      * Bảng giá theo customer_id — bền khi khách đổi tên (dùng cho statement đã lưu có sẵn
      * customer_id). Caller nên ưu tiên gọi bản này; bản theo name chỉ là fallback.
      */
-    public function customerPriceListById(int $customerId): array
+    public function customerPriceListById(int $customerId, ?int $priceBookId = null): array
     {
         if ($customerId <= 0) return [];
-        return TruckingPriceRow::where('customer_id', $customerId)->orderBy('sort')
-            ->toBase()->get()
+        // $priceBookId === null → KHÔNG có bảng giá phủ ngày → trả rỗng (định giá "chưa khớp").
+        if ($priceBookId === null) return [];
+        return TruckingPriceRow::where('customer_id', $customerId)->where('price_book_id', $priceBookId)
+            ->orderBy('sort')->toBase()->get()
             ->map(fn ($p) => $this->priceRowToArray($p))->all();
     }
 
