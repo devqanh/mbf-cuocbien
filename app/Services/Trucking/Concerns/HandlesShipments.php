@@ -8,6 +8,7 @@ use App\Models\TruckingCostLine;
 use App\Models\TruckingChohoItem;
 use App\Models\TruckingCustomer;
 use App\Models\TruckingDriver;
+use App\Models\TruckingExtVendor;
 use App\Models\TruckingLocation;
 use App\Models\TruckingPayer;
 use App\Models\TruckingPriceRow;
@@ -74,6 +75,7 @@ trait HandlesShipments
             'salaryItems' => [TruckingSalaryItem::class, false, false,           false],
             'vehicleCostTypes' => [TruckingVehicleCostType::class, false, false,  false],
             'assetCategories'  => [TruckingAssetCategory::class,   false, false,  false],
+            'extVendors'  => [TruckingExtVendor::class,  false, false,           false],
         ];
     }
 
@@ -868,6 +870,8 @@ trait HandlesShipments
             'bksRa'        => $s->bks_ra ?? '',
             'raMode'       => $s->ra_mode ?? 'self',
             'raOtherId'    => $s->ra_other_id,
+            'extVendor'    => $s->ext_vendor ?? '',
+            'extFee'       => $this->outMoney($s->ext_fee),
             'sailDate'     => $this->outDate($s->sail_date),
             'cutOff'       => $s->cut_off ?? '',
             'infoNote'     => $s->info_note ?? '',
@@ -977,6 +981,7 @@ trait HandlesShipments
                 'driver'       => ['driver', $this->str($data['driver'] ?? null)],
                 'raMode'       => ['ra_mode', $data['raMode'] ?? 'self'],
                 'raOtherId'    => ['ra_other_id', $data['raOtherId'] ?? null],
+                'extVendor'    => ['ext_vendor', $this->str($data['extVendor'] ?? null)],
                 'sailDate'     => ['sail_date', $this->inDate($data['sailDate'] ?? null)],
                 'cutOff'       => ['cut_off', $this->str($data['cutOff'] ?? null)],
                 'infoNote'     => ['info_note', $this->str($data['infoNote'] ?? null)],
@@ -996,6 +1001,14 @@ trait HandlesShipments
                 $hasBarge = trim((string) $s->barge_drop) !== '';
                 $s->is_barge   = $hasBarge;
                 $s->barge_cont = $hasBarge ? (preg_match('/R(F|HC|EEF)/i', (string) $s->cont_type) ? 'NOR' : 'DRY') : null;
+            }
+            // THUÊ XE NGOÀI bắt buộc chọn nhà xe: nếu lưu cost có dòng src=extTruck mà chưa có Nhà xe ngoài → chặn.
+            if ($apply('cost')) {
+                $hasExt = false;
+                foreach (($data['cost']['items'] ?? []) as $c) if (($c['src'] ?? '') === 'extTruck') { $hasExt = true; break; }
+                if ($hasExt && trim((string) $s->ext_vendor) === '') {
+                    throw new \RuntimeException('Lô "Thuê xe ngoài" cần chọn Nhà xe ngoài.');
+                }
             }
             // Nhãn (tags) — mảng chuỗi, chuẩn hóa: trim + bỏ rỗng + bỏ trùng (giữ thứ tự).
             if ($apply('tags')) {
@@ -1233,11 +1246,13 @@ trait HandlesShipments
             $costTotal    = (float) $s->costLines->sum($netOf);
             $costBillable = (float) $s->costLines->where('billable', true)->sum($netOf);
             $costCompany  = $costTotal - $costBillable;
+            // Cước thuê xe ngoài (chốt) = tổng dòng chi phí src=extTruck — để Bảng kê xe ngoài query nhanh.
+            $extFee       = (float) $s->costLines->where('src', 'extTruck')->sum('amount');
             $updates += [
                 'rev_base' => $revBase, 'vat_amount' => $vat, 'choho_revenue' => $chohoRev,
                 'phai_thu' => $phaiThu, 'da_thu' => $daThu, 'con_no' => $phaiThu - $daThu,
                 'cost_total' => $costTotal, 'cost_billable' => $costBillable, 'cost_company' => $costCompany,
-                'profit' => $revBase - $costCompany,
+                'profit' => $revBase - $costCompany, 'ext_fee' => $extFee,
             ];
         }
         if ($needVehicle) {

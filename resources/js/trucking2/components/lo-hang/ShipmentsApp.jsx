@@ -202,12 +202,15 @@ function ShipmentsApp() {
   const commitDirty = async (ids) => {
     const list = ids ? ids.filter((id) => dirtyIds.current.has(id)) : [...dirtyIds.current];
     if (!list.length) return true;
-    let ok = true, createdNew = false;
+    let ok = true, createdNew = false, extMissing = false;
     for (const id of list) {
       const ship = (draft && draft.id === id) ? draft : data.find((s) => s.id === id);
       if (!ship) continue;
       // Bắt buộc Khách hàng + Số booking trước khi tạo/lưu
       if (!((ship.customer || "").toString().trim()) || !((ship.booking || "").toString().trim())) { ok = false; continue; }
+      // Thuê xe ngoài (có dòng src=extTruck) BẮT BUỘC chọn Nhà xe ngoài
+      const hasExt = ((ship.cost && ship.cost.items) || []).some((it) => it.src === "extTruck");
+      if (hasExt && !((ship.extVendor || "").toString().trim())) { ok = false; extMissing = true; continue; }
       if (ship._new) {
         const res = await api("POST", ROUTES.shipmentStore, { sheet, ship });
         if (res && res.ok) { dirtyIds.current.delete(id); delete dirtyFields.current[id]; if (draft && draft.id === id) setDraft(null); createdNew = true; }
@@ -222,7 +225,7 @@ function ShipmentsApp() {
         else ok = false;
       }
     }
-    window.trkToast && window.trkToast(ok ? "Đã lưu" : "Chưa lưu được (kiểm tra Khách hàng / Số booking)", ok ? undefined : "error");
+    window.trkToast && window.trkToast(ok ? "Đã lưu" : (extMissing ? "Chưa lưu — lô Thuê xe ngoài cần chọn Nhà xe ngoài" : "Chưa lưu được (kiểm tra Khách hàng / Số booking)"), ok ? undefined : "error");
     if (createdNew && ok) setModal(null);   // lô mới đã có id thật → đóng popup (tránh tham chiếu id tạm)
     await load();
     return ok;

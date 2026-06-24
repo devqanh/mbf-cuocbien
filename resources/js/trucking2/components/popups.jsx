@@ -293,7 +293,7 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
   const setCostItems = (arr) => patch({ cost: { ...cost, items: arr } });
   const toggleExt = (on) => {
     if (on && !extLine) setCostItems([...costItems, { id: Date.now() + Math.random(), src: "extTruck", item: "Cước xe ngoài", amount: "", payer: "Xe ngoài", date: "", billable: false, color: "", note: "" }]);
-    else if (!on && extLine) setCostItems(costItems.filter((it) => it.src !== "extTruck"));
+    else if (!on && extLine) { setCostItems(costItems.filter((it) => it.src !== "extTruck")); patch({ extVendor: "" }); }   // bỏ tích → xóa nhà xe
   };
   const setExt = (np) => setCostItems(costItems.map((it) => (it.src === "extTruck" ? { ...it, ...np } : it)));
   // Phí thanh lý tờ khai (Hải Quan) → 1 dòng chi phí "Phí thanh lý tờ khai" (src=thanhLyFee) link sang Chi phí lô hàng
@@ -441,7 +441,24 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
             </button>
           ))}
         </div>
-        {/* SÀ LAN: chỉ cần chọn Nơi hạ sà lan → cont tự đi sà lan; loại DRY/NOR suy từ Loại cont (không thao tác thêm). */}
+        {/* THUÊ XE NGOÀI: hiện NGAY dưới nút — Nhà xe (bắt buộc) + cước + ghi chú. */}
+        {extHired && (
+          <div style={{ padding: "10px 12px", marginTop: 8, background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", borderRadius: 9 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 200px", gap: 12, alignItems: "end" }}>
+              <Field label="Nhà xe ngoài" hint="bắt buộc" req>
+                <Combo value={ship.extVendor} onChange={(x) => set({ extVendor: x })} options={cfg.extVendors || []} onCreate={(v) => add("extVendors", v)} placeholder="Chọn nhà xe (Cài đặt → Đơn vị xe ngoài)…" strict clearable />
+              </Field>
+              <Field label="Cước xe ngoài"><Money value={extLine.amount} onChange={(x) => setExt({ amount: x })} dim /></Field>
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <Field label="Ghi chú nhà xe"><Txt value={extLine.note} onChange={(x) => setExt({ note: x })} placeholder="SĐT, biển số, ghi chú thêm…" /></Field>
+            </div>
+            {!String(ship.extVendor || "").trim()
+              ? <div style={{ fontSize: 11.5, color: "var(--danger)", fontWeight: 600, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}><i className="bi bi-exclamation-triangle-fill" /> Chọn <b>Nhà xe ngoài</b> — bắt buộc để vào Bảng kê xe ngoài (công nợ).</div>
+              : <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}><I.link /> Khoản <b style={{ color: "var(--ink-3)" }}>“Cước xe ngoài”</b> vào Chi phí lô hàng; gom vào <b>Bảng kê xe ngoài</b> theo nhà xe.</div>}
+          </div>
+        )}
+        {/* SÀ LAN: chỉ cần chọn Nơi hạ sà lan → cont tự đi sà lan; loại DRY/NOR suy từ Loại cont. */}
         <div style={{ padding: "10px 12px", marginTop: 8, borderRadius: 9, background: ship.bargeDrop ? "var(--accent-weak-2)" : "#fafbfc", border: "1px solid " + (ship.bargeDrop ? "var(--accent-weak)" : "var(--line-2)") }}>
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, alignItems: "end" }}>
             <Field label="Nơi hạ sà lan (điểm đến)">
@@ -456,15 +473,6 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
             </div>
           </div>
         </div>
-        {extHired && (
-          <div style={{ padding: "8px 12px", marginTop: 6, background: "#fafbfc", border: "1px solid var(--line-2)", borderRadius: 9 }}>
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "200px 1fr", gap: 12, alignItems: "end" }}>
-              <Field label="Cước xe ngoài"><Money value={extLine.amount} onChange={(x) => setExt({ amount: x })} dim /></Field>
-              <Field label="Ghi chú nhà xe"><Txt value={extLine.note} onChange={(x) => setExt({ note: x })} placeholder="Tên nhà xe, SĐT, biển số…" /></Field>
-            </div>
-            <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}><I.link /> Khoản <b style={{ color: "var(--ink-3)" }}>“Cước xe ngoài”</b> trong Chi phí lô hàng; bỏ tích để gỡ.</div>
-          </div>
-        )}
         <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 8, lineHeight: 1.5 }}>
           <b style={{ color: "var(--ink-3)" }}>CRU</b> quyết KIND lấy giá (CRU+Xuất→External · CRU+Nhập→Internal · không CRU→Transport 1 way). <b style={{ color: "var(--ink-3)" }}>Sà lan</b>: có Nơi hạ sà lan = đi sà lan; giữ nguyên giá cont + thêm <b>phí sà lan riêng</b> (nhóm Non DRY/NOR, loại suy từ Loại cont).
         </div>
