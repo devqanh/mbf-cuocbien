@@ -30,7 +30,7 @@ function ViewStatementApp() {
     .catch(() => { window.trkToast && window.trkToast("Lỗi kết nối khi lưu", "error"); return false; });
   const onDelete = () => api("DELETE", ROUTES.statement + (st.hashid || st.id));
   // Xuất Excel: tải từ server (PhpSpreadsheet dựng theo mẫu chính thức, giữ định dạng)
-  const onExcel = () => { window.location.href = ROUTES.base + (st.hashid || st.id) + "/excel"; };
+  const onExcel = () => { window.location.href = ROUTES.base + (st.hashid || st.id) + "/export-excel"; };
 
   // Tính lại: HỎI xác nhận → mới query realtime (bảng giá + lô hiện tại) để tính.
   // Bảng kê đã lưu là dữ liệu TĨNH — chỉ thay đổi khi bấm Lưu sau khi kiểm tra.

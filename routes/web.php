@@ -226,7 +226,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/bang-ke/{statement}',         [StatementController::class, 'view'])->name('statements.view');
             Route::get('/bang-ke/{statement}/context', [StatementController::class, 'context'])->name('statements.context');
             Route::get('/bang-ke/{statement}/reprice', [StatementController::class, 'reprice'])->name('statements.reprice');   // tính lại ở backend
-            Route::get('/bang-ke/{statement}/excel',   [StatementController::class, 'export'])->name('statements.excel');
+            Route::get('/bang-ke/{statement}/export-excel', [StatementController::class, 'export'])->name('statements.excel');
         });
         Route::middleware('permission:statements.create')->group(function () {
             Route::post('/statements', [StatementController::class, 'store'])->name('statements.store');

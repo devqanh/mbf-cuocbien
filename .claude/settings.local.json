@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell(Get-NetTCPConnection -LocalPort 8080 -ErrorAction SilentlyContinue)"
+      "PowerShell(Get-NetTCPConnection -LocalPort 8080 -ErrorAction SilentlyContinue)",
+      "PowerShell(php artisan migrate --force 2>&1)",
+      "PowerShell(php artisan route:list --name=extStatements 2>&1)",
+      "PowerShell(php artisan tinker --execute=\"require 'C:/Users/QUYENA~1/AppData/Local/Temp/claude/c--laragon-www-cuocbien/b68a982e-c908-47ea-ac62-63eae4bc49de/scratchpad/test_ext.php';\" 2>&1)",
+      "PowerShell(php artisan tinker --execute=\"require 'C:/Users/QUYENA~1/AppData/Local/Temp/claude/c--laragon-www-cuocbien/b68a982e-c908-47ea-ac62-63eae4bc49de/scratchpad/debug.php';\" 2>&1)"
     ]
   }
 }
