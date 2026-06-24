@@ -35,6 +35,33 @@ const fmtDate = (iso) => { if (!iso) return ""; const [y, m, d] = iso.split("-")
 const PAYERS = ["Tài xế", "A.Hoàn", "Xe ngoài", "TK công ty", "Khách"];
 const VAT_RATE = 0.08;
 
+/* Lựa chọn % VAT cho bảng kê (cấp statement). */
+const STATEMENT_VAT_RATES = [0, 8, 10];
+
+/**
+ * NGUỒN CHÂN LÝ DUY NHẤT (frontend) cho 4 con số bảng kê — khớp backend statementAmounts().
+ * VAT chỉ áp lên NỀN vận chuyển (cước+dầu+sà lan); chi hộ KHÔNG chịu VAT.
+ *
+ * @param lines    mảng dòng, mỗi dòng có .detail (cuoc/dau/chiHo/bargeCuoc/bargeDau) hoặc .phaiThu
+ * @param vatRate  % VAT (0/8/10)
+ * @returns {base, choho, vat, total}
+ */
+function statementAmounts(lines, vatRate) {
+  let base = 0, choho = 0;
+  (lines || []).forEach((l) => {
+    const d = (l && typeof l.detail === "object" && l.detail) ? l.detail : null;
+    if (d && ("cuoc" in d || "dau" in d || "bargeCuoc" in d || "bargeDau" in d)) {
+      base += (+d.cuoc || 0) + (+d.dau || 0) + (+d.bargeCuoc || 0) + (+d.bargeDau || 0);
+      choho += (+d.chiHo || 0);
+    } else {
+      base += (+(l && l.phaiThu) || 0);   // không có detail → coi phaiThu là nền
+    }
+  });
+  base = Math.round(base); choho = Math.round(choho);
+  const vat = Math.round(base * (+vatRate || 0) / 100);
+  return { base, choho, vat, total: base + vat + choho };
+}
+
 /* ============================ icons ============================ */
 const I = {
   truck: (p) => (<svg viewBox="0 0 24 24" width="20" height="20" fill="none" {...p}><path d="M2.5 6.5A1.5 1.5 0 014 5h9.5v9.5H2.5v-8zM13.5 8.5H18l3 3v3h-7.5v-6z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/><circle cx="6.5" cy="17" r="1.8" stroke="currentColor" strokeWidth="1.6"/><circle cx="17.5" cy="17" r="1.8" stroke="currentColor" strokeWidth="1.6"/></svg>),
@@ -543,4 +570,4 @@ const fmtHours = (h) => {
   return (neg ? "-" : "") + (mm ? `${hh}h${String(mm).padStart(2, "0")}` : `${hh}h`);
 };
 
-export { useState, useRef, useMemo, useEffect, useCallback, useIsMobile, onlyDigits, groupVND, toNum, fmtVND, fmtNum, fmtShort, fmtDate, PAYERS, VAT_RATE, I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours };
+export { useState, useRef, useMemo, useEffect, useCallback, useIsMobile, onlyDigits, groupVND, toNum, fmtVND, fmtNum, fmtShort, fmtDate, PAYERS, VAT_RATE, STATEMENT_VAT_RATES, statementAmounts, I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours };

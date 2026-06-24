@@ -15,14 +15,18 @@ class TruckingStatement extends Model
     protected $fillable = [
         'no', 'customer_id', 'customer_name', 'info',
         'date', 'period_from', 'period_to', 'total',
+        'vat_rate', 'base_amount', 'choho_amount',
     ];
 
     protected $casts = [
-        'info'        => 'array',
-        'date'        => 'date',
-        'period_from' => 'date',
-        'period_to'   => 'date',
-        'total'       => 'decimal:2',
+        'info'         => 'array',
+        'date'         => 'date',
+        'period_from'  => 'date',
+        'period_to'    => 'date',
+        'total'        => 'decimal:2',
+        'vat_rate'     => 'decimal:2',
+        'base_amount'  => 'decimal:2',
+        'choho_amount' => 'decimal:2',
     ];
 
     public function customer(): BelongsTo

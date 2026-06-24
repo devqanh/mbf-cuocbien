@@ -1,6 +1,6 @@
 import React from "react";
 const { useState, useMemo, useEffect } = React;
-import { I, fmtVND, fmtNum, fmtShort, fmtDate, calcCost, calcRev, calcVeh, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, Combo, useIsMobile, DateField } from "@trk/lib.jsx";
+import { I, fmtVND, fmtNum, fmtShort, fmtDate, calcCost, calcRev, calcVeh, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, Combo, useIsMobile, DateField, statementAmounts, STATEMENT_VAT_RATES } from "@trk/lib.jsx";
 import { CostPopup, RevenuePopup, CostPopupICD, RevenuePopupICD, InfoPopup, ConfigPopup, PriceList, TRACK_COLORS, colorHex } from "@trk/pop.jsx";
 import { SortBtn, CellBtn, Badge, EditCell, TH, TD } from "./primitives.jsx";
 
@@ -14,6 +14,43 @@ const ROUTES_TRK = (window.__TRK && window.__TRK.routes) || {};
 const CO_NAME = CO.name || "MBF JOINT STOCK COMPANY";
 const CO_SUB = [CO.website, CO.phone].filter(Boolean).join(" · ") || "http://mbf.com.vn · 84-24-39449616";
 
+/* Select % VAT cho bảng kê (cấp statement). VAT chỉ áp nền cước+dầu+sà lan. */
+function VatSelect({ value, onChange }) {
+  return (
+    <select value={String(value || 0)} onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+      style={{ padding: "6px 10px", fontSize: 13, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 8, background: "#fff", color: "var(--ink)", cursor: "pointer", outline: "none" }}>
+      {STATEMENT_VAT_RATES.map((r) => <option key={r} value={r}>{r}%</option>)}
+    </select>
+  );
+}
+
+/* Khối tổng tiền 4 dòng (dùng chung tạo + xem): nền · VAT · chi hộ · tổng (+ công nợ nếu có). */
+function AmountSummary({ amt, vatRate, paid, payCount, showDebt }) {
+  const con = (amt.total || 0) - (paid || 0);
+  const row = (label, val, opt = {}) => (
+    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6, ...(opt.wrap || {}) }}>
+      <span style={{ color: "var(--ink-3)", ...(opt.labelStyle || {}) }}>{label}</span>
+      <b className="tnum" style={opt.valStyle || {}}>{fmtVND(val)}</b>
+    </div>
+  );
+  return (
+    <div style={{ width: 320, background: "#fafbfc", border: "1px solid var(--line)", borderRadius: 10, padding: "12px 16px" }}>
+      {row("Phải thu (cước + dầu)", amt.base)}
+      {row(`VAT (${vatRate || 0}%)`, amt.vat, { valStyle: { color: (vatRate ? "var(--accent)" : "var(--ink-4)") } })}
+      {row("Chi hộ (không VAT)", amt.choho)}
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, paddingTop: 8, marginBottom: showDebt ? 8 : 0, borderTop: "1px solid var(--line)" }}>
+        <span style={{ fontWeight: 700 }}>TỔNG TIỀN</span><b className="tnum">{fmtVND(amt.total)}</b>
+      </div>
+      {showDebt && <>
+        {row(`Đã thanh toán (${payCount || 0} đợt)`, paid, { valStyle: { color: "var(--good)" } })}
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, paddingTop: 8, borderTop: "1px solid var(--line)" }}>
+          <span style={{ fontWeight: 600 }}>CÒN PHẢI THU</span><b className="tnum" style={{ color: con > 0 ? "var(--warn)" : "var(--good)" }}>{fmtVND(Math.max(0, con))}</b>
+        </div>
+      </>}
+    </div>
+  );
+}
+
 function StatementForm({ cfg, onCancel, onSaved }) {
   const { useState, useEffect } = React;
   const T = window.__TRK || {}; const ROUTES = T.routes || {};
@@ -22,6 +59,7 @@ function StatementForm({ cfg, onCancel, onSaved }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [picked, setPicked] = useState({}); // id -> bool
+  const [vatRate, setVatRate] = useState(0); // % VAT cho bảng kê (mặc định 0)
   const info = (cfg.customerInfo || {})[cust] || {};
   const today = new Date().toISOString().slice(0, 10);
 
@@ -43,7 +81,9 @@ function StatementForm({ cfg, onCancel, onSaved }) {
   const [amtOv, setAmtOv] = useState({}); // override phải thu theo lô
   const sel = all.filter((x) => picked[x.id] !== false); // mặc định chọn hết
   const lineAmt = (x) => (amtOv[x.id] != null ? amtOv[x.id] : x.pr.phaiThu);
-  const tongThu = sel.reduce((a, x) => a + lineAmt(x), 0);
+  // 4 con số từ NGUỒN CHÂN LÝ chung (nền = cước+dầu+sà lan từ detail; VAT chỉ áp nền; chi hộ không VAT).
+  const amt = statementAmounts(sel.map((x) => ({ detail: x.pr, phaiThu: lineAmt(x) })), vatRate);
+  const tongThu = amt.total;
   const keNo = "BK-" + today.replace(/-/g, "").slice(2) + "-" + (cust ? cust.slice(0, 3).toUpperCase() : "XXX");
 
   const [saving, setSaving] = useState(false);
@@ -58,7 +98,7 @@ function StatementForm({ cfg, onCancel, onSaved }) {
       // snapshot định giá (backend) để hiển thị đối soát TĨNH (không query lại khi xem)
       detail: { ...x.pr },
     }));
-    const payload = { id: Date.now(), no: keNo, customer: cust, info, date: today, from, to, lines, tongThu, payments: [], createdAt: new Date().toISOString() };
+    const payload = { id: Date.now(), no: keNo, customer: cust, info, date: today, from, to, lines, vatRate, tongThu, payments: [], createdAt: new Date().toISOString() };
     // onSaved có thể async + trả về false để huỷ (vd bấm Huỷ ở confirm) → giữ nguyên trang
     let result;
     try { result = await Promise.resolve(onSaved && onSaved(payload)); }
@@ -68,7 +108,7 @@ function StatementForm({ cfg, onCancel, onSaved }) {
 
   const footer = (
     <div className="ke-noprint" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 8, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
-      <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{sel.length} lô · tổng đang chọn: <b className="tnum" style={{ color: "var(--ink)" }}>{fmtVND(tongThu)}</b></div>
+      <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{sel.length} lô · nền <b className="tnum">{fmtNum(amt.base)}</b> + VAT {vatRate}% <b className="tnum">{fmtNum(amt.vat)}</b> + chi hộ <b className="tnum">{fmtNum(amt.choho)}</b> = tổng <b className="tnum" style={{ color: "var(--ink)" }}>{fmtVND(tongThu)}</b></div>
       <div style={{ display: "flex", gap: 10 }}>
         <Btn onClick={onCancel}>Hủy</Btn>
         <Btn onClick={() => window.print()}>In thử</Btn>
@@ -94,6 +134,10 @@ function StatementForm({ cfg, onCancel, onSaved }) {
         <div style={{ display: "block" }}>
           <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>đến ngày</div>
           <div style={{ width: 150 }}><DateField value={to} onChange={setTo} /></div>
+        </div>
+        <div style={{ display: "block" }}>
+          <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>VAT</div>
+          <VatSelect value={vatRate} onChange={setVatRate} />
         </div>
         <div style={{ flex: 1 }} />
         <div style={{ fontSize: 12, color: "var(--ink-4)" }}>{all.length} lô có phải thu</div>
@@ -183,10 +227,25 @@ function StatementForm({ cfg, onCancel, onSaved }) {
             })}
           </tbody>
           <tfoot>
-            <tr style={{ fontWeight: 700 }}>
+            <tr>
               <td className="ke-noprint" style={{ borderTop: "1.5px solid var(--line)" }}></td>
-              <td colSpan={3} style={{ padding: "11px 8px", borderTop: "1.5px solid var(--line)", textAlign: "right" }}>TỔNG PHẢI THU</td>
-              <td className="tnum" style={{ textAlign: "right", padding: "11px 8px", borderTop: "1.5px solid var(--line)" }} colSpan={2}>{fmtVND(tongThu)}</td>
+              <td colSpan={3} style={{ padding: "9px 8px 3px", borderTop: "1.5px solid var(--line)", textAlign: "right", color: "var(--ink-3)" }}>Phải thu (cước + dầu)</td>
+              <td className="tnum" style={{ textAlign: "right", padding: "9px 8px 3px", borderTop: "1.5px solid var(--line)" }} colSpan={2}>{fmtVND(amt.base)}</td>
+            </tr>
+            <tr>
+              <td className="ke-noprint"></td>
+              <td colSpan={3} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>VAT ({vatRate}%)</td>
+              <td className="tnum" style={{ textAlign: "right", padding: "3px 8px", color: vatRate ? "var(--accent)" : "var(--ink-4)" }} colSpan={2}>{fmtVND(amt.vat)}</td>
+            </tr>
+            <tr>
+              <td className="ke-noprint"></td>
+              <td colSpan={3} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>Chi hộ (không VAT)</td>
+              <td className="tnum" style={{ textAlign: "right", padding: "3px 8px" }} colSpan={2}>{fmtVND(amt.choho)}</td>
+            </tr>
+            <tr style={{ fontWeight: 700 }}>
+              <td className="ke-noprint"></td>
+              <td colSpan={3} style={{ padding: "8px 8px 11px", textAlign: "right" }}>TỔNG TIỀN</td>
+              <td className="tnum" style={{ textAlign: "right", padding: "8px 8px 11px" }} colSpan={2}>{fmtVND(tongThu)}</td>
             </tr>
           </tfoot>
         </table>
@@ -208,7 +267,11 @@ function StatementDetailBody({ st, onUpdate, detailById = {} }) {
   const addP = () => sync([...payments, { id: Date.now() + Math.random(), date: new Date().toISOString().slice(0, 10), amount: "", note: "" }]);
   const delP = (id) => sync(payments.filter((p) => p.id !== id));
   const setLine = (id, amount) => onUpdate && onUpdate({ ...st, lines: (st.lines || []).map((l) => (l.id === id ? { ...l, phaiThu: amount } : l)) });
-  const tongThu = (st.lines || []).reduce((a, l) => a + (l.phaiThu || 0), 0);
+  const vatRate = +st.vatRate || 0;
+  const setVat = (v) => onUpdate && onUpdate({ ...st, vatRate: v });
+  // 4 con số = NGUỒN CHÂN LÝ chung (nền cước+dầu+sà lan; VAT chỉ áp nền; chi hộ không VAT).
+  const amt = statementAmounts(st.lines || [], vatRate);
+  const tongThu = amt.total;
   const grp = (d) => { d = (d || "").toString().replace(/[^\d]/g, ""); return d ? d.replace(/\B(?=(\d{3})+(?!\d))/g, ".") : ""; };
   const daTT = payments.reduce((a, p) => a + toNum(p.amount), 0);
   const conNo = tongThu - daTT;
@@ -231,7 +294,11 @@ function StatementDetailBody({ st, onUpdate, detailById = {} }) {
               <div style={{ width: 140 }}><DateField value={st.to || ""} onChange={(v) => setPeriod("to", v)} /></div>
               {(st.from || st.to) && <button type="button" onClick={() => onUpdate && onUpdate({ ...st, from: "", to: "" })} title="Xóa khoảng ngày"
                 style={{ border: "none", background: "transparent", color: "var(--ink-4)", cursor: "pointer", fontSize: 12, padding: "2px 4px" }}>✕</button>}
+              <span style={{ fontWeight: 600, marginLeft: 6 }}>VAT</span>
+              <VatSelect value={vatRate} onChange={setVat} />
             </div>
+            {/* VAT cho bản in (read-only) */}
+            <div className="ke-printonly" style={{ display: "none", fontSize: 12.5, color: "var(--ink-3)", marginTop: 4 }}>VAT: {vatRate}%</div>
           </div>
           <div style={{ textAlign: "right", fontSize: 12 }}>
             <div style={{ fontWeight: 700, color: "var(--accent)" }}>{CO_NAME}</div>
@@ -328,10 +395,24 @@ function StatementDetailBody({ st, onUpdate, detailById = {} }) {
               </React.Fragment>
             );})}
           </tbody>
-          <tfoot><tr style={{ fontWeight: 700 }}>
-            <td colSpan={4} style={{ padding: "11px 8px", borderTop: "1.5px solid var(--line)", textAlign: "right" }}>TỔNG PHẢI THU</td>
-            <td className="tnum" style={{ textAlign: "right", padding: "11px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtVND(tongThu)}</td>
-          </tr></tfoot>
+          <tfoot>
+            <tr>
+              <td colSpan={4} style={{ padding: "9px 8px 3px", borderTop: "1.5px solid var(--line)", textAlign: "right", color: "var(--ink-3)" }}>Phải thu (cước + dầu)</td>
+              <td className="tnum" style={{ textAlign: "right", padding: "9px 8px 3px", borderTop: "1.5px solid var(--line)" }}>{fmtVND(amt.base)}</td>
+            </tr>
+            <tr>
+              <td colSpan={4} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>VAT ({vatRate}%)</td>
+              <td className="tnum" style={{ textAlign: "right", padding: "3px 8px", color: vatRate ? "var(--accent)" : "var(--ink-4)" }}>{fmtVND(amt.vat)}</td>
+            </tr>
+            <tr>
+              <td colSpan={4} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>Chi hộ (không VAT)</td>
+              <td className="tnum" style={{ textAlign: "right", padding: "3px 8px" }}>{fmtVND(amt.choho)}</td>
+            </tr>
+            <tr style={{ fontWeight: 700 }}>
+              <td colSpan={4} style={{ padding: "8px 8px 11px", textAlign: "right" }}>TỔNG TIỀN</td>
+              <td className="tnum" style={{ textAlign: "right", padding: "8px 8px 11px" }}>{fmtVND(tongThu)}</td>
+            </tr>
+          </tfoot>
         </table>
 
         {/* payments / công nợ */}
@@ -375,11 +456,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {} }) {
         </div>
 
         <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end" }}>
-          <div style={{ width: 300, background: "#fafbfc", border: "1px solid var(--line)", borderRadius: 10, padding: "12px 16px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}><span style={{ color: "var(--ink-3)" }}>Tổng phải thu</span><b className="tnum">{fmtVND(tongThu)}</b></div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}><span style={{ color: "var(--ink-3)" }}>Đã thanh toán ({payments.length} đợt)</span><b className="tnum" style={{ color: "var(--good)" }}>{fmtVND(daTT)}</b></div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, paddingTop: 8, borderTop: "1px solid var(--line)" }}><span style={{ fontWeight: 600 }}>CÒN PHẢI THU</span><b className="tnum" style={{ color: conNo > 0 ? "var(--warn)" : "var(--good)" }}>{fmtVND(Math.max(0, conNo))}</b></div>
-          </div>
+          <AmountSummary amt={amt} vatRate={vatRate} paid={daTT} payCount={payments.length} showDebt />
         </div>
       </div>
   );
@@ -487,8 +564,9 @@ function DriftChip({ n }) {
 
 function KePage({ ke, drift = {}, onNew, onOpen }) {
   const isMobile = useIsMobile();
-  const cols = "150px 1fr 120px 1fr 150px 150px";
+  const cols = "130px 1fr 110px 130px 120px 90px 110px 130px";
   const driftOf = (st) => drift[String(st.id)];
+  const num = (v, fb) => (v == null ? fb : v);   // số dẫn xuất từ backend; fallback nếu boot cũ
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", padding: isMobile ? "16px 14px 24px" : "20px 22px 24px", overflow: "auto" }}>
       <div style={{ maxWidth: 1000, width: "100%", margin: "0 auto" }}>
@@ -518,8 +596,13 @@ function KePage({ ke, drift = {}, onNew, onOpen }) {
                   </div>
                   <div style={{ fontWeight: 600, fontSize: 14.5, marginTop: 4 }}>{st.customer}{driftOf(st) ? <DriftChip n={driftOf(st).changed} /> : null}</div>
                   <div className="tnum" style={{ color: "var(--ink-4)", fontSize: 12, marginTop: 2 }}>{(st.from || st.to) ? `Cont ra: ${fmtDate(st.from) || "…"} – ${fmtDate(st.to) || "…"}` : "—"}</div>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 9, paddingTop: 9, borderTop: "1px solid var(--line-2)" }}>
-                    <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Tổng: <b className="tnum" style={{ color: "var(--ink)" }}>{fmtVND(st.tongThu)}</b></span>
+                  <div style={{ marginTop: 9, paddingTop: 9, borderTop: "1px solid var(--line-2)", fontSize: 12.5, color: "var(--ink-3)", display: "flex", flexWrap: "wrap", gap: "2px 12px" }}>
+                    <span>Cước+dầu: <b className="tnum" style={{ color: "var(--ink-2)" }}>{fmtNum(num(st.baseAmount, st.tongThu))}</b></span>
+                    <span>VAT {num(st.vatRate, 0)}%: <b className="tnum" style={{ color: (st.vatRate ? "var(--accent)" : "var(--ink-2)") }}>{fmtNum(num(st.vatAmount, 0))}</b></span>
+                    <span>Chi hộ: <b className="tnum" style={{ color: "var(--ink-2)" }}>{fmtNum(num(st.chohoAmount, 0))}</b></span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 6 }}>
+                    <span style={{ fontSize: 13, color: "var(--ink-3)" }}>Tổng tiền: <b className="tnum" style={{ color: "var(--ink)" }}>{fmtVND(st.tongThu)}</b></span>
                     <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Còn: <b className="tnum" style={{ color: con > 0 ? "var(--warn)" : "var(--good)" }}>{fmtVND(Math.max(0, con))}</b></span>
                   </div>
                 </button>
@@ -531,7 +614,7 @@ function KePage({ ke, drift = {}, onNew, onOpen }) {
         {!isMobile && (
         <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
           <div style={{ display: "grid", gridTemplateColumns: cols, gap: 12, padding: "11px 16px", background: "#fafbfc", borderBottom: "1px solid var(--line)", fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-            <div>Số bảng kê</div><div>Khách hàng</div><div>Ngày lập</div><div>Kỳ · cont ra (từ – đến)</div><div style={{ textAlign: "right" }}>Tổng phải thu</div><div style={{ textAlign: "right" }}>Còn lại</div>
+            <div>Số bảng kê</div><div>Khách hàng</div><div>Ngày lập</div><div>Kỳ cont ra</div><div style={{ textAlign: "right" }}>Phải thu<br/>(cước+dầu)</div><div style={{ textAlign: "right" }}>+VAT</div><div style={{ textAlign: "right" }}>Chi hộ</div><div style={{ textAlign: "right" }}>Tổng tiền</div>
           </div>
           {ke.length === 0 && <div style={{ padding: "44px", textAlign: "center", color: "var(--ink-4)", fontSize: 13.5 }}>Chưa có bảng kê nào. Bấm “Tạo bảng kê mới” để bắt đầu.</div>}
           {ke.slice().reverse().map((st) => (
@@ -543,10 +626,10 @@ function KePage({ ke, drift = {}, onNew, onOpen }) {
               <span style={{ fontWeight: 500 }}>{st.customer}{driftOf(st) ? <DriftChip n={driftOf(st).changed} /> : null}</span>
               <span className="tnum" style={{ color: "var(--ink-2)" }}>{fmtDate(st.date)}</span>
               <span className="tnum" style={{ color: "var(--ink-3)", fontSize: 12.5 }}>{(st.from || st.to) ? `${fmtDate(st.from) || "…"} – ${fmtDate(st.to) || "…"}` : "—"}</span>
-              <span className="tnum" style={{ textAlign: "right", fontWeight: 600 }}>{fmtVND(st.tongThu)}</span>
-              {(() => { const daTT = (st.payments || []).reduce((a, p) => a + (parseInt((p.amount || "0").toString().replace(/[^\d]/g, ""), 10) || 0), 0); const con = st.tongThu - daTT; return (
-                <span className="tnum" style={{ textAlign: "right", fontWeight: 600, color: con > 0 ? "var(--warn)" : "var(--good)" }}>{fmtVND(Math.max(0, con))}</span>
-              ); })()}
+              <span className="tnum" style={{ textAlign: "right", color: "var(--ink-2)" }}>{fmtNum(num(st.baseAmount, st.tongThu))}</span>
+              <span className="tnum" style={{ textAlign: "right", color: (st.vatRate ? "var(--accent)" : "var(--ink-4)") }} title={`VAT ${num(st.vatRate, 0)}%`}>{fmtNum(num(st.vatAmount, 0))}</span>
+              <span className="tnum" style={{ textAlign: "right", color: "var(--ink-3)" }}>{fmtNum(num(st.chohoAmount, 0))}</span>
+              <span className="tnum" style={{ textAlign: "right", fontWeight: 700 }}>{fmtVND(st.tongThu)}</span>
             </button>
           ))}
         </div>

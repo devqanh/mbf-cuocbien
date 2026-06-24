@@ -45,6 +45,37 @@ trait HandlesStatements
     // ===================================================================
     // STATEMENT (bảng kê) — serialize & persist
     // ===================================================================
+
+    /**
+     * NGUỒN CHÂN LÝ DUY NHẤT cho 4 con số bảng kê (backend).
+     * VAT chỉ áp lên NỀN vận chuyển (cước+dầu+sà lan); chi hộ KHÔNG chịu VAT.
+     *
+     * @param iterable $details  Mỗi phần tử là detail snapshot 1 dòng (mảng) chứa
+     *                           cuoc/dau/chiHo/bargeCuoc/bargeDau. Khi thiếu detail
+     *                           (bảng kê cũ) → fallback phaiThu coi như cước (giữ total cũ).
+     * @return array{base:int,choho:int,vat:int,total:int}
+     */
+    public static function statementAmounts(iterable $details, float $vatRate): array
+    {
+        $base = 0.0; $choho = 0.0;
+        foreach ($details as $d) {
+            $d = is_array($d) ? $d : (array) $d;
+            if (array_key_exists('cuoc', $d) || array_key_exists('dau', $d)
+                || array_key_exists('bargeCuoc', $d) || array_key_exists('bargeDau', $d)) {
+                $base  += (float) ($d['cuoc'] ?? 0) + (float) ($d['dau'] ?? 0)
+                        + (float) ($d['bargeCuoc'] ?? 0) + (float) ($d['bargeDau'] ?? 0);
+                $choho += (float) ($d['chiHo'] ?? 0);
+            } else {
+                // Không có detail → coi phaiThu là nền (bảng kê cũ, vat=0 → total không đổi).
+                $base  += (float) ($d['phaiThu'] ?? 0);
+            }
+        }
+        $base  = (int) round($base);
+        $choho = (int) round($choho);
+        $vat   = (int) round($base * $vatRate / 100);
+        return ['base' => $base, 'choho' => $choho, 'vat' => $vat, 'total' => $base + $vat + $choho];
+    }
+
     public function statements(): array
     {
         return TruckingStatement::with(['lines', 'payments'])->orderBy('id')->get()
@@ -69,27 +100,54 @@ trait HandlesStatements
         else $q->orderBy('id');   // backward-compatible: ASC khi không paginate
 
         $rows = $q->get()
-            ->map(fn ($st) => [
-                'id'       => $st->id,
-                'hashid'   => Hashid::encode($st->id),
-                'no'       => $st->no,
-                'customer' => $st->customer_name ?? $st->customer?->name ?? '',
-                'date'     => $this->outDate($st->date),
-                'from'     => $this->outDate($st->period_from),
-                'to'       => $this->outDate($st->period_to),
-                // Tổng = TỔNG dòng (luôn đúng, không phụ thuộc cột total có thể cũ).
-                'tongThu'  => (int) round((float) ($st->lines_total ?? $st->total)),
-                'payments' => $st->payments->map(fn ($p) => [
-                    'id'     => $p->id,
-                    'date'   => $this->outDate($p->date),
-                    'amount' => $this->outMoney($p->amount),
-                    'note'   => $p->note ?? '',
-                ])->all(),
-            ])->all();
+            ->map(function ($st) {
+                $a = $this->statementListAmounts($st);
+                return [
+                    'id'          => $st->id,
+                    'hashid'      => Hashid::encode($st->id),
+                    'no'          => $st->no,
+                    'customer'    => $st->customer_name ?? $st->customer?->name ?? '',
+                    'date'        => $this->outDate($st->date),
+                    'from'        => $this->outDate($st->period_from),
+                    'to'          => $this->outDate($st->period_to),
+                    // 4 con số bảng kê (nền/VAT/chi hộ/tổng).
+                    'vatRate'     => (float) ($st->vat_rate ?? 0),
+                    'baseAmount'  => $a['base'],
+                    'vatAmount'   => $a['vat'],
+                    'chohoAmount' => $a['choho'],
+                    // tongThu = Tổng tiền (nền+VAT+chi hộ) — đồng nhất với trang xem & công nợ.
+                    'tongThu'     => $a['total'],
+                    'payments'    => $st->payments->map(fn ($p) => [
+                        'id'     => $p->id,
+                        'date'   => $this->outDate($p->date),
+                        'amount' => $this->outMoney($p->amount),
+                        'note'   => $p->note ?? '',
+                    ])->all(),
+                ];
+            })->all();
 
         // Khi paginate (DESC + limit): đảo chiều để CALLER nhận id-ASC như bản cũ → frontend
         // .slice().reverse() vẫn hiển thị newest-first đúng như trước.
         return $limit !== null ? array_reverse($rows) : $rows;
+    }
+
+    /**
+     * 4 con số cho 1 dòng DANH SÁCH — đọc cột dẫn xuất (base/choho/vat_rate) đã lưu khi save.
+     * Bảng kê CŨ chưa có cột dẫn xuất (mặc định 0) → fallback dùng Σ phai_thu (lines_total)
+     * làm nền, chi hộ 0, vat 0 → Tổng = total cũ (backward-compatible).
+     */
+    private function statementListAmounts(TruckingStatement $st): array
+    {
+        $base  = (float) ($st->base_amount ?? 0);
+        $choho = (float) ($st->choho_amount ?? 0);
+        $rate  = (float) ($st->vat_rate ?? 0);
+        if ($base <= 0 && $choho <= 0) {   // bảng kê cũ — chưa lưu cột dẫn xuất
+            $base = (float) ($st->lines_total ?? $st->total ?? 0);
+        }
+        $base  = (int) round($base);
+        $choho = (int) round($choho);
+        $vat   = (int) round($base * $rate / 100);
+        return ['base' => $base, 'choho' => $choho, 'vat' => $vat, 'total' => $base + $vat + $choho];
     }
 
     /** Meta cho paginate: tổng số bảng kê khớp filter (để KePage biết còn trang hay không). */
@@ -123,17 +181,28 @@ trait HandlesStatements
 
     public function statementToArray(TruckingStatement $st): array
     {
+        // 4 con số tính TỪ detail từng dòng (chân lý, đúng cả bảng kê cũ) + vat_rate đã lưu.
+        $rate = (float) ($st->vat_rate ?? 0);
+        $amt  = self::statementAmounts($st->lines->map(function ($l) {
+            $d = is_array($l->detail ?? null) ? $l->detail : [];
+            if (! $d) $d = ['phaiThu' => (float) $l->phai_thu];
+            return $d;
+        }), $rate);
         return [
-            'id'        => $st->id,
-            'hashid'    => Hashid::encode($st->id),
-            'no'        => $st->no,
-            'customer'  => $st->customer_name ?? $st->customer?->name ?? '',
-            'info'      => $st->info ?? [],
-            'date'      => $this->outDate($st->date),
-            'from'      => $this->outDate($st->period_from),
-            'to'        => $this->outDate($st->period_to),
-            'tongThu'   => (int) round((float) $st->lines->sum('phai_thu')),   // = tổng dòng (chân lý)
-            'lines'     => $st->lines->map(fn ($l) => [
+            'id'          => $st->id,
+            'hashid'      => Hashid::encode($st->id),
+            'no'          => $st->no,
+            'customer'    => $st->customer_name ?? $st->customer?->name ?? '',
+            'info'        => $st->info ?? [],
+            'date'        => $this->outDate($st->date),
+            'from'        => $this->outDate($st->period_from),
+            'to'          => $this->outDate($st->period_to),
+            'vatRate'     => $rate,
+            'baseAmount'  => $amt['base'],
+            'vatAmount'   => $amt['vat'],
+            'chohoAmount' => $amt['choho'],
+            'tongThu'     => $amt['total'],   // = Tổng tiền (nền + VAT + chi hộ)
+            'lines'       => $st->lines->map(fn ($l) => [
                 'id'        => $l->shipment_id ?? $l->id,
                 'booking'   => $l->booking ?? '',
                 'sheet'     => $l->sheet ?? '',
@@ -170,6 +239,17 @@ trait HandlesStatements
                 $customerId = $this->customerIdByName($data['customer']);
             }
 
+            // 4 con số = NGUỒN CHÂN LÝ (server tự cộng từ detail từng dòng) — không tin client.
+            // VAT chỉ áp nền (cước+dầu+sà lan); chi hộ không VAT.
+            $vatRate = max(0.0, (float) ($data['vatRate'] ?? 0));
+            $details = array_map(function ($l) {
+                $d = is_array($l['detail'] ?? null) ? $l['detail'] : [];
+                // Nếu thiếu detail nhưng có phaiThu (override thủ công) → dùng phaiThu làm nền.
+                if (! $d) $d = ['phaiThu' => $this->inMoney($l['phaiThu'] ?? null) ?? 0];
+                return $d;
+            }, $data['lines'] ?? []);
+            $amt = self::statementAmounts($details, $vatRate);
+
             $st ??= new TruckingStatement();
             $st->fill([
                 'no'            => $data['no'] ?? $st->no,
@@ -179,8 +259,11 @@ trait HandlesStatements
                 'date'          => $this->inDate($data['date'] ?? null),
                 'period_from'   => $this->inDate($data['from'] ?? null),
                 'period_to'     => $this->inDate($data['to'] ?? null),
-                // total = TỔNG dòng (chân lý, server tự cộng) — không tin tongThu client để khỏi lệch.
-                'total'         => collect($data['lines'] ?? [])->sum(fn ($l) => $this->inMoney($l['phaiThu'] ?? null) ?? 0),
+                'vat_rate'      => $vatRate,
+                'base_amount'   => $amt['base'],
+                'choho_amount'  => $amt['choho'],
+                // total = nền + VAT(nền) + chi hộ — backward-compat: vat=0 → = nền + chi hộ.
+                'total'         => $amt['total'],
             ]);
             $st->save();
 
