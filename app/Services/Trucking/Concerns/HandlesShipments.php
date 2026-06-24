@@ -1020,6 +1020,31 @@ trait HandlesShipments
         });
     }
 
+    /**
+     * Cập nhật HÀNG LOẠT các lô đã chọn — hiện chỉ Nơi hạ (to) + Nơi hạ sà lan (bargeDrop).
+     * Tái dùng saveShipment với $only = các field CÓ giá trị (bỏ trống = KHÔNG đụng field đó),
+     * nhờ vậy hưởng cùng logic: đăng ký ký hiệu địa điểm, suy is_barge/barge_cont, recompute.
+     * @return int số lô đã cập nhật
+     */
+    public function bulkUpdateShipments(array $ids, array $data): int
+    {
+        $ids = array_values(array_filter(array_map('intval', $ids)));
+        if (empty($ids)) return 0;
+
+        // Chỉ áp field NGƯỜI DÙNG nhập (khác rỗng) → tránh xóa nhầm dữ liệu lô đang chọn.
+        $only = [];
+        if (isset($data['to']) && trim((string) $data['to']) !== '')               $only[] = 'to';
+        if (isset($data['bargeDrop']) && trim((string) $data['bargeDrop']) !== '')  $only[] = 'bargeDrop';
+        if (empty($only)) return 0;
+
+        $n = 0;
+        foreach (TruckingShipment::whereIn('id', $ids)->get() as $s) {
+            $this->saveShipment($data, $s->sheet ?: 'icd', $s, $only);
+            $n++;
+        }
+        return $n;
+    }
+
     /** Bản đồ tên/ký hiệu kho → id (cho tách kho theo lô). Memoize / request. */
     private function warehouseIdMap(): array
     {

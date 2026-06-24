@@ -63,6 +63,20 @@ class ShipmentController extends BaseTruckingController
         return response()->json(['ok' => true]);
     }
 
+    /** Cập nhật hàng loạt các lô đã chọn (hiện: Nơi hạ + Nơi hạ sà lan). */
+    public function bulkUpdate(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'ids'             => ['required', 'array', 'min:1'],
+            'ids.*'           => ['integer'],
+            'ship'            => ['required', 'array'],
+            'ship.to'         => ['nullable', 'string'],
+            'ship.bargeDrop'  => ['nullable', 'string'],
+        ]);
+        $n = $this->svc->bulkUpdateShipments($data['ids'], $data['ship']);
+        return response()->json(['ok' => true, 'updated' => $n]);
+    }
+
     /** Kiểm tra trước (dry-run) — không ghi DB, trả danh sách lỗi từng dòng. */
     public function check(Request $request): JsonResponse
     {

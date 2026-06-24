@@ -40,6 +40,11 @@ function ShipmentsApp() {
   const pendingOpen = useRef(_initSp.get("open"));            // truthy → tự mở popup dòng đầu sau khi tải lọc
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(P0.perPage || 20);   // số lô / trang (chọn được)
+  const [selIds, setSelIds] = useState(() => new Set());      // lô đang tích (thao tác hàng loạt)
+  const [showBulk, setShowBulk] = useState(false);            // popup sửa hàng loạt
+  const [bulkTo, setBulkTo] = useState("");                   // Nơi hạ (cảng) áp hàng loạt
+  const [bulkBargeDrop, setBulkBargeDrop] = useState("");     // Nơi hạ sà lan áp hàng loạt
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [filter, setFilter] = useState("all");
   // Bộ lọc theo "follow": 'all' | 'any' | 'missing' | '#hex' (lọc theo màu cụ thể)
   const [followFilter, setFollowFilter] = useState("all");
@@ -362,6 +367,31 @@ function ShipmentsApp() {
 
   const toggleSort = (key) => { setSort((s) => s.key === key ? { key, dir: -s.dir } : { key, dir: 1 }); setPage(1); };
   const setPerPageP = (n) => { setPerPage(n); setPage(1); };   // đổi số/trang → về trang 1
+  // ----- Chọn nhiều lô + thao tác hàng loạt -----
+  const isSel = (id) => selIds.has(id);
+  const toggleSel = (id) => setSelIds((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const pageIds = () => rows.filter((s) => !String(s.id).startsWith("tmp")).map((s) => s.id);
+  const allPageSel = () => { const ids = pageIds(); return ids.length > 0 && ids.every((id) => selIds.has(id)); };
+  const toggleSelAllPage = () => setSelIds((p) => { const ids = pageIds(); const n = new Set(p); ids.every((id) => n.has(id)) ? ids.forEach((id) => n.delete(id)) : ids.forEach((id) => n.add(id)); return n; });
+  const clearSel = () => setSelIds(new Set());
+  const openBulk = () => { ensureCfg(); setBulkTo(""); setBulkBargeDrop(""); setShowBulk(true); };
+  const doBulk = async () => {
+    const ids = [...selIds];
+    const ship = {};
+    if (bulkTo) ship.to = bulkTo;
+    if (bulkBargeDrop) ship.bargeDrop = bulkBargeDrop;
+    if (!ids.length || (!ship.to && !ship.bargeDrop) || bulkBusy) return;
+    setBulkBusy(true);
+    try {
+      const res = await api("POST", ROUTES.shipmentBulk, { ids, ship });
+      if (res && res.ok) {
+        window.trkToast && window.trkToast(`Đã cập nhật ${res.updated} lô`, "success");
+        setShowBulk(false); clearSel(); load();
+      } else { window.trkToast && window.trkToast("Lỗi cập nhật hàng loạt", "error"); }
+    } catch (e) { window.trkToast && window.trkToast("Lỗi cập nhật hàng loạt", "error"); }
+    finally { setBulkBusy(false); }
+  };
+  const locCodeList = () => [...new Set(Object.values(cfg.locationCode || {}).filter(Boolean))].sort();
   const setFilterP = (f) => { setFilter(f); setPage(1); };
   const setFollowP = (f) => { setFollowFilter(f); setPage(1); };
   const setToLocP = (arr) => { setToLocSel(arr); setPage(1); };   // chọn nhiều ký hiệu nơi hạ (OR)
@@ -601,6 +631,18 @@ function ShipmentsApp() {
         )}
       </div>
 
+      {/* Thanh thao tác hàng loạt — hiện khi đã tích ít nhất 1 lô */}
+      {selIds.size > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", background: "var(--accent-weak-2)", borderBottom: "1px solid var(--accent-weak)", padding: isMobile ? "9px 14px" : "9px 22px", flexShrink: 0 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--accent)" }}><i className="bi bi-check2-square" /> Đã chọn {selIds.size} lô</span>
+          <button type="button" onClick={openBulk}
+            style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "7px 14px", fontSize: 13, fontWeight: 600, border: "none", borderRadius: 9, background: "var(--accent)", color: "#fff", cursor: "pointer" }}>
+            <i className="bi bi-pencil-square" /> Thao tác hàng loạt
+          </button>
+          <button type="button" onClick={clearSel} style={{ fontSize: 12.5, color: "var(--ink-3)", background: "transparent", border: "none", cursor: "pointer", fontWeight: 600 }}>Bỏ chọn</button>
+        </div>
+      )}
+
       {/* table */}
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", padding: isMobile ? "12px 12px 14px" : "16px 22px 14px" }}>
         <div style={{ flex: 1, minHeight: 0, background: isMobile ? "transparent" : "#fff", border: isMobile ? "none" : "1px solid var(--line)", borderRadius: 12, overflow: "auto" }}>
@@ -613,8 +655,12 @@ function ShipmentsApp() {
                 const out = !!(s.gioXeRa && s.gioXeRa.trim());   // "đã ra" = cont có Giờ xe ra của chính nó (không xét BKS / xe kéo cont khác)
                 return (
                   <div key={s.id} onClick={() => openModal({ id: s.id, type: "info" })}
-                    style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px", boxShadow: "0 1px 2px rgba(16,19,23,.04)" }}>
+                    style={{ background: isSel(s.id) ? "var(--accent-weak-2)" : "#fff", border: "1px solid " + (isSel(s.id) ? "var(--accent-weak)" : "var(--line)"), borderRadius: 12, padding: "12px 14px", boxShadow: "0 1px 2px rgba(16,19,23,.04)" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                      {!String(s.id).startsWith("tmp") && (
+                        <input type="checkbox" checked={isSel(s.id)} onClick={(e) => e.stopPropagation()} onChange={() => toggleSel(s.id)}
+                          style={{ width: 18, height: 18, accentColor: "var(--accent)", cursor: "pointer", flexShrink: 0, marginTop: 2 }} />
+                      )}
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <div style={{ fontWeight: 600, fontSize: 15 }}>{s.customer || <span style={{ color: "var(--ink-4)", fontWeight: 400 }}>(chưa đặt tên)</span>}</div>
                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
@@ -662,6 +708,7 @@ function ShipmentsApp() {
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: minW }}>
             <thead>
               <tr>
+                <TH w={36} align="center"><input type="checkbox" checked={allPageSel()} onChange={toggleSelAllPage} title="Chọn tất cả lô trong trang" style={{ width: 15, height: 15, accentColor: "var(--accent)", cursor: "pointer" }} /></TH>
                 <TH w={48} align="center">ID</TH>
                 <TH sticky><SortBtn k="customer" sort={sort} onSort={toggleSort}>Khách hàng</SortBtn></TH>
                 <TH>Cont</TH>
@@ -678,9 +725,10 @@ function ShipmentsApp() {
                 const costMain = m.cost;
                 const costSub = cc.thuChiHo > 0 ? `Chi hộ ${fmtShort(cc.thuChiHo)} · còn lại công ty` : (cc.tongChiPhi > 0 ? "Chi phí công ty" : "Xem chi tiết");
                 return (
-                  <tr key={s.id} style={{ transition: "background .1s", background: "transparent" }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent-weak-2)")}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
+                  <tr key={s.id} style={{ transition: "background .1s", background: isSel(s.id) ? "var(--accent-weak-2)" : "transparent" }}
+                    onMouseEnter={(e) => { if (!isSel(s.id)) e.currentTarget.style.background = "var(--accent-weak-2)"; }}
+                    onMouseLeave={(e) => { if (!isSel(s.id)) e.currentTarget.style.background = "transparent"; }}>
+                    <TD align="center">{String(s.id).startsWith("tmp") ? null : <input type="checkbox" checked={isSel(s.id)} onChange={() => toggleSel(s.id)} style={{ width: 15, height: 15, accentColor: "var(--accent)", cursor: "pointer" }} />}</TD>
                     <TD align="center"><span className="tnum" style={{ color: "var(--ink-4)", fontSize: 12.5 }} title="ID trong CSDL">{String(s.id).startsWith("tmp") ? "mới" : s.id}</span></TD>
                     <TD sticky>
                       <EditCell onClick={() => openModal({ id: s.id, type: "info" })}>
@@ -842,6 +890,38 @@ function ShipmentsApp() {
 
       {active && modal.type === "cost" && <CostPopup ship={active} patch={(np) => patch(active.id, np)} onSave={() => commitDirty()} isDirty={isDirty} onClose={() => setModal(null)} cfg={cfg} addCfg={addCfg} />}
       {active && modal.type === "info" && <InfoPopup ship={active} isHph={isHph} patch={(np) => patch(active.id, np)} patchOther={(id, np) => patch(id, np)} onSave={() => commitDirty()} isDirty={isDirty} siblings={sibs.filter((x) => x.id !== active.id)} onClose={closeInfo} onDelete={active._new ? null : () => delShip(active.id)} canDelete={T.canDelete} cfg={cfg} addCfg={addCfg} tagOptions={tagOptions} />}
+
+      {/* Popup THAO TÁC HÀNG LOẠT — tạm thời chỉ Nơi hạ (cảng) + Nơi hạ sà lan */}
+      {showBulk && (
+        <Modal title={`Thao tác hàng loạt · ${selIds.size} lô`} subtitle="Để trống ô nào thì giữ nguyên ô đó. Bấm Lưu để áp cho tất cả lô đang chọn." width={460} icon={<I.truck />}
+          onClose={() => setShowBulk(false)}
+          footer={
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10 }}>
+              <Btn onClick={() => setShowBulk(false)}>Hủy</Btn>
+              <Btn variant="primary" onClick={doBulk}>{bulkBusy ? "Đang lưu…" : `Lưu ${selIds.size} lô`}</Btn>
+            </div>
+          }>
+          <div style={{ padding: "14px 0 6px", display: "flex", flexDirection: "column", gap: 14 }}>
+            <label style={{ display: "block" }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-3)", marginBottom: 5 }}><i className="bi bi-geo-alt-fill" /> Nơi hạ (cảng)</div>
+              <select value={bulkTo} onChange={(e) => setBulkTo(e.target.value)}
+                style={{ width: "100%", fontSize: 14, padding: "9px 11px", border: "1px solid var(--line)", borderRadius: 9, background: "#fff", cursor: "pointer", outline: "none" }}>
+                <option value="">— Giữ nguyên —</option>
+                {locCodeList().map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+            <label style={{ display: "block" }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-3)", marginBottom: 5 }}><i className="bi bi-water" /> Nơi hạ sà lan (điểm đến)</div>
+              <select value={bulkBargeDrop} onChange={(e) => setBulkBargeDrop(e.target.value)}
+                style={{ width: "100%", fontSize: 14, padding: "9px 11px", border: "1px solid var(--line)", borderRadius: 9, background: "#fff", cursor: "pointer", outline: "none" }}>
+                <option value="">— Giữ nguyên —</option>
+                {["HPP", "LHP"].map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 5, lineHeight: 1.5 }}>Chọn nơi hạ sà lan = các lô tự đi sà lan; loại DRY/NOR suy từ Loại cont từng lô.</div>
+            </label>
+          </div>
+        </Modal>
+      )}
 
       {showImport && (
         <Modal title="Import lô hàng từ Excel" subtitle="Cột có (*) là BẮT BUỘC: Khách hàng, Số booking, Số lượng cont · Nơi lấy/hạ + Kho không bắt buộc nhưng nhập sai danh mục sẽ báo lỗi · file mẫu có sheet Hướng dẫn + danh mục hợp lệ · kiểm tra trước, 1 lỗi là không import gì cả" width={720} icon={<I.truck />}
