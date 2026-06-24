@@ -73,6 +73,8 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
   const setColor = (name, val) => { const nc = { ...costColors }; if (val) nc[name] = val; else delete nc[name]; setCfg("costColors", nc); };
   const costAuto = cfg.costAuto || {};
   const setAuto = (name, val) => { const na = { ...costAuto }; if (val) na[name] = true; else delete na[name]; setCfg("costAuto", na); };
+  const costVat = cfg.costVat || {};
+  const setVatItem = (name, val) => { const nv = { ...costVat }; const v = String(val).replace(/[^\d.]/g, ""); if (v !== "") nv[name] = v; else delete nv[name]; setCfg("costVat", nv); };
   const vatDefault = cfg.vatDefault || { hph: "8", icd: "0" };
   const setVat = (k, val) => setCfg("vatDefault", { ...vatDefault, [k]: val.replace(/[^\d.]/g, "") });
   const setVatAll = (val) => { const v = val.replace(/[^\d.]/g, ""); setCfg("vatDefault", { hph: v, icd: v }); };
@@ -110,7 +112,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
     const old = list[i]; const next = [...list]; next[i] = v; setCfg(sel, next);
     if (v === old) return;
     if (g && g.priced)  rekey("prices", prices, old, v);
-    if (g && g.colored) { rekey("costColors", costColors, old, v); rekey("costAuto", costAuto, old, v); }
+    if (g && g.colored) { rekey("costColors", costColors, old, v); rekey("costAuto", costAuto, old, v); rekey("costVat", costVat, old, v); }
     if (g && g.fleet) { rekey("vehicleType", vehType, old, v); rekey("vehicleAxle", vehAxle, old, v); rekey("vehicleGps", vehGps, old, v); }
   };
   const remove = (i) => {
@@ -120,7 +122,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
     if (g && g.geo) setCfg(geoArrKey, geoArr.filter((_, j) => j !== i));
     const drop = (mapKey, map) => { if (map[old] === undefined) return; const m = { ...map }; delete m[old]; setCfg(mapKey, m); };
     if (g && g.priced)  drop("prices", prices);
-    if (g && g.colored) { drop("costColors", costColors); drop("costAuto", costAuto); }
+    if (g && g.colored) { drop("costColors", costColors); drop("costAuto", costAuto); drop("costVat", costVat); }
     if (g && g.fleet) { drop("vehicleType", vehType); drop("vehicleAxle", vehAxle); drop("vehicleGps", vehGps); }
   };
   return (
@@ -386,15 +388,15 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
               </div>
               {(() => {
                 const codedGrid = g.geo ? "24px 0.8fr 130px 1.4fr 118px 28px" : g.addressed ? "24px 1.1fr 110px 1.5fr 28px" : "24px 1fr 130px 28px";
-                const grid = g.priced && g.colored ? "24px 1fr 150px 92px 56px 28px"
+                const grid = g.priced && g.colored ? "24px 1fr 150px 72px 92px 56px 28px"
                   : g.priced ? "24px 1fr 150px 28px"
-                  : g.colored ? "24px 1fr 92px 56px 28px"
+                  : g.colored ? "24px 1fr 72px 92px 56px 28px"
                   : g.coded ? codedGrid
                   : g.fleet ? "24px 1fr 360px 28px"
                   : "24px 1fr 28px";
-                const head = g.priced && g.colored ? [<span key="i" />, <span key="n">Tên khoản</span>, <span key="p" style={{ textAlign: "right" }}>Đơn giá mặc định</span>, <span key="a" style={{ textAlign: "center" }}>Tự hiện</span>, <span key="c" style={{ textAlign: "center" }}>Theo dõi</span>, <span key="x" />]
+                const head = g.priced && g.colored ? [<span key="i" />, <span key="n">Tên khoản</span>, <span key="p" style={{ textAlign: "right" }}>Đơn giá mặc định</span>, <span key="v" style={{ textAlign: "center" }}>VAT %</span>, <span key="a" style={{ textAlign: "center" }}>Tự hiện</span>, <span key="c" style={{ textAlign: "center" }}>Theo dõi</span>, <span key="x" />]
                   : g.priced ? [<span key="i" />, <span key="n">Tên khoản</span>, <span key="p" style={{ textAlign: "right" }}>Đơn giá mặc định</span>, <span key="x" />]
-                  : g.colored ? [<span key="i" />, <span key="n">Tên khoản</span>, <span key="a" style={{ textAlign: "center" }}>Tự hiện</span>, <span key="c" style={{ textAlign: "center" }}>Theo dõi</span>, <span key="x" />]
+                  : g.colored ? [<span key="i" />, <span key="n">Tên khoản</span>, <span key="v" style={{ textAlign: "center" }}>VAT %</span>, <span key="a" style={{ textAlign: "center" }}>Tự hiện</span>, <span key="c" style={{ textAlign: "center" }}>Theo dõi</span>, <span key="x" />]
                   : g.coded ? [<span key="i" />, <span key="n">{g.codeNameLabel || "Tên"}</span>, <span key="p">Ký hiệu</span>, ...(g.addressed ? [<span key="a">Địa chỉ kho</span>] : []), ...(g.geo ? [<span key="g">Vị trí (GPS)</span>] : []), <span key="x" />]
                   : null;   // đội xe (fleet) render dạng THẺ, không dùng header lưới
                 return head && <div style={{ display: "grid", gridTemplateColumns: grid, gap: 8, padding: "0 0 4px", fontSize: 11, fontWeight: 600, color: "var(--ink-4)", textTransform: "uppercase", letterSpacing: "0.04em" }}>{head}</div>;
@@ -469,9 +471,9 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                   const dupCode = isDupCode(i);
                   const emptyCode = !!(g && g.coded) && !String(codeArr[i] || "").trim();   // ký hiệu BỎ TRỐNG → không cho lưu
                   const badCode = dupCode || emptyCode;
-                  const rowGrid = g.priced && g.colored ? "24px 1fr 150px 92px 56px 28px"
+                  const rowGrid = g.priced && g.colored ? "24px 1fr 150px 72px 92px 56px 28px"
                     : g.priced ? "24px 1fr 150px 28px"
-                    : g.colored ? "24px 1fr 92px 56px 28px"
+                    : g.colored ? "24px 1fr 72px 92px 56px 28px"
                     : g.coded ? (g.geo ? "24px 0.8fr 130px 1.4fr 118px 28px" : g.addressed ? "24px 1.1fr 110px 1.5fr 28px" : "24px 1fr 130px 28px")
                     : g.fleet ? "24px 1fr 360px 28px"
                     : "24px 1fr 28px";
@@ -483,6 +485,15 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                       onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.background = "#fff"; }}
                       onBlur={(e) => { e.target.style.borderColor = "transparent"; e.target.style.background = "transparent"; }} />
                     {g.priced && <Money value={prices[it]} onChange={(x) => setPrice(it, x)} dim />}
+                    {g.colored && (
+                      <div style={{ position: "relative" }}>
+                        <input value={costVat[it] || ""} onChange={(e) => setVatItem(it, e.target.value)} placeholder="0" inputMode="decimal"
+                          title="VAT% mặc định — tự điền vào dòng khi chọn khoản này ở popup Chi phí (vẫn sửa được)"
+                          style={{ width: "100%", padding: "7px 20px 7px 9px", fontSize: 13, textAlign: "right", border: "1px solid var(--line)", borderRadius: 8, outline: "none" }}
+                          onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
+                        <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)", fontSize: 11, pointerEvents: "none" }}>%</span>
+                      </div>
+                    )}
                     {g.colored && (
                       <div style={{ display: "flex", justifyContent: "center" }}>
                         <input type="checkbox" checked={!!costAuto[it]} onChange={(e) => setAuto(it, e.target.checked)}

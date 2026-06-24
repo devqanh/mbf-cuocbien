@@ -74,9 +74,11 @@ trait HandlesCatalog
             }
             if ($colored) {
                 $cfg['costAuto'] ??= [];
+                $cfg['costVat'] ??= [];
                 foreach ($rows as $r) {
                     if (!empty($r->color)) $cfg['costColors'][$r->name] = $r->color;
                     if (!empty($r->auto))  $cfg['costAuto'][$r->name] = true;   // tự hiện ở popup + nhắc "chưa điền"
+                    if ($r->vat !== null)  $cfg['costVat'][$r->name] = $this->outNum($r->vat);   // VAT% mặc định
                 }
             }
         }
@@ -220,9 +222,11 @@ trait HandlesCatalog
             if ($colored) {
                 $out['costColors'] = [];
                 $out['costAuto'] = [];
+                $out['costVat'] = [];
                 foreach ($rows as $r) {
                     if (! empty($r->color)) $out['costColors'][$r->name] = $r->color;
                     if (! empty($r->auto))  $out['costAuto'][$r->name] = true;
+                    if ($r->vat !== null)   $out['costVat'][$r->name] = $this->outNum($r->vat);
                 }
             }
             return $out;

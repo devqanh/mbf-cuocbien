@@ -90,7 +90,7 @@ function CostPopup({ ship, patch, onSave, isDirty, onClose, cfg = {}, addCfg, ta
       </div>
 
       <CostLineRows rows={displayItems} onChange={setItems} options={costOpts} onCreate={addCostItem}
-        payers={payerOpts} onCreatePayer={addPayer} prices={prices} costColors={cfg.costColors || {}} />
+        payers={payerOpts} onCreatePayer={addPayer} prices={prices} costColors={cfg.costColors || {}} costVat={cfg.costVat || {}} />
     </Modal>
   );
 }

@@ -456,9 +456,11 @@ function Btn({ children, onClick, variant = "ghost", disabled = false, busy = fa
 function calcCost(c) {
   const v = c || {};
   const g = (x) => toNum(x);
+  // Chi phí NET = số tiền (gồm VAT) ÷ (1 + vat/100). VAT% theo từng dòng (mặc định 0).
+  const net = (e) => { const a = g(e.amount); const vr = g(e.vat); return vr > 0 ? Math.round(a / (1 + vr / 100)) : a; };
   const items = v.items || [];
-  const tongChiPhi = items.reduce((s, e) => s + g(e.amount), 0);
-  const thuChiHo = items.reduce((s, e) => s + (e.billable ? g(e.amount) : 0), 0);
+  const tongChiPhi = items.reduce((s, e) => s + net(e), 0);
+  const thuChiHo = items.reduce((s, e) => s + (e.billable ? net(e) : 0), 0);
   return { thuChiHo, tongChiPhi, congTy: tongChiPhi - thuChiHo };
 }
 function calcVeh(v) {

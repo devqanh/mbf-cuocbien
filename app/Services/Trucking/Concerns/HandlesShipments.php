@@ -212,7 +212,9 @@ trait HandlesShipments
         };
 
         // --- Aggregate toàn cục trên tập đã tìm ---
-        $totalCost = (int) round((float) TruckingCostLine::whereIn('shipment_id', $searched()->select('id'))->sum('amount'));
+        // Tổng chi phí (header) = số NET: SUM(ROUND(amount / (1 + vat/100))).
+        $totalCost = (int) round((float) TruckingCostLine::whereIn('shipment_id', $searched()->select('id'))
+            ->sum(DB::raw('ROUND(amount / (1 + COALESCE(vat,0)/100))')));
 
         // "Đã ra" = CONT này có GIỜ XE RA (gio_xe_ra) của chính nó. CHỈ xét gio_xe_ra — không xét bks_ra
         // (BKS có thể chỉ là xe kéo, chưa chắc cont đã ra) cũng không xét việc xe kéo cont KHÁC ra.
@@ -871,6 +873,7 @@ trait HandlesShipments
                     'id'       => $c->id,
                     'item'     => $c->item ?? '',
                     'amount'   => $this->outMoney($c->amount),
+                    'vat'      => $this->outNum($c->vat),
                     'invoiceNo' => $c->invoice_no ?? '',
                     'payer'    => $c->payer ?? '',
                     'date'     => $this->outDate($c->date),
@@ -1029,6 +1032,7 @@ trait HandlesShipments
                 $s->costLines()->create([
                     'item'     => $this->str($c['item'] ?? null),
                     'amount'   => $this->inMoney($c['amount'] ?? null),
+                    'vat'      => $this->inNum($c['vat'] ?? null) ?? 0,
                     'invoice_no' => $this->str($c['invoiceNo'] ?? null),
                     'payer'    => $this->str($c['payer'] ?? null),
                     'date'     => $this->inDate($c['date'] ?? null),
@@ -1208,8 +1212,10 @@ trait HandlesShipments
             $vat      = round($revBase * $rate / 100);
             $phaiThu  = $revBase + $vat + $chohoRev;
             $daThu    = (float) $s->payments->sum('amount');
-            $costTotal    = (float) $s->costLines->sum('amount');
-            $costBillable = (float) $s->costLines->where('billable', true)->sum('amount');
+            // Chi phí dùng số NET (đã trừ VAT): net = số tiền (gồm VAT) ÷ (1 + vat/100).
+            $netOf        = fn ($c) => $c->netAmount();
+            $costTotal    = (float) $s->costLines->sum($netOf);
+            $costBillable = (float) $s->costLines->where('billable', true)->sum($netOf);
             $costCompany  = $costTotal - $costBillable;
             $updates += [
                 'rev_base' => $revBase, 'vat_amount' => $vat, 'choho_revenue' => $chohoRev,

@@ -219,9 +219,10 @@ trait HandlesPricingAndImport
         foreach ($names as $i => $name) {
             $attrs = ['sort' => $i];
             if ($priced)  $attrs['default_price'] = isset($cfg['prices'][$name]) ? $this->inMoney($cfg['prices'][$name]) : null;
-            // Chỉ ghi đè color/auto khi payload CÓ gửi (thêm nhanh từ popup không gửi → GIỮ nguyên, không xoá).
+            // Chỉ ghi đè color/auto/vat khi payload CÓ gửi (thêm nhanh từ popup không gửi → GIỮ nguyên, không xoá).
             if ($colored && array_key_exists('costColors', $cfg)) $attrs['color'] = $cfg['costColors'][$name] ?? null;
             if ($colored && array_key_exists('costAuto', $cfg))   $attrs['auto']  = ! empty($cfg['costAuto'][$name]);
+            if ($colored && array_key_exists('costVat', $cfg))    $attrs['vat']   = isset($cfg['costVat'][$name]) && $cfg['costVat'][$name] !== '' ? (float) $cfg['costVat'][$name] : null;
             $cls::updateOrCreate(['name' => $name], $attrs);
         }
     }

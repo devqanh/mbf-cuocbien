@@ -13,7 +13,7 @@ const CAT_KEYS = {
   contTypes: ["contTypes"],
   warehouses: ["warehouses", "warehouseCodeArr", "warehouseAddrArr", "warehouseGeoArr", "warehousesIdArr"],
   payers: ["payers"],
-  costItems: ["costItems", "prices", "costColors", "costAuto"],
+  costItems: ["costItems", "prices", "costColors", "costAuto", "costVat"],
   choHoItems: ["choHoItems", "prices"],
   revItems: ["revItems", "prices"],
   vehicles: ["vehicles", "vehicleType", "vehicleAxle", "vehicleGps"],

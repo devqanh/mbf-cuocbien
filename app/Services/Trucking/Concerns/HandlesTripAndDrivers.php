@@ -1016,10 +1016,10 @@ trait HandlesTripAndDrivers
             $addCat($label, $vc->amount); $addPlate($vc->vehicle?->plate ?? '—', $vc->amount);
         }
 
-        // 4) Chi phí lô hàng (cost_lines, KHÔNG tính chi hộ khách)
+        // 4) Chi phí lô hàng (cost_lines, KHÔNG tính chi hộ khách) — dùng số NET (đã trừ VAT).
         foreach (TruckingCostLine::whereIn('shipment_id', $shipIds)
-            ->where(fn ($q) => $q->where('billable', false)->orWhereNull('billable'))->get(['item', 'amount']) as $cl) {
-            $addCat('Chi phí lô · ' . (trim((string) $cl->item) ?: 'khác'), $cl->amount);
+            ->where(fn ($q) => $q->where('billable', false)->orWhereNull('billable'))->get(['item', 'amount', 'vat']) as $cl) {
+            $addCat('Chi phí lô · ' . (trim((string) $cl->item) ?: 'khác'), $cl->netAmount());
         }
 
         // Doanh thu theo XE + sản lượng theo TUYẾN/KHO (từ lô trong tháng)
