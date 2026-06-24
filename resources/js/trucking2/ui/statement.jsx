@@ -1,6 +1,6 @@
 import React from "react";
 const { useState, useMemo, useEffect } = React;
-import { I, fmtVND, fmtNum, fmtShort, fmtDate, calcCost, calcRev, calcVeh, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, Combo, useIsMobile, DateField, statementAmounts, STATEMENT_VAT_RATES } from "@trk/lib.jsx";
+import { I, fmtVND, fmtNum, fmtShort, fmtDate, calcCost, calcRev, calcVeh, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, Combo, useIsMobile, DateField, statementAmounts, lineAmounts, STATEMENT_VAT_RATES } from "@trk/lib.jsx";
 import { CostPopup, RevenuePopup, CostPopupICD, RevenuePopupICD, InfoPopup, ConfigPopup, PriceList, TRACK_COLORS, colorHex } from "@trk/pop.jsx";
 import { SortBtn, CellBtn, Badge, EditCell, TH, TD } from "./primitives.jsx";
 
@@ -78,11 +78,12 @@ function StatementForm({ cfg, onCancel, onSaved }) {
     return () => { alive = false; };
   }, [cust, from, to]);
 
-  const [amtOv, setAmtOv] = useState({}); // override phải thu theo lô
+  const [amtOv, setAmtOv] = useState({}); // override NỀN (cước+dầu+sà lan) theo lô
   const sel = all.filter((x) => picked[x.id] !== false); // mặc định chọn hết
-  const lineAmt = (x) => (amtOv[x.id] != null ? amtOv[x.id] : x.pr.phaiThu);
-  // 4 con số từ NGUỒN CHÂN LÝ chung (nền = cước+dầu+sà lan từ detail; VAT chỉ áp nền; chi hộ không VAT).
-  const amt = statementAmounts(sel.map((x) => ({ detail: x.pr, phaiThu: lineAmt(x) })), vatRate);
+  // 3 con số/dòng từ NGUỒN CHÂN LÝ chung (nền cước+dầu+sà lan; VAT chỉ áp nền; chi hộ không VAT).
+  const ovOf = (x) => (amtOv[x.id] != null ? amtOv[x.id] : null);   // null = chưa sửa tay
+  const lineAmt = (x) => lineAmounts({ detail: x.pr }, vatRate, ovOf(x));   // {base,vat,choho,total}
+  const amt = statementAmounts(sel.map((x) => ({ detail: x.pr })), vatRate, (l, i) => ovOf(sel[i]));
   const tongThu = amt.total;
   const keNo = "BK-" + today.replace(/-/g, "").slice(2) + "-" + (cust ? cust.slice(0, 3).toUpperCase() : "XXX");
 
@@ -90,14 +91,21 @@ function StatementForm({ cfg, onCancel, onSaved }) {
   const save = async () => {
     if (!sel.length || saving) return;
     setSaving(true);
-    const lines = sel.map((x) => ({
-      id: x.id, booking: x.booking, sheet: x.sheet, io: x.io,
-      declNo: x.declNo || "", contType: x.contType || "", inv: x.inv || "", contNo: x.contNo || "", bks: x.bks || "",
-      from: x.from, to: x.to, date: x.date, contLabel: x.contLabel,
-      phaiThu: lineAmt(x), cuoc: lineAmt(x), thanhLy: x.thanhLy || 0, note: x.note,
-      // snapshot định giá (backend) để hiển thị đối soát TĨNH (không query lại khi xem)
-      detail: { ...x.pr },
-    }));
+    const lines = sel.map((x) => {
+      const a = lineAmt(x);   // {base,vat,choho,total}
+      const ov = ovOf(x);
+      // Sửa tay NỀN: ép detail (gộp vào cước, bỏ dầu/sà lan) để BACKEND tính nền = nền đã sửa.
+      const detail = ov != null ? { ...x.pr, cuoc: a.base, dau: 0, bargeCuoc: 0, bargeDau: 0 } : { ...x.pr };
+      return {
+        id: x.id, booking: x.booking, sheet: x.sheet, io: x.io,
+        declNo: x.declNo || "", contType: x.contType || "", inv: x.inv || "", contNo: x.contNo || "", bks: x.bks || "",
+        from: x.from, to: x.to, date: x.date, contLabel: x.contLabel,
+        // phaiThu/cuoc = NỀN dòng (cước+dầu) — giữ cho exporter; tổng có VAT tính ở cấp bảng kê.
+        phaiThu: a.base, cuoc: a.base, thanhLy: x.thanhLy || 0, note: x.note,
+        // snapshot định giá (backend) để hiển thị đối soát TĨNH (không query lại khi xem)
+        detail,
+      };
+    });
     const payload = { id: Date.now(), no: keNo, customer: cust, info, date: today, from, to, lines, vatRate, tongThu, payments: [], createdAt: new Date().toISOString() };
     // onSaved có thể async + trả về false để huỷ (vd bấm Huỷ ở confirm) → giữ nguyên trang
     let result;
@@ -179,11 +187,13 @@ function StatementForm({ cfg, onCancel, onSaved }) {
               <th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Lô / Booking</th>
               <th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Tuyến · Cont</th>
               <th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Cont ra</th>
-              <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Phải thu</th>
+              <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Phải thu<br/>(cước+dầu)</th>
+              <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>VAT</th>
+              <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Chi hộ</th>
             </tr>
           </thead>
           <tbody>
-            {!loading && all.length === 0 && <tr><td colSpan={6} style={{ padding: "28px 24px", textAlign: "center", color: "var(--ink-4)" }}>
+            {!loading && all.length === 0 && <tr><td colSpan={8} style={{ padding: "28px 24px", textAlign: "center", color: "var(--ink-4)" }}>
               {needDate
                 ? <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                     <i className="bi bi-calendar-range" style={{ fontSize: 26, color: "var(--accent)", opacity: .8 }} />
@@ -192,7 +202,7 @@ function StatementForm({ cfg, onCancel, onSaved }) {
                   </span>
                 : (cust ? "Không có lô nào phù hợp trong kỳ đã chọn." : "Chọn khách hàng để bắt đầu.")}
             </td></tr>}
-            {loading && <tr><td colSpan={6} style={{ padding: "24px", textAlign: "center", color: "var(--ink-4)" }}>Đang tải lô + định giá…</td></tr>}
+            {loading && <tr><td colSpan={8} style={{ padding: "24px", textAlign: "center", color: "var(--ink-4)" }}>Đang tải lô + định giá…</td></tr>}
             {!loading && all.map((x, i) => {
               const on = picked[x.id] !== false;
               return (
@@ -214,38 +224,51 @@ function StatementForm({ cfg, onCancel, onSaved }) {
                     </div>
                   </td>
                   <td className="tnum" style={{ padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{fmtDate(x.date) || "—"}</td>
+                  {(() => { const a = lineAmt(x); return (<>
                   <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: "1px solid var(--line-2)", fontWeight: 600 }}>
-                    <div style={{ position: "relative", width: 150, marginLeft: "auto" }}>
-                      <input inputMode="numeric" value={(lineAmt(x) || 0).toLocaleString("vi-VN")} onChange={(e) => setAmtOv((o) => ({ ...o, [x.id]: parseInt(e.target.value.replace(/[^\d]/g, ""), 10) || 0 }))} className="tnum"
+                    <div style={{ position: "relative", width: 130, marginLeft: "auto" }}>
+                      <input inputMode="numeric" value={(a.base || 0).toLocaleString("vi-VN")} onChange={(e) => setAmtOv((o) => ({ ...o, [x.id]: parseInt(e.target.value.replace(/[^\d]/g, ""), 10) || 0 }))} className="tnum"
                         style={{ width: "100%", padding: "6px 22px 6px 8px", fontSize: 12.5, textAlign: "right", fontWeight: 600, border: "1px solid var(--line)", borderRadius: 7, outline: "none" }}
                         onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
                       <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)", fontSize: 12, pointerEvents: "none" }}>₫</span>
                     </div>
                   </td>
+                  <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: "1px solid var(--line-2)", color: vatRate ? "var(--accent)" : "var(--ink-4)" }}>{fmtNum(a.vat)}</td>
+                  <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{fmtNum(a.choho)}</td>
+                  </>); })()}
                 </tr>
               );
             })}
           </tbody>
           <tfoot>
-            <tr>
+            {/* Hàng tổng theo TỪNG CỘT (nền · VAT · chi hộ) — khớp 3 cột mỗi dòng */}
+            <tr style={{ fontWeight: 700 }}>
               <td className="ke-noprint" style={{ borderTop: "1.5px solid var(--line)" }}></td>
-              <td colSpan={3} style={{ padding: "9px 8px 3px", borderTop: "1.5px solid var(--line)", textAlign: "right", color: "var(--ink-3)" }}>Phải thu (cước + dầu)</td>
-              <td className="tnum" style={{ textAlign: "right", padding: "9px 8px 3px", borderTop: "1.5px solid var(--line)" }} colSpan={2}>{fmtVND(amt.base)}</td>
+              <td colSpan={4} style={{ padding: "9px 8px", borderTop: "1.5px solid var(--line)", textAlign: "right", color: "var(--ink-3)" }}>CỘNG</td>
+              <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(amt.base)}</td>
+              <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)", color: vatRate ? "var(--accent)" : "var(--ink-4)" }}>{fmtNum(amt.vat)}</td>
+              <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(amt.choho)}</td>
+            </tr>
+            {/* Khối tổng 4 dòng (nền/VAT/chi hộ/tổng tiền) */}
+            <tr>
+              <td className="ke-noprint"></td>
+              <td colSpan={5} style={{ padding: "9px 8px 3px", textAlign: "right", color: "var(--ink-3)" }}>Phải thu (cước + dầu)</td>
+              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "9px 8px 3px" }}>{fmtVND(amt.base)}</td>
             </tr>
             <tr>
               <td className="ke-noprint"></td>
-              <td colSpan={3} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>VAT ({vatRate}%)</td>
-              <td className="tnum" style={{ textAlign: "right", padding: "3px 8px", color: vatRate ? "var(--accent)" : "var(--ink-4)" }} colSpan={2}>{fmtVND(amt.vat)}</td>
+              <td colSpan={5} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>VAT ({vatRate}%)</td>
+              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px", color: vatRate ? "var(--accent)" : "var(--ink-4)" }}>{fmtVND(amt.vat)}</td>
             </tr>
             <tr>
               <td className="ke-noprint"></td>
-              <td colSpan={3} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>Chi hộ (không VAT)</td>
-              <td className="tnum" style={{ textAlign: "right", padding: "3px 8px" }} colSpan={2}>{fmtVND(amt.choho)}</td>
+              <td colSpan={5} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>Chi hộ (không VAT)</td>
+              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px" }}>{fmtVND(amt.choho)}</td>
             </tr>
             <tr style={{ fontWeight: 700 }}>
               <td className="ke-noprint"></td>
-              <td colSpan={3} style={{ padding: "8px 8px 11px", textAlign: "right" }}>TỔNG TIỀN</td>
-              <td className="tnum" style={{ textAlign: "right", padding: "8px 8px 11px" }} colSpan={2}>{fmtVND(tongThu)}</td>
+              <td colSpan={5} style={{ padding: "8px 8px 11px", textAlign: "right" }}>TỔNG TIỀN</td>
+              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "8px 8px 11px" }}>{fmtVND(tongThu)}</td>
             </tr>
           </tfoot>
         </table>
@@ -266,10 +289,17 @@ function StatementDetailBody({ st, onUpdate, detailById = {} }) {
   const setP = (id, np) => sync(payments.map((p) => (p.id === id ? { ...p, ...np } : p)));
   const addP = () => sync([...payments, { id: Date.now() + Math.random(), date: new Date().toISOString().slice(0, 10), amount: "", note: "" }]);
   const delP = (id) => sync(payments.filter((p) => p.id !== id));
-  const setLine = (id, amount) => onUpdate && onUpdate({ ...st, lines: (st.lines || []).map((l) => (l.id === id ? { ...l, phaiThu: amount } : l)) });
   const vatRate = +st.vatRate || 0;
   const setVat = (v) => onUpdate && onUpdate({ ...st, vatRate: v });
-  // 4 con số = NGUỒN CHÂN LÝ chung (nền cước+dầu+sà lan; VAT chỉ áp nền; chi hộ không VAT).
+  // NỀN dòng = cước+dầu+sà lan (từ detail) — NGUỒN CHÂN LÝ khớp backend. VAT áp nền; chi hộ không VAT.
+  const lineAmt = (l) => lineAmounts(l, vatRate);   // {base,vat,choho,total} từ detail
+  // Sửa tay NỀN dòng → ghi vào detail (gộp cước, bỏ dầu/sà lan) + phaiThu = nền, để backend khớp.
+  const setLineBase = (id, base) => onUpdate && onUpdate({ ...st, lines: (st.lines || []).map((l) => {
+    if (l.id !== id) return l;
+    const d = (l.detail && typeof l.detail === "object") ? l.detail : {};
+    return { ...l, phaiThu: base, cuoc: base, detail: { ...d, cuoc: base, dau: 0, bargeCuoc: 0, bargeDau: 0 } };
+  }) });
+  // 4 con số = Σ per-line (khớp 3 cột mỗi dòng).
   const amt = statementAmounts(st.lines || [], vatRate);
   const tongThu = amt.total;
   const grp = (d) => { d = (d || "").toString().replace(/[^\d]/g, ""); return d ? d.replace(/\B(?=(\d{3})+(?!\d))/g, ".") : ""; };
@@ -315,7 +345,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {} }) {
           </div>
         </div>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
-          <thead><tr style={{ background: "#fafbfc" }}>{th("#", "center")}{th("Lô / Booking")}{th("Tuyến · Cont")}{th("Cont ra")}{th("Phải thu", "right")}</tr></thead>
+          <thead><tr style={{ background: "#fafbfc" }}>{th("#", "center")}{th("Lô / Booking")}{th("Tuyến · Cont")}{th("Cont ra")}{th(<>Phải thu<br/>(cước+dầu)</>, "right")}{th("VAT", "right")}{th("Chi hộ", "right")}</tr></thead>
           <tbody>
             {st.lines.map((l, i) => {
               const d = detailById[l.id];
@@ -329,20 +359,24 @@ function StatementDetailBody({ st, onUpdate, detailById = {} }) {
                   ? <a className="ke-noprint" href={ROUTES_TRK.loHang + "?q=" + encodeURIComponent(l.contNo) + "&open=1"} title="Mở lô hàng (lọc đúng cont này)" style={{ color: "var(--accent)", textDecoration: "none" }}>{l.contLabel}</a>
                   : l.contLabel}<span style={{ display: "none" }} className="ke-printonly">{l.contLabel}</span></div></td>
                 <td className="tnum" style={{ padding: "8px", borderBottom: d ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top" }}>{fmtDate(l.date) || "—"}</td>
+                {(() => { const a = lineAmt(l); return (<>
                 <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d ? "none" : "1px solid var(--line-2)", fontWeight: 600, verticalAlign: "top" }}>
-                  <span className="ke-noprint"><span style={{ position: "relative", display: "inline-block", width: 150 }}>
-                    <input inputMode="numeric" value={(l.phaiThu || 0).toLocaleString("vi-VN")} onChange={(e) => setLine(l.id, parseInt(e.target.value.replace(/[^\d]/g, ""), 10) || 0)} className="tnum"
+                  <span className="ke-noprint"><span style={{ position: "relative", display: "inline-block", width: 130 }}>
+                    <input inputMode="numeric" value={(a.base || 0).toLocaleString("vi-VN")} onChange={(e) => setLineBase(l.id, parseInt(e.target.value.replace(/[^\d]/g, ""), 10) || 0)} className="tnum"
                       style={{ width: "100%", padding: "6px 22px 6px 8px", fontSize: 12.5, textAlign: "right", fontWeight: 600, border: "1px solid var(--line)", borderRadius: 7, outline: "none" }}
                       onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
                     <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)", fontSize: 12, pointerEvents: "none" }}>₫</span>
                   </span></span>
-                  <span style={{ display: "none" }} className="ke-printonly">{fmtVND(l.phaiThu)}</span>
+                  <span style={{ display: "none" }} className="ke-printonly">{fmtVND(a.base)}</span>
                 </td>
+                <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d ? "none" : "1px solid var(--line-2)", color: vatRate ? "var(--accent)" : "var(--ink-4)", verticalAlign: "top" }}>{fmtNum(a.vat)}</td>
+                <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top" }}>{fmtNum(a.choho)}</td>
+                </>); })()}
               </tr>
               {d && d.found && (
                 <tr>
                   <td style={{ borderBottom: "1px solid var(--line-2)" }}></td>
-                  <td colSpan={4} style={{ padding: "0 8px 9px", borderBottom: "1px solid var(--line-2)" }}>
+                  <td colSpan={6} style={{ padding: "0 8px 9px", borderBottom: "1px solid var(--line-2)" }}>
                     {/* LỘ TRÌNH lô (ĐI → NHÀ MÁY → HẠ, theo ký hiệu) — để kế toán dò bảng giá */}
                     {(d.loTrinh || l.from || l.to) && (
                       <div style={{ fontSize: 12, fontWeight: 700, margin: "2px 0 4px", color: "var(--ink-2)" }}>
@@ -390,27 +424,34 @@ function StatementDetailBody({ st, onUpdate, detailById = {} }) {
                 </tr>
               )}
               {d && !d.found && (
-                <tr><td style={{ borderBottom: "1px solid var(--line-2)" }}></td><td colSpan={4} style={{ padding: "0 8px 9px", borderBottom: "1px solid var(--line-2)", fontSize: 11.5, color: "var(--ink-4)" }}>Lô không còn trong hệ thống — giữ số đã lưu, không tính lại được.</td></tr>
+                <tr><td style={{ borderBottom: "1px solid var(--line-2)" }}></td><td colSpan={6} style={{ padding: "0 8px 9px", borderBottom: "1px solid var(--line-2)", fontSize: 11.5, color: "var(--ink-4)" }}>Lô không còn trong hệ thống — giữ số đã lưu, không tính lại được.</td></tr>
               )}
               </React.Fragment>
             );})}
           </tbody>
           <tfoot>
-            <tr>
-              <td colSpan={4} style={{ padding: "9px 8px 3px", borderTop: "1.5px solid var(--line)", textAlign: "right", color: "var(--ink-3)" }}>Phải thu (cước + dầu)</td>
-              <td className="tnum" style={{ textAlign: "right", padding: "9px 8px 3px", borderTop: "1.5px solid var(--line)" }}>{fmtVND(amt.base)}</td>
+            {/* Hàng cộng theo TỪNG CỘT (nền · VAT · chi hộ) — khớp 3 cột mỗi dòng */}
+            <tr style={{ fontWeight: 700 }}>
+              <td colSpan={4} style={{ padding: "9px 8px", borderTop: "1.5px solid var(--line)", textAlign: "right", color: "var(--ink-3)" }}>CỘNG</td>
+              <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(amt.base)}</td>
+              <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)", color: vatRate ? "var(--accent)" : "var(--ink-4)" }}>{fmtNum(amt.vat)}</td>
+              <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(amt.choho)}</td>
             </tr>
             <tr>
-              <td colSpan={4} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>VAT ({vatRate}%)</td>
-              <td className="tnum" style={{ textAlign: "right", padding: "3px 8px", color: vatRate ? "var(--accent)" : "var(--ink-4)" }}>{fmtVND(amt.vat)}</td>
+              <td colSpan={5} style={{ padding: "9px 8px 3px", textAlign: "right", color: "var(--ink-3)" }}>Phải thu (cước + dầu)</td>
+              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "9px 8px 3px" }}>{fmtVND(amt.base)}</td>
             </tr>
             <tr>
-              <td colSpan={4} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>Chi hộ (không VAT)</td>
-              <td className="tnum" style={{ textAlign: "right", padding: "3px 8px" }}>{fmtVND(amt.choho)}</td>
+              <td colSpan={5} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>VAT ({vatRate}%)</td>
+              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px", color: vatRate ? "var(--accent)" : "var(--ink-4)" }}>{fmtVND(amt.vat)}</td>
+            </tr>
+            <tr>
+              <td colSpan={5} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>Chi hộ (không VAT)</td>
+              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px" }}>{fmtVND(amt.choho)}</td>
             </tr>
             <tr style={{ fontWeight: 700 }}>
-              <td colSpan={4} style={{ padding: "8px 8px 11px", textAlign: "right" }}>TỔNG TIỀN</td>
-              <td className="tnum" style={{ textAlign: "right", padding: "8px 8px 11px" }}>{fmtVND(tongThu)}</td>
+              <td colSpan={5} style={{ padding: "8px 8px 11px", textAlign: "right" }}>TỔNG TIỀN</td>
+              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "8px 8px 11px" }}>{fmtVND(tongThu)}</td>
             </tr>
           </tfoot>
         </table>

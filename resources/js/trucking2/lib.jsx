@@ -39,26 +39,50 @@ const VAT_RATE = 0.08;
 const STATEMENT_VAT_RATES = [0, 8, 10];
 
 /**
+ * NGUỒN CHÂN LÝ DUY NHẤT cho 1 DÒNG bảng kê (per-line).
+ * - base  = nền dòng = cước+dầu+sà lan (chưa VAT). Ưu tiên override baseOv (nếu sửa tay).
+ * - vat   = round(base × vatRate/100). Chi hộ KHÔNG chịu VAT.
+ * - choho = chi hộ dòng.
+ *
+ * @param line     dòng có .detail (cuoc/dau/chiHo/bargeCuoc/bargeDau) hoặc .phaiThu (fallback)
+ * @param vatRate  % VAT (0/8/10)
+ * @param baseOv   (tùy chọn) override nền dòng do người dùng sửa tay
+ * @returns {base, vat, choho, total}
+ */
+function lineAmounts(line, vatRate, baseOv) {
+  const d = (line && typeof line.detail === "object" && line.detail) ? line.detail : null;
+  let base, choho = 0;
+  if (baseOv != null) {
+    base = +baseOv || 0;
+    if (d) choho = +d.chiHo || 0;
+  } else if (d && ("cuoc" in d || "dau" in d || "bargeCuoc" in d || "bargeDau" in d)) {
+    base = (+d.cuoc || 0) + (+d.dau || 0) + (+d.bargeCuoc || 0) + (+d.bargeDau || 0);
+    choho = +d.chiHo || 0;
+  } else {
+    base = +(line && line.phaiThu) || 0;   // không có detail → coi phaiThu là nền
+  }
+  base = Math.round(base); choho = Math.round(choho);
+  const vat = Math.round(base * (+vatRate || 0) / 100);
+  return { base, vat, choho, total: base + vat + choho };
+}
+
+/**
  * NGUỒN CHÂN LÝ DUY NHẤT (frontend) cho 4 con số bảng kê — khớp backend statementAmounts().
  * VAT chỉ áp lên NỀN vận chuyển (cước+dầu+sà lan); chi hộ KHÔNG chịu VAT.
+ * = Σ per-line (lineAmounts) để luôn khớp 3 cột từng dòng.
  *
  * @param lines    mảng dòng, mỗi dòng có .detail (cuoc/dau/chiHo/bargeCuoc/bargeDau) hoặc .phaiThu
  * @param vatRate  % VAT (0/8/10)
+ * @param baseOvOf (tùy chọn) fn(line, idx) → override nền dòng (null = không override)
  * @returns {base, choho, vat, total}
  */
-function statementAmounts(lines, vatRate) {
-  let base = 0, choho = 0;
-  (lines || []).forEach((l) => {
-    const d = (l && typeof l.detail === "object" && l.detail) ? l.detail : null;
-    if (d && ("cuoc" in d || "dau" in d || "bargeCuoc" in d || "bargeDau" in d)) {
-      base += (+d.cuoc || 0) + (+d.dau || 0) + (+d.bargeCuoc || 0) + (+d.bargeDau || 0);
-      choho += (+d.chiHo || 0);
-    } else {
-      base += (+(l && l.phaiThu) || 0);   // không có detail → coi phaiThu là nền
-    }
+function statementAmounts(lines, vatRate, baseOvOf) {
+  let base = 0, choho = 0, vat = 0;
+  (lines || []).forEach((l, i) => {
+    const ov = baseOvOf ? baseOvOf(l, i) : null;
+    const a = lineAmounts(l, vatRate, ov);
+    base += a.base; choho += a.choho; vat += a.vat;
   });
-  base = Math.round(base); choho = Math.round(choho);
-  const vat = Math.round(base * (+vatRate || 0) / 100);
   return { base, choho, vat, total: base + vat + choho };
 }
 
@@ -570,4 +594,4 @@ const fmtHours = (h) => {
   return (neg ? "-" : "") + (mm ? `${hh}h${String(mm).padStart(2, "0")}` : `${hh}h`);
 };
 
-export { useState, useRef, useMemo, useEffect, useCallback, useIsMobile, onlyDigits, groupVND, toNum, fmtVND, fmtNum, fmtShort, fmtDate, PAYERS, VAT_RATE, STATEMENT_VAT_RATES, statementAmounts, I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours };
+export { useState, useRef, useMemo, useEffect, useCallback, useIsMobile, onlyDigits, groupVND, toNum, fmtVND, fmtNum, fmtShort, fmtDate, PAYERS, VAT_RATE, STATEMENT_VAT_RATES, statementAmounts, lineAmounts, I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours };
