@@ -436,6 +436,11 @@ trait HandlesPricingAndImport
             $to = trim((string) ($row['to'] ?? ''));
             if ($to !== '' && ! isset($locMap[mb_strtolower($to)]))     $reasons[] = "Nơi hạ “{$to}” chưa có trong danh mục địa điểm";
 
+            // Nơi hạ sà lan — KHÔNG bắt buộc; nếu có thì CHỈ nhận HPP hoặc LHP (cảng hạ sà lan).
+            $bargeDrop = strtoupper(trim((string) ($row['bargeDrop'] ?? '')));
+            if ($bargeDrop !== '' && ! in_array($bargeDrop, ['HPP', 'LHP'], true))
+                $reasons[] = "Nơi hạ sà lan “{$bargeDrop}” không hợp lệ (chỉ nhận HPP hoặc LHP)";
+
             // KHO — KHÔNG bắt buộc; tuyến nhiều đoạn → kiểm tra TỪNG đoạn theo danh mục Kho (tên hoặc ký hiệu)
             $kho = trim((string) ($row['kho'] ?? ''));
             if ($kho !== '') foreach ($this->khoSegments($kho) as $seg) {
@@ -530,6 +535,7 @@ trait HandlesPricingAndImport
                     'cutOff'       => $row['cutOff'] ?? null,
                     'from'         => $norm($row['from'] ?? null),
                     'to'           => $norm($row['to'] ?? null),
+                    'bargeDrop'    => strtoupper(trim((string) ($row['bargeDrop'] ?? ''))) ?: null,   // HPP/LHP → đi sà lan
                     'kho'          => $normKho($row['kho'] ?? null),
                     'gioDenDuKien' => $row['gioDenDuKien'] ?? null,
                     'cost'         => ['items' => []],

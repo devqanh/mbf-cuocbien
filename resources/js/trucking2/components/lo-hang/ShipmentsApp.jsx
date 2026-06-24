@@ -999,6 +999,7 @@ function ShipmentsApp() {
                 { h: "Số container", get: (l) => l.cont, contCol: true },
                 { h: "Nơi lấy", get: (l) => l.r.from || "—" },
                 { h: "Nơi hạ", get: (l) => l.r.to || "—" },
+                { h: "Hạ sà lan", get: (l) => l.r.bargeDrop || "—", al: "center" },
                 { h: "Kho (tuyến)", get: (l) => l.r.kho || "—" },
                 { h: "Đến dự kiến", get: (l) => fmtDT(l.r.gioDenDuKien), num: true },
                 { h: "Cắt máng", get: (l) => fmtDT(l.r.cutOff), num: true },
