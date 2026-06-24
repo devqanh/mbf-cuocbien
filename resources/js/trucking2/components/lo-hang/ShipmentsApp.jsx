@@ -18,6 +18,11 @@ function ShipmentsApp() {
   const DEFAULT_CFG = { locations: [], locationCode: {}, customers: [], customerInfo: {}, contTypes: [], warehouses: [], payers: [], costItems: [], choHoItems: [], revItems: [], vehicles: [], vehicleType: {}, drivers: [], prices: {}, costColors: {}, vatDefault: { hph: "8", icd: "0" }, freeTimeHours: "4" };
   const api = (method, url, body) => window.trkApi(method, url, body);
 
+  // Lưu BỘ LỌC ở localStorage → load lại trang không mất cấu hình. "Xóa lọc" reset về ban đầu.
+  const FILTER_KEY = "trk:lohang:filters";
+  const pf = (() => { try { return JSON.parse(localStorage.getItem(FILTER_KEY) || "{}") || {}; } catch (e) { return {}; } })();
+  const hasPersistedFilters = Object.keys(pf).length > 0;
+
   // Dùng chung 1 mẫu (ICD) — không còn tách HPH/ICD
   const sheet = "icd";
   const isHph = false;
@@ -39,26 +44,26 @@ function ShipmentsApp() {
   const [qDeb, setQDeb] = useState(_initSp.get("q") || "");   // q sau debounce (param thật gửi server)
   const pendingOpen = useRef(_initSp.get("open"));            // truthy → tự mở popup dòng đầu sau khi tải lọc
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(P0.perPage || 20);   // số lô / trang (chọn được)
+  const [perPage, setPerPage] = useState(pf.perPage || P0.perPage || 20);   // số lô / trang (chọn được)
   const [selIds, setSelIds] = useState(() => new Set());      // lô đang tích (thao tác hàng loạt)
   const [showBulk, setShowBulk] = useState(false);            // popup sửa hàng loạt
   const [bulkTo, setBulkTo] = useState("");                   // Nơi hạ (cảng) áp hàng loạt
   const [bulkBargeDrop, setBulkBargeDrop] = useState("");     // Nơi hạ sà lan áp hàng loạt
   const [bulkBusy, setBulkBusy] = useState(false);
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState(pf.filter || "all");
   // Bộ lọc theo "follow": 'all' | 'any' | 'missing' | '#hex' (lọc theo màu cụ thể)
-  const [followFilter, setFollowFilter] = useState("all");
-  const [toLocSel, setToLocSel] = useState([]);   // lọc theo NƠI HẠ theo KÝ HIỆU — CHỌN NHIỀU (OR)
+  const [followFilter, setFollowFilter] = useState(pf.followFilter || "all");
+  const [toLocSel, setToLocSel] = useState(pf.toLocSel || []);   // lọc theo NƠI HẠ theo KÝ HIỆU — CHỌN NHIỀU (OR)
   const [toLocs, setToLocs] = useState(P0.toLocs || []);   // danh sách KÝ HIỆU nơi hạ thực có (options)
-  const [toMode, setToMode] = useState("include");         // GỒM | LOẠI TRỪ nơi hạ
-  const [fromLocSel, setFromLocSel] = useState([]);        // lọc theo NƠI LẤY (ký hiệu) — chọn nhiều
-  const [fromMode, setFromMode] = useState("exclude");     // GỒM (include) | LOẠI TRỪ (exclude) nơi lấy
+  const [toMode, setToMode] = useState(pf.toMode || "include");         // GỒM | LOẠI TRỪ nơi hạ
+  const [fromLocSel, setFromLocSel] = useState(pf.fromLocSel || []);    // lọc theo NƠI LẤY (ký hiệu) — chọn nhiều
+  const [fromMode, setFromMode] = useState(pf.fromMode || "exclude");   // GỒM (include) | LOẠI TRỪ (exclude) nơi lấy
   const [fromLocs, setFromLocs] = useState(P0.fromLocs || []);
-  const [denDate, setDenDate] = useState("");     // lọc theo Giờ đến kế hoạch (gio_den_du_kien) — chọn 1 NGÀY
-  const [tagSel, setTagSel] = useState([]);        // lọc theo NHÃN — chọn nhiều (OR)
+  const [denDate, setDenDate] = useState(pf.denDate || "");     // lọc theo Giờ đến kế hoạch (gio_den_du_kien) — chọn 1 NGÀY
+  const [tagSel, setTagSel] = useState(pf.tagSel || []);        // lọc theo NHÃN — chọn nhiều (OR)
   const [tagOptions, setTagOptions] = useState(P0.tagOptions || []);
-  const [showFilters, setShowFilters] = useState(false);   // mở/thu panel bộ lọc chi tiết
-  const [sort, setSort] = useState({ key: "default", dir: 1 });
+  const [showFilters, setShowFilters] = useState(!!pf.showFilters);   // mở/thu panel bộ lọc chi tiết
+  const [sort, setSort] = useState(pf.sort || { key: "default", dir: 1 });
   const [showExport, setShowExport] = useState(false);
   const [exporting, setExporting] = useState(false);   // chống bấm Xuất Excel nhiều lần
   const [expFrom, setExpFrom] = useState("");
@@ -123,8 +128,14 @@ function ShipmentsApp() {
   };
   // Debounce ô tìm kiếm → cập nhật qDeb + về trang 1 (cùng 1 batch để chỉ load 1 lần)
   useEffect(() => { const t = setTimeout(() => { setQDeb(q); setPage(1); }, 350); return () => clearTimeout(t); }, [q]);
-  // Nạp lại khi tham số đổi (bỏ lần mount đầu — đã có boot)
-  const skipFirst = useRef(true);
+  // Lưu bộ lọc xuống localStorage mỗi khi đổi (để load lại trang giữ nguyên cấu hình).
+  useEffect(() => {
+    try { localStorage.setItem(FILTER_KEY, JSON.stringify({ filter, followFilter, toLocSel, toMode, fromLocSel, fromMode, denDate, tagSel, perPage, sort, showFilters })); } catch (e) {}
+  }, [filter, followFilter, toLocSel, toMode, fromLocSel, fromMode, denDate, tagSel, perPage, sort, showFilters]);
+
+  // Nạp lại khi tham số đổi. Bỏ lần mount đầu NẾU không có bộ lọc lưu (đã có boot mặc định);
+  // nếu CÓ bộ lọc lưu (khác mặc định) → nạp ngay lần đầu để áp đúng cấu hình đã khôi phục.
+  const skipFirst = useRef(!hasPersistedFilters);
   useEffect(() => {
     if (skipFirst.current) { skipFirst.current = false; return; }
     load();
@@ -413,7 +424,7 @@ function ShipmentsApp() {
   const setTagP = (arr) => { setTagSel(arr); setPage(1); };       // lọc theo nhãn
   // Số bộ lọc chi tiết đang bật + xóa tất cả (để hiện badge / nút Xóa lọc)
   const activeFilters = (toLocSel.length ? 1 : 0) + (fromLocSel.length ? 1 : 0) + (denDate ? 1 : 0) + (tagSel.length ? 1 : 0) + (followFilter !== "all" ? 1 : 0);
-  const clearFilters = () => { setToLocSel([]); setFromLocSel([]); setDenDate(""); setTagSel([]); setFollowFilter("all"); setPage(1); };
+  const clearFilters = () => { setToLocSel([]); setToMode("include"); setFromLocSel([]); setFromMode("exclude"); setDenDate(""); setTagSel([]); setFollowFilter("all"); setPage(1); };
   // 1 ô lọc trong panel: nhãn nhỏ phía trên + control phía dưới (gọn, thẳng hàng)
   const FF = ({ label, icon, children }) => (
     <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
