@@ -441,7 +441,7 @@ function ShipmentsApp() {
       })}
     </div>
   );
-  const minW = 880;
+  const minW = 1010;
   // Dãy số trang có dấu "…" — kiểu phân trang gọn (luôn hiện trang đầu/cuối + lân cận trang hiện tại)
   const pageList = (cur, last) => {
     if (last <= 7) return Array.from({ length: last }, (_, i) => i + 1);
@@ -676,7 +676,8 @@ function ShipmentsApp() {
                         <div style={{ fontWeight: 600, fontSize: 15 }}>{s.customer || <span style={{ color: "var(--ink-4)", fontWeight: 400 }}>(chưa đặt tên)</span>}</div>
                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
                           <span className="tnum" style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{s.booking || "—"}</span>
-                          {s.io ? <Badge tone={ioTone(s.io)}>{s.io}</Badge> : null}
+                          {s.io ? <Badge tone={ioTone(s.io)}>{s.io}</Badge>
+                            : <span title="Lô chưa chọn Nhập / Xuất / Khác" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, color: "var(--warn)", background: "#fcf3e2" }}><i className="bi bi-exclamation-triangle-fill" /> chưa chọn N/X</span>}
                           {s.cru ? <Badge tone="amber">CRU</Badge> : null}
                           {s.isBarge ? <Badge tone="blue">Sà lan{s.bargeCont ? " " + s.bargeCont : ""}</Badge> : null}
                         </div>
@@ -716,6 +717,10 @@ function ShipmentsApp() {
                         ) : null; })()}
                         {(s.tags || []).length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>{s.tags.map((t, i) => <span key={i} style={tagChip}>{t}</span>)}</div>}
                       </button>
+                      <div style={{ flex: 1, border: "1px solid var(--line)", borderRadius: 9, background: "#fafbfc", padding: "8px 11px" }}>
+                        <div style={{ fontSize: 10.5, color: "var(--ink-4)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Thu phí (cước+dầu)</div>
+                        <div className="tnum" style={{ fontSize: 14, fontWeight: 700, marginTop: 2, color: s.cuocDau == null ? "var(--ink-4)" : (s.cuocDau > 0 ? "var(--ink)" : "var(--warn)") }}>{s.cuocDau == null ? ((s.gioXeRa && s.gioXeRa.trim()) ? "—" : "chưa ra") : fmtVND(s.cuocDau)}</div>
+                      </div>
                     </div>
                   </div>
                 );
@@ -734,6 +739,7 @@ function ShipmentsApp() {
                 <TH>Tuyến</TH>
                 <TH>Lịch trình</TH>
                 <TH align="right"><SortBtn k="cost" sort={sort} onSort={toggleSort} align="right">Chi phí</SortBtn></TH>
+                <TH align="right" w={130}>Thu phí<div style={{ fontWeight: 400, fontSize: 10, color: "var(--ink-4)" }}>cước + dầu</div></TH>
                 <TH w={172} align="center">Hành động</TH>
               </tr>
             </thead>
@@ -754,7 +760,8 @@ function ShipmentsApp() {
                         <div style={{ fontWeight: 600, fontSize: 13.5 }}>{s.customer || <span style={{ color: "var(--ink-4)", fontWeight: 400 }}>(chưa đặt tên)</span>}</div>
                         <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 3, flexWrap: "wrap" }}>
                           <span style={{ fontSize: 12, color: "var(--ink-3)" }} className="tnum">{s.booking || "—"}</span>
-                          {s.io ? <Badge tone={ioTone(s.io)}>{s.io}</Badge> : null}
+                          {s.io ? <Badge tone={ioTone(s.io)}>{s.io}</Badge>
+                            : <span title="Lô chưa chọn Nhập / Xuất / Khác" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, color: "var(--warn)", background: "#fcf3e2" }}><i className="bi bi-exclamation-triangle-fill" /> chưa chọn N/X</span>}
                           {s.cru ? <Badge tone="amber">CRU</Badge> : null}
                           {s.isBarge ? <Badge tone="blue">Sà lan{s.bargeCont ? " " + s.bargeCont : ""}</Badge> : null}
                         </div>
@@ -838,6 +845,15 @@ function ShipmentsApp() {
                         );
                       })()}
                       {(s.tags || []).length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 5, paddingLeft: 9 }}>{s.tags.map((t, i) => <span key={i} style={tagChip}>{t}</span>)}</div>}
+                    </TD>
+                    <TD align="right" pad="6px 10px">
+                      {/* Thu phí (cước+dầu) lô ĐÃ RA — dùng chung công thức bảng kê (priceShipment). */}
+                      {s.cuocDau == null
+                        ? <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{(s.gioXeRa && s.gioXeRa.trim()) ? "—" : "chưa ra"}</span>
+                        : <div>
+                            <div className="tnum" style={{ fontSize: 13.5, fontWeight: 700, color: s.cuocDau > 0 ? "var(--ink)" : "var(--warn)" }}>{fmtVND(s.cuocDau)}</div>
+                            {s.cuocDau === 0 && s.priceMatched === false && <div style={{ fontSize: 10.5, color: "var(--warn)", marginTop: 2 }}>⚠ chưa khớp giá</div>}
+                          </div>}
                     </TD>
                     <TD align="center">
                       <div style={{ display: "inline-flex", flexDirection: "column", gap: 5, alignItems: "stretch" }}>

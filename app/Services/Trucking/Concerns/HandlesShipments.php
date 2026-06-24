@@ -279,7 +279,23 @@ trait HandlesShipments
 
         $list->with(['customer', 'costLines', 'revenueLines', 'payments', 'raOther:id,gio_xe_ra']);
         if (! $all) $list->forPage($page, $perPage);
-        $data = $list->get()->map(fn ($s) => $this->shipmentToArray($s))->all();
+        // "Thu phí (cước+dầu)" CHO LÔ ĐÃ RA — DÙNG CHUNG priceShipment với bảng kê (1 nguồn công thức,
+        // sửa 1 chỗ áp cả 2). Chỉ tính cho trang đang xem (không tính khi $all=export) để nhẹ query.
+        $data = $list->get()->map(function ($s) use ($all) {
+            $arr = $this->shipmentToArray($s);
+            $out = ! empty($s->gio_xe_ra);   // "đã ra" = có Giờ xe ra
+            if (! $all && $out) {
+                $sheet = strtoupper((string) $s->sheet);
+                $date  = $this->outDate($s->gio_xe_ra) ?: ($sheet === 'HPH' ? $this->outDate($s->sail_date) : '');
+                $pr = $this->priceShipment($s, $this->pricingContextForDate($s->customer_id ? (int) $s->customer_id : null, $s->customer?->name, $date));
+                // Nền cước+dầu (+ sà lan) — KHỚP cột "Phải thu (cước+dầu)" của bảng kê.
+                $arr['cuocDau']      = (int) $pr['cuoc'] + (int) $pr['dau'] + (int) ($pr['bargeCuoc'] ?? 0) + (int) ($pr['bargeDau'] ?? 0);
+                $arr['priceMatched'] = (bool) $pr['matched'];
+            } else {
+                $arr['cuocDau'] = null;   // chưa ra → chưa tính thu phí
+            }
+            return $arr;
+        })->all();
 
         return [
             'data'         => $data,
