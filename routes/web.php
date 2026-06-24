@@ -203,10 +203,15 @@ Route::middleware('auth')->group(function () {
         Route::middleware('permission:prices.view')->group(function () {
             Route::get('/bang-gia',        [PriceController::class, 'index'])->name('prices');
             Route::get('/customer-prices', [PriceController::class, 'customerPrices'])->name('customerPrices');
+            Route::get('/price-books',     [PriceController::class, 'books'])->name('priceBooks');
         });
         Route::middleware('permission:prices.update')->group(function () {
-            Route::post('/price-import', [PriceController::class, 'import'])->name('priceImport');
-            Route::post('/price-copy',   [PriceController::class, 'copy'])->name('priceCopy');
+            Route::post('/price-import',          [PriceController::class, 'import'])->name('priceImport');
+            Route::post('/price-copy',            [PriceController::class, 'copy'])->name('priceCopy');
+            Route::post('/price-books',           [PriceController::class, 'createBook'])->name('priceBookCreate');
+            Route::put('/price-books/{book}',     [PriceController::class, 'updateBook'])->name('priceBookUpdate')->whereNumber('book');
+            Route::delete('/price-books/{book}',  [PriceController::class, 'deleteBook'])->name('priceBookDelete')->whereNumber('book');
+            Route::put('/price-books/{book}/rows', [PriceController::class, 'saveBookRows'])->name('priceBookRows')->whereNumber('book');
         });
 
         // --- Bảng kê ---

@@ -17,6 +17,8 @@ window.__TRK = {
     priceImport: '{{ route("trucking2.priceImport") }}',
     priceCopy: '{{ route("trucking2.priceCopy") }}',
     customerPrices: '{{ route("trucking2.customerPrices") }}',
+    priceBooks: '{{ route("trucking2.priceBooks") }}',
+    priceBookCreate: '{{ url("trucking-v2/price-books") }}',
   },
   boot: @json($boot),
 };

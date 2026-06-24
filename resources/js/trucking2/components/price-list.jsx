@@ -4,7 +4,9 @@ import { I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section,
 import { DTField, Field, DriverSpendRows, VatLine, ItemRows, ChiHoRows, DoanhThuRows, ChkBox, TRACK_COLORS, SWATCHES, colorHex, FlagPicker, CostLineRows, PaymentRows, Seg } from "./shared.jsx";
 
 /* ===================== BẢNG GIÁ — editor (trang Bảng giá) ===================== */
-function PriceList({ rows = [], onChange, onImported, cfg = {}, customer }) {
+const fmtBD = (s) => { if (!s) return ""; const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s); return m ? `${m[3]}/${m[2]}/${m[1]}` : s; };
+
+function PriceList({ rows = [], onChange, onImported, cfg = {}, customer, bookId = null }) {
   const T = window.__TRK || {}; const ROUTES = T.routes || {};
   const [imp, setImp] = useState(null);   // {names:[], wb} sau khi đọc file
   const [sheet, setSheet] = useState("");
@@ -12,20 +14,23 @@ function PriceList({ rows = [], onChange, onImported, cfg = {}, customer }) {
   const [query, setQuery] = useState("");          // ô tra cứu tuyến
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
-  const [copySrc, setCopySrc] = useState("");   // khách NGUỒN để copy bảng giá vào khách đang chọn
+  const [copySrc, setCopySrc] = useState("");       // khách NGUỒN để copy bảng giá
+  const [copySrcBook, setCopySrcBook] = useState(""); // bảng giá (book) nguồn
   const fileRef = React.useRef(null);
   const otherCustomers = (cfg.customers || []).filter((c) => c && c !== customer);
+  const srcBooks = ((cfg.customerInfo || {})[copySrc] || {}).priceBooks || [];
+  const bookOpt = (b) => { const r = (b.from || b.to) ? `${b.from ? fmtBD(b.from) : "…"}–${b.to ? fmtBD(b.to) : "…"}` : "Mọi ngày"; return { value: String(b.id), label: (b.label ? b.label + " · " : "") + r + ` (${b.count || 0})` }; };
 
-  // ---- Copy bảng giá từ 1 khách khác sang khách đang chọn ----
+  // ---- Copy bảng giá từ 1 BOOK khác sang BOOK đang chọn ----
   const doCopy = async () => {
-    if (!customer) { setMsg("Chọn khách đích trước."); return; }
-    if (!copySrc || copySrc === customer) { setMsg("Chọn khách NGUỒN khác."); return; }
+    if (!bookId) { setMsg("Chọn bảng giá đích trước."); return; }
+    if (!copySrcBook) { setMsg("Chọn bảng giá NGUỒN."); return; }
+    if (String(copySrcBook) === String(bookId)) { setMsg("Chọn bảng giá nguồn khác."); return; }
     let replace = false;
     if (rows.length > 0) {
-      const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
       const ok = await window.confirmAction({
         title: "Ghi đè bảng giá?",
-        text: `Khách <b>${esc(customer)}</b> đang có <b>${rows.length}</b> dòng. Copy từ <b>${esc(copySrc)}</b> sẽ <b>GHI ĐÈ</b> toàn bộ. Tiếp tục?`,
+        text: `Bảng giá đang chọn có <b>${rows.length}</b> dòng. Copy sẽ <b>GHI ĐÈ</b> toàn bộ. Tiếp tục?`,
         confirmText: "Ghi đè bằng bảng giá nguồn", cancelText: "Huỷ",
       });
       if (!ok) return;
@@ -33,9 +38,9 @@ function PriceList({ rows = [], onChange, onImported, cfg = {}, customer }) {
     }
     setBusy(true); setMsg("");
     try {
-      const res = await fetch(ROUTES.priceCopy, { method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json", "X-CSRF-TOKEN": T.csrf }, body: JSON.stringify({ from: copySrc, to: customer, replace }) }).then((r) => r.json());
+      const res = await fetch(ROUTES.priceCopy, { method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json", "X-CSRF-TOKEN": T.csrf }, body: JSON.stringify({ fromBook: Number(copySrcBook), toBook: Number(bookId), replace }) }).then((r) => r.json());
       setBusy(false);
-      if (res && res.ok) { (onImported || onChange)(res.priceList || []); setMsg(`Đã copy ${res.copied} dòng từ ${copySrc}.`); setCopySrc(""); }
+      if (res && res.ok) { (onImported || onChange)(res.priceList || []); setMsg(`Đã copy ${res.copied} dòng.`); setCopySrc(""); setCopySrcBook(""); }
       else { setMsg("Copy lỗi: " + ((res && res.message) || "không rõ")); }
     } catch (err) { setBusy(false); setMsg("Copy lỗi kết nối."); }
   };
@@ -80,7 +85,7 @@ function PriceList({ rows = [], onChange, onImported, cfg = {}, customer }) {
     }
     if (!out.length) { setBusy(false); setMsg("Sheet không có dòng dữ liệu hợp lệ."); return; }
     try {
-      const res = await fetch(ROUTES.priceImport, { method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json", "X-CSRF-TOKEN": T.csrf }, body: JSON.stringify({ customer, rows: out }) }).then((r) => r.json());
+      const res = await fetch(ROUTES.priceImport, { method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json", "X-CSRF-TOKEN": T.csrf }, body: JSON.stringify({ customer, book: bookId, rows: out }) }).then((r) => r.json());
       setBusy(false);
       if (res && res.ok) { (onImported || onChange)(res.priceList || []); setImp(null); setMsg(`Đã import ${res.imported} dòng — ${res.created} mới, ${res.updated} cập nhật.`); }
       else { setMsg("Import lỗi: " + ((res && res.message) || "không rõ")); }
@@ -100,7 +105,7 @@ function PriceList({ rows = [], onChange, onImported, cfg = {}, customer }) {
     if (!ok) return;
     setBusy(true); setMsg("");
     try {
-      const res = await fetch(ROUTES.priceImport, { method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json", "X-CSRF-TOKEN": T.csrf }, body: JSON.stringify({ customer, rows: [], replace: true }) }).then((r) => r.json());
+      const res = await fetch(ROUTES.priceImport, { method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json", "X-CSRF-TOKEN": T.csrf }, body: JSON.stringify({ customer, book: bookId, rows: [], replace: true }) }).then((r) => r.json());
       setBusy(false);
       if (res && res.ok) { (onImported || onChange)(res.priceList || []); setMsg("Đã xóa toàn bộ bảng giá. Bấm Import Excel để nạp lại."); }
       else setMsg("Xóa lỗi: " + ((res && res.message) || "không rõ"));
@@ -306,13 +311,14 @@ function PriceList({ rows = [], onChange, onImported, cfg = {}, customer }) {
             style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 13px", fontSize: 12.5, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 8, background: "#fff", color: "var(--ink-2)", cursor: "pointer" }}>
             <I.plus /> Thêm nhóm địa điểm hạ
           </button>
-          {/* Copy nhanh bảng giá từ khách khác */}
-          {otherCustomers.length > 0 && (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-              <span style={{ width: 200 }}><Combo value={copySrc} onChange={setCopySrc} options={otherCustomers} placeholder="Copy giá từ khách…" small clearable /></span>
-              <button type="button" onClick={doCopy} disabled={busy || !copySrc}
-                style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 13px", fontSize: 12.5, fontWeight: 600, border: "1px solid var(--accent-weak)", borderRadius: 8, background: "var(--accent-weak-2)", color: "var(--accent)", cursor: copySrc ? "pointer" : "default", opacity: copySrc ? 1 : 0.6 }}>
-                <i className="bi bi-files" /> Copy sang khách này
+          {/* Copy nhanh: chọn khách NGUỒN → bảng giá NGUỒN → copy vào bảng giá đang chọn */}
+          {bookId && otherCustomers.length > 0 && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              <span style={{ width: 170 }}><Combo value={copySrc} onChange={(v) => { setCopySrc(v); setCopySrcBook(""); }} options={otherCustomers} placeholder="Copy từ khách…" small clearable /></span>
+              {copySrc && <span style={{ width: 190 }}><Combo value={copySrcBook} onChange={setCopySrcBook} options={srcBooks.map(bookOpt)} placeholder="…bảng giá nào" small clearable /></span>}
+              <button type="button" onClick={doCopy} disabled={busy || !copySrcBook}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 13px", fontSize: 12.5, fontWeight: 600, border: "1px solid var(--accent-weak)", borderRadius: 8, background: "var(--accent-weak-2)", color: "var(--accent)", cursor: copySrcBook ? "pointer" : "default", opacity: copySrcBook ? 1 : 0.6 }}>
+                <i className="bi bi-files" /> Copy vào bảng giá này
               </button>
             </span>
           )}

@@ -10,6 +10,7 @@ use App\Models\TruckingCustomer;
 use App\Models\TruckingDriver;
 use App\Models\TruckingLocation;
 use App\Models\TruckingPayer;
+use App\Models\TruckingPriceBook;
 use App\Models\TruckingPriceRow;
 use App\Models\TruckingFuelPrice;
 use App\Models\TruckingRevenueItem;
@@ -100,7 +101,7 @@ trait HandlesPricingAndImport
     public function priceBookConfig(): array
     {
         $locations = TruckingLocation::orderBy('sort')->orderBy('name')->get();
-        $customers = TruckingCustomer::withCount('priceRows')->orderBy('name')->get();
+        $customers = TruckingCustomer::withCount('priceRows')->with(['priceBooks' => fn ($q) => $q->withCount('priceRows')])->orderBy('name')->get();
 
         return [
             'locations'    => $locations->pluck('name')->all(),
@@ -116,8 +117,106 @@ trait HandlesPricingAndImport
                 'address'   => $c->address ?? '',
                 'note'      => $c->note ?? '',
                 'priceCount' => (int) ($c->price_rows_count ?? 0),
+                // Danh sách BẢNG GIÁ (price book) theo khoảng ngày của khách.
+                'priceBooks' => $c->priceBooks->map(fn ($b) => [
+                    'id'    => (int) $b->id,
+                    'label' => $b->label ?? '',
+                    'from'  => $b->period_from?->toDateString(),
+                    'to'    => $b->period_to?->toDateString(),
+                    'count' => (int) ($b->price_rows_count ?? 0),
+                ])->values()->all(),
             ]])->all(),
         ];
+    }
+
+    /** Danh sách bảng giá (book) của 1 khách — cho FE refresh sau CRUD. */
+    public function priceBooksForCustomer(int $customerId): array
+    {
+        return TruckingPriceBook::where('customer_id', $customerId)->withCount('priceRows')
+            ->orderBy('period_from')->orderBy('id')->get()
+            ->map(fn ($b) => [
+                'id'    => (int) $b->id,
+                'label' => $b->label ?? '',
+                'from'  => $b->period_from?->toDateString(),
+                'to'    => $b->period_to?->toDateString(),
+                'count' => (int) ($b->price_rows_count ?? 0),
+            ])->values()->all();
+    }
+
+    /** Dòng giá của 1 BOOK (lazy-load để sửa). */
+    public function priceBookRows(int $bookId): array
+    {
+        if ($bookId <= 0) return [];
+        return TruckingPriceRow::where('price_book_id', $bookId)->orderBy('sort')->toBase()->get()
+            ->map(fn ($p) => $this->priceRowToArray($p))->all();
+    }
+
+    /** Book MỞ (mọi ngày) của khách — tạo nếu chưa có. Dùng làm đích mặc định khi import không chỉ book. */
+    private function defaultBookId(int $customerId): int
+    {
+        $b = TruckingPriceBook::where('customer_id', $customerId)
+            ->whereNull('period_from')->whereNull('period_to')->orderBy('id')->first();
+        $b ??= TruckingPriceBook::create(['customer_id' => $customerId, 'label' => 'Mặc định (mọi ngày)', 'sort' => 0]);
+        return (int) $b->id;
+    }
+
+    public function createPriceBook(string $customerName, ?string $label, ?string $from, ?string $to): array
+    {
+        $cust = TruckingCustomer::firstOrCreate(['name' => trim($customerName)]);
+        $sort = (int) (TruckingPriceBook::where('customer_id', $cust->id)->max('sort') ?? 0) + 1;
+        TruckingPriceBook::create([
+            'customer_id' => $cust->id, 'label' => $label ?: null,
+            'period_from' => $from ?: null, 'period_to' => $to ?: null, 'sort' => $sort,
+        ]);
+        return ['books' => $this->priceBooksForCustomer((int) $cust->id)];
+    }
+
+    public function updatePriceBook(int $bookId, ?string $label, ?string $from, ?string $to): array
+    {
+        $b = TruckingPriceBook::find($bookId);
+        if (! $b) return ['ok' => false];
+        $b->update(['label' => $label ?: null, 'period_from' => $from ?: null, 'period_to' => $to ?: null]);
+        return ['ok' => true, 'books' => $this->priceBooksForCustomer((int) $b->customer_id)];
+    }
+
+    public function deletePriceBook(int $bookId): array
+    {
+        $b = TruckingPriceBook::find($bookId);
+        if (! $b) return ['ok' => false];
+        $cid = (int) $b->customer_id;
+        $b->delete();   // cascade rows
+        return ['ok' => true, 'books' => $this->priceBooksForCustomer($cid)];
+    }
+
+    /** Lưu toàn bộ dòng giá của 1 BOOK — xóa-hết-tạo-lại TRONG PHẠM VI book (không đụng book khác). */
+    public function savePriceBookRows(int $bookId, array $rows): array
+    {
+        return DB::transaction(function () use ($bookId, $rows) {
+            $book = TruckingPriceBook::find($bookId);
+            if (! $book) return ['ok' => false, 'priceList' => []];
+            TruckingPriceRow::where('price_book_id', $bookId)->delete();
+            foreach ($rows as $i => $p) {
+                TruckingPriceRow::create($this->priceRowAttrs($p, $i) + ['customer_id' => $book->customer_id, 'price_book_id' => $bookId]);
+            }
+            $this->registerPriceRowCodes($rows);
+            return ['ok' => true, 'priceList' => $this->priceBookRows($bookId)];
+        });
+    }
+
+    /** Đăng ký ký hiệu FROM (địa điểm) + TO1..4 (địa điểm + kho) từ các dòng giá. */
+    private function registerPriceRowCodes(array $rows): void
+    {
+        $whNames = [];
+        foreach ($rows as $p) {
+            $this->registerLocationCode($p['from'] ?? null);
+            foreach (['to1', 'to2', 'to3', 'to4'] as $k) {
+                $v = trim((string) ($p[$k] ?? ''));
+                if ($v === '') continue;
+                $this->registerLocationCode($v);
+                $whNames[$v] = true;
+            }
+        }
+        foreach (array_keys($whNames) as $name) TruckingWarehouse::firstOrCreate(['name' => $name], ['code' => $name]);
     }
 
     /** Lưu toàn bộ cfg (tương thích cũ) — gọi reconcile cho mọi key có mặt. */
@@ -263,14 +362,8 @@ trait HandlesPricingAndImport
                 'address'    => $d['address'] ?? null,
                 'note'       => $d['note'] ?? null,
             ]);
-            // Chỉ động vào bảng giá khi payload có 'priceList' (trang Bảng giá);
-            // trang Cài đặt > Khách hàng không gửi priceList → giữ nguyên giá.
-            if (array_key_exists('priceList', $d)) {
-                $cust->priceRows()->delete();
-                foreach (($d['priceList'] ?? []) as $i => $p) {
-                    $cust->priceRows()->create($this->priceRowAttrs($p, $i));
-                }
-            }
+            // GHI CHÚ: bảng giá KHÔNG còn lưu ở đây. Bảng giá theo BOOK (khoảng ngày) → lưu qua endpoint
+            // riêng (savePriceBookRows) để không xóa nhầm các book khác. /customers chỉ lưu thông tin khách.
         }
     }
 
@@ -674,18 +767,18 @@ trait HandlesPricingAndImport
      * Khóa định danh = (conn, loc, kind, from, to1..to4). Trùng → cập nhật
      * khoảng cách + phí; chưa có → tạo mới.
      */
-    public function importPriceRows(string $customerName, array $rows, bool $replace = false): array
+    public function importPriceRows(string $customerName, array $rows, bool $replace = false, ?int $bookId = null): array
     {
-        return DB::transaction(function () use ($customerName, $rows, $replace) {
+        return DB::transaction(function () use ($customerName, $rows, $replace, $bookId) {
             $cust = TruckingCustomer::firstOrCreate(['name' => trim($customerName)]);
-            if ($replace) $cust->priceRows()->delete();   // xóa sạch bảng giá cũ trước khi nạp lại
+            $bookId = $bookId ?: $this->defaultBookId((int) $cust->id);   // không chỉ book → book mở mặc định
+            if ($replace) TruckingPriceRow::where('price_book_id', $bookId)->delete();
             $created = 0; $updated = 0;
-            $sort = (int) ($cust->priceRows()->max('sort') ?? 0);
+            $sort = (int) (TruckingPriceRow::where('price_book_id', $bookId)->max('sort') ?? 0);
 
             foreach ($rows as $p) {
                 $attrs = $this->priceRowAttrs($p, 0);
-
-                $q = $cust->priceRows();
+                $q = TruckingPriceRow::where('price_book_id', $bookId);
                 foreach (['conn', 'loc', 'kind', 'from', 'to1', 'to2', 'to3', 'to4'] as $k) {
                     $v = $attrs[$k];
                     $v === null ? $q->whereNull($k) : $q->where($k, $v);
@@ -704,64 +797,47 @@ trait HandlesPricingAndImport
                     $updated++;
                 } else {
                     $attrs['sort'] = ++$sort;
-                    $cust->priceRows()->create($attrs);
+                    TruckingPriceRow::create($attrs + ['customer_id' => $cust->id, 'price_book_id' => $bookId]);
                     $created++;
                 }
             }
 
-            // Ký hiệu FROM + TO → danh mục Địa điểm; đồng thời TO → danh mục Kho.
-            // (Điểm Hạ KHÔNG dùng để tạo địa điểm nữa.)
-            $whNames = [];
-            foreach ($rows as $p) {
-                $this->registerLocationCode($p['from'] ?? null);
-                foreach (['to1', 'to2', 'to3', 'to4'] as $k) {
-                    $v = trim((string) ($p[$k] ?? ''));
-                    if ($v === '') continue;
-                    $this->registerLocationCode($v);
-                    $whNames[$v] = true;
-                }
-            }
-            foreach (array_keys($whNames) as $name) {
-                TruckingWarehouse::firstOrCreate(['name' => $name], ['code' => $name]);
-            }
-
-            $cust->load('priceRows');
+            $this->registerPriceRowCodes($rows);
             return [
                 'created'   => $created,
                 'updated'   => $updated,
                 'imported'  => $created + $updated,
-                'priceList' => $cust->priceRows->map(fn ($p) => $this->priceRowToArray($p))->all(),
+                'priceList' => $this->priceBookRows($bookId),
             ];
         });
     }
 
     /**
-     * Copy TOÀN BỘ bảng giá từ khách NGUỒN sang khách ĐÍCH (nhân bản dòng, id mới) — cho nhanh.
-     * $replace=true: xóa bảng giá hiện có của đích trước; false: chèn thêm (gộp).
+     * Copy TOÀN BỘ dòng giá từ BOOK NGUỒN sang BOOK ĐÍCH (nhân bản dòng, id mới) — cho nhanh.
+     * $replace=true: xóa dòng hiện có của book đích trước; false: chèn thêm (gộp).
      */
-    public function copyPriceRows(string $from, string $to, bool $replace = false): array
+    public function copyPriceRows(int $fromBookId, int $toBookId, bool $replace = false): array
     {
-        $fromId = TruckingCustomer::where('name', trim($from))->value('id');
-        $toId   = TruckingCustomer::where('name', trim($to))->value('id');
-        if (! $fromId || ! $toId || $fromId === $toId) {
-            return ['copied' => 0, 'priceList' => $toId ? $this->customerPriceList($to) : []];
+        $toBook = TruckingPriceBook::find($toBookId);
+        if (! $fromBookId || ! $toBook || $fromBookId === $toBookId) {
+            return ['copied' => 0, 'priceList' => $toBook ? $this->priceBookRows($toBookId) : []];
         }
 
-        return DB::transaction(function () use ($fromId, $toId, $to, $replace) {
-            if ($replace) TruckingPriceRow::where('customer_id', $toId)->delete();
+        return DB::transaction(function () use ($fromBookId, $toBook, $replace) {
+            if ($replace) TruckingPriceRow::where('price_book_id', $toBook->id)->delete();
 
             $cols = ['location_id', 'loc', 'conn', 'kind', 'from', 'to1', 'to2', 'to3', 'to4',
                      'distance', 'trans_fee_40', 'trans_fee_20', 'fuel_fee_40', 'fuel_fee_20', 'sort'];
             $now  = now();
-            $rows = TruckingPriceRow::where('customer_id', $fromId)->orderBy('sort')->orderBy('id')->get()
-                ->map(function ($r) use ($cols, $toId, $now) {
-                    $a = ['customer_id' => $toId, 'created_at' => $now, 'updated_at' => $now];
+            $rows = TruckingPriceRow::where('price_book_id', $fromBookId)->orderBy('sort')->orderBy('id')->get()
+                ->map(function ($r) use ($cols, $toBook, $now) {
+                    $a = ['customer_id' => $toBook->customer_id, 'price_book_id' => $toBook->id, 'created_at' => $now, 'updated_at' => $now];
                     foreach ($cols as $c) $a[$c] = $r->$c;
                     return $a;
                 })->all();
             foreach (array_chunk($rows, 500) as $chunk) TruckingPriceRow::insert($chunk);
 
-            return ['copied' => count($rows), 'priceList' => $this->customerPriceList($to)];
+            return ['copied' => count($rows), 'priceList' => $this->priceBookRows((int) $toBook->id)];
         });
     }
 
