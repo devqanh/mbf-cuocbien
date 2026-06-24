@@ -860,31 +860,37 @@ trait HandlesPricingAndImport
         if (! $sh) return [];
         $rows = $sh->toArray(null, true, false, false);
         $num = fn ($v) => (int) preg_replace('/[^\d]/', '', (string) $v);
-        $T = fn ($r, $i) => trim((string) ($r[$i] ?? ''));
-        $mode = null; $loc = null; $conn = null; $kind = null; $out = [];
+        // GỘP khoảng trắng + xuống dòng (ô KIND/FROM/TO trong file gốc hay có \n do wrap) → chuẩn để khớp giá.
+        $cl = fn ($r, $i) => preg_replace('/\s+/u', ' ', trim((string) ($r[$i] ?? '')));
+        $mode = null; $loc = null; $conn = null; $kind = null; $lastKind = ''; $out = [];
+        // tiêu đề khối GHI CHÚ (không phải tuyến) — gặp thì DỪNG bắt tuyến tới mục kế tiếp.
+        $isNote = fn ($c) => (bool) preg_match('/transportation fee for|combination|comeback|detention|cancel|other fee|free time/i', $c);
         foreach ($rows as $r) {
-            $B = $T($r, 1); $C = $T($r, 2);
-            if (preg_match('/^\s*1\./', $B)) { $mode = 'skip'; continue; }
-            if (preg_match('/^\s*2\.\s*$/', $B)) { $mode = 'drayage'; $loc = null; $conn = null; continue; }
-            if ($mode !== null && preg_match('/^\s*2\.\d+\.?\s*$/', $B)) {   // mục cảng (2.x)
-                if (stripos($C, 'PORT') !== false || stripos($C, 'ICD') !== false) { $loc = trim(preg_replace('/\bPORT\b/i', '', $C)); $conn = null; }
-                else $loc = null;   // 2.5 DETENTION… → bỏ
+            $B = $cl($r, 1); $C = $cl($r, 2);
+            if (preg_match('/^1\./', $B)) { $mode = 'skip'; continue; }
+            if (preg_match('/^2\.$/', $B)) { $mode = 'drayage'; $loc = null; $conn = null; $lastKind = ''; continue; }
+            if ($mode !== null && preg_match('/^2\.\d+\.?$/', $B)) {   // mục cảng (2.x)
+                $loc = (stripos($C, 'PORT') !== false || stripos($C, 'ICD') !== false) ? trim(preg_replace('/\bPORT\b/i', '', $C)) : null;   // 2.5 DETENTION… → bỏ
+                $conn = null; $lastKind = '';
                 continue;
             }
-            if (preg_match('/^\s*2\.\d+\.\d+/', $B)) { $conn = stripos($C, 'DISCONNECT') !== false ? 'Disconnect' : (stripos($C, 'CONNECT') !== false ? 'Connect' : $conn); continue; }
-            if (preg_match('/^\s*3\.\s*$/', $B)) { $mode = 'barging'; $kind = null; continue; }
-            if (preg_match('/^\s*3\.1/', $B)) { $mode = 'barging'; $kind = 'DRY CONTAINER'; continue; }
-            if (preg_match('/^\s*3\.2/', $B)) { $mode = 'barging'; $kind = 'NOR CONTAINER'; continue; }
-            if (preg_match('/^\s*4\./', $B)) { $mode = 'skip'; continue; }
+            if (preg_match('/^2\.\d+\.\d+/', $B)) { $conn = stripos($C, 'DISCONNECT') !== false ? 'Disconnect' : (stripos($C, 'CONNECT') !== false ? 'Connect' : $conn); $lastKind = ''; continue; }
+            if (preg_match('/^3\.$/', $B)) { $mode = 'barging'; $kind = null; continue; }
+            if (preg_match('/^3\.1/', $B)) { $mode = 'barging'; $kind = 'DRY CONTAINER'; continue; }
+            if (preg_match('/^3\.2/', $B)) { $mode = 'barging'; $kind = 'NOR CONTAINER'; continue; }
+            if (preg_match('/^4\./', $B)) { $mode = 'skip'; continue; }
+            // Khối ghi chú trong 1 mục cảng (vd "TRANSPORTATION FEE FOR COMBINATION/COMEBACK") → dừng bắt tuyến.
+            if ($mode === 'drayage' && $isNote($C)) { $loc = null; continue; }
             // dòng dữ liệu
-            $from = $T($r, 3);
+            $from = $cl($r, 3);
             if ($from === '' || strtoupper($from) === 'FROM' || strtoupper($C) === 'KIND') continue;
             $t40 = $num($r[9] ?? ''); $t20 = $num($r[10] ?? '');
             if ($t40 <= 0 && $t20 <= 0) continue;
             if ($mode === 'drayage' && $loc && $conn) {
-                $out[] = ['conn' => $conn, 'loc' => $loc, 'kind' => $C, 'from' => $from, 'to1' => $T($r, 4), 'to2' => $T($r, 5), 'to3' => $T($r, 6), 'to4' => $T($r, 7), 'distance' => $num($r[8] ?? ''), 'transFee40' => $t40, 'transFee20' => $t20, 'fuelFee40' => $num($r[11] ?? ''), 'fuelFee20' => $num($r[12] ?? '')];
+                $k = $C !== '' ? $C : $lastKind; $lastKind = $k;   // KIND là ô GỘP → kéo xuống cho cả nhóm
+                $out[] = ['conn' => $conn, 'loc' => $loc, 'kind' => $k, 'from' => $from, 'to1' => $cl($r, 4), 'to2' => $cl($r, 5), 'to3' => $cl($r, 6), 'to4' => $cl($r, 7), 'distance' => $num($r[8] ?? ''), 'transFee40' => $t40, 'transFee20' => $t20, 'fuelFee40' => $num($r[11] ?? ''), 'fuelFee20' => $num($r[12] ?? '')];
             } elseif ($mode === 'barging' && $kind) {
-                $drop = $T($r, 7) ?: ($T($r, 6) ?: ($T($r, 5) ?: $T($r, 4)));
+                $drop = $cl($r, 7) ?: ($cl($r, 6) ?: ($cl($r, 5) ?: $cl($r, 4)));
                 $out[] = ['conn' => 'Non', 'loc' => $drop, 'kind' => $kind, 'from' => $from, 'to1' => '', 'to2' => '', 'to3' => '', 'to4' => '', 'distance' => $num($r[8] ?? ''), 'transFee40' => $t40, 'transFee20' => $t20, 'fuelFee40' => $num($r[11] ?? ''), 'fuelFee20' => $num($r[12] ?? '')];
             }
         }
