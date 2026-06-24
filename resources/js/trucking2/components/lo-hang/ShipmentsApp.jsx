@@ -241,6 +241,17 @@ function ShipmentsApp() {
 
   // Màu theo dõi lấy từ danh mục (cfg.costColors) — dùng cho chip "chưa điền" trên từng dòng.
   const costColors = cfg.costColors || {};
+  const costAuto = cfg.costAuto || {};
+  // Khoản theo dõi "chưa điền" của 1 lô: (a) dòng có màu nhưng trống số HĐ; (b) khoản AUTO+màu CHƯA có dòng
+  // điền số HĐ — áp cho MỌI lô (kể cả lô chưa thêm dòng). Trả [{item, color}] đã gộp theo tên.
+  const missFollow = (s) => {
+    const items = (s.cost && s.cost.items) || [];
+    const filled = new Set(items.filter((it) => it.item && String(it.invoiceNo || "").trim()).map((it) => it.item));
+    const map = {};
+    items.forEach((it) => { if (it.item && costColors[it.item] && !String(it.invoiceNo || "").trim()) map[it.item] = costColors[it.item]; });
+    Object.keys(costAuto).forEach((n) => { if (costAuto[n] && costColors[n] && !filled.has(n)) map[n] = costColors[n]; });
+    return Object.entries(map).map(([item, color]) => ({ item, color }));
+  };
   // Lọc/tìm/sắp xếp/phân trang đã làm SERVER-SIDE → hàng hiển thị chính là data của trang.
   const rows = data;
 
@@ -695,6 +706,14 @@ function ShipmentsApp() {
                         style={{ flex: 1, textAlign: "left", border: "1px solid var(--line)", borderRadius: 9, background: "#fafbfc", padding: "8px 11px", cursor: "pointer" }}>
                         <div style={{ fontSize: 10.5, color: "var(--ink-4)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Chi phí</div>
                         <div className="tnum" style={{ fontSize: 14, fontWeight: 700, marginTop: 2 }}>{fmtVND(m.cost)}</div>
+                        {(() => { const miss = missFollow(s); return miss.length ? (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+                            {miss.map((it) => { const dot = colorHex(it.color) || "var(--warn)"; return (
+                              <span key={it.item} title={"Chưa điền: " + it.item} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, fontWeight: 600, padding: "1px 7px", borderRadius: 999, color: dot, background: "var(--line-2)" }}>
+                                <span style={{ width: 6, height: 6, borderRadius: 999, background: dot }} />{it.item}
+                              </span>); })}
+                          </div>
+                        ) : null; })()}
                         {(s.tags || []).length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>{s.tags.map((t, i) => <span key={i} style={tagChip}>{t}</span>)}</div>}
                       </button>
                     </div>
@@ -801,14 +820,14 @@ function ShipmentsApp() {
                     <TD pad="6px 10px">
                       <CellBtn main={fmtVND(costMain)} sub={costSub} onClick={() => openModal({ id: s.id, type: "cost" })} />
                       {(() => {
-                        const miss = ((s.cost && s.cost.items) || []).filter((it) => it.item && costColors[it.item] && !String(it.invoiceNo || "").trim());
+                        const miss = missFollow(s);
                         if (!miss.length) return null;
                         return (
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 5, paddingLeft: 9 }}>
                             {miss.map((it) => {
-                              const dot = colorHex(costColors[it.item]) || "var(--warn)";
+                              const dot = colorHex(it.color) || "var(--warn)";
                               return (
-                                <button key={it.id} type="button" title={"Lọc lô có theo dõi màu này · Chưa điền: " + it.item}
+                                <button key={it.item} type="button" title={"Lọc lô có theo dõi màu này · Chưa điền: " + it.item}
                                   onClick={(e) => { e.stopPropagation(); setFollowP(dot); }}
                                   style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, fontWeight: 600, padding: "1px 7px", borderRadius: 999, color: dot, background: "var(--line-2)", border: "none", cursor: "pointer" }}>
                                   <span style={{ width: 6, height: 6, borderRadius: 999, background: dot }} />{it.item}

@@ -73,8 +73,10 @@ trait HandlesCatalog
                 }
             }
             if ($colored) {
+                $cfg['costAuto'] ??= [];
                 foreach ($rows as $r) {
                     if (!empty($r->color)) $cfg['costColors'][$r->name] = $r->color;
+                    if (!empty($r->auto))  $cfg['costAuto'][$r->name] = true;   // tự hiện ở popup + nhắc "chưa điền"
                 }
             }
         }
@@ -217,7 +219,11 @@ trait HandlesCatalog
             }
             if ($colored) {
                 $out['costColors'] = [];
-                foreach ($rows as $r) if (! empty($r->color)) $out['costColors'][$r->name] = $r->color;
+                $out['costAuto'] = [];
+                foreach ($rows as $r) {
+                    if (! empty($r->color)) $out['costColors'][$r->name] = $r->color;
+                    if (! empty($r->auto))  $out['costAuto'][$r->name] = true;
+                }
             }
             return $out;
         }

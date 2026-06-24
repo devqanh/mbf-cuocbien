@@ -80,6 +80,8 @@ trait HandlesPricingAndImport
         return [
             'costColors'    => TruckingCostItem::whereNotNull('color')->where('color', '!=', '')
                                   ->pluck('color', 'name')->all(),
+            // Khoản "tự hiện" (auto) → list nhắc "chưa điền" trên mọi lô + popup hiện sẵn dòng.
+            'costAuto'      => array_fill_keys(TruckingCostItem::where('auto', true)->pluck('name')->all(), true),
             'freeTimeHours' => TruckingSetting::get('free_time_hours', '4'),
             'vatDefault'    => [
                 'hph' => TruckingSetting::get('vat_default_hph', '8'),
@@ -217,7 +219,9 @@ trait HandlesPricingAndImport
         foreach ($names as $i => $name) {
             $attrs = ['sort' => $i];
             if ($priced)  $attrs['default_price'] = isset($cfg['prices'][$name]) ? $this->inMoney($cfg['prices'][$name]) : null;
-            if ($colored) $attrs['color'] = $cfg['costColors'][$name] ?? null;
+            // Chỉ ghi đè color/auto khi payload CÓ gửi (thêm nhanh từ popup không gửi → GIỮ nguyên, không xoá).
+            if ($colored && array_key_exists('costColors', $cfg)) $attrs['color'] = $cfg['costColors'][$name] ?? null;
+            if ($colored && array_key_exists('costAuto', $cfg))   $attrs['auto']  = ! empty($cfg['costAuto'][$name]);
             $cls::updateOrCreate(['name' => $name], $attrs);
         }
     }

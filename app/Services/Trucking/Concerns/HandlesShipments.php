@@ -163,11 +163,20 @@ trait HandlesShipments
 
         // Khoản chi phí "theo dõi" (có màu trong danh mục) → id + tên + hex.
         // Lọc theo cost_item_id (FK ổn định) thay vì item text (đổi tên sẽ sót dòng cũ).
-        $followItems = TruckingCostItem::whereNotNull('color')->where('color', '!=', '')->get(['id', 'name', 'color']);
+        $followItems = TruckingCostItem::whereNotNull('color')->where('color', '!=', '')->get(['id', 'name', 'color', 'auto']);
         $followIds   = $followItems->pluck('id')->all();
         $followNames = $followItems->pluck('name')->all();        // giữ tên cho followStats display
         $nameHex     = $followItems->mapWithKeys(fn ($i) => [$i->name => $this->colorHex($i->color)])->all();
         $idHex       = $followItems->mapWithKeys(fn ($i) => [$i->id => $this->colorHex($i->color)])->all();
+        // Khoản "auto" (tự hiện) + có màu → expected cho MỌI lô (nhắc "chưa điền" kể cả lô chưa thêm dòng).
+        $autoHexes   = $followItems->filter(fn ($i) => $i->auto)->map(fn ($i) => $this->colorHex($i->color))->filter()->unique()->values()->all();
+        $autoSet     = array_flip($autoHexes);
+        $hasAutoFollow = ! empty($autoHexes);
+        $nonAutoColoredIds = $followItems->filter(fn ($i) => ! $i->auto)->pluck('id')->all();
+        $autoHexItems = [];   // hex => [item ids auto của màu đó]
+        foreach ($followItems->filter(fn ($i) => $i->auto) as $i) { $autoHexItems[$this->colorHex($i->color)][] = $i->id; }
+        $hexItems = [];       // hex => [tất cả item ids của màu đó]
+        foreach ($followItems as $i) { $hexItems[$this->colorHex($i->color)][] = $i->id; }
 
         // Áp tìm kiếm (khách / container / booking / invoice / tờ khai) lên 1 builder lô.
         $applySearch = function ($b) use ($q) {
@@ -218,7 +227,7 @@ trait HandlesShipments
         $outCount = $applyOut($searched())->count();
         $filterCounts = ['all' => $allCount, 'out' => $outCount, 'notout' => $allCount - $outCount];
 
-        $followStats = $this->followStats($searched(), $followNames, $nameHex);
+        $followStats = $this->followStats($searched(), $autoHexes);
 
         // --- Danh sách hiển thị: q + lọc + follow + sort + phân trang ---
         $list = $searched();
@@ -228,15 +237,27 @@ trait HandlesShipments
             $applyNotOut($list);
         }
         if ($followIds) {
+            // "đã điền" = có dòng khoản đó CÓ số hóa đơn. Khoản AUTO expected cho mọi lô (thiếu dòng = chưa điền).
+            $filledOf = fn ($ids) => fn ($c) => $c->whereIn('cost_item_id', $ids ?: [0])->whereNotNull('invoice_no')->where('invoice_no', '!=', '');
+            $emptyInv = fn ($ids) => fn ($c) => $c->whereIn('cost_item_id', $ids ?: [0])->where(fn ($x) => $x->whereNull('invoice_no')->orWhere('invoice_no', ''));
             if ($follow === 'any') {
-                $list->whereHas('costLines', fn ($c) => $c->whereIn('cost_item_id', $followIds));
+                // Có theo dõi: nếu có khoản auto → mọi lô đều expected (không lọc); nếu không, lọc lô có dòng theo dõi.
+                if (! $hasAutoFollow) $list->whereHas('costLines', fn ($c) => $c->whereIn('cost_item_id', $followIds));
             } elseif ($follow === 'missing') {
-                // "Chưa điền" = khoản theo dõi nhưng CHƯA có SỐ HÓA ĐƠN (trước đây xét theo số tiền).
-                $list->whereHas('costLines', fn ($c) => $c->whereIn('cost_item_id', $followIds)
-                    ->where(fn ($x) => $x->whereNull('invoice_no')->orWhere('invoice_no', '')));
+                // Chưa điền: (lô có dòng khoản KHÔNG-auto trống số HĐ) HOẶC (thiếu dòng-đã-điền cho 1 màu auto bất kỳ).
+                $list->where(function ($w) use ($nonAutoColoredIds, $autoHexItems, $emptyInv, $filledOf) {
+                    if ($nonAutoColoredIds) $w->whereHas('costLines', $emptyInv($nonAutoColoredIds));
+                    foreach ($autoHexItems as $ids) $w->orWhereDoesntHave('costLines', $filledOf($ids));
+                });
             } elseif (str_starts_with($follow, '#')) {
-                $ids = array_keys(array_filter($idHex, fn ($h) => $h === $follow));
-                $list->whereHas('costLines', fn ($c) => $c->whereIn('cost_item_id', $ids ?: [0]));
+                $ids = $hexItems[$follow] ?? [0];
+                if (isset($autoSet[$follow])) {
+                    // Màu auto: lô CHƯA điền màu này (chưa có dòng điền số HĐ) — kể cả lô chưa thêm dòng.
+                    $list->whereDoesntHave('costLines', $filledOf($ids));
+                } else {
+                    // Màu thường: lô có dòng màu này (như cũ).
+                    $list->whereHas('costLines', fn ($c) => $c->whereIn('cost_item_id', $ids));
+                }
             }
         }
 
@@ -700,40 +721,60 @@ trait HandlesShipments
      * lô có cờ nhưng CHƯA điền tiền. Chỉ nạp đúng các dòng chi phí thuộc khoản
      * "theo dõi" (không nạp toàn bộ dòng con) → nhẹ.
      */
-    private function followStats($shipQuery, array $followNames, array $nameHex): array
+    private function followStats($shipQuery, array $autoHexes = []): array
     {
-        if (! $followNames) return ['anyShips' => 0, 'missShips' => 0, 'byColor' => []];
         // Dùng cost_item_id (FK) để thống kê, không phụ thuộc item text (đổi tên vẫn đúng).
-        $followIds = TruckingCostItem::whereNotNull('color')->where('color', '!=', '')->pluck('id')->all();
-        $idToHex = TruckingCostItem::whereNotNull('color')->where('color', '!=', '')->get(['id', 'color'])
-            ->mapWithKeys(fn ($i) => [$i->id => $this->colorHex($i->color)])->all();
+        $items = TruckingCostItem::whereNotNull('color')->where('color', '!=', '')->get(['id', 'color']);
+        if ($items->isEmpty()) return ['anyShips' => 0, 'missShips' => 0, 'byColor' => []];
+        $idToHex   = $items->mapWithKeys(fn ($i) => [$i->id => $this->colorHex($i->color)])->all();
+        $followIds = $items->pluck('id')->all();
+        $autoSet   = array_flip($autoHexes);
 
-        $lines = TruckingCostLine::whereIn('shipment_id', $shipQuery->select('id'))
+        // ids lô trong phạm vi — cần cho khoản AUTO (mọi lô đều "expected", kể cả lô chưa có dòng).
+        $shipIds = $shipQuery->pluck('id')->all();
+        if (empty($shipIds)) return ['anyShips' => 0, 'missShips' => 0, 'byColor' => []];
+
+        // per-ship: hex => ['present'=>có dòng, 'filled'=>có dòng ĐÃ điền số HĐ]
+        $lines = TruckingCostLine::whereIn('shipment_id', $shipIds)
             ->whereIn('cost_item_id', $followIds)
             ->get(['shipment_id', 'cost_item_id', 'invoice_no'])
             ->groupBy('shipment_id');
-
-        $anyShips = 0; $missShips = 0; $buckets = [];
-        foreach ($lines as $shipLines) {
-            $anyShips++;
-            $shipHasMiss = false;
-            $seen = [];   // hex => có-dòng-CHƯA-CÓ-SỐ-HÓA-ĐƠN-trong-lô-này
+        $perShip = [];
+        foreach ($lines as $sid => $shipLines) {
+            $m = [];
             foreach ($shipLines as $l) {
                 $hex = $idToHex[$l->cost_item_id] ?? '';
                 if ($hex === '') continue;
-                $miss = trim((string) $l->invoice_no) === '';   // thiếu số hóa đơn
-                if ($miss) $shipHasMiss = true;
-                if (! isset($seen[$hex])) $seen[$hex] = $miss;
-                elseif ($miss) $seen[$hex] = true;
+                $m[$hex] ??= ['present' => false, 'filled' => false];
+                $m[$hex]['present'] = true;
+                if (trim((string) $l->invoice_no) !== '') $m[$hex]['filled'] = true;
             }
-            if ($shipHasMiss) $missShips++;
-            foreach ($seen as $hex => $miss) {
-                $buckets[$hex] ??= ['hex' => $hex, 'total' => 0, 'miss' => 0];
-                $buckets[$hex]['total']++;
-                if ($miss) $buckets[$hex]['miss']++;
-            }
+            $perShip[$sid] = $m;
         }
-        $byColor = array_values($buckets);
+
+        $allHexes = array_values(array_unique(array_values($idToHex)));
+        $buckets = [];
+        foreach ($allHexes as $hex) $buckets[$hex] = ['hex' => $hex, 'total' => 0, 'miss' => 0];
+        $anyShips = 0; $missShips = 0;
+
+        foreach ($shipIds as $sid) {
+            $m = $perShip[$sid] ?? [];
+            $shipExpected = false; $shipMiss = false;
+            foreach ($allHexes as $hex) {
+                $isAuto  = isset($autoSet[$hex]);
+                $present = ! empty($m[$hex]['present']);
+                $filled  = ! empty($m[$hex]['filled']);
+                $expected = $isAuto ? true : $present;   // auto: mọi lô; thường: chỉ lô có dòng màu đó
+                if (! $expected) continue;
+                $buckets[$hex]['total']++;
+                $shipExpected = true;
+                if (! $filled) { $buckets[$hex]['miss']++; $shipMiss = true; }   // chưa điền số HĐ (hoặc chưa có dòng)
+            }
+            if ($shipExpected) $anyShips++;
+            if ($shipMiss) $missShips++;
+        }
+
+        $byColor = array_values(array_filter($buckets, fn ($b) => $b['total'] > 0));
         usort($byColor, fn ($a, $b) => ($b['miss'] - $a['miss']) ?: ($b['total'] - $a['total']));
 
         return ['anyShips' => $anyShips, 'missShips' => $missShips, 'byColor' => $byColor];
@@ -976,6 +1017,15 @@ trait HandlesShipments
             if ($apply('cost')) {
             $s->costLines()->delete();
             foreach (($data['cost']['items'] ?? []) as $i => $c) {
+                // "Bỏ trống không lưu": khoản auto/khoản trống (không tiền + không số HĐ + không người chi/ghi chú/nguồn)
+                // thì KHÔNG tạo dòng → tránh rác 0đ khi auto-hiện sẵn ở popup.
+                $amt = (int) round((float) $this->inMoney($c['amount'] ?? null));
+                $hasContent = $amt !== 0
+                    || trim((string) ($c['invoiceNo'] ?? '')) !== ''
+                    || trim((string) ($c['note'] ?? '')) !== ''
+                    || trim((string) ($c['payer'] ?? '')) !== ''
+                    || trim((string) ($c['src'] ?? '')) !== '';
+                if (! $hasContent) continue;
                 $s->costLines()->create([
                     'item'     => $this->str($c['item'] ?? null),
                     'amount'   => $this->inMoney($c['amount'] ?? null),

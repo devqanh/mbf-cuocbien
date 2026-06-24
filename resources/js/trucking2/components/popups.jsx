@@ -33,6 +33,14 @@ function CostPopup({ ship, patch, onSave, isDirty, onClose, cfg = {}, addCfg, ta
   const cc = calcCost(c);
   const items = c.items || [];
   const setItems = (arr) => setC({ items: arr });
+  // Khoản "tự hiện" (auto) chưa có dòng → thêm dòng RỖNG để hiện sẵn cho dễ điền (bỏ trống không lưu — backend bỏ qua).
+  const costAuto = cfg.costAuto || {};
+  const costColors = cfg.costColors || {};
+  const present = new Set(items.map((it) => it.item).filter(Boolean));
+  const autoRows = Object.keys(costAuto)
+    .filter((n) => costAuto[n] && !present.has(n))
+    .map((n, i) => ({ id: "auto-" + i, item: n, amount: 0, billable: false, color: costColors[n] || "", _auto: true }));
+  const displayItems = autoRows.length ? [...items, ...autoRows] : items;
   const dirty = !!(isDirty && isDirty(ship.id));
   const [saving, setSaving] = useState(false);
   const handleSave = () => { if (saving) return; setSaving(true); Promise.resolve(onSave && onSave()).then(() => onClose()).catch(() => setSaving(false)); };
@@ -81,7 +89,7 @@ function CostPopup({ ship, patch, onSave, isDirty, onClose, cfg = {}, addCfg, ta
         <MultiCombo values={ship.tags || []} onChange={(arr) => patch({ tags: arr })} options={tagOptions} placeholder="Thêm nhãn…" max={20} />
       </div>
 
-      <CostLineRows rows={items} onChange={setItems} options={costOpts} onCreate={addCostItem}
+      <CostLineRows rows={displayItems} onChange={setItems} options={costOpts} onCreate={addCostItem}
         payers={payerOpts} onCreatePayer={addPayer} prices={prices} costColors={cfg.costColors || {}} />
     </Modal>
   );
