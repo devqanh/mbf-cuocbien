@@ -841,4 +841,70 @@ trait HandlesPricingAndImport
         });
     }
 
+    /**
+     * Đọc BÁO GIÁ GỐC (sheet "import" — layout báo giá nhiều mục) → mảng dòng giá phẳng.
+     *  - Mục "2. DRAYAGE BY TRIP": Loại = Connect/Disconnect (theo tiêu đề 2.x.1/2.x.2),
+     *    Điểm Hạ = cảng (2.x: HAI PHONG/LACH HUYEN/ICD QV/ICD TP), KIND=C, FROM=D, TO1..4=E..H,
+     *    Distance=I, Transport fee 40/20 = J/K, Fuel fee 40/20 = L/M.
+     *  - Mục "3. BARGING BY TRIP" (3.1 DRY / 3.2 NOR): Loại=Non, KIND=DRY/NOR CONTAINER,
+     *    FROM=D, Điểm Hạ = điểm đến (TO cuối, thường H = HPP/LHP).
+     * Trả [] nếu không có sheet "import".
+     */
+    public function parseQuotationRows(string $path): array
+    {
+        $rd = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($path);
+        $rd->setReadDataOnly(true);
+        $ss = $rd->load($path);
+        $sh = null;
+        foreach ($ss->getSheetNames() as $n) if (mb_strtolower(trim($n)) === 'import') { $sh = $ss->getSheetByName($n); break; }
+        if (! $sh) return [];
+        $rows = $sh->toArray(null, true, false, false);
+        $num = fn ($v) => (int) preg_replace('/[^\d]/', '', (string) $v);
+        $T = fn ($r, $i) => trim((string) ($r[$i] ?? ''));
+        $mode = null; $loc = null; $conn = null; $kind = null; $out = [];
+        foreach ($rows as $r) {
+            $B = $T($r, 1); $C = $T($r, 2);
+            if (preg_match('/^\s*1\./', $B)) { $mode = 'skip'; continue; }
+            if (preg_match('/^\s*2\.\s*$/', $B)) { $mode = 'drayage'; $loc = null; $conn = null; continue; }
+            if ($mode !== null && preg_match('/^\s*2\.\d+\.?\s*$/', $B)) {   // mục cảng (2.x)
+                if (stripos($C, 'PORT') !== false || stripos($C, 'ICD') !== false) { $loc = trim(preg_replace('/\bPORT\b/i', '', $C)); $conn = null; }
+                else $loc = null;   // 2.5 DETENTION… → bỏ
+                continue;
+            }
+            if (preg_match('/^\s*2\.\d+\.\d+/', $B)) { $conn = stripos($C, 'DISCONNECT') !== false ? 'Disconnect' : (stripos($C, 'CONNECT') !== false ? 'Connect' : $conn); continue; }
+            if (preg_match('/^\s*3\.\s*$/', $B)) { $mode = 'barging'; $kind = null; continue; }
+            if (preg_match('/^\s*3\.1/', $B)) { $mode = 'barging'; $kind = 'DRY CONTAINER'; continue; }
+            if (preg_match('/^\s*3\.2/', $B)) { $mode = 'barging'; $kind = 'NOR CONTAINER'; continue; }
+            if (preg_match('/^\s*4\./', $B)) { $mode = 'skip'; continue; }
+            // dòng dữ liệu
+            $from = $T($r, 3);
+            if ($from === '' || strtoupper($from) === 'FROM' || strtoupper($C) === 'KIND') continue;
+            $t40 = $num($r[9] ?? ''); $t20 = $num($r[10] ?? '');
+            if ($t40 <= 0 && $t20 <= 0) continue;
+            if ($mode === 'drayage' && $loc && $conn) {
+                $out[] = ['conn' => $conn, 'loc' => $loc, 'kind' => $C, 'from' => $from, 'to1' => $T($r, 4), 'to2' => $T($r, 5), 'to3' => $T($r, 6), 'to4' => $T($r, 7), 'distance' => $num($r[8] ?? ''), 'transFee40' => $t40, 'transFee20' => $t20, 'fuelFee40' => $num($r[11] ?? ''), 'fuelFee20' => $num($r[12] ?? '')];
+            } elseif ($mode === 'barging' && $kind) {
+                $drop = $T($r, 7) ?: ($T($r, 6) ?: ($T($r, 5) ?: $T($r, 4)));
+                $out[] = ['conn' => 'Non', 'loc' => $drop, 'kind' => $kind, 'from' => $from, 'to1' => '', 'to2' => '', 'to3' => '', 'to4' => '', 'distance' => $num($r[8] ?? ''), 'transFee40' => $t40, 'transFee20' => $t20, 'fuelFee40' => $num($r[11] ?? ''), 'fuelFee20' => $num($r[12] ?? '')];
+            }
+        }
+        return $out;
+    }
+
+    /** Nhập báo giá gốc vào 1 BOOK: parse → thay toàn bộ (replace) hoặc gộp (merge) dòng giá. */
+    public function importQuotationToBook(int $bookId, string $path, bool $replace = true): array
+    {
+        $book = TruckingPriceBook::find($bookId);
+        if (! $book) return ['ok' => false, 'msg' => 'Bảng giá không tồn tại.'];
+        $rows = $this->parseQuotationRows($path);
+        if (! $rows) return ['ok' => false, 'msg' => "Không đọc được dòng giá nào — kiểm tra file có sheet 'import' đúng định dạng báo giá."];
+        $cust = TruckingCustomer::find($book->customer_id);
+        $res = $replace
+            ? $this->savePriceBookRows($bookId, $rows)
+            : $this->importPriceRows($cust?->name ?? '', $rows, false, $bookId);
+        $by = [];
+        foreach ($rows as $x) $by[$x['conn']] = ($by[$x['conn']] ?? 0) + 1;
+        return ['ok' => true, 'imported' => count($rows), 'by' => $by, 'priceList' => $res['priceList'] ?? $this->priceBookRows($bookId)];
+    }
+
 }

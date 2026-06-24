@@ -78,6 +78,19 @@ class PriceController extends BaseTruckingController
         return response()->json(['ok' => true] + $res);
     }
 
+    /** Nhập BÁO GIÁ GỐC (.xlsx, sheet 'import') vào 1 BOOK — tự chuẩn hóa layout báo giá. */
+    public function quoteImport(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'file'    => ['required', 'file', 'mimes:xlsx,xls'],
+            'book'    => ['required', 'integer'],
+            'replace' => ['nullable', 'boolean'],
+        ]);
+        $res = $this->svc->importQuotationToBook((int) $data['book'], $request->file('file')->getRealPath(), (bool) ($data['replace'] ?? true));
+
+        return response()->json($res);
+    }
+
     /** Copy dòng giá từ 1 BOOK khác sang BOOK đang chọn. */
     public function copy(Request $request): JsonResponse
     {

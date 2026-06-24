@@ -207,6 +207,7 @@ Route::middleware('auth')->group(function () {
         });
         Route::middleware('permission:prices.update')->group(function () {
             Route::post('/price-import',          [PriceController::class, 'import'])->name('priceImport');
+            Route::post('/price-quote-import',    [PriceController::class, 'quoteImport'])->name('priceQuoteImport');
             Route::post('/price-copy',            [PriceController::class, 'copy'])->name('priceCopy');
             Route::post('/price-books',           [PriceController::class, 'createBook'])->name('priceBookCreate');
             Route::put('/price-books/{book}',     [PriceController::class, 'updateBook'])->name('priceBookUpdate')->whereNumber('book');

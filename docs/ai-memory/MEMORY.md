@@ -38,4 +38,5 @@
 - [VietQR bank](vietqr-bank.md) — chọn NH lái xe từ API VietQR (lưu bin) qua banks.js; popup "chi cho lái" /lo-trinh hiện STK+copy+QR chuyển khoản (amount=tổng chi)
 - [Quản lý chi phí](cost-management-page.md) — trang /quan-ly-chi-phi gom mọi phiếu chi xe+tài sản (tabs/filter/search) duyệt-thanh toán-sửa-hủy tập trung; endpoint per-phiếu updateVehicleCost + tái dùng PayModal/CostModal
 - [Lọc địa điểm Lô hàng](lo-hang-location-filters.md) — /lo-hang lọc Nơi hạ/Nơi lấy theo KÝ HIỆU; Nơi lấy có Gồm/Loại trừ; lọc Ngày đóng hàng = gio_den_du_kien (1 ngày); + sà lan/perPage/bulk/xuất chưa-ra/nhãn-ở-Chi-phí
+- [Bảng giá theo khoảng ngày](price-books-by-date.md) — mỗi khách nhiều price book [from,to]; bảng kê định giá per-lô theo NGÀY cont ra; không khớp ngày → "chưa khớp bảng giá"
 - [Khoản chi phí auto + VAT](cost-item-auto-vat.md) — cờ "auto" (tự hiện popup + nhắc chưa-điền-số-HĐ mọi lô) và VAT% (chi phí net = số tiền ÷ (1+vat)) cho danh mục Khoản chi phí

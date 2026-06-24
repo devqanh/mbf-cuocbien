@@ -54,6 +54,26 @@ function BangGiaPage({ cfg, setBooks, api, routes }) {
       .catch(() => { setSaving(false); setMsg("Lưu lỗi kết nối"); });
   };
 
+  // ----- Nhập báo giá gốc (.xlsx) vào book đang chọn -----
+  const quoteRef = React.useRef(null);
+  const [importing, setImporting] = useState(false);
+  const onQuoteFile = async (e) => {
+    const f = e.target.files && e.target.files[0]; e.target.value = "";
+    if (!f || !curBook) return;
+    if (rows.length > 0) {
+      const ok = await window.confirmAction({ title: "Nhập báo giá gốc?", text: `Bảng giá đang chọn có <b>${rows.length}</b> dòng — nhập file sẽ <b>GHI ĐÈ</b> toàn bộ bằng dữ liệu trong file. Tiếp tục?`, confirmText: "Ghi đè bằng file", danger: true });
+      if (!ok) return;
+    }
+    setImporting(true); setMsg("");
+    try {
+      const fd = new FormData(); fd.append("file", f); fd.append("book", curBook.id); fd.append("replace", "1");
+      const res = await fetch(routes.priceQuoteImport, { method: "POST", headers: { Accept: "application/json", "X-CSRF-TOKEN": (window.__TRK || {}).csrf }, body: fd }).then((r) => r.json());
+      setImporting(false);
+      if (res && res.ok) { const pl = res.priceList || []; setRowsByBook((s) => ({ ...s, [curBook.id]: pl })); setDirtyBook(null); bumpCount(curBook.id, pl.length); const by = res.by || {}; setMsg(`Đã nhập ${res.imported} dòng (${Object.entries(by).map(([k, v]) => k + " " + v).join(", ")})`); }
+      else setMsg(res && res.msg ? res.msg : "Nhập lỗi");
+    } catch (er) { setImporting(false); setMsg("Nhập lỗi kết nối"); }
+  };
+
   // ----- CRUD book -----
   const [bm, setBm] = useState(null);   // {mode:'create'|'edit', id?, label, from, to}
   const submitBook = () => {
@@ -158,8 +178,14 @@ function BangGiaPage({ cfg, setBooks, api, routes }) {
                 <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
                   <div style={{ fontSize: 13, color: "var(--ink-3)" }}>Đang sửa: <b style={{ color: "var(--ink)" }}>{bookRange(curBook)}</b></div>
                   <div style={{ flex: 1 }} />
-                  {msg && <span style={{ fontSize: 12, fontWeight: 600, color: msg === "Đã lưu" ? "var(--good)" : "var(--danger)" }}>{msg}</span>}
+                  {msg && <span style={{ fontSize: 12, fontWeight: 600, color: /lỗi|không/i.test(msg) ? "var(--danger)" : "var(--good)" }}>{msg}</span>}
                   {dirtyBook === curBook.id && <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "var(--warn)" }}><span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--warn)" }} /> Chưa lưu</span>}
+                  <input ref={quoteRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={onQuoteFile} />
+                  <button type="button" onClick={() => quoteRef.current && quoteRef.current.click()} disabled={importing}
+                    title="Nhập từ file báo giá gốc (.xlsx, sheet 'import') — tự chuẩn hóa vào bảng giá này"
+                    style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", fontSize: 12.5, fontWeight: 600, borderRadius: 9, cursor: "pointer", border: "1px solid var(--accent-weak)", background: "var(--accent-weak-2)", color: "var(--accent)" }}>
+                    <i className="bi bi-filetype-xlsx" /> {importing ? "Đang nhập…" : "Nhập báo giá gốc"}
+                  </button>
                   <button type="button" onClick={saveBook} disabled={saving || dirtyBook !== curBook.id}
                     style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 15px", fontSize: 13, fontWeight: 600, borderRadius: 9, border: "none",
                       cursor: dirtyBook === curBook.id && !saving ? "pointer" : "default", color: dirtyBook === curBook.id && !saving ? "#fff" : "var(--ink-4)", background: dirtyBook === curBook.id && !saving ? "var(--accent)" : "var(--line-2)" }}>
