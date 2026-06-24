@@ -17,6 +17,25 @@ trait FormatsTruckingValues
         return ($v === '' || $v === null) ? null : $v;
     }
 
+    /**
+     * Chuẩn hóa Nhập/Xuất về ĐÚNG 1 trong "Nhập" / "Xuất" / "Khác" (NFC) để nút Seg
+     * (so khớp value === option) tô đậm được. Nhận MỌI cách viết: hoa/thường, có/không
+     * dấu, Unicode NFC/NFD — nên detect bằng tiền tố ASCII (nh/xu/kh) thay vì so chuỗi có dấu.
+     * Giá trị lạ → giữ nguyên (đã trim); rỗng → null.
+     */
+    private function canonIo(?string $v): ?string
+    {
+        $v = trim((string) $v);
+        if ($v === '') return null;
+        $l = mb_strtolower($v);
+        $hit = (str_starts_with($l, 'nh') || str_contains($l, 'import')) ? 'Nhập'
+            : ((str_starts_with($l, 'xu') || str_contains($l, 'export')) ? 'Xuất'
+            : ((str_starts_with($l, 'kh') || str_contains($l, 'other')) ? 'Khác' : null));
+        if ($hit === null) return $v;
+        // Bảo đảm NFC để khớp byte với literal phía frontend (nếu thiếu ext intl thì literal ở đây đã là NFC).
+        return class_exists('\Normalizer') ? \Normalizer::normalize($hit, \Normalizer::FORM_C) : $hit;
+    }
+
     /** Chuỗi chữ số/tiền (frontend) → số nguyên DB (null nếu rỗng). */
     private function inMoney(mixed $v): ?int
     {

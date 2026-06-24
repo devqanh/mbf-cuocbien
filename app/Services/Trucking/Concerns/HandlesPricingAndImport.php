@@ -542,9 +542,9 @@ trait HandlesPricingAndImport
                 if (! isset($whMap[mb_strtolower($seg)])) $reasons[] = "Kho “{$seg}” chưa có trong danh mục kho";
             }
 
-            // NHẬP/XUẤT — nếu có nhập, chỉ nhận Nhập / Xuất (chuẩn hóa hoa→thường, GIỮ dấu)
+            // NHẬP/XUẤT — nhận MỌI cách viết (hoa/thường, có/không dấu, NFC/NFD); detect tiền tố ASCII nh/xu
             $io = mb_strtolower(trim((string) ($row['io'] ?? '')));
-            if ($io !== '' && ! (str_contains($io, 'nhập') || str_contains($io, 'xuất') || str_contains($io, 'import') || str_contains($io, 'export')))
+            if ($io !== '' && ! (str_starts_with($io, 'nh') || str_starts_with($io, 'xu') || str_starts_with($io, 'kh') || str_contains($io, 'import') || str_contains($io, 'export') || str_contains($io, 'other')))
                 $reasons[] = 'NHẬP/XUẤT “' . trim((string) $row['io']) . '” không hợp lệ (chỉ nhận Nhập hoặc Xuất)';
 
             // Ngày / giờ đến dự kiến + cắt máng — nếu có nhập phải đúng định dạng

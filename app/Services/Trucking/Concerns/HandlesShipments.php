@@ -961,7 +961,7 @@ trait HandlesShipments
             $cols = [
                 'booking'      => ['booking', $this->str($data['booking'] ?? null)],
                 'inv'          => ['inv', $this->str($data['inv'] ?? null)],
-                'io'           => ['io', $this->str($data['io'] ?? null)],
+                'io'           => ['io', $this->canonIo($data['io'] ?? null)],
                 'cru'          => ['cru', ! empty($data['cru'])],
                 'isBarge'      => ['is_barge', ! empty($data['isBarge'])],
                 'bargeCont'    => ['barge_cont', $this->str($data['bargeCont'] ?? null)],
