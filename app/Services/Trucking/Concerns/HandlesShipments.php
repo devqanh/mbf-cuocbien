@@ -112,7 +112,8 @@ trait HandlesShipments
      */
     public function pagedShipments(string $sheet, array $p): array
     {
-        $perPage = 20;
+        // Số lô / trang: cho người dùng chọn (whitelist chống lạm dụng), mặc định 20.
+        $perPage = in_array((int) ($p['perPage'] ?? 20), [20, 50, 100, 200], true) ? (int) $p['perPage'] : 20;
         $page    = max(1, (int) ($p['page'] ?? 1));
         $q       = trim((string) ($p['q'] ?? ''));
         $filter  = (string) ($p['filter'] ?? 'all');

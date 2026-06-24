@@ -39,6 +39,7 @@ function ShipmentsApp() {
   const [qDeb, setQDeb] = useState(_initSp.get("q") || "");   // q sau debounce (param thật gửi server)
   const pendingOpen = useRef(_initSp.get("open"));            // truthy → tự mở popup dòng đầu sau khi tải lọc
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(P0.perPage || 20);   // số lô / trang (chọn được)
   const [filter, setFilter] = useState("all");
   // Bộ lọc theo "follow": 'all' | 'any' | 'missing' | '#hex' (lọc theo màu cụ thể)
   const [followFilter, setFollowFilter] = useState("all");
@@ -73,6 +74,7 @@ function ShipmentsApp() {
     const pg = over && over.page != null ? over.page : page;
     const p = new URLSearchParams();
     p.set("page", pg);
+    if (perPage && perPage !== 20) p.set("perPage", perPage);
     if (qDeb.trim()) p.set("q", qDeb.trim());
     if (filter !== "all") p.set("filter", filter);
     if (followFilter !== "all") p.set("follow", followFilter);
@@ -121,7 +123,7 @@ function ShipmentsApp() {
   useEffect(() => {
     if (skipFirst.current) { skipFirst.current = false; return; }
     load();
-  }, [page, qDeb, filter, followFilter, toLocSel, toMode, fromLocSel, fromMode, denDate, tagSel, sort]);
+  }, [page, perPage, qDeb, filter, followFilter, toLocSel, toMode, fromLocSel, fromMode, denDate, tagSel, sort]);
   // Mở từ Lộ trình/Bảng kê (?q/?open): boot là danh sách CHƯA lọc → tải lại theo q ngay + tự mở popup.
   useEffect(() => { if (_initSp.get("q") || _initSp.get("open")) { skipFirst.current = false; load(); } }, []);
 
@@ -359,6 +361,7 @@ function ShipmentsApp() {
   };
 
   const toggleSort = (key) => { setSort((s) => s.key === key ? { key, dir: -s.dir } : { key, dir: 1 }); setPage(1); };
+  const setPerPageP = (n) => { setPerPage(n); setPage(1); };   // đổi số/trang → về trang 1
   const setFilterP = (f) => { setFilter(f); setPage(1); };
   const setFollowP = (f) => { setFollowFilter(f); setPage(1); };
   const setToLocP = (arr) => { setToLocSel(arr); setPage(1); };   // chọn nhiều ký hiệu nơi hạ (OR)
@@ -528,6 +531,15 @@ function ShipmentsApp() {
             <button type="button" onClick={() => setSort({ key: "default", dir: 1 })}
               style={{ fontSize: 12, color: "var(--accent)", background: "transparent", border: "none", cursor: "pointer", fontWeight: 600 }}>↺ Bỏ sắp xếp</button>
           )}
+          {/* Số lô / trang */}
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--ink-4)" }}>
+            Hiện
+            <select value={perPage} onChange={(e) => setPerPageP(Number(e.target.value))}
+              style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", border: "1px solid var(--line)", borderRadius: 8, padding: "5px 7px", background: "#fff", cursor: "pointer", outline: "none" }}>
+              {[20, 50, 100, 200].map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+            lô/trang
+          </label>
           <span style={{ fontSize: 12, color: "var(--ink-4)" }}>{pageInfo.total} lô · bấm tiêu đề cột để sắp xếp</span>
         </div>
 
