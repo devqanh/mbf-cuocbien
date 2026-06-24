@@ -1,6 +1,6 @@
 import React from "react";
 const { useState, useMemo, useEffect, useRef } = React;
-import { I, fmtVND, fmtShort, fmtDate, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, MultiCombo, useIsMobile, DateField } from "@trk/lib.jsx";
+import { I, fmtVND, fmtShort, fmtDate, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, Combo, MultiCombo, useIsMobile, DateField } from "@trk/lib.jsx";
 import { CostPopup, InfoPopup, colorHex } from "@trk/pop.jsx";
 import { SortBtn, CellBtn, Badge, EditCell, TH, TD } from "@trk/ui.jsx";
 import { loCountOf, parseImportRows, buildTemplateWb } from "./excel.js";
@@ -904,19 +904,11 @@ function ShipmentsApp() {
           <div style={{ padding: "14px 0 6px", display: "flex", flexDirection: "column", gap: 14 }}>
             <label style={{ display: "block" }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-3)", marginBottom: 5 }}><i className="bi bi-geo-alt-fill" /> Nơi hạ (cảng)</div>
-              <select value={bulkTo} onChange={(e) => setBulkTo(e.target.value)}
-                style={{ width: "100%", fontSize: 14, padding: "9px 11px", border: "1px solid var(--line)", borderRadius: 9, background: "#fff", cursor: "pointer", outline: "none" }}>
-                <option value="">— Giữ nguyên —</option>
-                {locCodeList().map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
+              <Combo value={bulkTo} onChange={setBulkTo} options={locCodeList().map((c) => ({ value: c, label: c }))} placeholder="— Giữ nguyên — (gõ để tìm)" clearable strict />
             </label>
             <label style={{ display: "block" }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-3)", marginBottom: 5 }}><i className="bi bi-water" /> Nơi hạ sà lan (điểm đến)</div>
-              <select value={bulkBargeDrop} onChange={(e) => setBulkBargeDrop(e.target.value)}
-                style={{ width: "100%", fontSize: 14, padding: "9px 11px", border: "1px solid var(--line)", borderRadius: 9, background: "#fff", cursor: "pointer", outline: "none" }}>
-                <option value="">— Giữ nguyên —</option>
-                {["HPP", "LHP"].map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
+              <Combo value={bulkBargeDrop} onChange={setBulkBargeDrop} options={["HPP", "LHP"].map((c) => ({ value: c, label: c }))} placeholder="— Giữ nguyên —" clearable strict />
               <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 5, lineHeight: 1.5 }}>Chọn nơi hạ sà lan = các lô tự đi sà lan; loại DRY/NOR suy từ Loại cont từng lô.</div>
             </label>
           </div>

@@ -29,6 +29,10 @@ UI: InfoPopup khu **"Phân loại & tùy chọn"** còn 2 toggle CRU / Thuê xe 
 
 **Xuất Excel /lo-hang:** popup có tùy chọn **"Chỉ xuất cont chưa ra"** → fetch `shipmentsPage?all=1&filter=notout` (server áp đúng quy tắc tab Chưa ra = chưa có gio_xe_ra). Lọc ngày = Giờ đến kế hoạch (expFrom/expTo).
 
+**Số lô/trang:** select 20/50/100/200 ở thanh lọc → param `perPage` (pagedShipments whitelist, mặc định 20); đổi → về trang 1. LƯU Ý cú pháp: tính `$pp` 1 lần rồi so whitelist (đừng đọc lại `$p['perPage']` ở nhánh true → Undefined array key).
+
+**Thao tác hàng loạt /lo-hang:** checkbox từng dòng (desktop + card) + "chọn cả trang" ở header (bỏ qua dòng `tmp` mới). Thanh "Đã chọn N lô · Thao tác hàng loạt · Bỏ chọn". Popup (tạm thời) chỉ 2 ô **Nơi hạ (cảng)** + **Nơi hạ sà lan (HPP/LHP)**, để trống = giữ nguyên. POST `trucking2.shipments.bulkUpdate` (`/shipments/bulk`, perm shipments.update) → `bulkUpdateShipments($ids,$data)` tái dùng `saveShipment($data,$sheet,$s,$only)` với `$only` = field CÓ giá trị (bỏ trống không đụng) → hưởng đăng ký địa điểm + suy is_barge/barge_cont + recompute. Test transaction-rollback PASS.
+
 **Field lô mới (cùng đợt):** `cost_lines.invoice_no` (Số hóa đơn từng khoản ở popup Chi phí); `shipments.info_note` (textarea Ghi chú lô, tách khỏi `ghi_chu` kế toán). **"Theo dõi" (follow)** nay phát hiện "Chưa có số HĐ" = khoản gắn màu theo dõi mà `invoice_no` trống (TRƯỚC: xét tiền=0) — áp ở follow=missing + followStats + chấm "!" CostLineRows.
 
 Liên quan [[coded-catalog-edit]], [[ra-status-rule]], [[trucking-report-schema]].
