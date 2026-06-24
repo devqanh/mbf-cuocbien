@@ -20,6 +20,7 @@ use App\Http\Controllers\Trucking\PriceController;
 use App\Http\Controllers\Trucking\ShipmentController as TruckingShipmentController;
 use App\Http\Controllers\Trucking\SpendRequestController;
 use App\Http\Controllers\Trucking\StatementController;
+use App\Http\Controllers\Trucking\ExtStatementController;
 use App\Http\Controllers\Trucking\TrackingController;
 use App\Http\Controllers\Trucking\TripCostController;
 use App\Http\Controllers\Trucking\ReportController;
@@ -235,6 +236,24 @@ Route::middleware('auth')->group(function () {
         });
         Route::middleware('permission:statements.delete')->group(function () {
             Route::delete('/statements/{statement}', [StatementController::class, 'destroy'])->name('statements.destroy');
+        });
+
+        // --- Bảng kê xe ngoài (phải trả nhà xe thuê) ---
+        Route::middleware('permission:extStatements.view')->group(function () {
+            Route::get('/bang-ke-xe-ngoai',                 [ExtStatementController::class, 'index'])->name('extStatements');
+            Route::get('/bang-ke-xe-ngoai/tao',             [ExtStatementController::class, 'create'])->name('extStatements.create');
+            Route::get('/ext-statement-candidates',         [ExtStatementController::class, 'candidates'])->name('extStatements.candidates');
+            Route::get('/ext-statement-list',               [ExtStatementController::class, 'list'])->name('extStatements.list');
+            Route::get('/bang-ke-xe-ngoai/{extStatement}',  [ExtStatementController::class, 'view'])->name('extStatements.view');
+        });
+        Route::middleware('permission:extStatements.create')->group(function () {
+            Route::post('/ext-statements', [ExtStatementController::class, 'store'])->name('extStatements.store');
+        });
+        Route::middleware('permission:extStatements.update')->group(function () {
+            Route::put('/ext-statements/{extStatement}', [ExtStatementController::class, 'update'])->name('extStatements.update');
+        });
+        Route::middleware('permission:extStatements.delete')->group(function () {
+            Route::delete('/ext-statements/{extStatement}', [ExtStatementController::class, 'destroy'])->name('extStatements.destroy');
         });
 
         // --- Cài đặt Trucking (danh mục, khách hàng, cấu hình) ---

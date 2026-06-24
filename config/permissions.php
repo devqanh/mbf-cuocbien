@@ -48,6 +48,12 @@ return [
             'color'       => '#3aa0ff',
             'description' => 'Bảng kê cần thu — tạo/sửa/xóa, xuất Excel theo mẫu',
         ],
+        'extStatements' => [
+            'label'       => 'Bảng kê xe ngoài',
+            'icon'        => 'truck',
+            'color'       => '#e0668a',
+            'description' => 'Bảng kê phải trả nhà xe thuê — gom lô theo nhà xe + kỳ, theo dõi công nợ',
+        ],
         'settings' => [
             'label'       => 'Cài đặt Trucking',
             'icon'        => 'sliders',
@@ -118,6 +124,11 @@ return [
         'statements.create' => ['label' => 'Tạo bảng kê',  'desc' => 'Tạo bảng kê mới từ các lô hàng'],
         'statements.update' => ['label' => 'Sửa bảng kê',  'desc' => 'Cập nhật / tính lại bảng kê đã lưu'],
         'statements.delete' => ['label' => 'Xoá bảng kê',  'desc' => 'Xoá bảng kê khỏi hệ thống'],
+
+        'extStatements.view'   => ['label' => 'Xem bảng kê xe ngoài',  'desc' => 'Xem danh sách & chi tiết bảng kê phải trả nhà xe thuê'],
+        'extStatements.create' => ['label' => 'Tạo bảng kê xe ngoài',  'desc' => 'Tạo bảng kê xe ngoài mới từ các lô đã thuê xe'],
+        'extStatements.update' => ['label' => 'Sửa bảng kê xe ngoài',  'desc' => 'Cập nhật bảng kê xe ngoài + đợt thanh toán cho nhà xe'],
+        'extStatements.delete' => ['label' => 'Xoá bảng kê xe ngoài',  'desc' => 'Xoá bảng kê xe ngoài khỏi hệ thống'],
 
         'settings.view'   => ['label' => 'Xem cài đặt Trucking', 'desc' => 'Xem danh mục, khách hàng, đội xe, cấu hình VAT/free-time'],
         'settings.update' => ['label' => 'Sửa cài đặt Trucking', 'desc' => 'Sửa danh mục, khách hàng, đội xe, VAT/free-time'],

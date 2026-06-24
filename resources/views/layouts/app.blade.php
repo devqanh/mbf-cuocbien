@@ -41,8 +41,8 @@
             <div class="collapse navbar-collapse app-nav" id="mainNav">
                 <ul class="navbar-nav me-auto">
                     {{-- Lô hàng = dropdown gom: Lô hàng · Lộ trình · Bảng kê (rút gọn menu chính) --}}
-                    @canany(['shipments.view', 'statements.view'])
-                    @php $loActive = request()->routeIs('trucking2.shipments') || request()->routeIs('trucking2.loTrinh') || request()->routeIs('trucking2.statements'); @endphp
+                    @canany(['shipments.view', 'statements.view', 'extStatements.view'])
+                    @php $loActive = request()->routeIs('trucking2.shipments') || request()->routeIs('trucking2.loTrinh') || request()->routeIs('trucking2.statements') || request()->routeIs('trucking2.extStatements'); @endphp
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle {{ $loActive ? 'active' : '' }}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                             <i class="bi bi-box-seam"></i> Lô hàng
@@ -54,6 +54,9 @@
                             @endcan
                             @can('statements.view')
                             <li><a class="dropdown-item {{ request()->routeIs('trucking2.statements') ? 'active' : '' }}" href="{{ route('trucking2.statements') }}"><i class="bi bi-receipt me-2"></i> Bảng kê</a></li>
+                            @endcan
+                            @can('extStatements.view')
+                            <li><a class="dropdown-item {{ request()->routeIs('trucking2.extStatements') ? 'active' : '' }}" href="{{ route('trucking2.extStatements') }}"><i class="bi bi-cash-coin me-2"></i> Bảng kê xe ngoài</a></li>
                             @endcan
                         </ul>
                     </li>
