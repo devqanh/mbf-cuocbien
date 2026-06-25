@@ -45,7 +45,11 @@
     .ke-print { position: absolute !important; left: 0; top: 0; width: 100%; box-shadow: none !important; max-height: none !important; border-radius: 0 !important; }
     .ke-noprint { display: none !important; }
     .ke-printonly { display: inline !important; }
+    .ke-zebra > td { background: #fff !important; }   /* in: bỏ nền xen kẽ cho sạch */
   }
+  /* Bảng kê: phân biệt rõ TỪNG LÔ — nền xen kẽ + vạch ngăn đậm cuối mỗi lô */
+  .ke-zebra > td { background: #f6f8fb; }
+  .ke-lo-end > td { border-bottom: 1.5px solid var(--line) !important; }
   @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
   @keyframes trk-spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }
   /* Input ngày/giờ Flatpickr (DateField/DTField) — đồng bộ với các field khác */

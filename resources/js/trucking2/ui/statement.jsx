@@ -212,7 +212,7 @@ function StatementForm({ cfg, onCancel, onSaved }) {
             {!loading && all.map((x, i) => {
               const on = picked[x.id] !== false;
               return (
-                <tr key={x.id} style={{ opacity: on ? 1 : 0.4 }}>
+                <tr key={x.id} className={(i % 2 ? "ke-zebra " : "") + "ke-lo-end"} style={{ opacity: on ? 1 : 0.4 }}>
                   <td className="ke-noprint" style={{ textAlign: "center", padding: "8px", borderBottom: "1px solid var(--line-2)" }}>
                     <input type="checkbox" checked={on} onChange={(e) => setPicked((p) => ({ ...p, [x.id]: e.target.checked }))} style={{ width: 16, height: 16, accentColor: "var(--accent)", cursor: "pointer" }} />
                   </td>
@@ -377,7 +377,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {} }) {
               const diff = d && d.found && (d.phaiThu || 0) !== (l.phaiThu || 0);
               return (
               <React.Fragment key={l.id}>
-              <tr>
+              <tr className={(i % 2 ? "ke-zebra " : "") + (d ? "" : "ke-lo-end")}>
                 <td className="tnum" style={{ textAlign: "center", padding: "8px", borderBottom: d ? "none" : "1px solid var(--line-2)", color: "var(--ink-4)", verticalAlign: "top" }}>{i + 1}</td>
                 <td style={{ padding: "8px", borderBottom: d ? "none" : "1px solid var(--line-2)", verticalAlign: "top" }}><div style={{ fontWeight: 600 }} className="tnum">{l.booking || "—"}</div><div style={{ fontSize: 11, color: "var(--ink-4)" }}>{l.sheet} · {l.io}</div></td>
                 <td style={{ padding: "8px", borderBottom: d ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top" }}>{l.from} → {l.to}<div style={{ fontSize: 11, color: "var(--ink-4)" }} className="tnum">{(ROUTES_TRK.loHang && l.contNo)
@@ -409,7 +409,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {} }) {
                 </>); })()}
               </tr>
               {d && d.found && (
-                <tr>
+                <tr className={(i % 2 ? "ke-zebra " : "") + "ke-lo-end"}>
                   <td style={{ borderBottom: "1px solid var(--line-2)" }}></td>
                   <td colSpan={7} style={{ padding: "0 8px 9px", borderBottom: "1px solid var(--line-2)" }}>
                     {/* LỘ TRÌNH lô (ĐI → NHÀ MÁY → HẠ, theo ký hiệu) — để kế toán dò bảng giá */}
@@ -459,7 +459,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {} }) {
                 </tr>
               )}
               {d && !d.found && (
-                <tr><td style={{ borderBottom: "1px solid var(--line-2)" }}></td><td colSpan={7} style={{ padding: "0 8px 9px", borderBottom: "1px solid var(--line-2)", fontSize: 11.5, color: "var(--ink-4)" }}>Lô không còn trong hệ thống — giữ số đã lưu, không tính lại được.</td></tr>
+                <tr className={(i % 2 ? "ke-zebra " : "") + "ke-lo-end"}><td style={{ borderBottom: "1px solid var(--line-2)" }}></td><td colSpan={7} style={{ padding: "0 8px 9px", borderBottom: "1px solid var(--line-2)", fontSize: 11.5, color: "var(--ink-4)" }}>Lô không còn trong hệ thống — giữ số đã lưu, không tính lại được.</td></tr>
               )}
               </React.Fragment>
             );})}
