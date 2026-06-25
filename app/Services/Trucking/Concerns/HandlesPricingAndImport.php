@@ -850,13 +850,17 @@ trait HandlesPricingAndImport
      *    FROM=D, Điểm Hạ = điểm đến (TO cuối, thường H = HPP/LHP).
      * Trả [] nếu không có sheet "import".
      */
-    public function parseQuotationRows(string $path): array
+    public function parseQuotationRows(string $path, ?string $sheet = null): array
     {
         $rd = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($path);
         $rd->setReadDataOnly(true);
         $ss = $rd->load($path);
         $sh = null;
-        foreach ($ss->getSheetNames() as $n) if (mb_strtolower(trim($n)) === 'import') { $sh = $ss->getSheetByName($n); break; }
+        if ($sheet !== null && $sheet !== '') {
+            $sh = $ss->getSheetByName($sheet);   // sheet do user chọn
+        } else {
+            foreach ($ss->getSheetNames() as $n) if (mb_strtolower(trim($n)) === 'import') { $sh = $ss->getSheetByName($n); break; }
+        }
         if (! $sh) return [];
         $rows = $sh->toArray(null, true, false, false);
         $num = fn ($v) => (int) preg_replace('/[^\d]/', '', (string) $v);
@@ -897,13 +901,62 @@ trait HandlesPricingAndImport
         return $out;
     }
 
+    /** Danh sách sheet trong 1 file Excel (cho user chọn). */
+    public function quotationSheetNames(string $path): array
+    {
+        try {
+            $rd = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($path);
+            $rd->setReadDataOnly(true);
+            return $rd->load($path)->getSheetNames();
+        } catch (\Throwable $e) { return []; }
+    }
+
+    /**
+     * KIỂM TRA (dry-run) báo giá gốc: parse sheet đã chọn → BÁO CÁO (không ghi DB).
+     * Trả sheets (để FE chọn), rows (giữ lại để Import không phải parse/upload lại) + tổng hợp.
+     */
+    public function validateQuotation(string $path, ?string $sheet = null): array
+    {
+        $sheets = $this->quotationSheetNames($path);
+        if (! $sheets) return ['ok' => false, 'sheets' => [], 'msg' => 'Không đọc được file Excel.'];
+        // sheet mặc định: ưu tiên 'import', không có thì sheet đầu.
+        $pick = $sheet;
+        if ($pick === null || $pick === '') {
+            foreach ($sheets as $n) if (mb_strtolower(trim($n)) === 'import') { $pick = $n; break; }
+            $pick ??= $sheets[0];
+        }
+        $rows = in_array($pick, $sheets, true) ? $this->parseQuotationRows($path, $pick) : [];
+        // Tổng hợp báo cáo
+        $by = ['Connect' => 0, 'Disconnect' => 0, 'Non' => 0];
+        $kinds = []; $locs = [];
+        foreach ($rows as $x) {
+            $by[$x['conn']] = ($by[$x['conn']] ?? 0) + 1;
+            $k = $x['kind'] !== '' ? $x['kind'] : '(trống)'; $kinds[$k] = ($kinds[$k] ?? 0) + 1;
+            if ($x['loc'] !== '') $locs[$x['loc']] = true;
+        }
+        $warnings = [];
+        if (! $rows) $warnings[] = "Sheet '{$pick}' không có dòng giá hợp lệ — chọn đúng sheet báo giá (thường tên 'import').";
+        foreach ($rows as $x) { if ($x['loc'] === '' || $x['from'] === '') { $warnings[] = 'Có dòng thiếu Điểm hạ/FROM.'; break; } }
+        return [
+            'ok'      => count($rows) > 0,
+            'sheets'  => array_values($sheets),
+            'sheet'   => $pick,
+            'total'   => count($rows),
+            'by'      => $by,
+            'kinds'   => collect($kinds)->map(fn ($v, $k) => ['kind' => $k, 'count' => $v])->values()->all(),
+            'locs'    => array_keys($locs),
+            'warnings' => array_values(array_unique($warnings)),
+            'rows'    => $rows,   // FE giữ để Import (không parse lại)
+        ];
+    }
+
     /** Nhập báo giá gốc vào 1 BOOK: parse → thay toàn bộ (replace) hoặc gộp (merge) dòng giá. */
-    public function importQuotationToBook(int $bookId, string $path, bool $replace = true): array
+    public function importQuotationToBook(int $bookId, string $path, bool $replace = true, ?string $sheet = null): array
     {
         $book = TruckingPriceBook::find($bookId);
         if (! $book) return ['ok' => false, 'msg' => 'Bảng giá không tồn tại.'];
-        $rows = $this->parseQuotationRows($path);
-        if (! $rows) return ['ok' => false, 'msg' => "Không đọc được dòng giá nào — kiểm tra file có sheet 'import' đúng định dạng báo giá."];
+        $rows = $this->parseQuotationRows($path, $sheet);
+        if (! $rows) return ['ok' => false, 'msg' => "Không đọc được dòng giá nào — kiểm tra sheet đúng định dạng báo giá."];
         $cust = TruckingCustomer::find($book->customer_id);
         $res = $replace
             ? $this->savePriceBookRows($bookId, $rows)

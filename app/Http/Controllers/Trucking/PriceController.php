@@ -78,15 +78,26 @@ class PriceController extends BaseTruckingController
         return response()->json(['ok' => true] + $res);
     }
 
-    /** Nhập BÁO GIÁ GỐC (.xlsx, sheet 'import') vào 1 BOOK — tự chuẩn hóa layout báo giá. */
+    /** KIỂM TRA (dry-run) báo giá gốc: chọn sheet → báo cáo + rows (KHÔNG ghi DB). */
+    public function quoteValidate(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'file'  => ['required', 'file', 'mimes:xlsx,xls'],
+            'sheet' => ['nullable', 'string'],
+        ]);
+        return response()->json($this->svc->validateQuotation($request->file('file')->getRealPath(), $data['sheet'] ?? null));
+    }
+
+    /** Nhập BÁO GIÁ GỐC (.xlsx) vào 1 BOOK — tự chuẩn hóa layout báo giá (chọn sheet). */
     public function quoteImport(Request $request): JsonResponse
     {
         $data = $request->validate([
             'file'    => ['required', 'file', 'mimes:xlsx,xls'],
             'book'    => ['required', 'integer'],
+            'sheet'   => ['nullable', 'string'],
             'replace' => ['nullable', 'boolean'],
         ]);
-        $res = $this->svc->importQuotationToBook((int) $data['book'], $request->file('file')->getRealPath(), (bool) ($data['replace'] ?? true));
+        $res = $this->svc->importQuotationToBook((int) $data['book'], $request->file('file')->getRealPath(), (bool) ($data['replace'] ?? true), $data['sheet'] ?? null);
 
         return response()->json($res);
     }

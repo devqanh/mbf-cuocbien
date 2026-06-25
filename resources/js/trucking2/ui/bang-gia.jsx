@@ -54,24 +54,47 @@ function BangGiaPage({ cfg, setBooks, api, routes }) {
       .catch(() => { setSaving(false); setMsg("Lưu lỗi kết nối"); });
   };
 
-  // ----- Nhập báo giá gốc (.xlsx) vào book đang chọn -----
+  // ----- Nhập báo giá gốc (.xlsx): popup chọn file → chọn sheet → KIỂM TRA (báo cáo) → Import -----
   const quoteRef = React.useRef(null);
-  const [importing, setImporting] = useState(false);
-  const onQuoteFile = async (e) => {
+  const [qm, setQm] = useState(null);   // {fileName, file, sheets[], sheet, report, checking, importing, err}
+  const csrf = (window.__TRK || {}).csrf;
+  const onQuoteFile = (e) => {
     const f = e.target.files && e.target.files[0]; e.target.value = "";
     if (!f || !curBook) return;
+    // Đọc tên sheet phía client (XLSX có sẵn trên trang) để chọn trước khi gửi.
+    let sheets = [];
+    try {
+      const rd = new FileReader();
+      rd.onload = () => {
+        try { const wb = window.XLSX.read(rd.result, { type: "array", bookSheets: true }); sheets = wb.SheetNames || []; } catch (er) { sheets = []; }
+        const def = sheets.find((s) => s.toLowerCase().trim() === "import") || sheets[0] || "";
+        setQm({ fileName: f.name, file: f, sheets, sheet: def, report: null, checking: false, importing: false, err: "" });
+      };
+      rd.readAsArrayBuffer(f);
+    } catch (er) { setQm({ fileName: f.name, file: f, sheets: [], sheet: "", report: null, checking: false, importing: false, err: "" }); }
+  };
+  const quoteValidate = async () => {
+    if (!qm || qm.checking) return;
+    setQm((q) => ({ ...q, checking: true, report: null, err: "" }));
+    try {
+      const fd = new FormData(); fd.append("file", qm.file); if (qm.sheet) fd.append("sheet", qm.sheet);
+      const r = await fetch(routes.priceQuoteValidate, { method: "POST", headers: { Accept: "application/json", "X-CSRF-TOKEN": csrf }, body: fd }).then((x) => x.json());
+      setQm((q) => ({ ...q, checking: false, report: r, sheet: r.sheet || q.sheet, sheets: (r.sheets && r.sheets.length) ? r.sheets : q.sheets, err: r && r.ok ? "" : (r.msg || "Sheet không có dòng giá hợp lệ") }));
+    } catch (er) { setQm((q) => ({ ...q, checking: false, err: "Lỗi kết nối khi kiểm tra" })); }
+  };
+  const quoteImport = async () => {
+    if (!qm || !qm.report || !qm.report.ok || qm.importing || !curBook) return;
     if (rows.length > 0) {
-      const ok = await window.confirmAction({ title: "Nhập báo giá gốc?", text: `Bảng giá đang chọn có <b>${rows.length}</b> dòng — nhập file sẽ <b>GHI ĐÈ</b> toàn bộ bằng dữ liệu trong file. Tiếp tục?`, confirmText: "Ghi đè bằng file", danger: true });
+      const ok = await window.confirmAction({ title: "Ghi đè bảng giá?", text: `Bảng giá đang chọn có <b>${rows.length}</b> dòng — nhập sẽ <b>GHI ĐÈ</b> toàn bộ bằng ${qm.report.total} dòng từ file. Tiếp tục?`, confirmText: "Ghi đè bằng file", danger: true });
       if (!ok) return;
     }
-    setImporting(true); setMsg("");
+    setQm((q) => ({ ...q, importing: true }));
     try {
-      const fd = new FormData(); fd.append("file", f); fd.append("book", curBook.id); fd.append("replace", "1");
-      const res = await fetch(routes.priceQuoteImport, { method: "POST", headers: { Accept: "application/json", "X-CSRF-TOKEN": (window.__TRK || {}).csrf }, body: fd }).then((r) => r.json());
-      setImporting(false);
-      if (res && res.ok) { const pl = res.priceList || []; setRowsByBook((s) => ({ ...s, [curBook.id]: pl })); setDirtyBook(null); bumpCount(curBook.id, pl.length); const by = res.by || {}; setMsg(`Đã nhập ${res.imported} dòng (${Object.entries(by).map(([k, v]) => k + " " + v).join(", ")})`); }
-      else setMsg(res && res.msg ? res.msg : "Nhập lỗi");
-    } catch (er) { setImporting(false); setMsg("Nhập lỗi kết nối"); }
+      const fd = new FormData(); fd.append("file", qm.file); fd.append("book", curBook.id); fd.append("sheet", qm.sheet || ""); fd.append("replace", "1");
+      const res = await fetch(routes.priceQuoteImport, { method: "POST", headers: { Accept: "application/json", "X-CSRF-TOKEN": csrf }, body: fd }).then((x) => x.json());
+      if (res && res.ok) { const pl = res.priceList || []; setRowsByBook((s) => ({ ...s, [curBook.id]: pl })); setDirtyBook(null); bumpCount(curBook.id, pl.length); const by = res.by || {}; setMsg(`Đã nhập ${res.imported} dòng (${Object.entries(by).map(([k, v]) => k + " " + v).join(", ")})`); setQm(null); }
+      else setQm((q) => ({ ...q, importing: false, err: res && res.msg ? res.msg : "Nhập lỗi" }));
+    } catch (er) { setQm((q) => ({ ...q, importing: false, err: "Lỗi kết nối khi nhập" })); }
   };
 
   // ----- CRUD book -----
@@ -181,10 +204,10 @@ function BangGiaPage({ cfg, setBooks, api, routes }) {
                   {msg && <span style={{ fontSize: 12, fontWeight: 600, color: /lỗi|không/i.test(msg) ? "var(--danger)" : "var(--good)" }}>{msg}</span>}
                   {dirtyBook === curBook.id && <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "var(--warn)" }}><span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--warn)" }} /> Chưa lưu</span>}
                   <input ref={quoteRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={onQuoteFile} />
-                  <button type="button" onClick={() => quoteRef.current && quoteRef.current.click()} disabled={importing}
-                    title="Nhập từ file báo giá gốc (.xlsx, sheet 'import') — tự chuẩn hóa vào bảng giá này"
+                  <button type="button" onClick={() => quoteRef.current && quoteRef.current.click()}
+                    title="Nhập từ file báo giá gốc (.xlsx) — chọn sheet, kiểm tra rồi mới import vào bảng giá này"
                     style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", fontSize: 12.5, fontWeight: 600, borderRadius: 9, cursor: "pointer", border: "1px solid var(--accent-weak)", background: "var(--accent-weak-2)", color: "var(--accent)" }}>
-                    <i className="bi bi-filetype-xlsx" /> {importing ? "Đang nhập…" : "Nhập báo giá gốc"}
+                    <i className="bi bi-filetype-xlsx" /> Nhập báo giá gốc
                   </button>
                   <button type="button" onClick={saveBook} disabled={saving || dirtyBook !== curBook.id}
                     style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 15px", fontSize: 13, fontWeight: 600, borderRadius: 9, border: "none",
@@ -231,6 +254,58 @@ function BangGiaPage({ cfg, setBooks, api, routes }) {
               </label>
             </div>
             <div style={{ fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.5 }}>Bảng kê sẽ lấy bảng giá phủ <b>ngày cont ra</b> của từng lô. Lô có ngày ngoài mọi bảng giá → "chưa khớp bảng giá".</div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Popup Nhập báo giá gốc: chọn sheet → KIỂM TRA (báo cáo) → Import */}
+      {qm && (
+        <Modal title="Nhập báo giá gốc" subtitle={qm.fileName ? ("File: " + qm.fileName) : "Chọn sheet, kiểm tra rồi mới import"} width={560} icon={<I.truck />}
+          onClose={() => setQm(null)}
+          footer={
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+              <span style={{ fontSize: 12, color: qm.err ? "var(--danger)" : "var(--ink-4)" }}>{qm.err || (qm.report && qm.report.ok ? "Đã kiểm tra — sẵn sàng import" : "Bấm Kiểm tra trước khi import")}</span>
+              <div style={{ display: "flex", gap: 10 }}>
+                <Btn onClick={() => setQm(null)}>Hủy</Btn>
+                <Btn onClick={quoteValidate} disabled={qm.checking}>{qm.checking ? "Đang kiểm tra…" : "Kiểm tra"}</Btn>
+                <Btn variant="primary" onClick={quoteImport} disabled={!(qm.report && qm.report.ok) || qm.importing}>{qm.importing ? "Đang nhập…" : "Import báo giá"}</Btn>
+              </div>
+            </div>
+          }>
+          <div style={{ padding: "14px 0 6px", display: "flex", flexDirection: "column", gap: 12 }}>
+            <label style={{ display: "block" }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-3)", marginBottom: 5 }}>Sheet dữ liệu</div>
+              <select value={qm.sheet} onChange={(e) => setQm((q) => ({ ...q, sheet: e.target.value, report: null, err: "" }))}
+                style={{ width: "100%", fontSize: 14, padding: "9px 11px", border: "1px solid var(--line)", borderRadius: 9, background: "#fff", cursor: "pointer", outline: "none" }}>
+                {(qm.sheets || []).map((s) => <option key={s} value={s}>{s}</option>)}
+                {!(qm.sheets || []).length && <option value="">(không đọc được sheet — vẫn bấm Kiểm tra)</option>}
+              </select>
+              <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 5 }}>Báo giá gốc thường ở sheet <b>import</b>. Bấm <b>Kiểm tra</b> để xem trước số dòng theo loại trước khi import.</div>
+            </label>
+
+            {qm.report && (
+              <div style={{ border: "1px solid " + (qm.report.ok ? "var(--accent-weak)" : "#f3c9c9"), background: qm.report.ok ? "var(--accent-weak-2)" : "#fce8e8", borderRadius: 10, padding: "12px 14px" }}>
+                {qm.report.ok ? (
+                  <>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: "var(--accent)", marginBottom: 8 }}><i className="bi bi-clipboard-check" /> Đọc được {qm.report.total} dòng giá từ sheet "{qm.report.sheet}"</div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                      {Object.entries(qm.report.by || {}).filter(([, v]) => v > 0).map(([k, v]) => (
+                        <span key={k} className="tnum" style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-2)", background: "#fff", border: "1px solid var(--line)", padding: "3px 9px", borderRadius: 999 }}>{k === "Non" ? "Sà lan (Non)" : k}: {v}</span>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>Điểm hạ: {(qm.report.locs || []).join(", ") || "—"}</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                      {(qm.report.kinds || []).map((k) => (
+                        <div key={k.kind} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--ink-2)" }}><span>{k.kind}</span><b className="tnum">{k.count}</b></div>
+                      ))}
+                    </div>
+                    {(qm.report.warnings || []).length > 0 && <div style={{ marginTop: 8, fontSize: 11.5, color: "#9a6700" }}>{qm.report.warnings.map((w, i) => <div key={i}><i className="bi bi-exclamation-triangle-fill" /> {w}</div>)}</div>}
+                  </>
+                ) : (
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--danger)" }}><i className="bi bi-x-octagon-fill" /> {qm.report.msg || (qm.report.warnings || [])[0] || "Sheet không có dòng giá hợp lệ — chọn sheet khác."}</div>
+                )}
+              </div>
+            )}
           </div>
         </Modal>
       )}
