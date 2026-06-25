@@ -292,8 +292,11 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
   const extHired = !!extLine;
   const setCostItems = (arr) => patch({ cost: { ...cost, items: arr } });
   const toggleExt = (on) => {
-    if (on && !extLine) setCostItems([...costItems, { id: Date.now() + Math.random(), src: "extTruck", item: "Cước xe ngoài", amount: "", payer: "Xe ngoài", date: "", billable: false, color: "", note: "" }]);
-    else if (!on && extLine) { setCostItems(costItems.filter((it) => it.src !== "extTruck")); patch({ extVendor: "" }); }   // bỏ tích → xóa nhà xe
+    if (on && !extLine) {
+      setCostItems([...costItems, { id: Date.now() + Math.random(), src: "extTruck", item: "Cước xe ngoài", amount: "", payer: "Xe ngoài", date: "", billable: false, color: "", note: "" }]);
+      // Tự chọn nhà xe ĐẦU TIÊN trong danh mục (nếu chưa chọn) → đỡ thao tác; user vẫn đổi được.
+      if (!String(ship.extVendor || "").trim() && (cfg.extVendors || []).length) patch({ extVendor: cfg.extVendors[0] });
+    } else if (!on && extLine) { setCostItems(costItems.filter((it) => it.src !== "extTruck")); patch({ extVendor: "" }); }   // bỏ tích → xóa nhà xe
   };
   const setExt = (np) => setCostItems(costItems.map((it) => (it.src === "extTruck" ? { ...it, ...np } : it)));
   // Phí thanh lý tờ khai (Hải Quan) → 1 dòng chi phí "Phí thanh lý tờ khai" (src=thanhLyFee) link sang Chi phí lô hàng
