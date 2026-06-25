@@ -30,7 +30,8 @@ const ST = {
 export function CostManagementApp() {
   const isMobile = useIsMobile();
   const canEdit = !!T.canEdit;
-  const costTypes = B.costTypes || [];
+  const costTypes = B.costTypes || [];              // loại chi phí xe
+  const assetCostTypes = B.assetCostTypes || [];    // loại chi phí tài sản
   const [status, setStatus] = useState("action");
   const [kind, setKind] = useState("all");
   const [q, setQ] = useState("");
@@ -139,7 +140,7 @@ export function CostManagementApp() {
           <div style={{ display: "flex", gap: 7, marginTop: 11, flexWrap: "wrap", paddingTop: 10, borderTop: "1px solid var(--line-2)" }}>
             {!row.approved && btn("Duyệt", "bi-check2-circle", () => doApprove(row), "primary")}
             {!row.paid && btn(row.approved ? "Thanh toán" : "Duyệt & chi", "bi-cash-coin", () => setPay(row), "good")}
-            {btn("Sửa", "bi-pencil", () => setEdit({ d: { ...row } }))}
+            {btn("Sửa", "bi-pencil", () => setEdit({ d: { ...row, kind: row.kindCost }, isAsset: row.kind === "asset" }))}
             {row.canCancel && btn("Hủy", "bi-x-circle", () => doCancel(row), "danger")}
           </div>
         )}
@@ -203,7 +204,7 @@ export function CostManagementApp() {
       </div>
 
       {pay && <PayModal row={pay} onConfirm={confirmPay} onClose={() => setPay(null)} />}
-      {edit && <CostModal data={edit.d} isNew={false} costTypes={costTypes}
+      {edit && <CostModal data={edit.d} isNew={false} costTypes={edit.isAsset ? assetCostTypes : costTypes}
         onUploadPhotos={uploadPhotos(edit.d.vehicleHashid)}
         onChange={(d) => setEdit((e) => ({ ...e, d }))} onSave={saveEdit} onClose={() => setEdit(null)} />}
     </div>

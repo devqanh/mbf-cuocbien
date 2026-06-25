@@ -248,7 +248,7 @@ trait HandlesVehicleDetail
     {
         return match ($section) {
             'usages'        => ['usages' => $this->usagesOut($v), 'drivers' => $this->driverOptions()],
-            'costs'         => ['costs' => $this->costsOut($v), 'costTypes' => $this->vehicleCostTypesOut()],
+            'costs'         => ['costs' => $this->costsOut($v), 'costTypes' => $this->costTypesForVehicle($v)],
             'depreciations' => ['depreciations' => $this->deprOut($v)],
             default         => [],
         };
@@ -259,13 +259,24 @@ trait HandlesVehicleDetail
         return TruckingVehicleCostType::orderBy('sort')->orderBy('name')->pluck('name')->all();
     }
 
+    public function assetCostTypesOut(): array
+    {
+        return \App\Models\TruckingAssetCostType::orderBy('sort')->orderBy('name')->pluck('name')->all();
+    }
+
+    /** Danh mục loại chi phí ĐÚNG NGUỒN: tài sản → "Loại chi phí tài sản"; xe → "Loại chi phí xe". */
+    public function costTypesForVehicle(TruckingVehicle $v): array
+    {
+        return ($v->kind === 'asset') ? $this->assetCostTypesOut() : $this->vehicleCostTypesOut();
+    }
+
     /** Chi tiết đầy đủ (base + 3 nhóm) — khi cần tất cả. */
     public function vehicleDetail(TruckingVehicle $v): array
     {
         return $this->vehicleBase($v) + [
             'usages'        => $this->usagesOut($v),
             'costs'         => $this->costsOut($v),
-            'costTypes'     => $this->vehicleCostTypesOut(),
+            'costTypes'     => $this->costTypesForVehicle($v),
             'depreciations' => $this->deprOut($v),
         ];
     }
@@ -316,7 +327,10 @@ trait HandlesVehicleDetail
                 foreach (TruckingVehicleCost::where('vehicle_id', '!=', $v->id)->where('invoice_no', 'like', 'PC-%')->pluck('invoice_no') as $no) $scan($no);
                 $nextN = $usedN ? max($usedN) : 0;
 
-                $typeId = TruckingVehicleCostType::pluck('id', 'name');
+                // Tham chiếu loại chi phí theo ĐÚNG NGUỒN: tài sản → catalog tài sản; xe → catalog xe.
+                $typeId = ($v->kind === 'asset')
+                    ? \App\Models\TruckingAssetCostType::pluck('id', 'name')
+                    : TruckingVehicleCostType::pluck('id', 'name');
                 // GIỮ LẠI người yêu cầu + trạng thái hủy qua delete+recreate (khớp theo id dòng cũ)
                 $preserve = $v->vehicleCosts()->get(['id', 'created_by', 'cancelled_at', 'cancelled_by', 'created_at', 'est_amount'])->keyBy('id');
                 $v->vehicleCosts()->delete();

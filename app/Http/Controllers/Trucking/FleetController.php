@@ -68,7 +68,8 @@ class FleetController extends BaseTruckingController
     public function costManagement()
     {
         return view('trucking2.quan-ly-chi-phi', $this->pageData([
-            'costTypes' => $this->svc->vehicleCostTypesOut(),
+            'costTypes'      => $this->svc->vehicleCostTypesOut(),   // mặc định (xe)
+            'assetCostTypes' => $this->svc->assetCostTypesOut(),     // dùng khi phiếu là tài sản
             'suppliers' => $this->svc->supplierSuggestions(),
             'initial'   => $this->svc->costManagementData(['status' => 'action', 'page' => 1]),
         ], 'fleet.manage', 'fleet.manage'));

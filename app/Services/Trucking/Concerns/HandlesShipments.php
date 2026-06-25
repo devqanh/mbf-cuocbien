@@ -75,6 +75,7 @@ trait HandlesShipments
             'salaryItems' => [TruckingSalaryItem::class, false, false,           false],
             'vehicleCostTypes' => [TruckingVehicleCostType::class, false, false,  false],
             'assetCategories'  => [TruckingAssetCategory::class,   false, false,  false],
+            'assetCostTypes'   => [\App\Models\TruckingAssetCostType::class, false, false, false],
             'extVendors'  => [TruckingExtVendor::class,  false, false,           false],
         ];
     }

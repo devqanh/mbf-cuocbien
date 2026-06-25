@@ -1009,10 +1009,19 @@ trait HandlesTripAndDrivers
             }
         }
 
-        // 3) Chi phí xe (vehicle_costs) theo spend_date
-        foreach (TruckingVehicleCost::with('vehicle:id,plate')->whereNotNull('spend_date')
+        // 3) Chi phí xe / tài sản (vehicle_costs) theo spend_date — NHÓM THEO THAM CHIẾU loại
+        //    chi phí (cost_type_id) phân giải theo ĐÚNG NGUỒN (xe → "Loại chi phí xe";
+        //    tài sản → "Loại chi phí tài sản"); fallback tên chuỗi khi chưa gắn danh mục.
+        $vehTypeName   = \App\Models\TruckingVehicleCostType::pluck('name', 'id');
+        $assetTypeName = \App\Models\TruckingAssetCostType::pluck('name', 'id');
+        foreach (TruckingVehicleCost::with('vehicle:id,plate,kind')->whereNotNull('spend_date')
             ->whereDate('spend_date', '>=', $s)->whereDate('spend_date', '<=', $e)->get() as $vc) {
-            $label = 'Chi phí xe' . (trim((string) $vc->name) !== '' ? ' · ' . trim((string) $vc->name) : '');
+            $isAsset = (($vc->vehicle?->kind) ?? 'vehicle') === 'asset';
+            $type = $vc->cost_type_id
+                ? ($isAsset ? ($assetTypeName[$vc->cost_type_id] ?? null) : ($vehTypeName[$vc->cost_type_id] ?? null))
+                : null;
+            $type  = $type ?: (trim((string) $vc->name) ?: null);
+            $label = ($isAsset ? 'Chi phí tài sản' : 'Chi phí xe') . ($type !== null ? ' · ' . $type : '');
             $addCat($label, $vc->amount); $addPlate($vc->vehicle?->plate ?? '—', $vc->amount);
         }
 

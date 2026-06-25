@@ -239,7 +239,12 @@ trait HandlesFleetAssets
         $amount   = $this->inMoney($in['amount'] ?? null) ?? 0;
         if ($amount <= 0) return ['ok' => false, 'message' => 'Số tiền thực tế phải lớn hơn 0.'];
         $name = $this->str($in['name'] ?? null) ?? $c->name;
-        $typeId = $name !== null ? \App\Models\TruckingVehicleCostType::where('name', $name)->value('id') : null;
+        // Tham chiếu loại chi phí theo ĐÚNG NGUỒN của phiếu (xe vs tài sản).
+        $isAsset = (($c->vehicle?->kind) ?? 'vehicle') === 'asset';
+        $typeId = $name !== null
+            ? ($isAsset ? \App\Models\TruckingAssetCostType::where('name', $name)->value('id')
+                        : \App\Models\TruckingVehicleCostType::where('name', $name)->value('id'))
+            : null;
         $c->forceFill([
             'name' => $name, 'cost_type_id' => $typeId,
             'kind' => ((($in['kind'] ?? $c->kind)) === 'recurring') ? 'recurring' : 'fixed',
