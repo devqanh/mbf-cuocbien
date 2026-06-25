@@ -8,15 +8,12 @@ const fmtBD = (s) => { if (!s) return ""; const m = /^(\d{4})-(\d{2})-(\d{2})/.e
 
 function PriceList({ rows = [], onChange, onImported, cfg = {}, customer, bookId = null }) {
   const T = window.__TRK || {}; const ROUTES = T.routes || {};
-  const [imp, setImp] = useState(null);   // {names:[], wb} sau khi đọc file
-  const [sheet, setSheet] = useState("");
   const [openKind, setOpenKind] = useState(null); // KIND đang mở (accordion); null = thu hết
   const [query, setQuery] = useState("");          // ô tra cứu tuyến
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [copySrc, setCopySrc] = useState("");       // khách NGUỒN để copy bảng giá
   const [copySrcBook, setCopySrcBook] = useState(""); // bảng giá (book) nguồn
-  const fileRef = React.useRef(null);
   const otherCustomers = (cfg.customers || []).filter((c) => c && c !== customer);
   const srcBooks = ((cfg.customerInfo || {})[copySrc] || {}).priceBooks || [];
   const bookOpt = (b) => { const r = (b.from || b.to) ? `${b.from ? fmtBD(b.from) : "…"}–${b.to ? fmtBD(b.to) : "…"}` : "Mọi ngày"; return { value: String(b.id), label: (b.label ? b.label + " · " : "") + r + ` (${b.count || 0})` }; };
@@ -50,47 +47,6 @@ function PriceList({ rows = [], onChange, onImported, cfg = {}, customer, bookId
   const blank = { distance: "", transFee40: "", transFee20: "", fuelFee40: "", fuelFee20: "" };
   const set = (id, np) => onChange(rows.map((e) => (e.id === id ? { ...e, ...np } : e)));
   const del = (id) => onChange(rows.filter((e) => e.id !== id));
-
-  // ---- Import Excel: đọc file → chọn sheet → parse → gọi API upsert ----
-  const onFile = (e) => {
-    const f = e.target.files && e.target.files[0]; e.target.value = "";
-    if (!f) return;
-    if (typeof XLSX === "undefined") { setMsg("Thư viện Excel chưa tải xong, thử lại."); return; }
-    setMsg("");
-    const rd = new FileReader();
-    rd.onload = () => { const wb = XLSX.read(rd.result, { type: "array" }); setImp({ names: wb.SheetNames, wb }); setSheet(wb.SheetNames[0] || ""); };
-    rd.readAsArrayBuffer(f);
-  };
-  const norm = (s) => String(s == null ? "" : s).trim().toLowerCase().replace(/\s+/g, " ");
-  const doImport = async () => {
-    if (!imp || !sheet) return;
-    if (!customer) { setMsg("Chọn một khách hàng trước khi import."); return; }
-    setBusy(true); setMsg("");
-    const aoa = XLSX.utils.sheet_to_json(imp.wb.Sheets[sheet], { header: 1, raw: true, defval: "" });
-    let hi = aoa.findIndex((r) => (r || []).some((c) => norm(c) === "loại" || norm(c) === "điểm hạ"));
-    if (hi < 0) hi = 0;
-    const header = (aoa[hi] || []).map(norm);
-    const idx = (...names) => { for (const n of names) { const i = header.indexOf(norm(n)); if (i >= 0) return i; } return -1; };
-    const C = { conn: idx("Loại"), loc: idx("Điểm Hạ"), kind: idx("KIND"), from: idx("FROM"), to1: idx("TO 1", "TO1"), to2: idx("TO 2", "TO2"), to3: idx("TO 3", "TO3"), to4: idx("TO 4", "TO4"), distance: idx("Distance (km)", "Distance", "KM"), transFee40: idx("Transport fee 40FT", "Transport fee 40"), transFee20: idx("Transport fee 20FT", "Transport fee 20"), fuelFee40: idx("Fuel fee 40FT", "Fuel fee 40"), fuelFee20: idx("Fuel fee 20FT", "Fuel fee 20") };
-    const num = (v) => String(v == null ? "" : v).replace(/[^\d]/g, "");
-    const txt = (v) => String(v == null ? "" : v).trim();
-    const out = [];
-    for (let r = hi + 1; r < aoa.length; r++) {
-      const row = aoa[r] || []; const g = (i) => (i >= 0 ? row[i] : "");
-      const connRaw = txt(g(C.conn)).toUpperCase(); const loc = txt(g(C.loc));
-      const from = txt(g(C.from));
-      if (!connRaw && !loc && !from) continue;
-      const conn = connRaw.includes("NON") ? "Non" : (connRaw.includes("DISCON") ? "Disconnect" : (connRaw.includes("CON") ? "Connect" : (connRaw || "Connect")));
-      out.push({ conn, loc, kind: txt(g(C.kind)), from, to1: txt(g(C.to1)), to2: txt(g(C.to2)), to3: txt(g(C.to3)), to4: txt(g(C.to4)), distance: num(g(C.distance)), transFee40: num(g(C.transFee40)), transFee20: num(g(C.transFee20)), fuelFee40: num(g(C.fuelFee40)), fuelFee20: num(g(C.fuelFee20)) });
-    }
-    if (!out.length) { setBusy(false); setMsg("Sheet không có dòng dữ liệu hợp lệ."); return; }
-    try {
-      const res = await fetch(ROUTES.priceImport, { method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json", "X-CSRF-TOKEN": T.csrf }, body: JSON.stringify({ customer, book: bookId, rows: out }) }).then((r) => r.json());
-      setBusy(false);
-      if (res && res.ok) { (onImported || onChange)(res.priceList || []); setImp(null); setMsg(`Đã import ${res.imported} dòng — ${res.created} mới, ${res.updated} cập nhật.`); }
-      else { setMsg("Import lỗi: " + ((res && res.message) || "không rõ")); }
-    } catch (err) { setBusy(false); setMsg("Import lỗi kết nối."); }
-  };
 
   // ---- Xóa toàn bộ bảng giá của khách (để import lại) — hỏi xác nhận ----
   const clearAll = async () => {
@@ -277,36 +233,10 @@ function PriceList({ rows = [], onChange, onImported, cfg = {}, customer, bookId
             )}
           </div>
         ); })}
-        {!rows.length && !imp && <div style={{ padding: "10px 2px", fontSize: 12.5, color: "var(--ink-4)" }}>Chưa có dòng báo giá — bấm <b>Import Excel</b> để nạp từ file, hoặc thêm nhóm địa điểm hạ thủ công.</div>}
+        {!rows.length && <div style={{ padding: "10px 2px", fontSize: 12.5, color: "var(--ink-4)" }}>Chưa có dòng báo giá — bấm <b>Nhập báo giá gốc</b> ở trên để nạp từ file, hoặc thêm nhóm địa điểm hạ thủ công.</div>}
       </div>
 
-      <input ref={fileRef} type="file" accept=".xlsx,.xls" onChange={onFile} style={{ display: "none" }} />
-
-      {imp ? (
-        <div style={{ marginTop: 12, padding: "12px 14px", border: "1px solid var(--accent-weak)", background: "var(--accent-weak-2)", borderRadius: 10 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 8 }}>Chọn sheet để import</div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <div style={{ position: "relative", minWidth: 240 }}>
-              <select value={sheet} onChange={(e) => setSheet(e.target.value)}
-                style={{ width: "100%", appearance: "none", WebkitAppearance: "none", padding: "8px 28px 8px 11px", fontSize: 13, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 9, background: "#fff", cursor: "pointer" }}>
-                {imp.names.map((n) => <option key={n} value={n}>{n}</option>)}
-              </select>
-              <span style={{ position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)", color: "var(--ink-3)", pointerEvents: "none" }}><I.chev /></span>
-            </div>
-            <Btn variant="primary" onClick={doImport}>{busy ? "Đang import…" : "Import sheet này"}</Btn>
-            <Btn onClick={() => { setImp(null); setMsg(""); }}>Hủy</Btn>
-          </div>
-          <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 8, lineHeight: 1.5 }}>
-            Cột nhận dạng theo tiêu đề: <b>Loại · Điểm Hạ · KIND · FROM · TO 1..4 · Distance (km) · Transport fee 40FT/20FT · Fuel fee 40FT/20FT</b>.
-            Trùng tuyến (Loại+Điểm Hạ+KIND+FROM+TO) sẽ cập nhật giá; chưa có thì tạo mới. Ký hiệu ở <b>FROM</b> và <b>TO</b> tự thêm vào danh mục <b>Địa điểm</b>; các <b>TO</b> đồng thời thêm vào danh mục <b>Kho</b>.
-          </div>
-        </div>
-      ) : (
-        <div style={{ display: "flex", gap: 8, marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--line-2)", alignItems: "center", flexWrap: "wrap" }}>
-          <button type="button" onClick={() => fileRef.current && fileRef.current.click()}
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 13px", fontSize: 12.5, fontWeight: 600, border: "none", borderRadius: 8, background: "var(--accent)", color: "#fff", cursor: "pointer" }}>
-            <I.plus /> Import Excel
-          </button>
+      <div style={{ display: "flex", gap: 8, marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--line-2)", alignItems: "center", flexWrap: "wrap" }}>
           <button type="button" onClick={addLoc}
             style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 13px", fontSize: 12.5, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 8, background: "#fff", color: "var(--ink-2)", cursor: "pointer" }}>
             <I.plus /> Thêm nhóm địa điểm hạ
@@ -330,9 +260,8 @@ function PriceList({ rows = [], onChange, onImported, cfg = {}, customer, bookId
               <I.trash /> Xóa toàn bộ bảng giá
             </button>
           )}
-          {msg && <span style={{ fontSize: 12, fontWeight: 600, color: (msg.startsWith("Đã import") || msg.startsWith("Đã xóa")) ? "var(--good)" : "var(--danger)" }}>{msg}</span>}
-        </div>
-      )}
+          {msg && <span style={{ fontSize: 12, fontWeight: 600, color: (msg.startsWith("Đã copy") || msg.startsWith("Đã xóa")) ? "var(--good)" : "var(--danger)" }}>{msg}</span>}
+      </div>
     </div>
   );
 }
