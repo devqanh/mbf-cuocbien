@@ -8,6 +8,17 @@ import { loCountOf, parseImportRows, buildTemplateWb } from "./excel.js";
 // Chip số INV — nổi bật để kế toán dễ dò
 const invChip = { display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", padding: "1px 8px", borderRadius: 7 };
 const invChipLbl = { fontSize: 9.5, fontWeight: 800, letterSpacing: ".04em", opacity: .75 };
+// Chip INV: cắt ngắn (ellipsis) khi quá dài để không kéo giãn cột; rê chuột xem đầy đủ.
+function InvChip({ value, max = 150 }) {
+  const v = (value == null ? "" : value).toString();
+  if (!v) return null;
+  return (
+    <span className="tnum" style={invChip} title={v}>
+      <span style={invChipLbl}>INV</span>
+      <span style={{ maxWidth: max, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v}</span>
+    </span>
+  );
+}
 const tagChip = { display: "inline-flex", alignItems: "center", fontSize: 10.5, fontWeight: 600, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", padding: "1px 7px", borderRadius: 999, whiteSpace: "nowrap" };
 // Màu badge Nhập/Xuất/Khác cho dễ phân biệt: Nhập=xanh dương · Xuất=xanh lá · Khác=hổ phách
 const ioTone = (io) => { const v = (io || "").toLowerCase(); return v.includes("nh") ? "blue" : v.includes("xu") ? "good" : "amber"; };
@@ -706,7 +717,7 @@ function ShipmentsApp() {
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
                       <span className="tnum" style={{ fontSize: 14.5, fontWeight: 700, color: "var(--ink)" }}>{s.contNo || "—"}</span>
                       <span className="tnum" style={{ fontSize: 12, color: "var(--ink-4)" }}>{s.contType}{s.kho ? " · " + s.kho : ""}</span>
-                      {s.inv && <span className="tnum" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", padding: "1px 8px", borderRadius: 7 }}><span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: ".04em", opacity: .75 }}>INV</span> {s.inv}</span>}
+                      <InvChip value={s.inv} />
                     </div>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 7 }}>
                       {s.gioDenDuKien && <span className="tnum" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, color: "var(--accent)", background: "var(--accent-weak-2)" }}>
@@ -787,13 +798,13 @@ function ShipmentsApp() {
                           <>
                             <div style={{ fontWeight: 700, fontSize: 13.5 }} className="tnum">{s.qty} × {s.contType}</div>
                             <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 2 }} className="tnum">{s.contNo || "—"}</div>
-                            {s.inv && <div style={{ marginTop: 4 }}><span className="tnum" style={invChip}><span style={invChipLbl}>INV</span> {s.inv}</span></div>}
+                            {s.inv && <div style={{ marginTop: 4 }}><InvChip value={s.inv} /></div>}
                           </>
                         ) : (
                           <>
                             <div style={{ fontWeight: 700, fontSize: 14.5, color: "var(--ink)" }} className="tnum">{s.contNo || "—"}</div>
                             <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 2 }} className="tnum">{s.contType}{s.kho ? " · " + s.kho : ""}</div>
-                            {s.inv && <div style={{ marginTop: 4 }}><span className="tnum" style={invChip}><span style={invChipLbl}>INV</span> {s.inv}</span></div>}
+                            {s.inv && <div style={{ marginTop: 4 }}><InvChip value={s.inv} /></div>}
                             {(() => { const out = !!(s.gioXeRa && s.gioXeRa.trim()); return (
                             <div style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 4, fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
                               color: out ? "var(--good)" : "var(--warn)", background: out ? "var(--good-weak)" : "#fcf3e2" }}>
