@@ -264,6 +264,13 @@ trait HandlesVehicleDetail
         return \App\Models\TruckingAssetCostType::orderBy('sort')->orderBy('name')->pluck('name')->all();
     }
 
+    /** Danh mục hình thức thanh toán (phiếu chi) — cấu hình ở Cài đặt; fallback 3 mặc định nếu trống. */
+    public function payMethodsOut(): array
+    {
+        $rows = \App\Models\TruckingPayMethod::orderBy('sort')->orderBy('name')->pluck('name')->all();
+        return $rows ?: ['Chuyển khoản', 'Tiền mặt', 'Khác'];
+    }
+
     /** Danh mục loại chi phí ĐÚNG NGUỒN: tài sản → "Loại chi phí tài sản"; xe → "Loại chi phí xe". */
     public function costTypesForVehicle(TruckingVehicle $v): array
     {

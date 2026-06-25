@@ -23,6 +23,7 @@ const CAT_KEYS = {
   vehicleCostTypes: ["vehicleCostTypes"],
   assetCategories: ["assetCategories"],
   assetCostTypes: ["assetCostTypes"],
+  payMethods: ["payMethods"],
   routeFees: ["routeFees"],
   fuelPrices: ["fuelPrices"],
   __general: ["vatDefault", "freeTimeHours", "freeTimeRules", "dueWarnDays"],
@@ -32,13 +33,13 @@ const CAT_KEYS = {
 const TAB_LABELS = {
   locations: "Địa điểm", customers: "Khách hàng", contTypes: "Loại cont", warehouses: "Kho",
   payers: "Bên thanh toán", costItems: "Khoản chi phí", choHoItems: "Khoản chi hộ", revItems: "Khoản doanh thu",
-  vehicles: "Đội xe", drivers: "Tài xế", salaryItems: "Khoản lương", extVendors: "Đơn vị xe ngoài", vehicleCostTypes: "Loại chi phí xe", assetCategories: "Loại tài sản", assetCostTypes: "Loại chi phí tài sản", routeFees: "Phí tuyến đường", fuelPrices: "Bảng giá dầu", __general: "Cấu hình chung",
+  vehicles: "Đội xe", drivers: "Tài xế", salaryItems: "Khoản lương", extVendors: "Đơn vị xe ngoài", vehicleCostTypes: "Loại chi phí xe", assetCategories: "Loại tài sản", assetCostTypes: "Loại chi phí tài sản", payMethods: "Hình thức thanh toán", routeFees: "Phí tuyến đường", fuelPrices: "Bảng giá dầu", __general: "Cấu hình chung",
 };
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 function SettingsApp() {
   const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
-  const DEFAULT_CFG = { locations: [], locationCode: {}, locationCodeArr: [], locationsIdArr: [], locationLocked: [], customers: [], customerInfo: {}, contTypes: [], warehouses: [], warehouseCode: {}, warehouseCodeArr: [], warehousesIdArr: [], warehouseAddr: {}, warehouseAddrArr: [], warehouseGeoArr: [], payers: [], costItems: [], choHoItems: [], revItems: [], vehicles: [], vehicleType: {}, vehicleAxle: {}, vehicleGps: {}, gpsVehicles: [], drivers: [], salaryItems: [], extVendors: [], vehicleCostTypes: [], assetCategories: [], assetCostTypes: [], routeFees: [], fuelPrices: [], prices: {}, costColors: {}, vatDefault: { hph: "8", icd: "0" }, freeTimeHours: "4", freeTimeRules: [], dueWarnDays: "30" };
+  const DEFAULT_CFG = { locations: [], locationCode: {}, locationCodeArr: [], locationsIdArr: [], locationLocked: [], customers: [], customerInfo: {}, contTypes: [], warehouses: [], warehouseCode: {}, warehouseCodeArr: [], warehousesIdArr: [], warehouseAddr: {}, warehouseAddrArr: [], warehouseGeoArr: [], payers: [], costItems: [], choHoItems: [], revItems: [], vehicles: [], vehicleType: {}, vehicleAxle: {}, vehicleGps: {}, gpsVehicles: [], drivers: [], salaryItems: [], extVendors: [], vehicleCostTypes: [], assetCategories: [], assetCostTypes: [], payMethods: [], routeFees: [], fuelPrices: [], prices: {}, costColors: {}, vatDefault: { hph: "8", icd: "0" }, freeTimeHours: "4", freeTimeRules: [], dueWarnDays: "30" };
   const api = (method, url, body) => window.trkApi(method, url, body);
   const [cfg, setCfgState] = useState(DEFAULT_CFG);
   const [counts, setCounts] = useState(B.counts || {});   // badge sidebar (boot, nhẹ)

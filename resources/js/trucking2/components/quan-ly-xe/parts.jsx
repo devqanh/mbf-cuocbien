@@ -241,10 +241,11 @@ const blankCost = () => ({ id: Date.now() + Math.random(), name: "", invoiceNo: 
 const PAY_METHODS = ["Chuyển khoản", "Tiền mặt", "Khác"];
 
 /* Modal DUYỆT THANH TOÁN — kế toán điền thông tin rồi mới duyệt */
-function PayModal({ row, onConfirm, onClose }) {
+function PayModal({ row, onConfirm, onClose, payMethods }) {
   const { useState } = React;
+  const methods = (payMethods && payMethods.length) ? payMethods : PAY_METHODS;
   // amount = số THỰC TẾ chi (mặc định = số hiện có, vốn = dự kiến nếu phiếu từ yêu cầu chi). estAmount = dự kiến lái xe gửi.
-  const [d, setD] = useState({ amount: row.amount || "", paidDate: row.paidDate || today10(), paidMethod: row.paidMethod || "Chuyển khoản", paidRef: row.paidRef || "", paidNote: row.paidNote || "" });
+  const [d, setD] = useState({ amount: row.amount || "", paidDate: row.paidDate || today10(), paidMethod: row.paidMethod || methods[0] || "Chuyển khoản", paidRef: row.paidRef || "", paidNote: row.paidNote || "" });
   const set = (np) => setD((x) => ({ ...x, ...np }));
   const [err, setErr] = useState("");
   const confirm = () => { if (toNum(d.amount) <= 0) return setErr("Vui lòng nhập số tiền thực tế (lớn hơn 0)."); setErr(""); onConfirm(d); };
@@ -263,7 +264,7 @@ function PayModal({ row, onConfirm, onClose }) {
         <div>{lbl("Ngày thanh toán")}<DateField value={d.paidDate} onChange={(x) => set({ paidDate: x })} /></div>
         <div>{lbl("Hình thức")}
           <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 8, padding: 2, flexWrap: "wrap" }}>
-            {PAY_METHODS.map((m) => { const on = (d.paidMethod || "") === m; return <button key={m} type="button" onClick={() => set({ paidMethod: m })} style={{ border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, padding: "6px 12px", borderRadius: 6, background: on ? "#fff" : "transparent", color: on ? "var(--accent)" : "var(--ink-4)", boxShadow: on ? "0 1px 2px rgba(16,19,23,.14)" : "none" }}>{m}</button>; })}
+            {methods.map((m) => { const on = (d.paidMethod || "") === m; return <button key={m} type="button" onClick={() => set({ paidMethod: m })} style={{ border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, padding: "6px 12px", borderRadius: 6, background: on ? "#fff" : "transparent", color: on ? "var(--accent)" : "var(--ink-4)", boxShadow: on ? "0 1px 2px rgba(16,19,23,.14)" : "none" }}>{m}</button>; })}
           </div>
         </div>
         <div>{lbl("Số chứng từ / UNC")}<Txt value={d.paidRef} onChange={(x) => set({ paidRef: x })} placeholder="VD: UNC-2026-0123" /></div>
@@ -274,8 +275,9 @@ function PayModal({ row, onConfirm, onClose }) {
 }
 
 /* Modal điền 1 phiếu chi */
-function CostModal({ data, isNew, onChange, onSave, onClose, costTypes = [], onUploadPhotos }) {
+function CostModal({ data, isNew, onChange, onSave, onClose, costTypes = [], payMethods, onUploadPhotos }) {
   const { useState, useRef } = React;
+  const methods = (payMethods && payMethods.length) ? payMethods : PAY_METHODS;
   const d = data; const set = (np) => onChange({ ...d, ...np });
   const rec = normKind(d.kind) === "recurring";
   const [err, setErr] = useState("");
@@ -357,7 +359,7 @@ function CostModal({ data, isNew, onChange, onSave, onClose, costTypes = [], onU
             <div>{lbl("Ngày thanh toán")}<DateField value={d.paidDate} onChange={(x) => set({ paidDate: x })} /></div>
             <div>{lbl("Hình thức")}
               <select value={d.paidMethod || ""} onChange={(e) => set({ paidMethod: e.target.value })} style={{ width: "100%", padding: "8px 11px", fontSize: 13.5, border: "1px solid var(--line)", borderRadius: 9, background: "#fff" }}>
-                <option value="">— chọn —</option>{PAY_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+                <option value="">— chọn —</option>{methods.map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
             <div>{lbl("Số chứng từ / UNC")}<Txt value={d.paidRef} onChange={(x) => set({ paidRef: x })} placeholder="VD: UNC-2026-0123" /></div>
@@ -369,7 +371,7 @@ function CostModal({ data, isNew, onChange, onSave, onClose, costTypes = [], onU
   );
 }
 
-function CostTab({ rows, onChange, costTypes, saving, onUploadPhotos, highlightId, onCancel }) {
+function CostTab({ rows, onChange, costTypes, payMethods, saving, onUploadPhotos, highlightId, onCancel }) {
   const { useState } = React;
   const isMobile = useIsMobile();
   const [filter, setFilter] = useState("all");   // all | fixed | recurring | due
@@ -513,8 +515,8 @@ function CostTab({ rows, onChange, costTypes, saving, onUploadPhotos, highlightI
 
       <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}><i className="bi bi-check2-circle" style={{ color: "var(--good)" }} /> Mọi thao tác ở mục Chi phí (thêm/sửa/duyệt/thanh toán/xóa) được <b>lưu ngay</b> — không cần bấm Lưu. Khoản <b>định kỳ</b> (bảo hiểm, đăng kiểm…): đến hạn bấm <i className="bi bi-arrow-repeat" /> để <b>tạo phiếu mới</b> → điền tiền + ngày hết hạn mới; phiếu cũ tự chuyển <b>“đã gia hạn ở HĐ #…”</b>. <b># hóa đơn tự sinh</b>.</span>
 
-      {edit && <CostModal data={edit.d} isNew={edit.i < 0} costTypes={costTypes} onUploadPhotos={onUploadPhotos} onChange={(d) => setEdit((e) => ({ ...e, d }))} onSave={saveModal} onClose={() => setEdit(null)} />}
-      {payIdx != null && all[payIdx] && <PayModal row={all[payIdx]} onConfirm={confirmPay} onClose={() => setPayIdx(null)} />}
+      {edit && <CostModal data={edit.d} isNew={edit.i < 0} costTypes={costTypes} payMethods={payMethods} onUploadPhotos={onUploadPhotos} onChange={(d) => setEdit((e) => ({ ...e, d }))} onSave={saveModal} onClose={() => setEdit(null)} />}
+      {payIdx != null && all[payIdx] && <PayModal row={all[payIdx]} payMethods={payMethods} onConfirm={confirmPay} onClose={() => setPayIdx(null)} />}
     </div>
   );
 }

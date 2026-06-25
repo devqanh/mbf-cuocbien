@@ -15,6 +15,7 @@ export const CFG_GROUPS = [
   { key: "vehicleCostTypes", label: "Loại chi phí xe", hint: "loại chi phí bảo dưỡng/sửa chữa xe — chọn ở Quản lý xe (tab Chi phí) để nhóm báo cáo theo loại", ph: "VD: Bảo dưỡng định kỳ" },
   { key: "assetCategories", label: "Loại tài sản", hint: "phân loại tài sản (máy móc, thiết bị, nhà xưởng…) — chọn khi thêm/sửa tài sản ở Quản lý tài sản", ph: "VD: Máy móc thiết bị" },
   { key: "assetCostTypes", label: "Loại chi phí tài sản", hint: "loại chi phí của tài sản (bảo trì, sửa chữa, vật tư…) — chọn ở Quản lý tài sản (tab Chi phí) để nhóm báo cáo theo loại", ph: "VD: Bảo trì, bảo dưỡng" },
+  { key: "payMethods", label: "Hình thức thanh toán", hint: "hình thức/tài khoản chi cho phiếu chi xe & tài sản (Chuyển khoản, Tiền mặt, Vietinbank, Bank công ty, Cá nhân…) — chọn khi duyệt thanh toán, sau lọc theo hình thức", ph: "VD: Vietinbank công ty" },
   { key: "routeFees", label: "Phí tuyến đường", hint: "định mức phí & dầu cho từng tuyến (tập kho) — vé trạm, tiền đường, trợ cấp, phí khác, lương CRU, km, dầu 2 cầu/1 cầu", ph: "", routefees: true },
   { key: "fuelPrices", label: "Bảng giá dầu", hint: "đơn giá dầu (đồng/lít) theo khoảng ngày — link tính tiền dầu cho tuyến theo ngày của lô", ph: "", fuelprices: true },
   { key: "__general", label: "Cấu hình chung", hint: "cấu hình dùng chung cho hệ thống — VAT mặc định, ngưỡng Free time… (mở rộng thêm sau)", general: true },

@@ -76,6 +76,7 @@ trait HandlesShipments
             'vehicleCostTypes' => [TruckingVehicleCostType::class, false, false,  false],
             'assetCategories'  => [TruckingAssetCategory::class,   false, false,  false],
             'assetCostTypes'   => [\App\Models\TruckingAssetCostType::class, false, false, false],
+            'payMethods'       => [\App\Models\TruckingPayMethod::class, false, false, false],
             'extVendors'  => [TruckingExtVendor::class,  false, false,           false],
         ];
     }

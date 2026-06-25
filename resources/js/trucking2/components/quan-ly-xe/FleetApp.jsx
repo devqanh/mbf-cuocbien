@@ -15,6 +15,7 @@ function FleetApp({ modeSwitch }) {
 
   const [vehicles] = useState(B.vehicles || []);
   const vehicleCostTypes = B.vehicleCostTypes || [];   // danh mục Loại chi phí xe (cai-dat#vehicleCostTypes) — cho Định mức + khớp yêu cầu chi
+  const payMethods = B.payMethods || [];               // danh mục Hình thức thanh toán (cai-dat#payMethods)
   const [costItems, setCostItems] = useState(B.costItems || []);   // danh mục Khoản chi phí (Combo tên phiếu)
   const addCostItem = async (name) => {
     name = (name || "").trim(); if (!name) return;
@@ -420,7 +421,7 @@ function FleetApp({ modeSwitch }) {
             : tab === "deprecMonthly" ? <DeprecMonthlyTab rows={detail.depreciations || []} />
             : tab === "usage" ? <UsageTab rows={detail.usages || []} onChange={(rows) => upd({ usages: rows })} drivers={detail.drivers || []} />
             : tab === "fuel" ? <FuelTab vehicleId={selId} hashid={selHash.current} routes={ROUTES} />
-            : <CostTab rows={detail.costs || []} onChange={saveCosts} saving={costSaving} costTypes={detail.costTypes || []} onUploadPhotos={uploadCostPhotos} highlightId={hlCost} onCancel={cancelCost} />}
+            : <CostTab rows={detail.costs || []} onChange={saveCosts} saving={costSaving} costTypes={detail.costTypes || []} payMethods={payMethods} onUploadPhotos={uploadCostPhotos} highlightId={hlCost} onCancel={cancelCost} />}
         </div>
       </div>
     </div>

@@ -32,6 +32,7 @@ export function CostManagementApp() {
   const canEdit = !!T.canEdit;
   const costTypes = B.costTypes || [];              // loại chi phí xe
   const assetCostTypes = B.assetCostTypes || [];    // loại chi phí tài sản
+  const payMethods = B.payMethods || [];            // hình thức thanh toán (cai-dat#payMethods)
   const [status, setStatus] = useState("action");
   const [kind, setKind] = useState("all");
   const [q, setQ] = useState("");
@@ -203,8 +204,8 @@ export function CostManagementApp() {
         </div>
       </div>
 
-      {pay && <PayModal row={pay} onConfirm={confirmPay} onClose={() => setPay(null)} />}
-      {edit && <CostModal data={edit.d} isNew={false} costTypes={edit.isAsset ? assetCostTypes : costTypes}
+      {pay && <PayModal row={pay} payMethods={payMethods} onConfirm={confirmPay} onClose={() => setPay(null)} />}
+      {edit && <CostModal data={edit.d} isNew={false} costTypes={edit.isAsset ? assetCostTypes : costTypes} payMethods={payMethods}
         onUploadPhotos={uploadPhotos(edit.d.vehicleHashid)}
         onChange={(d) => setEdit((e) => ({ ...e, d }))} onSave={saveEdit} onClose={() => setEdit(null)} />}
     </div>

@@ -407,7 +407,7 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
             : tab === "info" ? <AssetInfoTab info={detail.info} onChange={(info) => upd({ info })} categories={categories} addCategory={addCategory} />
             : tab === "deprec" ? <DeprecTab rows={detail.depreciations || []} onChange={(rows) => upd({ depreciations: rows })} />
             : tab === "deprecMonthly" ? <DeprecMonthlyTab rows={detail.depreciations || []} />
-            : tab === "cost" ? <CostTab rows={detail.costs || []} onChange={saveCosts} saving={costSaving} costTypes={detail.costTypes || []} onUploadPhotos={uploadCostPhotos} onCancel={cancelCost} highlightId={hlCost} />
+            : tab === "cost" ? <CostTab rows={detail.costs || []} onChange={saveCosts} saving={costSaving} costTypes={detail.costTypes || []} payMethods={B.payMethods || []} onUploadPhotos={uploadCostPhotos} onCancel={cancelCost} highlightId={hlCost} />
             : <div style={card}><DocsBlock docs={detail.docs || []} busy={docBusy} docType={docType} setDocType={setDocType} onPick={uploadDocs} onDelete={deleteDoc} canEdit={canEdit} docTypes={ASSET_DOC_TYPES} hint="Tài liệu tài sản (hóa đơn mua, hợp đồng, bảo hành, ảnh… — ảnh / PDF / Word / Excel)" /></div>}
         </div>
       </div>

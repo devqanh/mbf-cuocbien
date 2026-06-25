@@ -21,6 +21,7 @@ class FleetController extends BaseTruckingController
             'pendingCosts'    => $this->svc->pendingVehicleCosts(),
             'costItems'       => $this->svc->costItemNames(),
             'vehicleCostTypes' => $this->svc->vehicleCostTypesOut(),   // định mức km dùng đúng danh mục Loại chi phí xe
+            'payMethods'      => $this->svc->payMethodsOut(),          // hình thức thanh toán (cấu hình ở Cài đặt)
             'dueWarnDays'     => (int) TruckingSetting::get('due_warn_days', '30'),
         ], 'fleet.manage', 'fleet.manage'));
     }
@@ -70,6 +71,7 @@ class FleetController extends BaseTruckingController
         return view('trucking2.quan-ly-chi-phi', $this->pageData([
             'costTypes'      => $this->svc->vehicleCostTypesOut(),   // mặc định (xe)
             'assetCostTypes' => $this->svc->assetCostTypesOut(),     // dùng khi phiếu là tài sản
+            'payMethods'     => $this->svc->payMethodsOut(),         // hình thức thanh toán (cấu hình ở Cài đặt)
             'suppliers' => $this->svc->supplierSuggestions(),
             'initial'   => $this->svc->costManagementData(['status' => 'action', 'page' => 1]),
         ], 'fleet.manage', 'fleet.manage'));
