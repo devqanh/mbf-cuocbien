@@ -97,6 +97,23 @@ trait HandlesTripAndDrivers
         return $this->khoResolve($kho, true);
     }
 
+    /** Đổi 1 ĐỊA ĐIỂM (Nơi lấy/Nơi hạ — tên hoặc ký hiệu) → KÝ HIỆU (cho Lộ trình). Fallback giữ nguyên nếu không khớp. */
+    public function locCode(?string $loc): string
+    {
+        $loc = trim((string) $loc);
+        if ($loc === '') return '';
+        static $map = null;
+        if ($map === null) {
+            $map = [];
+            foreach (TruckingLocation::get(['name', 'code']) as $l) {
+                $code = $l->code ?: $l->name;   // thiếu ký hiệu → fallback tên
+                if ($l->code) $map[mb_strtoupper(trim((string) $l->code))] = $code;
+                if ($l->name) $map[mb_strtoupper(trim((string) $l->name))] = $code;
+            }
+        }
+        return $map[mb_strtoupper($loc)] ?? $loc;
+    }
+
     /** Tách "tuyến kho" (chuỗi nhiều kho) → mảng nhãn; $toCode=true → KÝ HIỆU, false → TÊN. */
     private function khoResolve(?string $kho, bool $toCode): array
     {

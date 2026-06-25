@@ -380,10 +380,10 @@ trait HandlesShipments
                 if ($label === '' || ($pts && end($pts)['label'] === $label)) return;
                 $pts[] = ['label' => $label, 'kind' => $kind];
             };
-            $add($rs->from_loc, 'pickup');
-            // Lộ trình = kế toán theo dõi → kho hiện KÝ HIỆU (gọn, dễ hiểu) thay vì tên hiển thị.
+            // Lộ trình = kế toán theo dõi → Nơi lấy / Kho / Nơi hạ đều hiện KÝ HIỆU (gọn, dễ hiểu) thay vì tên hiển thị.
+            $add($this->locCode($rs->from_loc), 'pickup');
             foreach ($this->khoCodePoints($rs->kho) as $kp) $add($kp, 'kho');
-            $add($rs->to_loc, 'drop');
+            $add($this->locCode($rs->to_loc), 'drop');
 
             return array_merge([
                 'bks'        => trim((string) $s->bks_vao),
