@@ -62,8 +62,10 @@ function lineAmounts(line, vatRate, baseOv) {
     base = +(line && line.phaiThu) || 0;   // không có detail → coi phaiThu là nền
   }
   base = Math.round(base); choho = Math.round(choho);
-  const vat = Math.round(base * (+vatRate || 0) / 100);
-  return { base, vat, choho, total: base + vat + choho };
+  // VAT theo DÒNG: ưu tiên override detail.vat (sửa riêng từng dòng), else % mặc định bảng kê.
+  const rate = (d && d.vat != null && d.vat !== "") ? (+d.vat || 0) : (+vatRate || 0);
+  const vat = Math.round(base * rate / 100);
+  return { base, vat, choho, total: base + vat + choho, rate };
 }
 
 /**

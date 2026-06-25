@@ -57,22 +57,27 @@ trait HandlesStatements
      */
     public static function statementAmounts(iterable $details, float $vatRate): array
     {
-        $base = 0.0; $choho = 0.0;
+        $base = 0; $choho = 0; $vat = 0;
         foreach ($details as $d) {
             $d = is_array($d) ? $d : (array) $d;
+            $lineBase = 0.0; $lineChoho = 0.0;
             if (array_key_exists('cuoc', $d) || array_key_exists('dau', $d)
                 || array_key_exists('bargeCuoc', $d) || array_key_exists('bargeDau', $d)) {
-                $base  += (float) ($d['cuoc'] ?? 0) + (float) ($d['dau'] ?? 0)
-                        + (float) ($d['bargeCuoc'] ?? 0) + (float) ($d['bargeDau'] ?? 0);
-                $choho += (float) ($d['chiHo'] ?? 0);
+                $lineBase  = (float) ($d['cuoc'] ?? 0) + (float) ($d['dau'] ?? 0)
+                           + (float) ($d['bargeCuoc'] ?? 0) + (float) ($d['bargeDau'] ?? 0);
+                $lineChoho = (float) ($d['chiHo'] ?? 0);
             } else {
                 // Không có detail → coi phaiThu là nền (bảng kê cũ, vat=0 → total không đổi).
-                $base  += (float) ($d['phaiThu'] ?? 0);
+                $lineBase  = (float) ($d['phaiThu'] ?? 0);
             }
+            $lineBase  = (int) round($lineBase);
+            $lineChoho = (int) round($lineChoho);
+            // VAT theo DÒNG: override detail.vat nếu có, else % mặc định bảng kê. Cộng VAT từng dòng (khớp frontend).
+            $rate = (isset($d['vat']) && $d['vat'] !== '' && $d['vat'] !== null) ? (float) $d['vat'] : $vatRate;
+            $base  += $lineBase;
+            $choho += $lineChoho;
+            $vat   += (int) round($lineBase * $rate / 100);
         }
-        $base  = (int) round($base);
-        $choho = (int) round($choho);
-        $vat   = (int) round($base * $vatRate / 100);
         return ['base' => $base, 'choho' => $choho, 'vat' => $vat, 'total' => $base + $vat + $choho];
     }
 
@@ -140,13 +145,16 @@ trait HandlesStatements
     {
         $base  = (float) ($st->base_amount ?? 0);
         $choho = (float) ($st->choho_amount ?? 0);
-        $rate  = (float) ($st->vat_rate ?? 0);
+        $total = (float) ($st->total ?? 0);
         if ($base <= 0 && $choho <= 0) {   // bảng kê cũ — chưa lưu cột dẫn xuất
             $base = (float) ($st->lines_total ?? $st->total ?? 0);
+            $total = $total ?: $base;
         }
         $base  = (int) round($base);
         $choho = (int) round($choho);
-        $vat   = (int) round($base * $rate / 100);
+        $total = (int) round($total);
+        // VAT = total − nền − chi hộ (total đã chốt từ Σ per-line VAT khi save) → đúng cả khi VAT khác nhau theo dòng.
+        $vat   = max(0, $total - $base - $choho);
         return ['base' => $base, 'choho' => $choho, 'vat' => $vat, 'total' => $base + $vat + $choho];
     }
 
