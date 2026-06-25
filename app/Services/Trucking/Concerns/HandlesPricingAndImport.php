@@ -392,13 +392,32 @@ trait HandlesPricingAndImport
         // nhưng viết khác → RENAME (giữ vehicle_id) + CẬP NHẬT plate ở Lô hàng + route_pays.
         $normP  = fn ($v) => preg_replace('/[\s\-.,]/u', '', mb_strtoupper(trim((string) $v)));
         $newByN = []; foreach ($plates as $p) $newByN[$normP($p)] = $p;
+
+        // GỘP XE TRÙNG sẵn có trong DB: nhiều xe cùng DẠNG CHUẨN HÓA (vd "29E72123" và "29E-72123")
+        // → giữ 1 xe (id nhỏ nhất), repoint Lô hàng + route_pays sang xe giữ, xóa xe thừa. Phải gộp
+        // TRƯỚC khi đổi format, nếu không đổi format xe này sẽ đụng unique 'plate' của xe trùng kia.
+        $byNorm = [];   // normKey => [vehicle...] (sắp theo id)
+        foreach (TruckingVehicle::orderBy('id')->get() as $v) $byNorm[$normP($v->plate)][] = $v;
+        $survivors = [];   // normKey => xe giữ lại
+        foreach ($byNorm as $nk => $list) {
+            $keep = $list[0];
+            for ($i = 1; $i < count($list); $i++) {
+                $dup = $list[$i];
+                TruckingShipment::where('vehicle_id', $dup->id)->update(['vehicle_id' => $keep->id]);
+                TruckingShipment::where('bks_vao', $dup->plate)->update(['bks_vao' => $keep->plate]);
+                TruckingShipment::where('bks_ra', $dup->plate)->update(['bks_ra' => $keep->plate]);
+                \App\Models\TruckingRoutePay::where('vehicle_id', $dup->id)->update(['vehicle_id' => $keep->id, 'bks' => $keep->plate]);
+                $dup->delete();
+            }
+            $survivors[$nk] = $keep;
+        }
+
         $matchedIds = [];   // id xe đã match
-        foreach (TruckingVehicle::all() as $old) {
-            $n = $normP($old->plate);
+        foreach ($survivors as $n => $old) {
             if (isset($newByN[$n])) {
                 $newPlate = $newByN[$n];
                 if ($old->plate !== $newPlate) {
-                    // plate format đổi → propagate ra Lô hàng + route_pays
+                    // plate format đổi → propagate ra Lô hàng + route_pays (an toàn: mỗi normKey chỉ còn 1 xe)
                     TruckingShipment::where('vehicle_id', $old->id)->where('bks_vao', $old->plate)->update(['bks_vao' => $newPlate]);
                     TruckingShipment::where('bks_ra', $old->plate)->update(['bks_ra' => $newPlate]);
                     \App\Models\TruckingRoutePay::where('vehicle_id', $old->id)->update(['bks' => $newPlate]);
