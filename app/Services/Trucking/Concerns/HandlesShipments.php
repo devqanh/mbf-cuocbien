@@ -381,7 +381,8 @@ trait HandlesShipments
                 $pts[] = ['label' => $label, 'kind' => $kind];
             };
             $add($rs->from_loc, 'pickup');
-            foreach ($this->khoPoints($rs->kho) as $kp) $add($kp, 'kho');
+            // Lộ trình = kế toán theo dõi → kho hiện KÝ HIỆU (gọn, dễ hiểu) thay vì tên hiển thị.
+            foreach ($this->khoCodePoints($rs->kho) as $kp) $add($kp, 'kho');
             $add($rs->to_loc, 'drop');
 
             return array_merge([

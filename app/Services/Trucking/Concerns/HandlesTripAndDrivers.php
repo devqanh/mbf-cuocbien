@@ -85,25 +85,40 @@ trait HandlesTripAndDrivers
         return implode(' → ', $out);
     }
 
-    /** Tách tuyến kho thành MẢNG nhãn điểm (hiển thị tên kho) — cho hành trình lái xe. */
+    /** Tách tuyến kho thành MẢNG nhãn điểm — hiển thị TÊN kho (cho hành trình lái xe / lô hàng). */
     public function khoPoints(?string $kho): array
+    {
+        return $this->khoResolve($kho, false);
+    }
+
+    /** Tách tuyến kho thành MẢNG KÝ HIỆU kho (cho Lộ trình — kế toán theo dõi, ký hiệu gọn dễ hiểu). */
+    public function khoCodePoints(?string $kho): array
+    {
+        return $this->khoResolve($kho, true);
+    }
+
+    /** Tách "tuyến kho" (chuỗi nhiều kho) → mảng nhãn; $toCode=true → KÝ HIỆU, false → TÊN. */
+    private function khoResolve(?string $kho, bool $toCode): array
     {
         $kho = trim((string) $kho);
         if ($kho === '') return [];
-        static $map = null;
-        if ($map === null) {
-            $map = [];
+        static $maps = [];
+        $k = $toCode ? 'code' : 'name';
+        if (! isset($maps[$k])) {
+            $m = [];
             foreach (TruckingWarehouse::get(['name', 'code']) as $w) {
-                if ($w->code) $map[mb_strtoupper(trim((string) $w->code))] = $w->name ?: $w->code;
-                if ($w->name) $map[mb_strtoupper(trim((string) $w->name))] = $w->name;
+                $val = $toCode ? ($w->code ?: $w->name) : ($w->name ?: $w->code);   // ký hiệu / tên (fallback chéo nếu thiếu)
+                if ($w->code) $m[mb_strtoupper(trim((string) $w->code))] = $val;
+                if ($w->name) $m[mb_strtoupper(trim((string) $w->name))] = $val;
             }
+            $maps[$k] = $m;
         }
         $segs = preg_split('/\s*(?:,|→|->|–|—|\s-\s)\s*/u', $kho) ?: [];
         $out = [];
         foreach ($segs as $seg) {
             $seg = trim($seg);
             if ($seg === '') continue;
-            $out[] = $map[mb_strtoupper($seg)] ?? $seg;
+            $out[] = $maps[$k][mb_strtoupper($seg)] ?? $seg;
         }
         return $out;
     }
