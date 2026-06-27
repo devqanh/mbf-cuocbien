@@ -144,6 +144,19 @@ function Txt({ value, onChange, placeholder, disabled = false }) {
 }
 
 /* Select2-style searchable combo bound to a config list. onCreate(v) adds to config. */
+// Xếp hạng độ khớp khi tìm: khớp tuyệt đối(0) < bắt đầu bằng(1) < đầu 1 từ(2) < chứa(3); -1 = không khớp.
+function matchRank(label, ql) {
+  const l = (label == null ? "" : String(label)).toLowerCase();
+  if (!ql) return 4;
+  const i = l.indexOf(ql);
+  if (i < 0) return -1;
+  if (l === ql) return 0;
+  if (i === 0) return 1;
+  const p = l[i - 1];
+  if (p === " " || p === "-" || p === "(" || p === "/" || p === "·") return 2;
+  return 3;
+}
+
 function Combo({ value, onChange, options = [], onCreate, placeholder = "Chọn…", small, clearable, strict }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -173,7 +186,12 @@ function Combo({ value, onChange, options = [], onCreate, placeholder = "Chọn�
   const ql = q.trim().toLowerCase();
   // Cho phép option dạng chuỗi HOẶC {value,label} (nhãn ≠ giá trị — vd lái xe "Tên · SĐT")
   const opts = options.map((o) => (o && typeof o === "object") ? { value: String(o.value), label: o.label == null ? String(o.value) : String(o.label) } : { value: String(o), label: String(o) });
-  const filtered = opts.filter((o) => !ql || o.label.toLowerCase().includes(ql));
+  // Lọc + XẾP HẠNG: khớp đúng/đầu chuỗi/đầu từ lên trước (tránh chìm trong danh sách dài).
+  const filtered = !ql ? opts : opts
+    .map((o, idx) => ({ o, r: matchRank(o.label, ql), idx }))
+    .filter((x) => x.r >= 0)
+    .sort((a, b) => a.r - b.r || a.o.label.length - b.o.label.length || a.idx - b.idx)
+    .map((x) => x.o);
   const exact = opts.some((o) => o.label.toLowerCase() === ql);
   const curLabel = (opts.find((o) => o.value === value) || {}).label || value;
   const pick = (v) => { onChange(v); setOpen(false); setQ(""); };
@@ -271,8 +289,14 @@ function MultiCombo({ values = [], onChange, options = [], groups = null, onCrea
   // Gom nhóm → danh sách phẳng (cho dedup/tạo mới) + map giá trị→nhãn loại (hiện trên chip & gợi ý).
   const flatOpts = groups ? groups.flatMap((g) => g.items || []) : options;
   const groupOf = (v) => { if (!groups) return ""; const g = groups.find((g) => (g.items || []).some((x) => norm(x) === norm(v))); return g ? g.label : ""; };
+  // Lọc + XẾP HẠNG kết quả tìm (khớp đúng/đầu chuỗi/đầu từ lên trước).
+  const rankSort = (arr) => !ql ? arr : arr
+    .map((o, idx) => ({ o, r: matchRank(o, ql), idx }))
+    .filter((x) => x.r >= 0)
+    .sort((a, b) => a.r - b.r || String(a.o).length - String(b.o).length || a.idx - b.idx)
+    .map((x) => x.o);
   // allowDup → KHÔNG loại mục đã chọn khỏi gợi ý (cho chọn lại).
-  const avail = flatOpts.filter((o) => (allowDup || !has(sel, o)) && (!ql || o.toLowerCase().includes(ql)));
+  const avail = rankSort(flatOpts.filter((o) => allowDup || !has(sel, o)));
   const exact = has(flatOpts, q) || (!allowDup && has(sel, q));
   // Chọn xong GIỮ mở + focus lại ô tìm để chọn tiếp nhiều mục (không bị mất các mục đã chọn)
   const refocus = () => { setTimeout(() => { try { searchRef.current && searchRef.current.focus(); } catch (e) {} }, 0); };
@@ -312,7 +336,7 @@ function MultiCombo({ values = [], onChange, options = [], groups = null, onCrea
                 onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>{o}</button>
             ))}
             {groups && groups.map((g) => {
-              const gi = (g.items || []).filter((o) => (allowDup || !has(sel, o)) && (!ql || o.toLowerCase().includes(ql)));
+              const gi = rankSort((g.items || []).filter((o) => allowDup || !has(sel, o)));
               if (!gi.length) return null;
               return (
                 <div key={g.label}>
