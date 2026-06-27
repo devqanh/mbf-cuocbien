@@ -211,7 +211,7 @@ function TripNode({ l, isFirst, isLast, bks, href, fuel }) {
   // Xe không kéo cont → chỉ hiện NƠI LẤY (chỗ xe vào), không vẽ tới nơi hạ vì chưa giao cont nào.
   const pts = l.mode === "none" ? (l.points || []).filter((p) => p.kind === "pickup") : l.points;
   return (
-    <a href={href} title="Xem lô hàng"
+    <a href={href} title="Xem lô hàng (mở tab mới)" target="_blank" rel="noreferrer"
       style={{ display: "flex", alignItems: "stretch", gap: 12, textDecoration: "none", color: "inherit" }}
       onMouseEnter={(e) => (e.currentTarget.querySelector(".trk-trip-body").style.background = "var(--accent-weak-2)")}
       onMouseLeave={(e) => (e.currentTarget.querySelector(".trk-trip-body").style.background = "transparent")}>
