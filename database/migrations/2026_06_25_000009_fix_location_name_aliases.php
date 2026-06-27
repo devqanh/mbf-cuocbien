@@ -54,29 +54,38 @@ return new class extends Migration
                 }
             }
 
-            // 3) XÓA địa điểm LỖI (sau khi lô đã repoint) — chỉ khi KHÔNG còn lô/bảng giá tham chiếu.
+            // 3) DỌN địa điểm LỖI (sau khi lô đã repoint). Mỗi TÊN chỉ nên còn 1 alias name->ký hiệu sạch.
+            //    - Có alias sạch CÙNG TÊN khác → XÓA bản lỗi (nếu không còn lô/bảng giá dùng).
+            //    - KHÔNG có alias sạch (vd "ICD Quế Võ") → CHUYỂN code = ký hiệu canonical (GIỮ tên
+            //      để validate/import sau này vẫn nhận; saveShipment sẽ canon -> ký hiệu).
             $hasPriceRows = Schema::hasTable('trucking_price_rows');
+            $refCount = function (string $code) use ($cols, $hasPriceRows) {
+                $n = 0;
+                foreach ($cols as $col) $n += DB::table('trucking_shipments')->where($col, $code)->count();
+                if ($hasPriceRows) $n += DB::table('trucking_price_rows')->where('loc', $code)->count();
+                return $n;
+            };
             foreach ($locs as $l) {
                 $code = trim((string) $l->code); $name = trim((string) $l->name);
                 if ($code === '') continue;
 
-                $dirty = $diac($code);
-                if (! $dirty && $code === $name) {
-                    foreach ($locs as $x) {
-                        if ($x->id !== $l->id && $U($x->name) === $U($name)
-                            && trim((string) $x->code) !== '' && ! $diac($x->code) && trim((string) $x->code) !== $name) {
-                            $dirty = true; break;   // trùng tên với 1 alias ký hiệu sạch khác
-                        }
-                    }
-                }
+                $dirty = $diac($code) || ($code === $name && ($nameToCode[$U($name)] ?? null) !== null && $nameToCode[$U($name)] !== $name);
                 if (! $dirty) continue;
 
-                $used = 0;
-                foreach ($cols as $col) $used += DB::table('trucking_shipments')->where($col, $code)->count();
-                $usedPrice = $hasPriceRows ? DB::table('trucking_price_rows')->where('loc', $code)->count() : 0;
-                if ($used === 0 && $usedPrice === 0) {
-                    DB::table('trucking_locations')->where('id', $l->id)->delete();
+                $canonical = $nameToCode[$U($name)] ?? null;
+                $hasSibling = $canonical !== null && $locs->first(fn ($x) => $x->id !== $l->id && $U($x->name) === $U($name) && trim((string) $x->code) === $canonical) !== null;
+
+                if ($hasSibling) {
+                    if ($refCount($code) === 0) DB::table('trucking_locations')->where('id', $l->id)->delete();
+                } elseif ($canonical !== null && $canonical !== $code) {
+                    DB::table('trucking_locations')->where('id', $l->id)->update(['code' => $canonical]);   // chuyển thành alias name->ký hiệu
                 }
+            }
+
+            // 4) Đảm bảo alias "ICD Quế Võ" -> ICDQV tồn tại (môi trường lỡ xóa bản cũ vẫn nhận khi import).
+            if (DB::table('trucking_locations')->where('code', 'ICDQV')->exists()
+                && ! DB::table('trucking_locations')->whereRaw('UPPER(TRIM(name)) = ?', [$U('ICD Quế Võ')])->exists()) {
+                DB::table('trucking_locations')->insert(['name' => 'ICD Quế Võ', 'code' => 'ICDQV', 'created_at' => now(), 'updated_at' => now()]);
             }
         });
     }
