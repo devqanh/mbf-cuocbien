@@ -960,11 +960,9 @@ trait HandlesShipments
                 $s->customer_id = $customerId;
             }
 
-            // Chuẩn hóa địa điểm → KÝ HIỆU: nếu giá trị là TÊN địa điểm (vd import Excel "TÂN VŨ")
-            // mà có alias ký hiệu sạch → lưu ký hiệu ("HPP"). UI vốn gửi ký hiệu nên không đổi.
-            $canonLoc = function ($v) { $v = $this->str($v); return $v === null ? null : ($this->locCode($v) ?: $v); };
-
             // Map field client → [cột, giá trị]. Chỉ ghi cột khi field đó được phép (đã sửa).
+            // GIỮ NGUYÊN tên địa điểm cụ thể (vd "SITC ĐÌNH VŨ") — KHÔNG gộp về ký hiệu khi lưu;
+            // ký hiệu (HPP) chỉ dùng để khớp giá/gộp báo cáo (qua codeMap), tên cụ thể vẫn hiển thị ở lô.
             $cols = [
                 'booking'      => ['booking', $this->str($data['booking'] ?? null)],
                 'inv'          => ['inv', $this->str($data['inv'] ?? null)],
@@ -972,7 +970,7 @@ trait HandlesShipments
                 'cru'          => ['cru', ! empty($data['cru'])],
                 'isBarge'      => ['is_barge', ! empty($data['isBarge'])],
                 'bargeCont'    => ['barge_cont', $this->str($data['bargeCont'] ?? null)],
-                'bargeDrop'    => ['barge_drop', $canonLoc($data['bargeDrop'] ?? null)],
+                'bargeDrop'    => ['barge_drop', $this->str($data['bargeDrop'] ?? null)],
                 'qty'          => ['qty', isset($data['qty']) && $data['qty'] !== '' ? (int) $data['qty'] : null],
                 'contType'     => ['cont_type', $this->str($data['contType'] ?? null)],
                 'contNo'       => ['cont_no', $this->str($data['contNo'] ?? null)],
@@ -981,8 +979,8 @@ trait HandlesShipments
                 'thanhLy'      => ['thanh_ly_date', $this->inDate($data['thanhLy'] ?? null)],
                 'cshtNote'     => ['csht_note', $this->str($data['cshtNote'] ?? null)],
                 'kho'          => ['kho', $this->str($data['kho'] ?? null)],
-                'from'         => ['from_loc', $canonLoc($data['from'] ?? null)],
-                'to'           => ['to_loc', $canonLoc($data['to'] ?? null)],
+                'from'         => ['from_loc', $this->str($data['from'] ?? null)],
+                'to'           => ['to_loc', $this->str($data['to'] ?? null)],
                 'bksVao'       => ['bks_vao', $this->str($data['bksVao'] ?? null)],
                 'bksRa'        => ['bks_ra', $this->str($data['bksRa'] ?? null)],
                 'driver'       => ['driver', $this->str($data['driver'] ?? null)],

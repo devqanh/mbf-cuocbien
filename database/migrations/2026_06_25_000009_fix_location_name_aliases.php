@@ -5,84 +5,66 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * DỌN ĐỊA ĐIỂM: lô hàng (from_loc/to_loc/barge_drop) lỡ lưu TÊN địa điểm (có dấu TV,
- * vd "TÂN VŨ", "HATECO", "ICD Quế Võ") thay vì KÝ HIỆU ("HPP"/"LHP"/"ICDQV").
- * Sinh ra do registerLocationCode tạo bản code==name khi chưa có alias.
+ * DỌN CATALOG ĐỊA ĐIỂM (KHÔNG đụng lô hàng).
  *
- * KHÔNG MẤT VẾT:
- *  1) MIGRATE LÔ trước: đổi giá trị TÊN -> KÝ HIỆU SẠCH theo bản đồ name->code (chỉ
- *     dùng location có code KHÔNG dấu). "ICD Quế Võ" -> "ICDQV" (đã chốt với user).
- *  2) Sau khi lô không còn tham chiếu, XÓA các địa điểm LỖI (code có dấu, hoặc code==name
- *     trùng tên với 1 alias ký hiệu sạch khác). Giữ nguyên các alias hợp lệ (name->code).
+ * Bug: registerLocationCode tạo bản LỖI `code == name` có dấu TV (vd "TÂN VŨ"→"TÂN VŨ",
+ * "ICD Quế Võ"→"ICD Quế Võ") song song với alias đúng ("TÂN VŨ"→"HPP"). Khiến ký hiệu của
+ * 1 tên không nhất quán → khớp giá / hiển thị ký hiệu sai.
  *
- * Data-driven (không hardcode id) → chạy đúng trên mọi môi trường. Idempotent.
+ * QUAN TRỌNG: LÔ HÀNG GIỮ NGUYÊN tên cảng cụ thể (vd "SITC ĐÌNH VŨ", "HATECO"). Ta CHỈ
+ * sửa danh mục để mỗi TÊN map về đúng KÝ HIỆU (HPP/LHP/ICDQV) — ký hiệu chỉ dùng để khớp
+ * giá / gộp báo cáo / hiển thị ở Lộ trình; tên cụ thể vẫn hiện ở lô.
+ *
+ *  - Bản lỗi CÓ alias sạch cùng tên (TÂN VŨ→HPP, HATECO→LHP…) → XÓA bản lỗi (alias đúng giữ lại).
+ *  - Bản lỗi KHÔNG có alias sạch (ICD Quế Võ) → SỬA code = ký hiệu đúng (ICDQV), GIỮ tên.
+ *
+ * Data-driven, idempotent. KHÔNG sửa from_loc/to_loc/barge_drop của lô.
  */
 return new class extends Migration
 {
     public function up(): void
     {
-        if (! Schema::hasTable('trucking_locations') || ! Schema::hasTable('trucking_shipments')) return;
+        if (! Schema::hasTable('trucking_locations')) return;
 
         $diac = fn ($s) => (bool) preg_match('/[\x{00C0}-\x{1EF9}]/u', (string) $s);
         $U    = fn ($s) => mb_strtoupper(trim((string) $s));
-        $cols = ['from_loc', 'to_loc', 'barge_drop'];
 
-        DB::transaction(function () use ($diac, $U, $cols) {
+        DB::transaction(function () use ($diac, $U) {
             $locs = DB::table('trucking_locations')->orderBy('id')->get(['id', 'name', 'code']);
 
-            // 1) Bản đồ TÊN -> KÝ HIỆU SẠCH (chỉ code không dấu). Alias thực (code!=name) được ưu tiên.
+            // Bản đồ TÊN -> KÝ HIỆU SẠCH (chỉ code KHÔNG dấu; alias thực code!=name ưu tiên).
             $nameToCode = [];
             foreach ($locs as $l) {
                 $code = trim((string) $l->code); $name = trim((string) $l->name);
-                if ($code === '' || $diac($code)) continue;     // code bẩn (có dấu) → bỏ qua
+                if ($code === '' || $diac($code)) continue;
                 $k = $U($name);
                 if (! isset($nameToCode[$k]) || $code !== $name) $nameToCode[$k] = $code;
             }
-            // Override đã chốt: "ICD Quế Võ" gom về ICDQV (không có alias sạch sẵn).
+            // Override đã chốt với user: "ICD Quế Võ" -> ICDQV (không có alias sạch sẵn).
             if (DB::table('trucking_locations')->where('code', 'ICDQV')->exists()) {
                 $nameToCode[$U('ICD Quế Võ')] = 'ICDQV';
             }
 
-            // 2) MIGRATE LÔ: đổi value TÊN -> KÝ HIỆU.
-            foreach ($cols as $col) {
-                $vals = DB::table('trucking_shipments')->whereNotNull($col)->where($col, '!=', '')->distinct()->pluck($col);
-                foreach ($vals as $v) {
-                    $new = $nameToCode[$U($v)] ?? null;
-                    if ($new !== null && $new !== trim((string) $v)) {
-                        DB::table('trucking_shipments')->where($col, $v)->update([$col => $new]);
-                    }
-                }
-            }
-
-            // 3) DỌN địa điểm LỖI (sau khi lô đã repoint). Mỗi TÊN chỉ nên còn 1 alias name->ký hiệu sạch.
-            //    - Có alias sạch CÙNG TÊN khác → XÓA bản lỗi (nếu không còn lô/bảng giá dùng).
-            //    - KHÔNG có alias sạch (vd "ICD Quế Võ") → CHUYỂN code = ký hiệu canonical (GIỮ tên
-            //      để validate/import sau này vẫn nhận; saveShipment sẽ canon -> ký hiệu).
-            $hasPriceRows = Schema::hasTable('trucking_price_rows');
-            $refCount = function (string $code) use ($cols, $hasPriceRows) {
-                $n = 0;
-                foreach ($cols as $col) $n += DB::table('trucking_shipments')->where($col, $code)->count();
-                if ($hasPriceRows) $n += DB::table('trucking_price_rows')->where('loc', $code)->count();
-                return $n;
-            };
+            // DỌN bản LỖI (code có dấu, HOẶC code==name mà tên đó có ký hiệu sạch khác).
             foreach ($locs as $l) {
                 $code = trim((string) $l->code); $name = trim((string) $l->name);
                 if ($code === '') continue;
 
-                $dirty = $diac($code) || ($code === $name && ($nameToCode[$U($name)] ?? null) !== null && $nameToCode[$U($name)] !== $name);
+                $canonical = $nameToCode[$U($name)] ?? null;
+                $dirty = $diac($code) || ($code === $name && $canonical !== null && $canonical !== $name);
                 if (! $dirty) continue;
 
-                $canonical = $nameToCode[$U($name)] ?? null;
-                $hasSibling = $canonical !== null && $locs->first(fn ($x) => $x->id !== $l->id && $U($x->name) === $U($name) && trim((string) $x->code) === $canonical) !== null;
+                $hasSibling = $canonical !== null && $locs->first(fn ($x) => $x->id !== $l->id
+                    && $U($x->name) === $U($name) && trim((string) $x->code) === $canonical) !== null;
 
                 if ($hasSibling) {
-                    if ($refCount($code) === 0) DB::table('trucking_locations')->where('id', $l->id)->delete();
+                    DB::table('trucking_locations')->where('id', $l->id)->delete();           // alias đúng giữ lại
                 } elseif ($canonical !== null && $canonical !== $code) {
-                    DB::table('trucking_locations')->where('id', $l->id)->update(['code' => $canonical]);   // chuyển thành alias name->ký hiệu
+                    DB::table('trucking_locations')->where('id', $l->id)->update(['code' => $canonical]);   // sửa code, GIỮ tên
                 }
             }
 
-            // 4) Đảm bảo alias "ICD Quế Võ" -> ICDQV tồn tại (môi trường lỡ xóa bản cũ vẫn nhận khi import).
+            // Đảm bảo alias "ICD Quế Võ" -> ICDQV tồn tại (môi trường lỡ xóa vẫn nhận khi import).
             if (DB::table('trucking_locations')->where('code', 'ICDQV')->exists()
                 && ! DB::table('trucking_locations')->whereRaw('UPPER(TRIM(name)) = ?', [$U('ICD Quế Võ')])->exists()) {
                 DB::table('trucking_locations')->insert(['name' => 'ICD Quế Võ', 'code' => 'ICDQV', 'created_at' => now(), 'updated_at' => now()]);
@@ -92,6 +74,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        // Không khôi phục được dữ liệu đã gộp/xóa — no-op.
+        // Không khôi phục được bản đã xóa/sửa — no-op.
     }
 };
