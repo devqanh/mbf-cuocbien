@@ -85,10 +85,13 @@ function ExtKePage({ ke, onNew, onOpen }) {
 
 /* Header + bảng dòng (in được) — dùng chung cho tạo + xem. */
 function ExtLinesTable({ vendor, no, date, from, to, lines, footerTotal }) {
-  const th = (txt, align) => <th style={{ textAlign: align || "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>{txt}</th>;
+  const th = (txt, align, w) => <th style={{ textAlign: align || "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase", width: w }}>{txt}</th>;
   const sumFee = lines.reduce((a, l) => a + (l.fee || 0), 0);
+  const sumVat = lines.reduce((a, l) => a + (l.vat || 0), 0);
   const sumChoho = lines.reduce((a, l) => a + (l.choho || 0), 0);
   const hasChoho = sumChoho > 0;
+  const hasVat = sumVat > 0;
+  const nCols = 5 + (hasVat ? 1 : 0) + (hasChoho ? 1 : 0);   // #, Lô, Cước, [VAT], [Chi hộ], Tổng
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 20, marginBottom: 14 }}>
@@ -105,32 +108,41 @@ function ExtLinesTable({ vendor, no, date, from, to, lines, footerTotal }) {
         <div style={{ fontWeight: 700, fontSize: 14 }}>Nhà xe: {vendor || "—"}</div>
       </div>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
-        <thead><tr style={{ background: "#fafbfc" }}>{th("#", "center")}{th("Lô / Booking")}{th("BKS")}{th("Tuyến")}{th("Ngày đến")}{th("Cước", "right")}{hasChoho && th("Chi hộ", "right")}{th("Tổng", "right")}</tr></thead>
+        <thead><tr style={{ background: "#fafbfc" }}>{th("#", "center", 30)}{th("Lô / Khách hàng")}{th("Cước", "right")}{hasVat && th("VAT", "right")}{hasChoho && th("Chi hộ", "right")}{th("Tổng", "right")}</tr></thead>
         <tbody>
-          {lines.length === 0 && <tr><td colSpan={hasChoho ? 8 : 7} style={{ padding: "20px", textAlign: "center", color: "var(--ink-4)" }}>Chưa có dòng nào.</td></tr>}
-          {lines.map((l, i) => (
+          {lines.length === 0 && <tr><td colSpan={nCols} style={{ padding: "20px", textAlign: "center", color: "var(--ink-4)" }}>Chưa có dòng nào.</td></tr>}
+          {lines.map((l, i) => {
+            const route = [l.from, l.to].filter(Boolean).join(" → ");
+            const meta = [l.sheet, l.contLabel, l.bks].filter(Boolean).join(" · ");
+            return (
             <tr key={l.id}>
-              <td className="tnum" style={{ textAlign: "center", padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-4)" }}>{i + 1}</td>
+              <td className="tnum" style={{ textAlign: "center", padding: "8px 6px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-4)", verticalAlign: "top" }}>{i + 1}</td>
               <td style={{ padding: "8px", borderBottom: "1px solid var(--line-2)" }}>
-                <div style={{ fontWeight: 600 }} className="tnum">{l.booking || "—"}</div>
-                <div style={{ fontSize: 11, color: "var(--ink-4)" }}>{l.sheet} · {l.contLabel}</div>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                  <span style={{ fontWeight: 700 }} className="tnum">{l.booking || "—"}</span>
+                  {l.customer && <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 600 }}>{l.customer}</span>}
+                </div>
+                {meta && <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 1 }}>{meta}</div>}
+                <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 1 }}>{fmtDate(l.date) || "—"}{route ? " · " + route : ""}</div>
               </td>
-              <td className="tnum" style={{ padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{l.bks || "—"}</td>
-              <td style={{ padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{[l.from, l.to].filter(Boolean).join(" → ") || "—"}</td>
-              <td className="tnum" style={{ padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{fmtDate(l.date) || "—"}</td>
-              <td className="tnum" style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", fontWeight: 600 }}>{fmtNum(l.fee)}</td>
-              {hasChoho && <td style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)" }}>
+              <td className="tnum" style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", fontWeight: 600, verticalAlign: "top" }}>{fmtNum(l.fee)}</td>
+              {hasVat && <td style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", verticalAlign: "top" }}>
+                <div className="tnum" style={{ color: l.vat ? "var(--ink-2)" : "var(--ink-4)" }}>{l.vat ? fmtNum(l.vat) : "—"}</div>
+                {l.vatRate > 0 && <div style={{ fontSize: 10.5, color: "var(--ink-4)" }}>{l.vatRate}%</div>}
+              </td>}
+              {hasChoho && <td style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", verticalAlign: "top" }}>
                 <div className="tnum" style={{ color: l.choho ? "var(--ink-2)" : "var(--ink-4)" }}>{l.choho ? fmtNum(l.choho) : "—"}</div>
                 {l.chohoNote && <div style={{ fontSize: 10.5, color: "var(--ink-4)", lineHeight: 1.3, marginTop: 1 }}>{l.chohoNote}</div>}
               </td>}
-              <td className="tnum" style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", fontWeight: 700 }}>{fmtNum((l.fee || 0) + (l.choho || 0))}</td>
+              <td className="tnum" style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", fontWeight: 700, verticalAlign: "top" }}>{fmtNum((l.fee || 0) + (l.vat || 0) + (l.choho || 0))}</td>
             </tr>
-          ))}
+          );})}
         </tbody>
         <tfoot>
           <tr style={{ fontWeight: 700 }}>
-            <td colSpan={5} style={{ padding: "9px 8px", borderTop: "1.5px solid var(--line)", textAlign: "right", color: "var(--ink-3)" }}>TỔNG</td>
+            <td colSpan={2} style={{ padding: "9px 8px", borderTop: "1.5px solid var(--line)", textAlign: "right", color: "var(--ink-3)" }}>TỔNG</td>
             <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(sumFee)}</td>
+            {hasVat && <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(sumVat)}</td>}
             {hasChoho && <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(sumChoho)}</td>}
             <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtVND(footerTotal)}</td>
           </tr>
@@ -152,8 +164,13 @@ function ExtStatementForm({ cfg, onCancel, onSaved }) {
   const [all, setAll] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [vatDef, setVatDef] = useState(0);     // % VAT mặc định (áp cho mọi lô)
+  const [vatOv, setVatOv] = useState({});      // ghi đè VAT theo từng lô {id: rate}
   const today = new Date().toISOString().slice(0, 10);
   const needDate = !!vendor && !from && !to;
+  const rateOf = (x) => (vatOv[x.id] != null ? vatOv[x.id] : vatDef);
+  const vatOf = (x) => Math.round((x.fee || 0) * rateOf(x) / 100);   // VAT chỉ trên cước
+  const lineTotal = (x) => (x.fee || 0) + vatOf(x) + (x.choho || 0);
 
   useEffect(() => {
     if (!vendor || (!from && !to)) { setAll([]); setLoading(false); return; }
@@ -167,16 +184,17 @@ function ExtStatementForm({ cfg, onCancel, onSaved }) {
 
   const sel = all.filter((x) => picked[x.id] !== false);
   const totalFee = sel.reduce((a, x) => a + (x.fee || 0), 0);
+  const totalVat = sel.reduce((a, x) => a + vatOf(x), 0);
   const totalChoho = sel.reduce((a, x) => a + (x.choho || 0), 0);
-  const total = totalFee + totalChoho;
+  const total = totalFee + totalVat + totalChoho;
   const keNo = "BKN-" + today.replace(/-/g, "").slice(2) + "-" + (vendor ? vendor.replace(/[^A-Za-zÀ-ỹ0-9]/g, "").slice(0, 3).toUpperCase() : "XXX");
 
   const save = async () => {
     if (!sel.length || saving) return;
     setSaving(true);
     const lines = sel.map((x) => ({
-      id: x.id, booking: x.booking, sheet: x.sheet, bks: x.bks,
-      from: x.from, to: x.to, contLabel: x.contLabel, date: x.date, fee: x.fee, choho: x.choho, chohoNote: x.chohoNote, note: x.note,
+      id: x.id, booking: x.booking, customer: x.customer, sheet: x.sheet, bks: x.bks,
+      from: x.from, to: x.to, contLabel: x.contLabel, date: x.date, fee: x.fee, choho: x.choho, chohoNote: x.chohoNote, vatRate: rateOf(x), note: x.note,
     }));
     const payload = { id: Date.now(), no: keNo, vendor, date: today, from, to, lines, payments: [] };
     let result;
@@ -203,13 +221,20 @@ function ExtStatementForm({ cfg, onCancel, onSaved }) {
           <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>đến ngày</div>
           <div style={{ width: 150 }}><DateField value={to} onChange={setTo} /></div>
         </div>
+        <div style={{ display: "block" }}>
+          <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>VAT mặc định</div>
+          <select value={vatDef} onChange={(e) => { setVatDef(Number(e.target.value)); setVatOv({}); }}
+            style={{ height: 38, padding: "0 10px", fontSize: 13, border: "1px solid var(--line)", borderRadius: 8, background: "#fff", cursor: "pointer" }}>
+            {[0, 8, 10].map((r) => <option key={r} value={r}>{r}%</option>)}
+          </select>
+        </div>
         <div style={{ flex: 1 }} />
-        <div style={{ fontSize: 12, color: "var(--ink-4)" }}>{all.length} lô có cước</div>
+        <div style={{ fontSize: 12, color: "var(--ink-4)" }}>{all.length} lô</div>
       </div>
 
       <div className="ke-noprint" style={{ fontSize: 11.5, color: "var(--ink-4)", padding: "8px 0 0", display: "flex", alignItems: "flex-start", gap: 6, lineHeight: 1.5 }}>
         <i className="bi bi-info-circle" style={{ marginTop: 1 }} />
-        <span>Lọc theo <b style={{ color: "var(--ink-3)" }}>Giờ xe đến</b> của lô hàng. Hiện lô có <b style={{ color: "var(--ink-3)" }}>cước thuê xe ngoài</b> hoặc <b style={{ color: "var(--ink-3)" }}>chi hộ</b> (khoản “Chi hộ khách” ở Chi phí lô hàng). Tổng phải trả nhà xe = cước + chi hộ.</span>
+        <span>Lọc theo <b style={{ color: "var(--ink-3)" }}>Giờ xe đến</b>. Hiện lô có <b style={{ color: "var(--ink-3)" }}>cước thuê xe ngoài</b> hoặc <b style={{ color: "var(--ink-3)" }}>chi hộ</b>. <b style={{ color: "var(--ink-3)" }}>VAT</b> chỉ áp lên cước (chi hộ không VAT); chọn VAT mặc định ở trên hoặc sửa từng lô. Tổng = cước + VAT + chi hộ.</span>
       </div>
 
       {/* printable statement */}
@@ -232,18 +257,16 @@ function ExtStatementForm({ cfg, onCancel, onSaved }) {
           <thead>
             <tr style={{ background: "#fafbfc" }}>
               <th className="ke-noprint" style={{ width: 34, padding: "9px 8px", borderBottom: "1.5px solid var(--line)" }}></th>
-              <th style={{ width: 34, textAlign: "center", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)" }}>#</th>
-              <th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Lô / Booking</th>
-              <th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>BKS</th>
-              <th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Tuyến</th>
-              <th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Ngày đến</th>
+              <th style={{ width: 30, textAlign: "center", padding: "9px 6px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)" }}>#</th>
+              <th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Lô / Khách hàng</th>
               <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Cước</th>
+              <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase", width: 78 }}>VAT</th>
               <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Chi hộ</th>
               <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Tổng</th>
             </tr>
           </thead>
           <tbody>
-            {!loading && all.length === 0 && <tr><td colSpan={9} style={{ padding: "28px 24px", textAlign: "center", color: "var(--ink-4)" }}>
+            {!loading && all.length === 0 && <tr><td colSpan={7} style={{ padding: "28px 24px", textAlign: "center", color: "var(--ink-4)" }}>
               {needDate
                 ? <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                     <i className="bi bi-calendar-range" style={{ fontSize: 26, color: "var(--accent)", opacity: .8 }} />
@@ -252,28 +275,38 @@ function ExtStatementForm({ cfg, onCancel, onSaved }) {
                   </span>
                 : (vendor ? "Không có lô nào phù hợp trong kỳ đã chọn." : "Chọn nhà xe để bắt đầu.")}
             </td></tr>}
-            {loading && <tr><td colSpan={9} style={{ padding: "24px", textAlign: "center", color: "var(--ink-4)" }}>Đang tải lô…</td></tr>}
+            {loading && <tr><td colSpan={7} style={{ padding: "24px", textAlign: "center", color: "var(--ink-4)" }}>Đang tải lô…</td></tr>}
             {!loading && all.map((x, i) => {
               const on = picked[x.id] !== false;
+              const route = [x.from, x.to].filter(Boolean).join(" → ");
+              const meta = [x.sheet, x.contLabel, x.bks].filter(Boolean).join(" · ");
               return (
                 <tr key={x.id} style={{ opacity: on ? 1 : 0.4 }}>
-                  <td className="ke-noprint" style={{ textAlign: "center", padding: "8px", borderBottom: "1px solid var(--line-2)" }}>
-                    <input type="checkbox" checked={on} onChange={(e) => setPicked((p) => ({ ...p, [x.id]: e.target.checked }))} style={{ width: 16, height: 16, accentColor: "var(--accent)", cursor: "pointer" }} />
+                  <td className="ke-noprint" style={{ textAlign: "center", padding: "8px", borderBottom: "1px solid var(--line-2)", verticalAlign: "top" }}>
+                    <input type="checkbox" checked={on} onChange={(e) => setPicked((p) => ({ ...p, [x.id]: e.target.checked }))} style={{ width: 16, height: 16, accentColor: "var(--accent)", cursor: "pointer", marginTop: 2 }} />
                   </td>
-                  <td className="tnum" style={{ textAlign: "center", padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-4)" }}>{i + 1}</td>
+                  <td className="tnum" style={{ textAlign: "center", padding: "8px 6px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-4)", verticalAlign: "top" }}>{i + 1}</td>
                   <td style={{ padding: "8px", borderBottom: "1px solid var(--line-2)" }}>
-                    <div style={{ fontWeight: 600 }} className="tnum">{x.booking || "—"}</div>
-                    <div style={{ fontSize: 11, color: "var(--ink-4)" }}>{x.sheet} · {x.contLabel}</div>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontWeight: 700 }} className="tnum">{x.booking || "—"}</span>
+                      {x.customer && <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 600 }}>{x.customer}</span>}
+                    </div>
+                    {meta && <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 1 }}>{meta}</div>}
+                    <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 1 }}>{fmtDate(x.date) || "—"}{route ? " · " + route : ""}</div>
                   </td>
-                  <td className="tnum" style={{ padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{x.bks || "—"}</td>
-                  <td style={{ padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{[x.from, x.to].filter(Boolean).join(" → ") || "—"}</td>
-                  <td className="tnum" style={{ padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{fmtDate(x.date) || "—"}</td>
-                  <td className="tnum" style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", fontWeight: 600 }}>{fmtNum(x.fee)}</td>
-                  <td style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)" }}>
+                  <td className="tnum" style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", fontWeight: 600, verticalAlign: "top" }}>{fmtNum(x.fee)}</td>
+                  <td style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", verticalAlign: "top" }}>
+                    <select className="ke-noprint" value={rateOf(x)} onChange={(e) => setVatOv((p) => ({ ...p, [x.id]: Number(e.target.value) }))}
+                      style={{ width: 56, padding: "3px 4px", fontSize: 12, border: "1px solid var(--line)", borderRadius: 6, background: "#fff", cursor: "pointer", textAlign: "right" }}>
+                      {[0, 8, 10].map((r) => <option key={r} value={r}>{r}%</option>)}
+                    </select>
+                    {vatOf(x) > 0 && <div className="tnum" style={{ fontSize: 10.5, color: "var(--ink-4)", marginTop: 2 }}>{fmtNum(vatOf(x))}</div>}
+                  </td>
+                  <td style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", verticalAlign: "top" }}>
                     <div className="tnum" style={{ color: x.choho ? "var(--ink-2)" : "var(--ink-4)" }}>{x.choho ? fmtNum(x.choho) : "—"}</div>
                     {x.chohoNote && <div style={{ fontSize: 10.5, color: "var(--ink-4)", lineHeight: 1.3, marginTop: 1 }}>{x.chohoNote}</div>}
                   </td>
-                  <td className="tnum" style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", fontWeight: 700 }}>{fmtNum((x.fee || 0) + (x.choho || 0))}</td>
+                  <td className="tnum" style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", fontWeight: 700, verticalAlign: "top" }}>{fmtNum(lineTotal(x))}</td>
                 </tr>
               );
             })}
@@ -281,8 +314,9 @@ function ExtStatementForm({ cfg, onCancel, onSaved }) {
           <tfoot>
             <tr style={{ fontWeight: 700 }}>
               <td className="ke-noprint" style={{ borderTop: "1.5px solid var(--line)" }}></td>
-              <td colSpan={5} style={{ padding: "9px 8px", borderTop: "1.5px solid var(--line)", textAlign: "right", color: "var(--ink-3)" }}>TỔNG ({sel.length} lô)</td>
+              <td colSpan={2} style={{ padding: "9px 8px", borderTop: "1.5px solid var(--line)", textAlign: "right", color: "var(--ink-3)" }}>TỔNG ({sel.length} lô)</td>
               <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(totalFee)}</td>
+              <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{totalVat ? fmtNum(totalVat) : "—"}</td>
               <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{totalChoho ? fmtNum(totalChoho) : "—"}</td>
               <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtVND(total)}</td>
             </tr>
@@ -293,7 +327,7 @@ function ExtStatementForm({ cfg, onCancel, onSaved }) {
       </div>
 
       <div className="ke-noprint" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 8, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
-        <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{sel.length} lô · cước <b className="tnum" style={{ color: "var(--ink)" }}>{fmtVND(totalFee)}</b>{totalChoho ? <> · chi hộ <b className="tnum" style={{ color: "var(--ink)" }}>{fmtVND(totalChoho)}</b></> : null} · tổng <b className="tnum" style={{ color: "var(--ink)" }}>{fmtVND(total)}</b></div>
+        <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{sel.length} lô · cước <b className="tnum" style={{ color: "var(--ink)" }}>{fmtVND(totalFee)}</b>{totalVat ? <> · VAT <b className="tnum" style={{ color: "var(--ink)" }}>{fmtVND(totalVat)}</b></> : null}{totalChoho ? <> · chi hộ <b className="tnum" style={{ color: "var(--ink)" }}>{fmtVND(totalChoho)}</b></> : null} · tổng <b className="tnum" style={{ color: "var(--ink)" }}>{fmtVND(total)}</b></div>
         <div style={{ display: "flex", gap: 10 }}>
           <Btn onClick={onCancel}>Hủy</Btn>
           <Btn onClick={() => window.print()}>In thử</Btn>

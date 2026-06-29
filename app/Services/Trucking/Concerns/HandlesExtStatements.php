@@ -30,7 +30,7 @@ trait HandlesExtStatements
         $v = trim($vendor);
         if ($v === '') return ['candidates' => []];
 
-        $q = TruckingShipment::with('costLines')
+        $q = TruckingShipment::with('costLines', 'customer')
             ->where('ext_vendor', $v)
             ->whereNotNull('gio_xe_den')
             ->where(function ($w) {
@@ -58,6 +58,7 @@ trait HandlesExtStatements
             $out[] = [
                 'id'         => $s->id,
                 'booking'    => $s->booking ?? '',
+                'customer'   => $s->customer ? ($s->customer->short_name ?: $s->customer->name) : '',
                 'sheet'      => $sheet,
                 'bks'        => $s->bks_vao ?: ($s->bks_ra ?: ''),
                 'from'       => $s->from_loc ?? '',
@@ -90,9 +91,13 @@ trait HandlesExtStatements
     public function saveExtStatement(array $data, ?TruckingExtStatement $st = null): TruckingExtStatement
     {
         return DB::transaction(function () use ($data, $st) {
+            // Tổng = Σ(cước + VAT(cước) + chi hộ). VAT chỉ áp lên cước; chi hộ không VAT.
             $total = 0;
             foreach (($data['lines'] ?? []) as $l) {
-                $total += ($this->inMoney($l['fee'] ?? null) ?? 0) + ($this->inMoney($l['choho'] ?? null) ?? 0);
+                $fee   = $this->inMoney($l['fee'] ?? null) ?? 0;
+                $choho = $this->inMoney($l['choho'] ?? null) ?? 0;
+                $rate  = (float) ($l['vatRate'] ?? 0);
+                $total += $fee + (int) round($fee * $rate / 100) + $choho;
             }
 
             $st ??= new TruckingExtStatement();
@@ -115,6 +120,7 @@ trait HandlesExtStatements
                     'ext_statement_id' => $st->id,
                     'shipment_id'      => $l['id'] ?? null,
                     'booking'          => $this->str($l['booking'] ?? null),
+                    'customer'         => $this->str($l['customer'] ?? null),
                     'sheet'            => $this->str($l['sheet'] ?? null),
                     'bks'              => $this->str($l['bks'] ?? null),
                     'from_loc'         => $this->str($l['from'] ?? null),
@@ -124,6 +130,7 @@ trait HandlesExtStatements
                     'fee'              => $this->inMoney($l['fee'] ?? null) ?? 0,
                     'choho'            => $this->inMoney($l['choho'] ?? null) ?? 0,
                     'choho_note'       => $this->str($l['chohoNote'] ?? null),
+                    'vat_rate'         => (float) ($l['vatRate'] ?? 0),
                     'note'             => $this->str($l['note'] ?? null),
                     'sort'             => $i,
                     'created_at'       => $now,
@@ -207,20 +214,27 @@ trait HandlesExtStatements
             'total'  => $total,
             'paid'   => $paid,
             'conNo'  => $total - $paid,
-            'lines'  => $st->lines->map(fn ($l) => [
-                'id'        => $l->shipment_id ?? $l->id,
-                'booking'   => $l->booking ?? '',
-                'sheet'     => $l->sheet ?? '',
-                'bks'       => $l->bks ?? '',
-                'from'      => $l->from_loc ?? '',
-                'to'        => $l->to_loc ?? '',
-                'contLabel' => $l->cont_label ?? '',
-                'date'      => $this->outDate($l->date),
-                'fee'       => (int) round((float) $l->fee),
-                'choho'     => (int) round((float) $l->choho),
-                'chohoNote' => $l->choho_note ?? '',
-                'note'      => $l->note ?? '',
-            ])->all(),
+            'lines'  => $st->lines->map(function ($l) {
+                $fee  = (int) round((float) $l->fee);
+                $rate = (float) $l->vat_rate;
+                return [
+                    'id'        => $l->shipment_id ?? $l->id,
+                    'booking'   => $l->booking ?? '',
+                    'customer'  => $l->customer ?? '',
+                    'sheet'     => $l->sheet ?? '',
+                    'bks'       => $l->bks ?? '',
+                    'from'      => $l->from_loc ?? '',
+                    'to'        => $l->to_loc ?? '',
+                    'contLabel' => $l->cont_label ?? '',
+                    'date'      => $this->outDate($l->date),
+                    'fee'       => $fee,
+                    'choho'     => (int) round((float) $l->choho),
+                    'chohoNote' => $l->choho_note ?? '',
+                    'vatRate'   => $rate,
+                    'vat'       => (int) round($fee * $rate / 100),   // VAT chỉ trên cước
+                    'note'      => $l->note ?? '',
+                ];
+            })->all(),
             'payments' => $st->payments->map(fn ($p) => [
                 'id'     => $p->id,
                 'date'   => $this->outDate($p->date),

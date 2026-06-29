@@ -9,15 +9,16 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class TruckingExtStatementLine extends Model
 {
     protected $fillable = [
-        'ext_statement_id', 'shipment_id', 'booking', 'sheet', 'bks',
-        'from_loc', 'to_loc', 'cont_label', 'date', 'fee', 'choho', 'choho_note', 'note', 'sort',
+        'ext_statement_id', 'shipment_id', 'booking', 'customer', 'sheet', 'bks',
+        'from_loc', 'to_loc', 'cont_label', 'date', 'fee', 'choho', 'choho_note', 'vat_rate', 'note', 'sort',
     ];
 
     protected $casts = [
-        'date'  => 'date',
-        'fee'   => 'decimal:2',
-        'choho' => 'decimal:2',
-        'sort'  => 'integer',
+        'date'     => 'date',
+        'fee'      => 'decimal:2',
+        'choho'    => 'decimal:2',
+        'vat_rate' => 'decimal:2',
+        'sort'     => 'integer',
     ];
 
     public function statement(): BelongsTo
