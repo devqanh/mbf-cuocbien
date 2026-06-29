@@ -56,7 +56,7 @@ function ExtKePage({ ke, onNew, onOpen }) {
         {!isMobile && (
         <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
           <div style={{ display: "grid", gridTemplateColumns: cols, gap: 12, padding: "11px 16px", background: "#fafbfc", borderBottom: "1px solid var(--line)", fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-            <div>Số bảng kê</div><div>Nhà xe</div><div>Ngày lập</div><div>Kỳ (Giờ xe đến)</div><div style={{ textAlign: "right" }}>Số lô</div><div style={{ textAlign: "right" }}>Tổng cước</div><div style={{ textAlign: "right" }}>Đã trả</div><div style={{ textAlign: "right" }}>Còn nợ</div>
+            <div>Số bảng kê</div><div>Nhà xe</div><div>Ngày lập</div><div>Kỳ (Giờ xe đến)</div><div style={{ textAlign: "right" }}>Số lô</div><div style={{ textAlign: "right" }}>Tổng (cước+chi hộ)</div><div style={{ textAlign: "right" }}>Đã trả</div><div style={{ textAlign: "right" }}>Còn nợ</div>
           </div>
           {ke.length === 0 && <div style={{ padding: "44px", textAlign: "center", color: "var(--ink-4)", fontSize: 13.5 }}>Chưa có bảng kê xe ngoài nào. Bấm “Tạo bảng kê mới” để bắt đầu.</div>}
           {ke.map((st) => {
@@ -86,6 +86,9 @@ function ExtKePage({ ke, onNew, onOpen }) {
 /* Header + bảng dòng (in được) — dùng chung cho tạo + xem. */
 function ExtLinesTable({ vendor, no, date, from, to, lines, footerTotal }) {
   const th = (txt, align) => <th style={{ textAlign: align || "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>{txt}</th>;
+  const sumFee = lines.reduce((a, l) => a + (l.fee || 0), 0);
+  const sumChoho = lines.reduce((a, l) => a + (l.choho || 0), 0);
+  const hasChoho = sumChoho > 0;
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 20, marginBottom: 14 }}>
@@ -102,9 +105,9 @@ function ExtLinesTable({ vendor, no, date, from, to, lines, footerTotal }) {
         <div style={{ fontWeight: 700, fontSize: 14 }}>Nhà xe: {vendor || "—"}</div>
       </div>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
-        <thead><tr style={{ background: "#fafbfc" }}>{th("#", "center")}{th("Lô / Booking")}{th("BKS")}{th("Tuyến")}{th("Ngày đến")}{th("Cước", "right")}</tr></thead>
+        <thead><tr style={{ background: "#fafbfc" }}>{th("#", "center")}{th("Lô / Booking")}{th("BKS")}{th("Tuyến")}{th("Ngày đến")}{th("Cước", "right")}{hasChoho && th("Chi hộ", "right")}{th("Tổng", "right")}</tr></thead>
         <tbody>
-          {lines.length === 0 && <tr><td colSpan={6} style={{ padding: "20px", textAlign: "center", color: "var(--ink-4)" }}>Chưa có dòng nào.</td></tr>}
+          {lines.length === 0 && <tr><td colSpan={hasChoho ? 8 : 7} style={{ padding: "20px", textAlign: "center", color: "var(--ink-4)" }}>Chưa có dòng nào.</td></tr>}
           {lines.map((l, i) => (
             <tr key={l.id}>
               <td className="tnum" style={{ textAlign: "center", padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-4)" }}>{i + 1}</td>
@@ -116,12 +119,19 @@ function ExtLinesTable({ vendor, no, date, from, to, lines, footerTotal }) {
               <td style={{ padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{[l.from, l.to].filter(Boolean).join(" → ") || "—"}</td>
               <td className="tnum" style={{ padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{fmtDate(l.date) || "—"}</td>
               <td className="tnum" style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", fontWeight: 600 }}>{fmtNum(l.fee)}</td>
+              {hasChoho && <td style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)" }}>
+                <div className="tnum" style={{ color: l.choho ? "var(--ink-2)" : "var(--ink-4)" }}>{l.choho ? fmtNum(l.choho) : "—"}</div>
+                {l.chohoNote && <div style={{ fontSize: 10.5, color: "var(--ink-4)", lineHeight: 1.3, marginTop: 1 }}>{l.chohoNote}</div>}
+              </td>}
+              <td className="tnum" style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", fontWeight: 700 }}>{fmtNum((l.fee || 0) + (l.choho || 0))}</td>
             </tr>
           ))}
         </tbody>
         <tfoot>
           <tr style={{ fontWeight: 700 }}>
-            <td colSpan={5} style={{ padding: "9px 8px", borderTop: "1.5px solid var(--line)", textAlign: "right", color: "var(--ink-3)" }}>TỔNG CƯỚC</td>
+            <td colSpan={5} style={{ padding: "9px 8px", borderTop: "1.5px solid var(--line)", textAlign: "right", color: "var(--ink-3)" }}>TỔNG</td>
+            <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(sumFee)}</td>
+            {hasChoho && <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(sumChoho)}</td>}
             <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtVND(footerTotal)}</td>
           </tr>
         </tfoot>
@@ -156,7 +166,9 @@ function ExtStatementForm({ cfg, onCancel, onSaved }) {
   }, [vendor, from, to]);
 
   const sel = all.filter((x) => picked[x.id] !== false);
-  const total = sel.reduce((a, x) => a + (x.fee || 0), 0);
+  const totalFee = sel.reduce((a, x) => a + (x.fee || 0), 0);
+  const totalChoho = sel.reduce((a, x) => a + (x.choho || 0), 0);
+  const total = totalFee + totalChoho;
   const keNo = "BKN-" + today.replace(/-/g, "").slice(2) + "-" + (vendor ? vendor.replace(/[^A-Za-zÀ-ỹ0-9]/g, "").slice(0, 3).toUpperCase() : "XXX");
 
   const save = async () => {
@@ -164,7 +176,7 @@ function ExtStatementForm({ cfg, onCancel, onSaved }) {
     setSaving(true);
     const lines = sel.map((x) => ({
       id: x.id, booking: x.booking, sheet: x.sheet, bks: x.bks,
-      from: x.from, to: x.to, contLabel: x.contLabel, date: x.date, fee: x.fee, note: x.note,
+      from: x.from, to: x.to, contLabel: x.contLabel, date: x.date, fee: x.fee, choho: x.choho, chohoNote: x.chohoNote, note: x.note,
     }));
     const payload = { id: Date.now(), no: keNo, vendor, date: today, from, to, lines, payments: [] };
     let result;
@@ -197,7 +209,7 @@ function ExtStatementForm({ cfg, onCancel, onSaved }) {
 
       <div className="ke-noprint" style={{ fontSize: 11.5, color: "var(--ink-4)", padding: "8px 0 0", display: "flex", alignItems: "flex-start", gap: 6, lineHeight: 1.5 }}>
         <i className="bi bi-info-circle" style={{ marginTop: 1 }} />
-        <span>Lọc theo <b style={{ color: "var(--ink-3)" }}>Giờ xe đến</b> của lô hàng. Chỉ hiện lô đã có <b style={{ color: "var(--ink-3)" }}>cước thuê xe ngoài</b> ({"> 0"}).</span>
+        <span>Lọc theo <b style={{ color: "var(--ink-3)" }}>Giờ xe đến</b> của lô hàng. Hiện lô có <b style={{ color: "var(--ink-3)" }}>cước thuê xe ngoài</b> hoặc <b style={{ color: "var(--ink-3)" }}>chi hộ</b> (khoản “Chi hộ khách” ở Chi phí lô hàng). Tổng phải trả nhà xe = cước + chi hộ.</span>
       </div>
 
       {/* printable statement */}
@@ -226,10 +238,12 @@ function ExtStatementForm({ cfg, onCancel, onSaved }) {
               <th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Tuyến</th>
               <th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Ngày đến</th>
               <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Cước</th>
+              <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Chi hộ</th>
+              <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Tổng</th>
             </tr>
           </thead>
           <tbody>
-            {!loading && all.length === 0 && <tr><td colSpan={7} style={{ padding: "28px 24px", textAlign: "center", color: "var(--ink-4)" }}>
+            {!loading && all.length === 0 && <tr><td colSpan={9} style={{ padding: "28px 24px", textAlign: "center", color: "var(--ink-4)" }}>
               {needDate
                 ? <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                     <i className="bi bi-calendar-range" style={{ fontSize: 26, color: "var(--accent)", opacity: .8 }} />
@@ -238,7 +252,7 @@ function ExtStatementForm({ cfg, onCancel, onSaved }) {
                   </span>
                 : (vendor ? "Không có lô nào phù hợp trong kỳ đã chọn." : "Chọn nhà xe để bắt đầu.")}
             </td></tr>}
-            {loading && <tr><td colSpan={7} style={{ padding: "24px", textAlign: "center", color: "var(--ink-4)" }}>Đang tải lô…</td></tr>}
+            {loading && <tr><td colSpan={9} style={{ padding: "24px", textAlign: "center", color: "var(--ink-4)" }}>Đang tải lô…</td></tr>}
             {!loading && all.map((x, i) => {
               const on = picked[x.id] !== false;
               return (
@@ -255,6 +269,11 @@ function ExtStatementForm({ cfg, onCancel, onSaved }) {
                   <td style={{ padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{[x.from, x.to].filter(Boolean).join(" → ") || "—"}</td>
                   <td className="tnum" style={{ padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{fmtDate(x.date) || "—"}</td>
                   <td className="tnum" style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", fontWeight: 600 }}>{fmtNum(x.fee)}</td>
+                  <td style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)" }}>
+                    <div className="tnum" style={{ color: x.choho ? "var(--ink-2)" : "var(--ink-4)" }}>{x.choho ? fmtNum(x.choho) : "—"}</div>
+                    {x.chohoNote && <div style={{ fontSize: 10.5, color: "var(--ink-4)", lineHeight: 1.3, marginTop: 1 }}>{x.chohoNote}</div>}
+                  </td>
+                  <td className="tnum" style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", fontWeight: 700 }}>{fmtNum((x.fee || 0) + (x.choho || 0))}</td>
                 </tr>
               );
             })}
@@ -262,7 +281,9 @@ function ExtStatementForm({ cfg, onCancel, onSaved }) {
           <tfoot>
             <tr style={{ fontWeight: 700 }}>
               <td className="ke-noprint" style={{ borderTop: "1.5px solid var(--line)" }}></td>
-              <td colSpan={5} style={{ padding: "9px 8px", borderTop: "1.5px solid var(--line)", textAlign: "right", color: "var(--ink-3)" }}>TỔNG CƯỚC ({sel.length} lô)</td>
+              <td colSpan={5} style={{ padding: "9px 8px", borderTop: "1.5px solid var(--line)", textAlign: "right", color: "var(--ink-3)" }}>TỔNG ({sel.length} lô)</td>
+              <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(totalFee)}</td>
+              <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{totalChoho ? fmtNum(totalChoho) : "—"}</td>
               <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtVND(total)}</td>
             </tr>
           </tfoot>
@@ -272,7 +293,7 @@ function ExtStatementForm({ cfg, onCancel, onSaved }) {
       </div>
 
       <div className="ke-noprint" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 8, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
-        <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{sel.length} lô · tổng cước <b className="tnum" style={{ color: "var(--ink)" }}>{fmtVND(total)}</b></div>
+        <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{sel.length} lô · cước <b className="tnum" style={{ color: "var(--ink)" }}>{fmtVND(totalFee)}</b>{totalChoho ? <> · chi hộ <b className="tnum" style={{ color: "var(--ink)" }}>{fmtVND(totalChoho)}</b></> : null} · tổng <b className="tnum" style={{ color: "var(--ink)" }}>{fmtVND(total)}</b></div>
         <div style={{ display: "flex", gap: 10 }}>
           <Btn onClick={onCancel}>Hủy</Btn>
           <Btn onClick={() => window.print()}>In thử</Btn>
@@ -375,7 +396,7 @@ function SavedExtStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUr
             <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end" }}>
               <div style={{ width: 320, background: "#fafbfc", border: "1px solid var(--line)", borderRadius: 10, padding: "12px 16px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, marginBottom: 8 }}>
-                  <span style={{ fontWeight: 700 }}>TỔNG CƯỚC</span><b className="tnum">{fmtVND(total)}</b>
+                  <span style={{ fontWeight: 700 }}>TỔNG PHẢI TRẢ</span><b className="tnum">{fmtVND(total)}</b>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 8 }}>
                   <span style={{ color: "var(--ink-3)" }}>Đã trả ({payments.length} đợt)</span><b className="tnum" style={{ color: "var(--good)" }}>{fmtVND(paid)}</b>

@@ -20,17 +20,22 @@ use Illuminate\Support\Facades\DB;
 trait HandlesExtStatements
 {
     /**
-     * Ứng viên cho 1 bảng kê xe ngoài: lô của 1 NHÀ XE trong khoảng GIỜ XE ĐẾN, ext_fee > 0.
-     * Đẩy lọc vào SQL theo index (ext_vendor, gio_xe_den) — không kéo toàn bộ lô.
+     * Ứng viên cho 1 bảng kê xe ngoài: lô của 1 NHÀ XE trong khoảng GIỜ XE ĐẾN.
+     * Lấy lô có cước thuê (ext_fee > 0) HOẶC có chi hộ (cost_billable > 0 — khoản
+     * "Chi hộ khách" ở Chi phí lô hàng). Đẩy lọc vào SQL theo index (ext_vendor,
+     * gio_xe_den) — không kéo toàn bộ lô. Eager-load costLines để cộng chi hộ (gross).
      */
     public function extStatementCandidates(string $vendor, ?string $from, ?string $to): array
     {
         $v = trim($vendor);
         if ($v === '') return ['candidates' => []];
 
-        $q = TruckingShipment::where('ext_vendor', $v)
-            ->where('ext_fee', '>', 0)
-            ->whereNotNull('gio_xe_den');
+        $q = TruckingShipment::with('costLines')
+            ->where('ext_vendor', $v)
+            ->whereNotNull('gio_xe_den')
+            ->where(function ($w) {
+                $w->where('ext_fee', '>', 0)->orWhere('cost_billable', '>', 0);
+            });
         if ($from) $q->where('gio_xe_den', '>=', $from . ' 00:00:00');
         if ($to)   $q->where('gio_xe_den', '<=', $to . ' 23:59:59');
 
@@ -41,20 +46,41 @@ trait HandlesExtStatements
             $contLabel = $sheet === 'HPH'
                 ? ($s->qty . ' × ' . $s->cont_type)
                 : (($s->cont_no ?: $s->cont_type) . ($s->cont_no ? ' · ' . $s->cont_type : ''));
+            $fee   = (int) round((float) $s->ext_fee);
+            // Chi hộ = các khoản "Chi hộ khách" (billable) ở Chi phí lô hàng — gross (như bảng kê khách).
+            $chohoItems = []; $choho = 0;
+            foreach ($s->costLines->where('billable', true) as $c) {
+                $amt = (int) round((float) $c->amount);
+                $choho += $amt;
+                $chohoItems[] = ['item' => $c->item ?: '(khoản)', 'amount' => $amt];
+            }
+            if ($fee <= 0 && $choho <= 0) continue;   // không có gì để trả nhà xe
             $out[] = [
-                'id'        => $s->id,
-                'booking'   => $s->booking ?? '',
-                'sheet'     => $sheet,
-                'bks'       => $s->bks_vao ?: ($s->bks_ra ?: ''),
-                'from'      => $s->from_loc ?? '',
-                'to'        => $s->to_loc ?? '',
-                'contLabel' => $contLabel,
-                'date'      => $this->outDate($s->gio_xe_den),
-                'fee'       => (int) round((float) $s->ext_fee),
-                'note'      => trim((string) $s->ghi_chu),
+                'id'         => $s->id,
+                'booking'    => $s->booking ?? '',
+                'sheet'      => $sheet,
+                'bks'        => $s->bks_vao ?: ($s->bks_ra ?: ''),
+                'from'       => $s->from_loc ?? '',
+                'to'         => $s->to_loc ?? '',
+                'contLabel'  => $contLabel,
+                'date'       => $this->outDate($s->gio_xe_den),
+                'fee'        => $fee,
+                'choho'      => $choho,
+                'chohoItems' => $chohoItems,                    // breakdown danh mục chi hộ
+                'chohoNote'  => $this->chohoNoteText($chohoItems),
+                'note'       => trim((string) $s->ghi_chu),
             ];
         }
         return ['candidates' => $out];
+    }
+
+    /** Gộp breakdown chi hộ thành 1 dòng ghi chú: "Nâng 2.916.000 · Lưu cont 300.000". */
+    private function chohoNoteText(array $items): string
+    {
+        return implode(' · ', array_map(
+            fn ($it) => trim((string) ($it['item'] ?? '')) . ' ' . number_format((int) round((float) ($it['amount'] ?? 0)), 0, ',', '.'),
+            array_filter($items, fn ($it) => (int) round((float) ($it['amount'] ?? 0)) !== 0)
+        ));
     }
 
     /**
@@ -65,7 +91,9 @@ trait HandlesExtStatements
     {
         return DB::transaction(function () use ($data, $st) {
             $total = 0;
-            foreach (($data['lines'] ?? []) as $l) $total += $this->inMoney($l['fee'] ?? null) ?? 0;
+            foreach (($data['lines'] ?? []) as $l) {
+                $total += ($this->inMoney($l['fee'] ?? null) ?? 0) + ($this->inMoney($l['choho'] ?? null) ?? 0);
+            }
 
             $st ??= new TruckingExtStatement();
             $st->fill([
@@ -94,6 +122,8 @@ trait HandlesExtStatements
                     'cont_label'       => $this->str($l['contLabel'] ?? null),
                     'date'             => $this->inDate($l['date'] ?? null),
                     'fee'              => $this->inMoney($l['fee'] ?? null) ?? 0,
+                    'choho'            => $this->inMoney($l['choho'] ?? null) ?? 0,
+                    'choho_note'       => $this->str($l['chohoNote'] ?? null),
                     'note'             => $this->str($l['note'] ?? null),
                     'sort'             => $i,
                     'created_at'       => $now,
@@ -187,6 +217,8 @@ trait HandlesExtStatements
                 'contLabel' => $l->cont_label ?? '',
                 'date'      => $this->outDate($l->date),
                 'fee'       => (int) round((float) $l->fee),
+                'choho'     => (int) round((float) $l->choho),
+                'chohoNote' => $l->choho_note ?? '',
                 'note'      => $l->note ?? '',
             ])->all(),
             'payments' => $st->payments->map(fn ($p) => [
