@@ -144,13 +144,20 @@ function Txt({ value, onChange, placeholder, disabled = false }) {
 }
 
 /* Select2-style searchable combo bound to a config list. onCreate(v) adds to config. */
+// Chuẩn hóa để tìm KHÔNG phụ thuộc dấu VÀ không lệch NFC/NFD: NFD tách dấu → bỏ dấu kết hợp (U+0300–U+036F)
+// → đ→d → thường. Nhờ vậy "hà hưng hải" (gõ Unikey, có thể NFD) tìm ra "HÀ HƯNG HẢI" (DB lưu NFC) và
+// "hai minh" (không dấu) cũng ra "HẢI MINH". KHÔNG strip thì indexOf hỏng do khác chuẩn hóa Unicode.
+function stripDia(s) {
+  return (s == null ? "" : String(s)).normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
+}
 // Xếp hạng độ khớp khi tìm: khớp tuyệt đối(0) < bắt đầu bằng(1) < đầu 1 từ(2) < chứa(3); -1 = không khớp.
 function matchRank(label, ql) {
-  const l = (label == null ? "" : String(label)).toLowerCase();
-  if (!ql) return 4;
-  const i = l.indexOf(ql);
+  const l = stripDia(label);
+  const needle = stripDia(ql);
+  if (!needle) return 4;
+  const i = l.indexOf(needle);
   if (i < 0) return -1;
-  if (l === ql) return 0;
+  if (l === needle) return 0;
   if (i === 0) return 1;
   const p = l[i - 1];
   if (p === " " || p === "-" || p === "(" || p === "/" || p === "·") return 2;
@@ -225,15 +232,15 @@ function Combo({ value, onChange, options = [], onCreate, placeholder = "Chọn�
           border: "1px solid var(--line)", borderRadius: 11, boxShadow: "0 12px 32px -8px rgba(16,19,23,.24), 0 2px 8px rgba(16,19,23,.08)", overflow: "hidden" }}>
           <div style={{ padding: 7, borderBottom: "1px solid var(--line-2)", position: "relative", flexShrink: 0 }}>
             <span style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)" }}><I.search /></span>
-            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm hoặc thêm mới…"
+            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} onCompositionEnd={(e) => setQ(e.currentTarget.value)} placeholder="Tìm hoặc thêm mới…"
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (filtered.length && !ql) return; if (filtered.length === 1) pick(filtered[0].value); else if (!strict && !exact && q.trim()) create(); } }}
               style={{ width: "100%", padding: "7px 10px 7px 30px", fontSize: 13, border: "1px solid var(--line)", borderRadius: 8, outline: "none" }} />
           </div>
           <div style={{ maxHeight: pos.maxH, overflowY: "auto", padding: 4 }}>
-            {filtered.map((o) => {
+            {filtered.map((o, oi) => {
               const sel = o.value === value;
               return (
-                <button key={o.value} type="button" onClick={() => pick(o.value)}
+                <button key={o.value + "::" + oi} type="button" onClick={() => pick(o.value)}
                   style={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
                     padding: "8px 10px", fontSize: 13.5, border: "none", borderRadius: 7, cursor: "pointer",
                     background: sel ? "var(--accent-weak)" : "transparent", color: sel ? "var(--accent)" : "var(--ink-2)", fontWeight: sel ? 600 : 400 }}
@@ -325,7 +332,7 @@ function MultiCombo({ values = [], onChange, options = [], groups = null, onCrea
         <div style={{ position: "absolute", zIndex: 80, top: "calc(100% + 4px)", left: 0, right: 0, background: "#fff", border: "1px solid var(--line)", borderRadius: 11, boxShadow: "0 12px 32px -8px rgba(16,19,23,.24), 0 2px 8px rgba(16,19,23,.08)", overflow: "hidden" }}>
           <div style={{ padding: 7, borderBottom: "1px solid var(--line-2)", position: "relative" }}>
             <span style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)" }}><I.search /></span>
-            <input ref={searchRef} autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={strict ? "Tìm trong danh mục…" : "Tìm hoặc thêm mới…"}
+            <input ref={searchRef} autoFocus value={q} onChange={(e) => setQ(e.target.value)} onCompositionEnd={(e) => setQ(e.currentTarget.value)} placeholder={strict ? "Tìm trong danh mục…" : "Tìm hoặc thêm mới…"}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (avail.length === 1) addVal(avail[0]); else if (!strict && !exact && q.trim()) create(); } }}
               style={{ width: "100%", padding: "7px 10px 7px 30px", fontSize: 13, border: "1px solid var(--line)", borderRadius: 8, outline: "none" }} />
           </div>

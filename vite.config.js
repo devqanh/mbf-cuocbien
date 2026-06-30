@@ -63,6 +63,9 @@ export default defineConfig(({ mode }) => {
                 ? {
                       origin: `https://${tunnelHost}`,
                       hmr: { host: tunnelHost, protocol: 'wss', clientPort: 443 },
+                      // Vite ≥ chặn Host lạ (chống DNS-rebinding) → KHÔNG cho domain tunnel sẽ trả 403 cho mọi
+                      // module ⇒ trắng trang. Cho phép đúng host tunnel để asset/HMR qua https domain chạy được.
+                      allowedHosts: [tunnelHost],
                   }
                 : {}),
             watch: {

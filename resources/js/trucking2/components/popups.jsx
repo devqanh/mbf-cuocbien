@@ -9,9 +9,12 @@ const nowLocalDT = () => { const d = new Date(); const p = (n) => String(n).padS
 // Địa điểm dạng select2: giá trị = tên (giữ nguyên dữ liệu), nhãn = "Tên - Ký hiệu" để dễ nhận diện + tìm theo ký hiệu.
 // LƯU theo KÝ HIỆU (value=mã) để link/tham chiếu bền; HIỆN "Tên — Mã" cho dễ đọc.
 // Địa điểm chưa có mã → tạm dùng tên làm value.
+// value = TÊN địa điểm (DUY NHẤT) chứ KHÔNG phải ký hiệu — vì nhiều địa điểm chung 1 ký hiệu (vd HÀ HƯNG
+// HẢI, TÂN VŨ, GIC… đều = HPP). Lưu ký hiệu sẽ mất tên cụ thể + chọn xong nhảy về tên đầu tiên trùng mã.
+// Lưu tên: round-trip đúng tên đã chọn; định giá vẫn khớp vì backend tự quy tên→ký hiệu (codeMap/$rc).
 const locOptions = (cfg) => (cfg.locations || []).map((n) => {
   const c = (cfg.locationCode || {})[n];
-  return c ? { value: c, label: `${n} — ${c}` } : { value: n, label: n };
+  return { value: n, label: c ? `${n} — ${c}` : n };
 });
 // Loại cont sà lan SUY TỪ Loại cont: reefer (RF/RHC) → NOR, còn lại → DRY (vd 40HC→DRY, 40RF/40RHC→NOR).
 const bargeKindOf = (ct) => /R(F|HC|EEF)/i.test(String(ct || "")) ? "NOR" : "DRY";

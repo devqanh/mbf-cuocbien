@@ -12,6 +12,7 @@
 - [Two-factor auth](two-factor-auth.md) — 2FA/TOTP tự viết thuần PHP (không package), QR client-side; profile bật/tắt + login challenge + admin reset
 - [Font global config](font-global-config.md) — font toàn dự án tập trung ở partials/_font.blade.php (Inter); đổi 1 chỗ + view:clear, không cần npm build
 - [Dev tunnel + Vite](dev-tunnel-vite.md) — local map ra domain qua Cloudflare Tunnel/ngrok (chỉ 443); npm run dev lỗi vì 5173 không lộ; dùng VITE_TUNNEL_HOST hoặc dev qua URL local
+- [Vite port conflict / trắng trang](vite-port-conflict.md) — tunnel trắng trang do Vite chặn host (allowedHosts) HOẶC dự án khác chiếm 5173 trên [::1]; chẩn đoán bằng so HTTP IPv4 vs IPv6
 - [Asset management](asset-management.md) — Quản lý tài sản dùng chung trang/bảng Quản lý xe (cột kind=vehicle|asset, type='asset' không đụng phí xe); tái dùng tab chi phí/khấu hao/tài liệu
 - [Plan link](plan-link.md) — link kế hoạch công khai (token) cho lái xe mobile cập nhật giờ xe đến/ra + ảnh; lọc theo Giờ đến dự kiến; nút ở toolbar Lô hàng
 - [Dev no build](dev-no-build.md) — đang npm run dev, KHÔNG cần npm run build sau khi sửa .jsx
@@ -24,6 +25,7 @@
 - [Date fields](date-fields.md) — input ngày/giờ React dùng DateField/DTField (Flatpickr locale VN, fallback native), KHÔNG dùng type=date native; trừ 2 trang public lái xe
 - [Ra status rule](ra-status-rule.md) — "đã ra" = có Giờ xe ra (gio_xe_ra) HOẶC Biển số ra (bks_ra); xe ngoài không có BKS nên giờ ra là đủ; áp ở badge/tab lọc/ô chọn cont khác ra; có ra_mode self/other/none (none→gio_xe_ra_xe cột riêng)
 - [Coded catalog edit](coded-catalog-edit.md) — Địa điểm/Kho cho sửa ký hiệu; reconcileLookup khớp theo id (idArr) giữ id khi đổi code, không đứt link; vẫn chặn trùng mã
+- [Location value = name](location-value-is-name.md) — Combo Nơi lấy/hạ phải lưu TÊN (duy nhất) chứ KHÔNG lưu ký hiệu vì nhiều địa điểm chung 1 mã; backend tự quy tên→mã khi định giá/báo cáo
 - [Duyệt chi theo lô (ĐÃ BỎ)](shipment-spend-duyet-chi.md) — đã gỡ "chi cho tài xế" khỏi Lô hàng + drop trucking_shipment_spends; chi lái nay ở Lộ trình
 - [Chi lái ở Lộ trình](route-pays-lo-trinh.md) — phí tuyến chọn Cảng+Kho, "chi theo ngày" tổng hợp theo xe/ngày, lương 4 mức (kéo×CRU), repeater chi khác; bảng trucking_route_pays (chỉ lưu lái nhận + đã chi)
 - [JSON schema evolution](json-schema-evolution.md) — cột JSON phải tiến hóa tương thích ngược: chỉ thêm trường tùy chọn + đọc kèm default; không đổi tên/kiểu trường cũ
