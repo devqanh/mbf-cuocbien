@@ -8,6 +8,14 @@ const ROUTES_TRK = (window.__TRK && window.__TRK.routes) || {};
 const CO_NAME = CO.name || "MBF JOINT STOCK COMPANY";
 const CO_SUB = [CO.website, CO.phone].filter(Boolean).join(" · ") || "http://mbf.com.vn · 84-24-39449616";
 
+/* Badge Nhập/Xuất/Khác (xanh dương / xanh lá / hổ phách) — hiển thị loại cont của lô. */
+function IoBadge({ io }) {
+  const v = (io || "").toLowerCase();
+  if (!v) return null;
+  const tone = v.includes("nh") ? ["#1d6fd6", "#e7f0fc"] : v.includes("xu") ? ["#1f8a5b", "#e3f5ec"] : ["#b9750a", "#fcf3e2"];
+  return <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 999, color: tone[0], background: tone[1], whiteSpace: "nowrap" }}>{io}</span>;
+}
+
 /* ============================================================
  * Danh sách bảng kê xe ngoài (theo nhà xe) — Tổng / Đã trả / Còn nợ.
  * ============================================================ */
@@ -118,8 +126,9 @@ function ExtLinesTable({ vendor, no, date, from, to, lines, footerTotal }) {
             <tr key={l.id}>
               <td className="tnum" style={{ textAlign: "center", padding: "8px 6px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-4)", verticalAlign: "top" }}>{i + 1}</td>
               <td style={{ padding: "8px", borderBottom: "1px solid var(--line-2)" }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   <span style={{ fontWeight: 700 }} className="tnum">{l.booking || "—"}</span>
+                  <IoBadge io={l.io} />
                   {l.customer && <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 600 }}>{l.customer}</span>}
                 </div>
                 {meta && <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 1 }}>{meta}</div>}
@@ -193,7 +202,7 @@ function ExtStatementForm({ cfg, onCancel, onSaved }) {
     if (!sel.length || saving) return;
     setSaving(true);
     const lines = sel.map((x) => ({
-      id: x.id, booking: x.booking, customer: x.customer, sheet: x.sheet, bks: x.bks,
+      id: x.id, booking: x.booking, customer: x.customer, io: x.io, sheet: x.sheet, bks: x.bks,
       from: x.from, to: x.to, contLabel: x.contLabel, date: x.date, fee: x.fee, choho: x.choho, chohoNote: x.chohoNote, vatRate: rateOf(x), note: x.note,
     }));
     const payload = { id: Date.now(), no: keNo, vendor, date: today, from, to, lines, payments: [] };
@@ -287,8 +296,9 @@ function ExtStatementForm({ cfg, onCancel, onSaved }) {
                   </td>
                   <td className="tnum" style={{ textAlign: "center", padding: "8px 6px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-4)", verticalAlign: "top" }}>{i + 1}</td>
                   <td style={{ padding: "8px", borderBottom: "1px solid var(--line-2)" }}>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <span style={{ fontWeight: 700 }} className="tnum">{x.booking || "—"}</span>
+                      <IoBadge io={x.io} />
                       {x.customer && <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 600 }}>{x.customer}</span>}
                     </div>
                     {meta && <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 1 }}>{meta}</div>}

@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class TruckingExtStatementLine extends Model
 {
     protected $fillable = [
-        'ext_statement_id', 'shipment_id', 'booking', 'customer', 'sheet', 'bks',
+        'ext_statement_id', 'shipment_id', 'booking', 'customer', 'io', 'sheet', 'bks',
         'from_loc', 'to_loc', 'cont_label', 'date', 'fee', 'choho', 'choho_note', 'vat_rate', 'note', 'sort',
     ];
 

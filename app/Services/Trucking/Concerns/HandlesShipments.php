@@ -869,6 +869,20 @@ trait HandlesShipments
             'kho'          => $s->kho ?? '',
             'from'         => $s->from_loc ?? '',
             'to'           => $s->to_loc ?? '',
+            // Chuỗi KÝ HIỆU tuyến: Nơi lấy → các Kho → Nơi hạ (vd HPP → QV → HPP) cho kế toán rà soát nhanh
+            // từng lô. Rỗng (ẩn dòng) nếu y hệt chuỗi tên hiển thị (không có kho, ký hiệu = tên).
+            'routeCodes'   => (function () use ($s) {
+                $codes = array_values(array_filter(array_merge(
+                    [$this->locCode($s->from_loc)],
+                    $this->khoCodePoints($s->kho),
+                    [$this->locCode($s->to_loc)],
+                ), fn ($x) => trim((string) $x) !== ''));
+                $names = array_values(array_filter([
+                    trim((string) ($s->from_loc ?? '')),
+                    trim((string) ($s->to_loc ?? '')),
+                ], fn ($x) => $x !== ''));
+                return $codes === $names ? [] : $codes;
+            })(),
             'bksVao'       => $s->bks_vao ?? '',
             'bksRa'        => $s->bks_ra ?? '',
             'raMode'       => $s->ra_mode ?? 'self',

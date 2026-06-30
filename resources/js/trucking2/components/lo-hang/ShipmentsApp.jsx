@@ -714,6 +714,16 @@ function ShipmentsApp() {
                       <span style={{ color: "var(--accent)", flexShrink: 0 }}><I.arrow /></span>
                       <span style={{ color: "var(--ink-2)" }}>{s.to || "—"}</span>
                     </div>
+                    {(s.routeCodes || []).length > 0 && (
+                      <div className="tnum" style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", fontSize: 11.5, color: "var(--ink-4)", marginTop: 2 }}>
+                        {s.routeCodes.map((c, i) => (
+                          <React.Fragment key={i}>
+                            {i > 0 && <span style={{ flexShrink: 0 }}><I.arrow /></span>}
+                            <span>{c}</span>
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    )}
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
                       <span className="tnum" style={{ fontSize: 14.5, fontWeight: 700, color: "var(--ink)" }}>{s.contNo || "—"}</span>
                       <span className="tnum" style={{ fontSize: 12, color: "var(--ink-4)" }}>{s.contType}{s.kho ? " · " + s.kho : ""}</span>
@@ -822,6 +832,16 @@ function ShipmentsApp() {
                           <span style={{ color: "var(--accent)", flexShrink: 0 }}><I.arrow /></span>
                           <span style={{ color: "var(--ink-2)" }}>{s.to || "—"}</span>
                         </div>
+                        {(s.routeCodes || []).length > 0 && (
+                          <div className="tnum" style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", fontSize: 11, color: "var(--ink-4)", marginTop: 2 }} title="Ký hiệu tuyến: nơi lấy → kho → nơi hạ">
+                            {s.routeCodes.map((c, i) => (
+                              <React.Fragment key={i}>
+                                {i > 0 && <span style={{ flexShrink: 0 }}><I.arrow /></span>}
+                                <span>{c}</span>
+                              </React.Fragment>
+                            ))}
+                          </div>
+                        )}
                       </EditCell>
                     </TD>
                     <TD>

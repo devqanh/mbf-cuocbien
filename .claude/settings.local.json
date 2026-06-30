@@ -5,7 +5,21 @@
       "PowerShell(php artisan migrate --force 2>&1)",
       "PowerShell(php artisan route:list --name=extStatements 2>&1)",
       "PowerShell(php artisan tinker --execute=\"require 'C:/Users/QUYENA~1/AppData/Local/Temp/claude/c--laragon-www-cuocbien/b68a982e-c908-47ea-ac62-63eae4bc49de/scratchpad/test_ext.php';\" 2>&1)",
-      "PowerShell(php artisan tinker --execute=\"require 'C:/Users/QUYENA~1/AppData/Local/Temp/claude/c--laragon-www-cuocbien/b68a982e-c908-47ea-ac62-63eae4bc49de/scratchpad/debug.php';\" 2>&1)"
+      "PowerShell(php artisan tinker --execute=\"require 'C:/Users/QUYENA~1/AppData/Local/Temp/claude/c--laragon-www-cuocbien/b68a982e-c908-47ea-ac62-63eae4bc49de/scratchpad/debug.php';\" 2>&1)",
+      "PowerShell(php artisan migrate --force --path=database/migrations/2026_06_25_000009_fix_location_name_aliases.php)",
+      "PowerShell(php artisan tinker --execute=\"require 'C:/Users/QUYENA~1/AppData/Local/Temp/claude/c--laragon-www-cuocbien/b68a982e-c908-47ea-ac62-63eae4bc49de/scratchpad/loc_after.php';\")",
+      "PowerShell(php artisan tinker --execute=\"require 'C:/Users/QUYENA~1/AppData/Local/Temp/claude/c--laragon-www-cuocbien/b68a982e-c908-47ea-ac62-63eae4bc49de/scratchpad/lo_39559003.php';\")",
+      "PowerShell(git add docs/ai-memory/coded-catalog-edit.md)",
+      "PowerShell(git push origin main)",
+      "PowerShell(git add resources/js/trucking2/pages/lo-trinh.jsx public/build)",
+      "PowerShell(php artisan migrate --force --path=database/migrations/2026_06_29_000001_add_choho_to_ext_statement_lines.php)",
+      "PowerShell(php artisan tinker --execute=\"require 'C:/Users/QUYENA~1/AppData/Local/Temp/claude/c--laragon-www-cuocbien/b68a982e-c908-47ea-ac62-63eae4bc49de/scratchpad/test_ext_choho.php';\")",
+      "PowerShell(php artisan tinker --execute=\"require 'C:/Users/QUYENA~1/AppData/Local/Temp/claude/c--laragon-www-cuocbien/b68a982e-c908-47ea-ac62-63eae4bc49de/scratchpad/sgn.php';\")",
+      "PowerShell(php artisan migrate:rollback --force --path=database/migrations/2026_06_29_000001_add_choho_to_ext_statement_lines.php)",
+      "PowerShell(git add app/Models/TruckingExtStatementLine.php app/Services/Trucking/Concerns/HandlesExtStatements.php database/migrations/2026_06_29_000001_add_choho_to_ext_statement_lines.php resources/js/trucking2/ui/ext-statement.jsx)",
+      "PowerShell(php artisan migrate --force --path=database/migrations/2026_06_29_000002_add_customer_vat_to_ext_statement_lines.php)",
+      "PowerShell(git add app/Models/TruckingExtStatementLine.php app/Services/Trucking/Concerns/HandlesExtStatements.php database/migrations/2026_06_29_000002_add_customer_vat_to_ext_statement_lines.php resources/js/trucking2/ui/ext-statement.jsx)",
+      "PowerShell(php artisan migrate:rollback --force --path=database/migrations/2026_06_29_000002_add_customer_vat_to_ext_statement_lines.php)"
     ]
   }
 }
