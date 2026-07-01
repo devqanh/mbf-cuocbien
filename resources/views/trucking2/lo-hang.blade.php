@@ -16,6 +16,8 @@ window.__TRK = {
     shipmentStore: '{{ route("trucking2.shipments.store") }}',
     shipmentCheck: '{{ route("trucking2.shipmentCheck") }}',
     shipmentImport: '{{ route("trucking2.shipmentImport") }}',
+    cshtCheck: '{{ route("trucking2.cshtCheck") }}',
+    cshtImport: '{{ route("trucking2.cshtImport") }}',
     shipmentsPage: '{{ route("trucking2.shipmentsPage") }}',
     shipmentBulk: '{{ route("trucking2.shipments.bulkUpdate") }}',
     config: '{{ route("trucking2.configData") }}',

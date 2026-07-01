@@ -271,16 +271,16 @@ function CostLineRows({ rows = [], onChange, options = [], onCreate, payers = []
     amount: toNum(e.amount) ? e.amount : (prices[item] || ""),
     vat: (e.vat === undefined || e.vat === null || e.vat === "") ? (costVat[item] ?? "") : e.vat,
   });
-  const add = () => onChange([...rows, { id: Date.now() + Math.random(), item: "", amount: "", vat: "", invoiceNo: "", payer: "", date: "", billable: false }]);
+  const add = () => onChange([...rows, { id: Date.now() + Math.random(), item: "", amount: "", vat: "", invoiceNo: "", payer: "", date: "", note: "", billable: false }]);
   const del = (id) => onChange(rows.filter((e) => e.id !== id));
-  const cols = "1fr 116px 64px 124px 116px 118px 80px 44px 28px";
+  const cols = "1fr 116px 64px 124px 116px 118px 130px 80px 44px 28px";
   return (
     <div style={{ padding: "4px 0 0" }}>
       <div style={{ overflowX: isMobile ? "auto" : "visible", WebkitOverflowScrolling: "touch" }}>
-      <div style={{ minWidth: isMobile ? 860 : undefined }}>
+      <div style={{ minWidth: isMobile ? 990 : undefined }}>
       <div style={{ display: "grid", gridTemplateColumns: cols, gap: 9, padding: "8px 0 5px" }}>
-        {["Khoản chi phí", "Số tiền", "VAT %", "Số hóa đơn", "Người chi", "Ngày hóa đơn", "Chi hộ", "Theo dõi", ""].map((h, i) => (
-          <div key={i} style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-4)", textTransform: "uppercase", letterSpacing: "0.04em", textAlign: i === 1 ? "right" : (i === 2 || i === 6 || i === 7) ? "center" : "left" }}>{h}</div>
+        {["Khoản chi phí", "Số tiền", "VAT %", "Số hóa đơn", "Người chi", "Ngày hóa đơn", "Ghi chú", "Chi hộ", "Theo dõi", ""].map((h, i) => (
+          <div key={i} style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-4)", textTransform: "uppercase", letterSpacing: "0.04em", textAlign: i === 1 ? "right" : (i === 2 || i === 7 || i === 8) ? "center" : "left" }}>{h}</div>
         ))}
       </div>
       {rows.map((e) => {
@@ -307,6 +307,7 @@ function CostLineRows({ rows = [], onChange, options = [], onCreate, payers = []
           <Txt value={e.invoiceNo} onChange={(x) => set(e.id, { invoiceNo: x })} placeholder="Số HĐ…" />
           <Combo value={e.payer} onChange={(x) => set(e.id, { payer: x })} options={payers} onCreate={onCreatePayer} placeholder="Người chi…" small />
           <DateField value={e.date} onChange={(x) => set(e.id, { date: x })} />
+          <Txt value={e.note} onChange={(x) => set(e.id, { note: x })} placeholder="Ghi chú…" />
           <div style={{ display: "flex", justifyContent: "center" }}><ChkBox checked={!!e.billable} onChange={(v) => set(e.id, { billable: v })} /></div>
           <div style={{ display: "flex", justifyContent: "center" }}
             title={hex ? ("Màu theo dõi gắn cho khoản này ở Cài đặt" + (missing ? " · chưa có số hóa đơn → hiện nhắc ngoài bảng" : " · đã có số HĐ")) : "Khoản này chưa gắn màu theo dõi (chỉnh ở Cài đặt → Khoản chi phí)"}>

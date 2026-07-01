@@ -3,7 +3,7 @@ const { useState, useMemo, useEffect, useRef } = React;
 import { I, fmtVND, fmtShort, fmtDate, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, Combo, MultiCombo, useIsMobile, DateField } from "@trk/lib.jsx";
 import { CostPopup, InfoPopup, colorHex } from "@trk/pop.jsx";
 import { SortBtn, CellBtn, Badge, EditCell, TH, TD } from "@trk/ui.jsx";
-import { loCountOf, parseImportRows, buildTemplateWb } from "./excel.js";
+import { loCountOf, parseImportRows, buildTemplateWb, parseCshtRows, buildCshtTemplateWb, cshtRowCount } from "./excel.js";
 
 // Chip số INV — nổi bật để kế toán dễ dò
 const invChip = { display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", padding: "1px 8px", borderRadius: 7 };
@@ -88,6 +88,15 @@ function ShipmentsApp() {
   const [impRows, setImpRows] = useState([]);
   const [impCheck, setImpCheck] = useState(null); // null | { valid, total, errors:[] }
   const impFileRef = useRef(null);
+  // ---- Import CSHT (phí CSHT + Thanh lý theo số cont) ----
+  const [showCsht, setShowCsht] = useState(false);
+  const [cshtWb, setCshtWb] = useState(null);      // {names, wb}
+  const [cshtSheet, setCshtSheet] = useState("");
+  const [cshtBusy, setCshtBusy] = useState(false);
+  const [cshtMsg, setCshtMsg] = useState("");
+  const [cshtRows, setCshtRows] = useState([]);
+  const [cshtCheck, setCshtCheck] = useState(null); // null | { valid, total, errors:[] }
+  const cshtFileRef = useRef(null);
 
   // Tải 1 trang từ server theo tham số hiện tại. reqId chống race (chỉ áp phản hồi mới nhất).
   const reqId = useRef(0);
@@ -401,6 +410,48 @@ function ShipmentsApp() {
     } catch (err) { setImpBusy(false); setImpMsg("Import lỗi kết nối."); }
   };
 
+  // ---- Import CSHT (phí CSHT + Thanh lý vào chi phí lô hàng theo số cont) ----
+  const downloadCshtTemplate = () => {
+    if (typeof XLSX === "undefined") { window.alert("Thư viện Excel chưa tải xong."); return; }
+    XLSX.writeFile(buildCshtTemplateWb(), "mau-import-csht.xlsx");
+  };
+  const onCshtFile = (e) => {
+    const f = e.target.files && e.target.files[0]; e.target.value = "";
+    if (!f) return;
+    if (typeof XLSX === "undefined") { setCshtMsg("Thư viện Excel chưa tải xong."); return; }
+    setCshtMsg(""); setCshtCheck(null); setCshtRows([]);
+    const rd = new FileReader();
+    rd.onload = () => { const wb = XLSX.read(rd.result, { type: "array", cellDates: true }); setCshtWb({ names: wb.SheetNames, wb }); setCshtSheet(wb.SheetNames[0] || ""); };
+    rd.readAsArrayBuffer(f);
+  };
+  const doCshtCheck = async () => {
+    if (!cshtWb || !cshtSheet) return;
+    setCshtBusy(true); setCshtMsg(""); setCshtCheck(null);
+    const out = parseCshtRows(cshtWb.wb, cshtSheet); setCshtRows(out);
+    if (!out.length) { setCshtBusy(false); setCshtCheck({ valid: false, total: 0, errors: [{ line: 0, reasons: ["Sheet không có dòng dữ liệu hợp lệ"] }] }); return; }
+    try {
+      const res = await api("POST", ROUTES.cshtCheck, { sheet, rows: out });
+      setCshtBusy(false);
+      if (res && res.ok) setCshtCheck({ valid: res.valid, total: res.total, errors: res.errors || [] });
+      else setCshtCheck({ valid: false, total: out.length, errors: [{ line: 0, reasons: [(res && res.message) || "Lỗi kiểm tra"] }] });
+    } catch (err) { setCshtBusy(false); setCshtMsg("Lỗi kết nối khi kiểm tra."); }
+  };
+  const doCshtImport = async () => {
+    if (!cshtCheck || !cshtCheck.valid || !cshtRows.length) return;
+    setCshtBusy(true); setCshtMsg("");
+    try {
+      const res = await api("POST", ROUTES.cshtImport, { sheet, rows: cshtRows });
+      setCshtBusy(false);
+      if (res && res.ok && res.valid) {
+        setCshtMsg(`Đã cập nhật ${res.updated} khoản trên ${res.shipments} lô.`); setCshtWb(null); setCshtCheck(null); setCshtRows([]);
+        await load();   // nạp lại danh sách + tổng chi phí sau import
+      } else if (res && res.errors) {
+        setCshtCheck({ valid: false, total: cshtRows.length, errors: res.errors });
+        setCshtMsg("Dữ liệu có lỗi — chưa import gì.");
+      } else setCshtMsg("Import lỗi: " + ((res && res.message) || "không rõ"));
+    } catch (err) { setCshtBusy(false); setCshtMsg("Import lỗi kết nối."); }
+  };
+
   const toggleSort = (key) => { setSort((s) => s.key === key ? { key, dir: -s.dir } : { key, dir: 1 }); setPage(1); };
   const setPerPageP = (n) => { setPerPage(n); setPage(1); };   // đổi số/trang → về trang 1
   // ----- Chọn nhiều lô + thao tác hàng loạt -----
@@ -506,6 +557,12 @@ function ShipmentsApp() {
             <i className="bi bi-upload" style={{ color: "var(--accent)" }} /> Import lô
           </button>
           <input ref={impFileRef} type="file" accept=".xlsx,.xls" onChange={onImpFile} style={{ display: "none" }} />
+          <button type="button" onClick={() => setShowCsht(true)} title="Import phí CSHT + Thanh lý vào chi phí lô hàng theo số cont"
+            style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "var(--ink-2)", background: "#fff", border: "1px solid var(--line)", borderRadius: 10 }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
+            <i className="bi bi-receipt" style={{ color: "var(--accent)" }} /> Import CSHT
+          </button>
+          <input ref={cshtFileRef} type="file" accept=".xlsx,.xls,.csv" onChange={onCshtFile} style={{ display: "none" }} />
           <div style={{ position: "relative" }}>
             <button type="button" onClick={() => setShowExport((v) => !v)} title="Xuất danh sách lô hàng ra Excel"
               style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer", color: "#fff", background: "var(--good)", border: "none", borderRadius: 10, boxShadow: "0 1px 2px rgba(31,138,91,.45)", transition: "background .12s" }}
@@ -1134,6 +1191,130 @@ function ShipmentsApp() {
             )}
 
             {impMsg && <div style={{ fontSize: 12.5, fontWeight: 600, marginTop: 10, color: impMsg.startsWith("Đã nhập") ? "var(--good)" : "var(--danger)" }}>{impMsg}</div>}
+          </div>
+        </Modal>
+      )}
+
+      {showCsht && (
+        <Modal title="Import CSHT" subtitle="Nạp phí CSHT + Số tiền thanh lý vào Chi phí lô hàng theo SỐ CONT. Cột (*) bắt buộc: Số cont · đối chiếu Nhập/Xuất, lệch là báo lỗi · Số HĐ / Ngày HĐ / Ghi chú áp cho cả 2 khoản · import lại GHI ĐÈ dòng cũ · kiểm tra trước, 1 lỗi là không import gì cả" width={720} icon={<I.truck />}
+          onClose={() => setShowCsht(false)}
+          footer={
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <div style={{ fontSize: 12.5, color: cshtCheck ? (cshtCheck.valid ? "var(--good)" : "var(--danger)") : "var(--ink-3)", fontWeight: cshtCheck ? 600 : 400 }}>
+                {cshtCheck ? (cshtCheck.valid ? `✓ ${cshtRowCount(cshtRows)} dòng hợp lệ` : `${cshtCheck.errors.length} dòng lỗi — chưa import gì`) : (cshtWb ? "Đã chọn file — bấm Kiểm tra" : "Chọn file để bắt đầu")}
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <Btn onClick={() => setShowCsht(false)}>Đóng</Btn>
+                {cshtCheck && cshtCheck.valid && <Btn variant="primary" onClick={doCshtImport}>{cshtBusy ? "Đang nhập…" : `Import ${cshtRowCount(cshtRows)} dòng`}</Btn>}
+              </div>
+            </div>
+          }>
+          <div style={{ padding: "12px 0 4px" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
+              <button type="button" onClick={downloadCshtTemplate}
+                style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--ink-2)", cursor: "pointer" }}>
+                <i className="bi bi-download" /> Tải file mẫu
+              </button>
+              <button type="button" onClick={() => cshtFileRef.current && cshtFileRef.current.click()}
+                style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13, fontWeight: 600, border: "none", borderRadius: 9, background: "var(--accent)", color: "#fff", cursor: "pointer" }}>
+                <i className="bi bi-file-earmark-arrow-up" /> {cshtWb ? "Chọn file khác" : "Chọn file"}
+              </button>
+              {cshtWb && <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Đã đọc file · {cshtWb.names.length} sheet</span>}
+            </div>
+
+            {cshtWb && (
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-end", marginBottom: 14 }}>
+                <label style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>Sheet cần import</div>
+                  <div style={{ position: "relative" }}>
+                    <select value={cshtSheet} onChange={(e) => { setCshtSheet(e.target.value); setCshtCheck(null); }}
+                      style={{ width: "100%", appearance: "none", WebkitAppearance: "none", padding: "9px 28px 9px 11px", fontSize: 13.5, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 10, background: "#fff", cursor: "pointer" }}>
+                      {cshtWb.names.map((n) => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                    <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: "var(--ink-3)", pointerEvents: "none" }}><I.chev /></span>
+                  </div>
+                </label>
+                <Btn onClick={doCshtCheck}>{cshtBusy && !cshtCheck ? "Đang kiểm tra…" : "Kiểm tra dữ liệu"}</Btn>
+              </div>
+            )}
+
+            {cshtCheck && cshtCheck.valid && (() => {
+              const fmtDT = (iso) => { if (!iso) return "—"; const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso)); return m ? `${m[3]}/${m[2]}/${m[1]}` : String(iso); };
+              const ioLabel = (v) => { const s = String(v || "").toLowerCase(); if (/nh[âaạ]p|import/.test(s)) return "Nhập"; if (/xu[âaấ]t|export/.test(s)) return "Xuất"; return v || "—"; };
+              const amt = (v) => { const n = toNum(v); return n ? fmtVND(n) : "—"; };
+              const cols = [
+                { h: "#", get: (l, i) => i + 1, al: "center", muted: true },
+                { h: "Ngày HĐ", get: (l) => l.dateRaw ? l.dateRaw : fmtDT(l.date), num: true },
+                { h: "Số cont", get: (l) => l.contNo || "—", contCol: true },
+                { h: "Nhập/Xuất", get: (l) => ioLabel(l.io), al: "center" },
+                { h: "Phí CSHT", get: (l) => amt(l.csht), al: "right", num: true },
+                { h: "Thanh lý", get: (l) => amt(l.thanhLy), al: "right", num: true },
+                { h: "Ghi chú", get: (l) => l.note || "—" },
+                { h: "Số HĐ", get: (l) => l.invoiceNo || "—", num: true },
+              ];
+              const rowsV = cshtRows.filter((r) => String(r.contNo || "").trim() !== "");
+              return (
+                <div style={{ border: "1px solid #bfe4d1", borderRadius: 10, overflow: "hidden" }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--good)", padding: "10px 13px", background: "var(--good-weak)", borderBottom: "1px solid #bfe4d1" }}>
+                    <i className="bi bi-check-circle-fill" /> {rowsV.length} dòng hợp lệ → ghi/ghi đè khoản <b>CSHT</b> và <b>Thanh lí</b> vào chi phí từng lô. Kiểm tra rồi bấm <b>Import</b>.
+                  </div>
+                  <div style={{ maxHeight: "44vh", overflow: "auto", overscrollBehavior: "contain" }}>
+                    <table style={{ borderCollapse: "collapse", fontSize: 12.5, minWidth: 720, width: "100%" }}>
+                      <thead>
+                        <tr>
+                          {cols.map((c, i) => (
+                            <th key={i} style={{ textAlign: c.al || "left", padding: "7px 11px", fontSize: 10.5, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.03em", borderBottom: "1px solid var(--line)", position: "sticky", top: 0, background: "#fafbfc", whiteSpace: "nowrap", zIndex: 1 }}>{c.h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rowsV.map((l, i) => (
+                          <tr key={i}>
+                            {cols.map((c, ci) => {
+                              const v = c.get(l, i);
+                              const base = { padding: "6px 11px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)", textAlign: c.al || "left", whiteSpace: c.num ? "nowrap" : "normal" };
+                              if (c.contCol) return <td key={ci} className="tnum" style={{ ...base, fontWeight: 700 }}>{l.contNo}</td>;
+                              return <td key={ci} className={c.num ? "tnum" : undefined} style={base}>{v}</td>;
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {cshtCheck && !cshtCheck.valid && (
+              <div style={{ border: "1px solid #f3c9c9", borderRadius: 10, overflow: "hidden" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--danger)", padding: "10px 13px", background: "#fef6f6", borderBottom: "1px solid #f3c9c9" }}>
+                  <i className="bi bi-exclamation-triangle-fill" /> {cshtCheck.errors.length} dòng lỗi — sửa file rồi Kiểm tra lại. Chưa import gì cả.
+                </div>
+                <div style={{ maxHeight: "44vh", overflowY: "auto", overscrollBehavior: "contain" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                    <thead>
+                      <tr style={{ background: "#fafbfc" }}>
+                        {["Dòng", "Số cont", "Nhập/Xuất", "Lý do"].map((h, i) => (
+                          <th key={i} style={{ textAlign: "left", padding: "7px 12px", fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "1px solid var(--line)", position: "sticky", top: 0, background: "#fafbfc", whiteSpace: "nowrap" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cshtCheck.errors.map((er, i) => (
+                        <tr key={i}>
+                          <td className="tnum" style={{ padding: "7px 12px", borderBottom: "1px solid var(--line-2)", fontWeight: 600, color: "var(--ink-2)", whiteSpace: "nowrap" }}>{er.line}</td>
+                          <td className="tnum" style={{ padding: "7px 12px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{er.cont || "—"}</td>
+                          <td style={{ padding: "7px 12px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{er.io || "—"}</td>
+                          <td style={{ padding: "7px 12px", borderBottom: "1px solid var(--line-2)", color: "var(--danger)" }}>{(er.reasons || []).join("; ")}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {cshtMsg && <div style={{ fontSize: 12.5, fontWeight: 600, marginTop: 10, color: cshtMsg.startsWith("Đã cập nhật") ? "var(--good)" : "var(--danger)" }}>{cshtMsg}</div>}
           </div>
         </Modal>
       )}

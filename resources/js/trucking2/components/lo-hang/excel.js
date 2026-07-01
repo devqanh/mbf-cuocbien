@@ -71,6 +71,65 @@ export function parseImportRows(wb, sheetName) {
   return out;
 }
 
+// ===================== IMPORT CSHT (phí CSHT + Thanh lý theo số cont) =====================
+// Cột file CSHT. (*) = bắt buộc: Số cont. Khớp cột theo TỪ KHÓA (không phụ thuộc dấu/hoa thường).
+export const CSHT_COLS = ["NGÀY HĐ", "SỐ CONT *", "NHẬP/XUẤT", "PHÍ CSHT", "SỐ TIỀN THANH LÝ", "GHI CHÚ", "SỐ HĐ"];
+
+// Đếm số dòng CSHT có dữ liệu (có số cont) — để hiện số lượng trước khi import.
+export const cshtRowCount = (rows) => (rows || []).filter((r) => String(r.contNo || "").trim() !== "").length;
+
+// Số tiền: bỏ mọi ký tự không phải số → chuỗi digit (backend tự parse). "" nếu trống.
+const money = (v) => { if (v == null) return ""; if (typeof v === "number") return String(Math.round(v)); return String(v).replace(/[^\d]/g, ""); };
+
+// Parse 1 sheet Excel CSHT → mảng dòng { date, dateRaw, contNo, io, csht, thanhLy, note, invoiceNo }.
+export function parseCshtRows(wb, sheetName) {
+  const aoa = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, raw: true, defval: "" });
+  let hi = aoa.findIndex((r) => (r || []).some((c) => { const h = normH(c); return h.includes("cont") || h.includes("csht"); }));
+  if (hi < 0) hi = 0;
+  const header = (aoa[hi] || []).map(normH);
+  const col = (...kws) => header.findIndex((h) => kws.some((k) => h.includes(k)));
+  const C = { date: col("ngày", "ngay"), cont: col("cont"), io: col("nhập", "xuất", "nhap", "xuat"), csht: col("csht"), thanhLy: col("thanh lý", "thanh ly", "thanh lí", "thanh li"), note: col("ghi chú", "ghi chu"), inv: col("hđ", "hd", "hóa đơn", "hoa don") };
+  // "SỐ HĐ" và "NGÀY HĐ" đều chứa "hđ" → nếu inv trùng cột ngày thì lấy cột hđ KHÁC cột ngày.
+  if (C.inv >= 0 && C.inv === C.date) C.inv = header.findIndex((h, idx) => (h.includes("hđ") || h.includes("hd") || h.includes("hóa đơn") || h.includes("hoa don")) && idx !== C.date);
+  const out = [];
+  for (let r = hi + 1; r < aoa.length; r++) {
+    const row = aoa[r] || [];
+    const g = (i) => { if (i < 0) return ""; const v = row[i]; return v instanceof Date ? "" : String(v == null ? "" : v).trim(); };
+    const cont = g(C.cont);
+    const csht = money(C.csht >= 0 ? row[C.csht] : null);
+    const thanhLy = money(C.thanhLy >= 0 ? row[C.thanhLy] : null);
+    // Bỏ dòng trắng (không cont + không tiền)
+    if (!cont && !csht && !thanhLy) continue;
+    const d = cellDate(C.date >= 0 ? row[C.date] : null);
+    out.push({ date: d.iso, dateRaw: d.display || g(C.date), contNo: cont, io: g(C.io), csht, thanhLy, note: g(C.note), invoiceNo: g(C.inv) });
+  }
+  return out;
+}
+
+// Dựng workbook FILE MẪU import CSHT (1 sheet mẫu + Hướng dẫn).
+export function buildCshtTemplateWb() {
+  const ex1 = { "NGÀY HĐ": "20/06/2026", "SỐ CONT *": "TGHU1234567", "NHẬP/XUẤT": "Nhập", "PHÍ CSHT": 250000, "SỐ TIỀN THANH LÝ": 180000, "GHI CHÚ": "CSHT tháng 6", "SỐ HĐ": "0001234" };
+  const ex2 = { "NGÀY HĐ": "21/06/2026", "SỐ CONT *": "MSKU9981122", "NHẬP/XUẤT": "Xuất", "PHÍ CSHT": 250000, "SỐ TIỀN THANH LÝ": "", "GHI CHÚ": "", "SỐ HĐ": "0001235" };
+  const ws = XLSX.utils.json_to_sheet([ex1, ex2], { header: CSHT_COLS });
+  ws["!cols"] = CSHT_COLS.map((col) => ({ wch: Math.max(12, col.length + 2) }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "CSHT");
+  const guide = [
+    { "Cột": "NGÀY HĐ", "Bắt buộc": "không", "Ý nghĩa": "Ngày hóa đơn / ngày thanh toán (dd/mm/yyyy) — ghi vào Ngày hóa đơn của khoản chi phí" },
+    { "Cột": "SỐ CONT *", "Bắt buộc": "CÓ", "Ý nghĩa": "Số container — phải trùng ĐÚNG 1 lô đang có (trùng nhiều lô hoặc không có sẽ báo lỗi)" },
+    { "Cột": "NHẬP/XUẤT", "Bắt buộc": "không", "Ý nghĩa": "Nhập hoặc Xuất — đối chiếu với lô; LỆCH sẽ báo lỗi (để trống = không đối chiếu)" },
+    { "Cột": "PHÍ CSHT", "Bắt buộc": "không*", "Ý nghĩa": "Số tiền khoản “CSHT” (đã gồm VAT) — ghi/ghi đè dòng CSHT của lô" },
+    { "Cột": "SỐ TIỀN THANH LÝ", "Bắt buộc": "không*", "Ý nghĩa": "Số tiền khoản “Thanh lí” — ghi/ghi đè dòng Thanh lí của lô" },
+    { "Cột": "GHI CHÚ", "Bắt buộc": "không", "Ý nghĩa": "Ghi chú — áp cho cả khoản CSHT & Thanh lí của dòng" },
+    { "Cột": "SỐ HĐ", "Bắt buộc": "không", "Ý nghĩa": "Số hóa đơn — áp cho cả khoản CSHT & Thanh lí của dòng" },
+    { "Cột": "(*) lưu ý", "Bắt buộc": "", "Ý nghĩa": "Mỗi dòng phải có ít nhất 1 trong 2: PHÍ CSHT hoặc SỐ TIỀN THANH LÝ. Import lại sẽ GHI ĐÈ dòng cũ (không nhân đôi)." },
+  ];
+  const wg = XLSX.utils.json_to_sheet(guide, { header: ["Cột", "Bắt buộc", "Ý nghĩa"] });
+  wg["!cols"] = [{ wch: 18 }, { wch: 10 }, { wch: 70 }];
+  XLSX.utils.book_append_sheet(wb, wg, "Hướng dẫn");
+  return wb;
+}
+
 // Dựng workbook FILE MẪU import (gồm sheet mẫu + tham chiếu Địa điểm/Khách/Kho hợp lệ + Hướng dẫn). c = cfg đầy đủ.
 export function buildTemplateWb(c) {
   c = c || {};

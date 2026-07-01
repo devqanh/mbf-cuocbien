@@ -78,7 +78,7 @@ function CostPopup({ ship, patch, onSave, isDirty, onClose, cfg = {}, addCfg, ta
 
   return (
     <Modal title="Chi phí lô hàng" subtitle={<>Lô <b style={{ color: "var(--ink-2)" }}>{ship.booking}</b> · {ship.customer} · gom mọi khoản chi phí phân bổ vào một nơi</>}
-      onClose={onClose} footer={footer} width={960}>
+      onClose={onClose} footer={footer} width={1060}>
 
       {showFx && (
         <div style={{ margin: "12px 0 2px", padding: "10px 13px", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", borderRadius: 10, fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.6 }}>

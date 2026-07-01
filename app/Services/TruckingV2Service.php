@@ -55,6 +55,7 @@ class TruckingV2Service
     use \App\Services\Trucking\Concerns\HandlesVehicleDetail;
     use \App\Services\Trucking\Concerns\HandlesTripAndDrivers;
     use \App\Services\Trucking\Concerns\HandlesPricingAndImport;
+    use \App\Services\Trucking\Concerns\HandlesCshtImport;
     use \App\Services\Trucking\Concerns\HandlesStatements;
     use \App\Services\Trucking\Concerns\HandlesStatementPricing;
     use \App\Services\Trucking\Concerns\HandlesExtStatements;

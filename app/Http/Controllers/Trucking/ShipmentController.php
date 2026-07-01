@@ -96,6 +96,26 @@ class ShipmentController extends BaseTruckingController
         return response()->json(['ok' => true] + $res);
     }
 
+    /** Import CSHT — kiểm tra trước (dry-run): không ghi DB, trả lỗi từng dòng. */
+    public function cshtCheck(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'sheet' => ['required', 'in:hph,icd'],
+            'rows'  => ['present', 'array'],
+        ]);
+        return response()->json(['ok' => true] + $this->svc->validateCshtImport($data['sheet'], $data['rows']));
+    }
+
+    /** Import CSHT vào chi phí lô hàng theo số cont — ALL-OR-NOTHING, ghi đè dòng CSHT/Thanh lí sẵn có. */
+    public function cshtImport(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'sheet' => ['required', 'in:hph,icd'],
+            'rows'  => ['present', 'array'],
+        ]);
+        return response()->json(['ok' => true] + $this->svc->importCshtImport($data['sheet'], $data['rows']));
+    }
+
     private function validateShipment(Request $request): array
     {
         $data = $request->validate([
