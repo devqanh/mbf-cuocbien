@@ -276,22 +276,50 @@ function PayModal({ row, onConfirm, onClose, payMethods }) {
 
 /* Modal điền 1 phiếu chi */
 function CostModal({ data, isNew, onChange, onSave, onClose, costTypes = [], payMethods, onUploadPhotos }) {
-  const { useState, useRef } = React;
+  const { useState, useRef, useEffect } = React;
   const methods = (payMethods && payMethods.length) ? payMethods : PAY_METHODS;
   const d = data; const set = (np) => onChange({ ...d, ...np });
   const rec = normKind(d.kind) === "recurring";
   const [err, setErr] = useState("");
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const photoRef = useRef(null);
   const photos = Array.isArray(d.photos) ? d.photos : [];
-  const pickPhotos = async (e) => {
-    const files = Array.from(e.target.files || []); e.target.value = "";
-    if (!files.length || !onUploadPhotos) return;
+  // dataRef: luôn giữ data MỚI NHẤT để upload (dán/kéo-thả) không đè mất field đang sửa / ảnh vừa thêm.
+  const dataRef = useRef(d); dataRef.current = d;
+  // Tải LÊN 1 loạt File ảnh (từ chọn file / dán clipboard / kéo-thả) — lọc đúng ảnh, gộp vào ảnh sẵn có.
+  const uploadFiles = async (fileList) => {
+    const imgs = Array.from(fileList || []).filter((f) => f && f.type && f.type.indexOf("image/") === 0);
+    if (!imgs.length || !onUploadPhotos) return;
     setPhotoBusy(true);
-    const added = await onUploadPhotos(files);
-    if (added && added.length) set({ photos: [...photos, ...added] });
-    setPhotoBusy(false);
+    try {
+      const added = await onUploadPhotos(imgs);
+      if (added && added.length) {
+        const cur = Array.isArray(dataRef.current.photos) ? dataRef.current.photos : [];
+        onChange({ ...dataRef.current, photos: [...cur, ...added] });
+      }
+    } finally { setPhotoBusy(false); }
   };
+  // "latest ref" cho listener paste (gắn 1 lần) luôn gọi được uploadFiles mới nhất.
+  const uploadRef = useRef(uploadFiles); uploadRef.current = uploadFiles;
+  const pickPhotos = (e) => { const files = Array.from(e.target.files || []); e.target.value = ""; uploadFiles(files); };
+  // Dán ảnh (Ctrl+V) ở BẤT KỲ đâu trong khi popup mở → tự tải lên. Không có ảnh trong clipboard thì để yên (paste text).
+  useEffect(() => {
+    if (!onUploadPhotos) return;
+    const onPaste = (e) => {
+      const items = (e.clipboardData && e.clipboardData.items) || [];
+      const imgs = [];
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        if (it.kind === "file" && it.type && it.type.indexOf("image/") === 0) { const f = it.getAsFile(); if (f) imgs.push(f); }
+      }
+      if (!imgs.length) return;
+      e.preventDefault();
+      uploadRef.current(imgs);
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, [onUploadPhotos]);
   const removePhoto = (i) => set({ photos: photos.filter((_, j) => j !== i) });
   const reqLbl = (t) => <span>{t} <span style={{ color: "var(--bad, #d6453d)" }}>*</span></span>;
   const trySave = () => {
@@ -328,7 +356,14 @@ function CostModal({ data, isNew, onChange, onSave, onClose, costTypes = [], pay
         {/* Ảnh thực tế (hóa đơn / đồng hồ km / phụ tùng) */}
         <div style={{ gridColumn: "1 / -1" }}>
           {lbl("Ảnh thực tế")}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 9 }}>
+          {onUploadPhotos && <div style={{ fontSize: 11.5, color: "var(--ink-4)", margin: "-2px 0 7px", display: "flex", alignItems: "center", gap: 6 }}>
+            <i className="bi bi-clipboard-check" style={{ color: "var(--accent)" }} /> Dán ảnh <b style={{ color: "var(--ink-3)" }}>(Ctrl+V)</b> · kéo-thả · hoặc chọn nhiều ảnh cùng lúc — tự tải lên.
+          </div>}
+          <div
+            onDragOver={onUploadPhotos ? (e) => { e.preventDefault(); if (!dragOver) setDragOver(true); } : undefined}
+            onDragLeave={onUploadPhotos ? (e) => { if (e.currentTarget === e.target) setDragOver(false); } : undefined}
+            onDrop={onUploadPhotos ? (e) => { e.preventDefault(); setDragOver(false); uploadFiles(e.dataTransfer.files); } : undefined}
+            style={{ display: "flex", flexWrap: "wrap", gap: 9, padding: onUploadPhotos ? 8 : 0, borderRadius: 12, border: onUploadPhotos ? ("1.5px dashed " + (dragOver ? "var(--accent)" : "transparent")) : "none", background: dragOver ? "var(--accent-weak-2)" : "transparent", transition: "background .12s, border-color .12s" }}>
             {photos.map((p, i) => (
               <div key={i} style={{ position: "relative", width: 84, height: 84, borderRadius: 10, overflow: "hidden", border: "1px solid var(--line)" }}>
                 <a href={p.url} target="_blank" rel="noreferrer" title={p.name}><img src={p.url} alt={p.name || ""} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /></a>
