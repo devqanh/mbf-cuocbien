@@ -146,21 +146,32 @@ function DeprecMonthlyTab({ rows }) {
   if (!items.length) return <div style={{ padding: "14px 2px", fontSize: 12.5, color: "var(--ink-4)" }}>Chưa có hạng mục khấu hao nào (cần Nguyên giá + Ngày bắt đầu + Số tháng). Thêm ở tab <b>Khấu hao</b>.</div>;
 
   const nowIdx = ymOf(today10());
-  // Khấu hao đều/tháng = nguyên giá ÷ số tháng (tháng cuối bù lẻ). CHỈ tính tới tháng HIỆN TẠI.
+  // Khấu hao THEO NGÀY = Nguyên giá ÷ (30 × số tháng). Mỗi tháng = khấu hao/ngày × số NGÀY thực tế của tháng
+  // nằm trong kỳ (từ ngày bắt đầu, tối đa 30 × số tháng ngày, chỉ tính tới hôm nay) → khớp tuyệt đối tab Khấu hao.
+  const dOnly = (iso) => new Date(iso + "T00:00:00");
+  const DAY = 86400000;
   const perMonth = {}; let totalOrig = 0;
   items.forEach((it) => {
-    const orig = num(it.origPrice), months = num(it.months), start = ymOf(it.startDate);
+    const orig = num(it.origPrice), months = num(it.months);
     totalOrig += orig;
-    const monthly = Math.round(orig / months);
-    for (let k = 0; k < months; k++) {
-      const idx = start + k;
-      if (idx > nowIdx) break;   // không tính tương lai (chưa tới thì chưa khấu hao)
-      perMonth[idx] = (perMonth[idx] || 0) + (k === months - 1 ? orig - monthly * (months - 1) : monthly);
+    const perDay = orig / (30 * months);
+    const usedTotal = Math.min(daysUsed(it.startDate), 30 * months);   // số ngày đã khấu hao (giống tab Khấu hao)
+    if (usedTotal <= 0) return;
+    const start = dOnly(it.startDate);
+    const activeEnd = new Date(start.getTime() + usedTotal * DAY);      // hết ngày đã khấu hao (exclusive)
+    let cur = new Date(start.getFullYear(), start.getMonth(), 1);       // ngày 1 của tháng bắt đầu
+    while (cur < activeEnd) {
+      const next = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);  // ngày 1 tháng kế
+      const from = start > cur ? start : cur;
+      const to = activeEnd < next ? activeEnd : next;
+      const days = Math.max(0, Math.round((to - from) / DAY));
+      if (days > 0) { const idx = cur.getFullYear() * 12 + cur.getMonth(); perMonth[idx] = (perMonth[idx] || 0) + perDay * days; }
+      cur = next;
     }
   });
   const idxs = Object.keys(perMonth).map(Number).sort((a, b) => a - b);
   const accNow = idxs.reduce((a, i) => a + perMonth[i], 0);
-  const remain = Math.max(0, totalOrig - accNow);
+  const remain = Math.max(0, Math.round(totalOrig - accNow));
   const pct = totalOrig > 0 ? Math.min(100, Math.round(accNow * 100 / totalOrig)) : 0;
   const nowLabel = `${mLabel(nowIdx)}/${Math.floor(nowIdx / 12)}`;
 
@@ -175,7 +186,7 @@ function DeprecMonthlyTab({ rows }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         <DmStat label="Nguyên giá" val={fmtVND(totalOrig)} color="var(--ink-1)" />
-        <DmStat label={`Đã khấu hao đến ${nowLabel}`} val={fmtVND(accNow)} color="var(--accent)" />
+        <DmStat label={`Đã khấu hao đến ${nowLabel}`} val={fmtVND(Math.round(accNow))} color="var(--accent)" />
         <DmStat label="Giá trị còn lại" val={fmtVND(remain)} color="var(--good)" />
       </div>
       <div>
@@ -189,7 +200,7 @@ function DeprecMonthlyTab({ rows }) {
           <div key={y} style={{ border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 14px", background: "#fafbfc", borderBottom: "1px solid var(--line-2)" }}>
               <span style={{ fontWeight: 700, fontSize: 13.5 }}><i className="bi bi-calendar3" style={{ color: "var(--accent)", marginRight: 6 }} />Năm {y}</span>
-              <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Khấu hao trong năm: <b className="tnum" style={{ color: "var(--accent)" }}>{fmtVND(yTotal)}</b></span>
+              <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Khấu hao trong năm: <b className="tnum" style={{ color: "var(--accent)" }}>{fmtVND(Math.round(yTotal))}</b></span>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(118px, 1fr))", gap: 8, padding: 12 }}>
               {yIdxs.map((i) => {
@@ -197,7 +208,7 @@ function DeprecMonthlyTab({ rows }) {
                 return (
                   <div key={i} style={{ padding: "8px 10px", borderRadius: 9, border: "1px solid " + (isNow ? "var(--accent)" : "var(--line)"), background: isNow ? "var(--accent-weak-2)" : "#fff" }}>
                     <div style={{ fontSize: 11, color: isNow ? "var(--accent)" : "var(--ink-4)", fontWeight: 700 }} className="tnum">Tháng {mLabel(i)}{isNow ? " · nay" : ""}</div>
-                    <div className="tnum" style={{ fontSize: 14, fontWeight: 700, marginTop: 2 }}>{fmtVND(perMonth[i])}</div>
+                    <div className="tnum" style={{ fontSize: 14, fontWeight: 700, marginTop: 2 }}>{fmtVND(Math.round(perMonth[i]))}</div>
                   </div>
                 );
               })}
@@ -205,7 +216,7 @@ function DeprecMonthlyTab({ rows }) {
           </div>
         );
       })}
-      <div style={{ fontSize: 11.5, color: "var(--ink-4)" }}>Khấu hao <b>đều theo tháng</b> = Nguyên giá ÷ Số tháng, tính từ <b>tháng bắt đầu sử dụng</b>. Chỉ tính đến tháng hiện tại ({nowLabel}).</div>
+      <div style={{ fontSize: 11.5, color: "var(--ink-4)" }}>Khấu hao <b>theo ngày</b> = Nguyên giá ÷ (30 × Số tháng); mỗi tháng cộng theo <b>số ngày thực tế</b> nằm trong kỳ (tháng hiện tại tính tới hôm nay). Khớp với tab <b>Khấu hao</b>.</div>
     </div>
   );
 }

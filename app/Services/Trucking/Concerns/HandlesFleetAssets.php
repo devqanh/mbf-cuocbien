@@ -79,20 +79,26 @@ trait HandlesFleetAssets
             })->all();
     }
 
-    /** Tóm tắt khấu hao đều/tháng (CHỈ tính tới tháng hiện tại $nowIdx) cho 1 tập hạng mục. */
+    /**
+     * Tóm tắt khấu hao cho 1 tập hạng mục. Khấu hao THEO NGÀY = Nguyên giá ÷ (30 × số tháng);
+     * đã khấu hao = khấu hao/ngày × số NGÀY đã dùng (tối đa 30 × số tháng) → khớp tab Khấu hao (frontend).
+     * 'monthly' = khấu hao/tháng (= 30 × khấu hao/ngày = Nguyên giá ÷ số tháng) của các hạng mục CÒN trong kỳ.
+     */
     private function depSummary($deps, int $nowIdx): array
     {
+        $today = \Carbon\Carbon::today();
         $orig = 0.0; $monthly = 0.0; $accrued = 0.0;
         foreach ($deps as $d) {
             $o = (float) $d->orig_price; $m = (int) $d->months;
             if ($o <= 0 || $m <= 0 || ! $d->start_date) continue;
-            try { $c = \Carbon\Carbon::parse($d->start_date); } catch (\Throwable) { continue; }
+            try { $c = \Carbon\Carbon::parse($d->start_date)->startOfDay(); } catch (\Throwable) { continue; }
             $orig += $o;
+            $perDay    = $o / (30 * $m);
+            $totalDays = 30 * $m;
+            $used = $c->lte($today) ? min($totalDays, $c->diffInDays($today)) : 0;   // số ngày đã khấu hao
+            $accrued += $perDay * $used;
             $startIdx = (int) $c->format('Y') * 12 + ((int) $c->format('n') - 1);
-            $per = $o / $m;
-            $elapsed = max(0, min($m, $nowIdx - $startIdx + 1));   // số tháng đã khấu hao tới nay (gồm tháng này)
-            $accrued += $per * $elapsed;
-            if ($nowIdx >= $startIdx && $nowIdx <= $startIdx + $m - 1) $monthly += $per;   // tháng này còn khấu hao
+            if ($nowIdx >= $startIdx && $nowIdx <= $startIdx + $m - 1) $monthly += $o / $m;   // tháng này còn trong kỳ
         }
         return ['orig' => (int) round($orig), 'monthly' => (int) round($monthly), 'accrued' => (int) round($accrued), 'remain' => (int) round(max(0, $orig - $accrued))];
     }
