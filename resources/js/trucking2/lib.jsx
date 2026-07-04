@@ -35,6 +35,10 @@ const fmtDate = (iso) => { if (!iso) return ""; const [y, m, d] = iso.split("-")
 const PAYERS = ["Tài xế", "A.Hoàn", "Xe ngoài", "TK công ty", "Khách"];
 const VAT_RATE = 0.08;
 
+// Số cầu xe MBF: "1"/"2" cầu hoặc "tai" = Xe tải. AXLE_OPTS cho picker (Cài đặt), axleLabel để hiển thị nhãn.
+const AXLE_OPTS = [["1", "1 cầu"], ["2", "2 cầu"], ["tai", "Xe tải"]];
+const axleLabel = (a) => { const s = (a == null ? "" : String(a)).trim(); return s === "" ? "" : (s === "tai" ? "Xe tải" : s + " cầu"); };
+
 /* Lựa chọn % VAT cho bảng kê (cấp statement). */
 const STATEMENT_VAT_RATES = [0, 8, 10];
 
@@ -627,4 +631,4 @@ const fmtHours = (h) => {
   return (neg ? "-" : "") + (mm ? `${hh}h${String(mm).padStart(2, "0")}` : `${hh}h`);
 };
 
-export { useState, useRef, useMemo, useEffect, useCallback, useIsMobile, onlyDigits, groupVND, toNum, fmtVND, fmtNum, fmtShort, fmtDate, PAYERS, VAT_RATE, STATEMENT_VAT_RATES, statementAmounts, lineAmounts, I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours };
+export { useState, useRef, useMemo, useEffect, useCallback, useIsMobile, onlyDigits, groupVND, toNum, fmtVND, fmtNum, fmtShort, fmtDate, PAYERS, VAT_RATE, STATEMENT_VAT_RATES, AXLE_OPTS, axleLabel, statementAmounts, lineAmounts, I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours };

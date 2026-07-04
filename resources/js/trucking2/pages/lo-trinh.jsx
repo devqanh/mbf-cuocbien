@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import "@trk/shared.js";
 
 const { useState, useEffect, useRef } = React;
-import { I, useIsMobile, DateField, Combo, Modal, Btn, Money, fmtVND, fmtNum, toNum } from "@trk/lib.jsx";
+import { I, useIsMobile, DateField, Combo, Modal, Btn, Money, fmtVND, fmtNum, toNum, axleLabel } from "@trk/lib.jsx";
 import { vietqrImg } from "@trk/banks.js";
 
 // Khối thông tin NH của lái nhận tiền: copy STK + QR VietQR quét chuyển khoản. Gọn — QR ẩn, bấm mới hiện.
@@ -365,7 +365,7 @@ function LoTrinhApp() {
                     {tr.matched
                       ? <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--good)", background: "var(--good-weak)", padding: "1px 7px", borderRadius: 999 }}>✓ {tr.type === "Ngoài" ? "Xe ngoài" : "Xe MBF"}</span>
                       : <span style={{ fontSize: 10.5, color: "var(--ink-4)" }}>(ngoài hệ thống)</span>}
-                    {(tr.axle === "1" || tr.axle === "2") && <span title="Số cầu xe" style={{ fontSize: 10.5, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak)", padding: "1px 7px", borderRadius: 999 }}>{tr.axle} cầu</span>}
+                    {(tr.axle === "1" || tr.axle === "2" || tr.axle === "tai") && <span title="Số cầu xe" style={{ fontSize: 10.5, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak)", padding: "1px 7px", borderRadius: 999 }}>{axleLabel(tr.axle)}</span>}
                     {tr.frozen && <span title="Đã chốt (số tiền đóng băng)" style={{ fontSize: 10.5, fontWeight: 700, color: "#2563eb", background: "#e7efff", padding: "1px 7px", borderRadius: 999 }}><i className="bi bi-lock-fill" /> Đã chốt</span>}
                     <span style={{ flex: 1 }} />
                     <span style={{ fontSize: 12, color: "var(--ink-3)", fontWeight: 600, marginRight: 4 }}>{tr.legs.length} hoạt động</span>

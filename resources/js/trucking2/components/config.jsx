@@ -1,6 +1,6 @@
 import React from "react";
 const { useState, useRef, useMemo, useEffect } = React;
-import { I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, fmtVND, fmtNum, fmtShort, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, useIsMobile } from "@trk/lib.jsx";
+import { I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, fmtVND, fmtNum, fmtShort, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, useIsMobile, AXLE_OPTS } from "@trk/lib.jsx";
 import { DTField, Field, DriverSpendRows, VatLine, ItemRows, ChiHoRows, DoanhThuRows, ChkBox, TRACK_COLORS, SWATCHES, colorHex, FlagPicker, CostLineRows, PaymentRows, Seg } from "./shared.jsx";
 // Cài đặt = khung ConfigBody/ConfigPopup; các tab nặng tách ra components/config/ cho dễ đọc/maintain.
 import { AddrInput, MapPicker } from "./config/MapPicker.jsx";
@@ -447,7 +447,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                           {isMbf && (
                             <div style={{ display: "flex", alignItems: "center", gap: 7 }} title="Số cầu — để tính dầu theo Phí tuyến đường">
                               <span style={{ fontSize: 11.5, color: "var(--ink-4)", fontWeight: 600 }}>Số cầu</span>
-                              {seg([["1", "1 cầu"], ["2", "2 cầu"]], vehAxle[it] || "", (v) => setVehAxle(it, v))}
+                              {seg(AXLE_OPTS, vehAxle[it] || "", (v) => setVehAxle(it, v))}
                             </div>
                           )}
                         </div>

@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import "@trk/shared.js";
 
 const { useState } = React;
-import { I, Btn, Txt, Combo, DateField, fmtVND } from "@trk/lib.jsx";
+import { I, Btn, Txt, Combo, DateField, fmtVND, axleLabel } from "@trk/lib.jsx";
 import { PayrollDetail } from "@trk/components/payroll-detail.jsx";
 
 const lbl = (t) => <div style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>{t}</div>;
@@ -112,7 +112,7 @@ function CreatePayrollApp() {
                         <TD>
                           <i className={"bi " + (open[r.bks] ? "bi-chevron-down" : "bi-chevron-right")} style={{ fontSize: 11, color: "var(--ink-4)", marginRight: 6 }} />
                           <span className="tnum" style={{ fontWeight: 700 }}>{r.bks}</span>
-                          {(r.axle === "1" || r.axle === "2") && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak)", padding: "1px 6px", borderRadius: 999 }}>{r.axle} cầu</span>}
+                          {(r.axle === "1" || r.axle === "2" || r.axle === "tai") && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak)", padding: "1px 6px", borderRadius: 999 }}>{axleLabel(r.axle)}</span>}
                         </TD>
                         <TD><div style={{ minWidth: 180 }} onClick={(e) => e.stopPropagation()}><Combo value={r.driver || ""} onChange={(v) => set(i, { driver: v })} options={drivers} placeholder="Chọn lái…" small /></div></TD>
                         <TD right><span className="tnum">{r.days}</span></TD>

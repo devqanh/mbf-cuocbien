@@ -1,6 +1,6 @@
 import React from "react";
 const { useState, useEffect, useRef } = React;
-import { I, Money, Num, Txt, Combo, DateField, Btn, Modal, fmtVND, fmtNum, fmtDate, toNum, useIsMobile } from "@trk/lib.jsx";
+import { I, Money, Num, Txt, Combo, DateField, Btn, Modal, fmtVND, fmtNum, fmtDate, toNum, useIsMobile, axleLabel } from "@trk/lib.jsx";
 import { ChkBox } from "@trk/pop.jsx";
 import { num, daysUsed, COST_KINDS, normKind, TAB_KEYS, SECTION_OF, WARN_DAYS, DUE_NONE, dueStatus, vehRank, DueCell, StatChip, lbl, delBtn, addBtn, Pager, DeprecTab, DeprecMonthlyTab, UsageTab, today10, esc, blankCost, PAY_METHODS, PayModal, CostModal, CostTab, VEH_DOC_TYPES, DocsBlock, InfoTab, AllowanceTab, PendingCostsModal } from "./parts.jsx";
 import { FuelTab } from "./fuel-tab.jsx";
@@ -314,7 +314,7 @@ function FleetApp({ modeSwitch }) {
                             <td style={{ padding: "11px 12px", borderLeft: `3px solid ${stripe}` }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                 <span style={{ fontSize: 15, fontWeight: 700 }} className="tnum">{v.plate}</span>
-                                {v.axle && <span style={{ fontSize: 10.5, fontWeight: 600, color: "var(--accent)", background: "var(--accent-weak)", padding: "1px 7px", borderRadius: 999 }}>{v.axle} cầu</span>}
+                                {v.axle && <span style={{ fontSize: 10.5, fontWeight: 600, color: "var(--accent)", background: "var(--accent-weak)", padding: "1px 7px", borderRadius: 999 }}>{axleLabel(v.axle)}</span>}
                               </div>
                             </td>
                             <td style={{ padding: "9px 12px" }}><DueCell iso={v.registrationDue} /></td>
@@ -394,7 +394,7 @@ function FleetApp({ modeSwitch }) {
             <span style={{ transform: "rotate(180deg)", display: "inline-flex" }}><I.arrow /></span> Danh sách xe
           </button>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 16, fontWeight: 700 }} className="tnum">{detail ? detail.plate : "…"}{detail && detail.axle ? " · " + detail.axle + " cầu" : ""}</div>
+            <div style={{ fontSize: 16, fontWeight: 700 }} className="tnum">{detail ? detail.plate : "…"}{detail && detail.axle ? " · " + axleLabel(detail.axle) : ""}</div>
             <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Xe MBF nội bộ</div>
           </div>
         </div>

@@ -1,5 +1,5 @@
 import React from "react";
-import { I, Money, Num, Txt, Combo, fmtVND, fmtNum, fmtDate, useIsMobile } from "@trk/lib.jsx";
+import { I, Money, Num, Txt, Combo, fmtVND, fmtNum, fmtDate, useIsMobile, axleLabel } from "@trk/lib.jsx";
 
 // tiền tệ thô → số (chấp nhận "1.200.000", 1200000, "")
 export const n = (v) => parseFloat((v ?? "").toString().replace(/[^\d.-]/g, "")) || 0;
@@ -36,7 +36,7 @@ export function splitLine(x) {
     else if (v > 0) cost.push({ name: FEE_LABEL[k], amount: v });
   });
   const fuel = Math.round(n(c.fuelLiters) * n(c.fuelPrice));
-  if (fuel > 0) cost.push({ name: "Dầu" + (x.axle ? " (" + x.axle + " cầu)" : ""), amount: fuel });
+  if (fuel > 0) cost.push({ name: "Dầu" + (x.axle ? " (" + axleLabel(x.axle) + ")" : ""), amount: fuel });
   (c.extras || []).forEach((e) => { if (n(e.amount) || (e.name || "").trim()) cost.push({ name: e.name || "Phí khác", amount: n(e.amount) }); });
   (c.salaryExtras || []).forEach((e) => { if (n(e.amount) || (e.name || "").trim()) salary.push({ name: e.name || "Khoản lương", amount: n(e.amount) }); });
   const costTotal = cost.reduce((a, i) => a + i.amount, 0);
@@ -200,7 +200,7 @@ export function TripEditor({ rows, onRows, routeFees = [], drivers = [], costIte
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: issues.length ? 8 : 10, paddingBottom: issues.length ? 8 : 10, borderBottom: "1px solid var(--line-2)" }}>
               <div style={{ fontWeight: 700 }} className="tnum">{x.booking || "—"}</div>
               <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)" }} title="Tuyến đi qua các kho (phí xe khớp theo tuyến này)"><i className="bi bi-geo-alt" style={{ color: "var(--accent)", marginRight: 4 }} />{x.khoRoute || x.kho || "—"}</span>
-              <span style={{ fontSize: 12, color: "var(--ink-4)" }} className="tnum">BKS: {x.bks || "—"}{x.axle ? " · " + x.axle + " cầu" : ""}</span>
+              <span style={{ fontSize: 12, color: "var(--ink-4)" }} className="tnum">BKS: {x.bks || "—"}{x.axle ? " · " + axleLabel(x.axle) : ""}</span>
               <span style={{ fontSize: 12, color: "var(--ink-4)" }} className="tnum">Ra: {x.date || "—"}</span>
               {c.cru && <span style={{ fontSize: 11, fontWeight: 700, color: "#b45309", background: "#fef3c7", padding: "2px 8px", borderRadius: 999 }}>CRU</span>}
               {(x.usedIn || []).length > 0 && <span title={"Đã có trong: " + x.usedIn.join(", ")} style={{ fontSize: 11, fontWeight: 700, color: "var(--danger)", background: "#fce8e8", padding: "2px 8px", borderRadius: 999 }}>⚠ đã có ở kỳ {x.usedIn.join(", ")}</span>}
@@ -239,7 +239,7 @@ export function TripEditor({ rows, onRows, routeFees = [], drivers = [], costIte
                     {costFields.map((f) => <FeeRow key={f.k} label={f.label} value={c[f.k]} onChange={(v) => upd(key, { [f.k]: v })} readOnly={readOnly} />)}
                     <div style={{ padding: "4px 0" }}>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
-                        <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Dầu{x.axle ? " (" + x.axle + " cầu)" : ""}</span>
+                        <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Dầu{x.axle ? " (" + axleLabel(x.axle) + ")" : ""}</span>
                         <b className="tnum" style={{ fontSize: 12.5, color: "var(--ink)" }}>{fmtNum(fuel)}</b>
                       </div>
                       {!readOnly && <div style={{ display: "flex", gap: 6 }}>
