@@ -16,6 +16,7 @@ window.__TRK = {
     list:       '{{ route("trucking2.costManagement.list") }}',
     costUpdate: '{{ url("trucking-v2/quan-ly-xe/cost") }}/',   // + {hashid} (PUT)
     costCancel: '{{ url("trucking-v2/quan-ly-xe/cost") }}/',   // + {hashid}/cancel (PUT)
+    costBulk:   '{{ route("trucking2.fleet.costBulk") }}',      // POST {ids[], action}
     costPhoto:  '{{ url("trucking-v2/quan-ly-xe") }}/',        // + {vehicleHashid}/cost-photo (POST)
     fleet:      '{{ url("trucking-v2/quan-ly-xe") }}',         // deep-link xe: #<hashid>/cost
   },

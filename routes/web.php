@@ -297,6 +297,7 @@ Route::middleware('auth')->group(function () {
             Route::put('/quan-ly-xe/{vehicle}', [FleetController::class, 'saveVehicle'])->name('fleet.save');
             Route::put('/quan-ly-xe/cost/{cost}', [FleetController::class, 'updateCost'])->name('fleet.updateCost');
             Route::put('/quan-ly-xe/cost/{cost}/cancel', [FleetController::class, 'adminCancelCost'])->name('fleet.cancelCost');
+            Route::post('/quan-ly-xe/cost-bulk', [FleetController::class, 'costBulk'])->name('fleet.costBulk');
             Route::post('/quan-ly-xe-cost-item', [FleetController::class, 'addCostItem'])->name('fleet.costItem');
             Route::post('/quan-ly-xe/{vehicle}/cost-photo', [FleetController::class, 'uploadCostPhotos'])->name('fleet.costPhoto.upload');
             Route::post('/quan-ly-xe/{vehicle}/docs', [FleetController::class, 'uploadDocs'])->name('fleet.docs.upload');

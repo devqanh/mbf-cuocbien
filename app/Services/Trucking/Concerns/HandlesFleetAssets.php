@@ -205,9 +205,34 @@ trait HandlesFleetAssets
             default     => $list,
         };
         $total = (clone $list)->count();
+        $sumAmount = (int) round((float) (clone $list)->sum('amount'));   // TỔNG tiền toàn bộ tập khớp bộ lọc (không chỉ trang này)
         $rows = $list->orderByDesc('id')->forPage($page, $per)->get()->map(fn ($c) => $this->costMgmtRow($c))->all();
 
-        return ['rows' => $rows, 'total' => $total, 'page' => $page, 'perPage' => $per, 'counts' => $counts];
+        return ['rows' => $rows, 'total' => $total, 'sumAmount' => $sumAmount, 'page' => $page, 'perPage' => $per, 'counts' => $counts];
+    }
+
+    /**
+     * HÀNH ĐỘNG HÀNG LOẠT trên nhiều phiếu chi (theo hashid): approve | pay | cancel.
+     * Bỏ qua phiếu đã hủy; pay/cancel bỏ qua phiếu đã chi phù hợp. Trả số phiếu thực sự đổi.
+     */
+    public function bulkUpdateVehicleCosts(array $hashids, string $action): int
+    {
+        $ids = collect($hashids)->map(fn ($h) => Hashid::decode((string) $h))->filter()->unique()->values();
+        if ($ids->isEmpty()) return 0;
+        $costs = TruckingVehicleCost::whereIn('id', $ids)->whereNull('cancelled_at')->get();
+        $today = now()->toDateString();
+        $uid = auth()->id();
+        $n = 0;
+        foreach ($costs as $c) {
+            if ($action === 'approve') {
+                if (! $c->approved) { $c->approved = true; $c->save(); $n++; }
+            } elseif ($action === 'pay') {
+                if (! $c->paid) { $c->approved = true; $c->paid = true; if (! $c->paid_date) $c->paid_date = $today; $c->save(); $n++; }
+            } elseif ($action === 'cancel') {
+                if (! $c->paid) { $c->cancelled_at = now(); $c->cancelled_by = $uid; $c->save(); $n++; }
+            }
+        }
+        return $n;
     }
 
     /** Map 1 phiếu chi cho trang Quản lý chi phí (kèm thông tin xe/tài sản + người gửi + trạng thái). */
@@ -227,13 +252,21 @@ trait HandlesFleetAssets
             'spendDate' => $this->outDate($c->spend_date), 'dueDate' => $this->outDate($c->due_date),
             'amount' => $this->outMoney($c->amount),
             'estAmount' => $c->est_amount !== null ? $this->outMoney($c->est_amount) : null,
-            'currentKm' => $this->outNum($c->current_km), 'supplier' => $c->supplier ?? '', 'note' => $c->note ?? '',
+            'currentKm' => $this->outNum($c->current_km), 'supplier' => $c->supplier ?? '', 'payer' => $c->payer ?? '', 'material' => (bool) $c->material, 'note' => $c->note ?? '',
             'paid' => (bool) $c->paid, 'approved' => (bool) $c->approved,
             'paidDate' => $this->outDate($c->paid_date), 'paidMethod' => $c->paid_method ?? '', 'paidRef' => $c->paid_ref ?? '', 'paidNote' => $c->paid_note ?? '',
             'requester' => $c->creator?->name ?? '', 'status' => $st['code'], 'statusLabel' => $st['label'],
             'cancelled' => (bool) $c->cancelled_at, 'canCancel' => (! $c->cancelled_at && ! $c->paid),
             'photos' => $this->costPhotosOut(is_array($c->photos) ? $c->photos : [], $c->vehicle_id),
         ];
+    }
+
+    /** Danh mục "Người chi" cho phiếu chi xe = danh mục Người chi (Cài đặt) ∪ các giá trị đã dùng. */
+    public function vehiclePayerNames(): array
+    {
+        $catalog = TruckingPayer::orderBy('sort')->orderBy('name')->pluck('name');
+        $used = TruckingVehicleCost::whereNotNull('payer')->where('payer', '!=', '')->distinct()->pluck('payer');
+        return $catalog->merge($used)->map(fn ($n) => trim((string) $n))->filter()->unique()->values()->all();
     }
 
     /** Cập nhật 1 PHIẾU CHI đơn lẻ (duyệt/thanh toán/sửa) — KHÔNG đụng est_amount/created_by/cancelled. */
@@ -259,6 +292,8 @@ trait HandlesFleetAssets
             'amount'     => $amount,
             'current_km' => array_key_exists('currentKm', $in) ? $this->inNum($in['currentKm']) : $c->current_km,
             'supplier'   => array_key_exists('supplier', $in) ? $this->str($in['supplier']) : $c->supplier,
+            'payer'      => array_key_exists('payer', $in) ? $this->str($in['payer']) : $c->payer,
+            'material'   => array_key_exists('material', $in) ? ! empty($in['material']) : $c->material,
             'note'       => array_key_exists('note', $in) ? $this->str($in['note']) : $c->note,
             'photos'     => array_key_exists('photos', $in) ? $this->cleanCostPhotos($in['photos']) : ($c->photos ?? []),
             'approved'   => $approved,

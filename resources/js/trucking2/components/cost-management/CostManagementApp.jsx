@@ -51,7 +51,7 @@ export function CostManagementApp() {
     const url = ROUTES.list + "?status=" + encodeURIComponent(st) + "&kind=" + encodeURIComponent(kd) + "&q=" + encodeURIComponent(qq) + "&page=" + pg;
     api("GET", url).then((r) => {
       if (my !== reqId.current) return;
-      setData(r && r.ok ? r : { rows: [], total: 0, counts: {} }); setLoading(false);
+      setData(r && r.ok ? r : { rows: [], total: 0, counts: {} }); setLoading(false); setSel(new Set());
     }).catch(() => { if (my === reqId.current) { setData({ rows: [], total: 0, counts: {} }); setLoading(false); } });
   }, [status, kind, q, page]);
 
@@ -63,6 +63,35 @@ export function CostManagementApp() {
   const counts = data.counts || {};
   const rows = data.rows || [];
   const totalPages = Math.max(1, Math.ceil((data.total || 0) / (data.perPage || 20)));
+
+  // ---- Chọn hàng loạt (theo hashid) — reset mỗi lần tải lại danh sách ----
+  const [sel, setSel] = useState(() => new Set());
+  const isSel = (h) => sel.has(h);
+  const toggleSel = (h) => setSel((s) => { const n = new Set(s); n.has(h) ? n.delete(h) : n.add(h); return n; });
+  const selectable = rows.filter((r) => !r.cancelled && r.hashid);   // phiếu đã hủy không thao tác hàng loạt
+  const allSel = selectable.length > 0 && selectable.every((r) => sel.has(r.hashid));
+  const toggleAll = () => setSel(() => (allSel ? new Set() : new Set(selectable.map((r) => r.hashid))));
+  const clearSel = () => setSel(new Set());
+  const selTotal = rows.filter((r) => sel.has(r.hashid)).reduce((a, r) => a + toNum(r.amount), 0);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const bulkDo = async (action) => {
+    const ids = [...sel]; if (!ids.length || bulkBusy) return;
+    const LABEL = { approve: "Duyệt", pay: "Đánh dấu đã thanh toán", cancel: "Hủy" };
+    if (action === "cancel") {
+      const ok = await window.confirmAction({ title: `Hủy ${ids.length} phiếu?`, text: "Các phiếu <b>chưa thanh toán</b> sẽ bị hủy và loại khỏi tổng/báo cáo.", confirmText: "Hủy các phiếu", danger: true });
+      if (!ok) return;
+    } else if (action === "pay") {
+      const ok = await window.confirmAction({ title: `Đánh dấu đã TT ${ids.length} phiếu?`, text: "Các phiếu sẽ được <b>duyệt + đánh dấu đã thanh toán</b> (ngày TT = hôm nay). Có thể sửa chi tiết TT từng phiếu sau.", confirmText: "Đánh dấu đã TT" });
+      if (!ok) return;
+    }
+    setBulkBusy(true);
+    try {
+      const r = await api("POST", ROUTES.costBulk, { ids, action });
+      if (r && r.ok) { window.trkToast && window.trkToast(`${LABEL[action]}: ${r.done} phiếu`); clearSel(); refresh(); }
+      else window.trkToast && window.trkToast((r && r.message) || "Thao tác thất bại", "error");
+    } catch (e) { window.trkToast && window.trkToast("Lỗi kết nối", "error"); }
+    setBulkBusy(false);
+  };
 
   // ---- Hành động ----
   const doApprove = async (row) => {
@@ -87,7 +116,7 @@ export function CostManagementApp() {
     if (!edit) return; const d = edit.d;
     const r = await api("PUT", ROUTES.costUpdate + d.hashid, {
       name: d.name, kind: d.kind, amount: dig(d.amount), spendDate: d.spendDate, dueDate: d.dueDate,
-      currentKm: dig(d.currentKm), supplier: d.supplier, note: d.note,
+      currentKm: dig(d.currentKm), supplier: d.supplier, payer: d.payer, material: !!d.material, note: d.note,
       approved: !!d.approved, paid: !!d.paid, paidDate: d.paidDate, paidMethod: d.paidMethod, paidRef: d.paidRef, paidNote: d.paidNote,
       photos: d.photos || [],
     });
@@ -115,8 +144,12 @@ export function CostManagementApp() {
     const st = ST[row.status] || ST.pending;
     const estDiff = row.estAmount != null && dig(row.estAmount) !== dig(row.amount);
     return (
-      <div key={row.id} style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px", opacity: row.cancelled ? 0.62 : 1 }}>
+      <div key={row.id} style={{ background: isSel(row.hashid) ? "var(--accent-weak-2)" : "#fff", border: "1px solid " + (isSel(row.hashid) ? "var(--accent-weak)" : "var(--line)"), borderRadius: 12, padding: "12px 14px", opacity: row.cancelled ? 0.62 : 1 }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+          {canEdit && !row.cancelled && row.hashid && (
+            <input type="checkbox" checked={isSel(row.hashid)} onChange={() => toggleSel(row.hashid)} onClick={(e) => e.stopPropagation()}
+              title="Chọn để thao tác hàng loạt" style={{ width: 17, height: 17, accentColor: "var(--accent)", cursor: "pointer", marginTop: 3, flexShrink: 0 }} />
+          )}
           <div style={{ flex: 1, minWidth: 200 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               {row.invoiceNo && <span className="tnum" style={{ fontSize: 11.5, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak-2)", padding: "1px 7px", borderRadius: 6 }}>{row.invoiceNo}</span>}
@@ -190,6 +223,37 @@ export function CostManagementApp() {
 
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: isMobile ? "12px 12px 24px" : "16px 22px 24px" }}>
         <div style={{ maxWidth: 940, margin: "0 auto", display: "flex", flexDirection: "column", gap: 10 }}>
+          {/* Thanh TỔNG CHI PHÍ theo bộ lọc + chọn tất cả */}
+          {!loading && rows.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", background: "#fff", border: "1px solid var(--line)", borderRadius: 11, padding: "10px 14px" }}>
+              {canEdit && selectable.length > 0 && (
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", fontSize: 12.5, fontWeight: 600, color: "var(--ink-3)" }}>
+                  <input type="checkbox" checked={allSel} onChange={toggleAll} style={{ width: 16, height: 16, accentColor: "var(--accent)", cursor: "pointer" }} />
+                  Chọn trang
+                </label>
+              )}
+              <div style={{ flex: 1 }} />
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                <span style={{ fontSize: 12, color: "var(--ink-4)", fontWeight: 600, textTransform: "uppercase", letterSpacing: ".03em" }}>Tổng chi phí</span>
+                <span className="tnum" style={{ fontSize: 19, fontWeight: 800, color: "var(--ink)" }}>{fmtVND(data.sumAmount || 0)}</span>
+                <span style={{ fontSize: 12, color: "var(--ink-4)" }} className="tnum">· {data.total || 0} phiếu</span>
+              </div>
+            </div>
+          )}
+          {/* Thanh HÀNH ĐỘNG HÀNG LOẠT — hiện khi đã chọn */}
+          {sel.size > 0 && (
+            <div style={{ position: "sticky", top: 0, zIndex: 5, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", borderRadius: 11, padding: "10px 14px", boxShadow: "0 2px 8px rgba(16,19,23,.06)" }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--accent)" }}><i className="bi bi-check2-square" /> Đã chọn {sel.size} phiếu</span>
+              <span className="tnum" style={{ fontSize: 13, color: "var(--ink-2)" }}>· Tổng chọn: <b>{fmtVND(selTotal)}</b></span>
+              <div style={{ flex: 1 }} />
+              {canEdit && <>
+                {btn(bulkBusy ? "Đang xử lý…" : "Duyệt", "bi-check2-circle", () => bulkDo("approve"), "primary")}
+                {btn("Đánh dấu đã TT", "bi-cash-coin", () => bulkDo("pay"), "good")}
+                {btn("Hủy", "bi-x-circle", () => bulkDo("cancel"), "danger")}
+              </>}
+              <button type="button" onClick={clearSel} style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-3)", background: "transparent", border: "none", cursor: "pointer" }}>Bỏ chọn</button>
+            </div>
+          )}
           {loading && <div style={{ padding: "30px", textAlign: "center", color: "var(--ink-4)" }}><i className="bi bi-arrow-repeat" style={{ animation: "trk-spin .7s linear infinite" }} /> Đang tải…</div>}
           {!loading && rows.length === 0 && <div style={{ padding: "40px", textAlign: "center", color: "var(--ink-4)", fontSize: 13.5, background: "#fff", border: "1px solid var(--line)", borderRadius: 12 }}>Không có phiếu chi nào khớp bộ lọc.</div>}
           {!loading && rows.map((row) => card(row))}
@@ -205,7 +269,7 @@ export function CostManagementApp() {
       </div>
 
       {pay && <PayModal row={pay} payMethods={payMethods} onConfirm={confirmPay} onClose={() => setPay(null)} />}
-      {edit && <CostModal data={edit.d} isNew={false} costTypes={edit.isAsset ? assetCostTypes : costTypes} payMethods={payMethods}
+      {edit && <CostModal data={edit.d} isNew={false} costTypes={edit.isAsset ? assetCostTypes : costTypes} payMethods={payMethods} payers={B.payers || []}
         onUploadPhotos={uploadPhotos(edit.d.vehicleHashid)}
         onChange={(d) => setEdit((e) => ({ ...e, d }))} onSave={saveEdit} onClose={() => setEdit(null)} />}
     </div>

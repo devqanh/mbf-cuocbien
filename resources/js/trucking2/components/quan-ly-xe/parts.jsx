@@ -248,7 +248,7 @@ function UsageTab({ rows, onChange, drivers }) {
 /* ---- Tab: Chi phí — BẢNG hiển thị cột chính, bấm dòng → modal sửa, Thêm phiếu chi → modal ---- */
 const today10 = () => new Date().toISOString().slice(0, 10);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const blankCost = () => ({ id: Date.now() + Math.random(), name: "", invoiceNo: "", kind: "fixed", spendDate: today10(), dueDate: "", amount: "", currentKm: "", supplier: "", note: "", paid: false, paidDate: "", paidMethod: "", paidRef: "", paidNote: "", approved: false });
+const blankCost = () => ({ id: Date.now() + Math.random(), name: "", invoiceNo: "", kind: "fixed", spendDate: today10(), dueDate: "", amount: "", currentKm: "", supplier: "", payer: "", material: false, note: "", paid: false, paidDate: "", paidMethod: "", paidRef: "", paidNote: "", approved: false });
 const PAY_METHODS = ["Chuyển khoản", "Tiền mặt", "Khác"];
 
 /* Modal DUYỆT THANH TOÁN — kế toán điền thông tin rồi mới duyệt */
@@ -286,7 +286,7 @@ function PayModal({ row, onConfirm, onClose, payMethods }) {
 }
 
 /* Modal điền 1 phiếu chi */
-function CostModal({ data, isNew, onChange, onSave, onClose, costTypes = [], payMethods, onUploadPhotos }) {
+function CostModal({ data, isNew, onChange, onSave, onClose, costTypes = [], payMethods, payers = [], onUploadPhotos }) {
   const { useState, useRef, useEffect } = React;
   const methods = (payMethods && payMethods.length) ? payMethods : PAY_METHODS;
   const d = data; const set = (np) => onChange({ ...d, ...np });
@@ -361,8 +361,13 @@ function CostModal({ data, isNew, onChange, onSave, onClose, costTypes = [], pay
         </>)}
         {rec && f(<span style={{ color: "var(--accent)" }}>Ngày hết hạn ★</span>, <DateField value={d.dueDate} onChange={(x) => set({ dueDate: x })} />)}
         {f("Nhà cung cấp", <Txt value={d.supplier} onChange={(x) => set({ supplier: x })} placeholder="…" />)}
+        {f("Người chi", <Combo value={d.payer} onChange={(x) => set({ payer: x })} options={payers} placeholder="Chọn hoặc gõ người chi…" clearable />)}
         {f("KM hiện tại", <Num value={d.currentKm} onChange={(x) => set({ currentKm: x })} suffix="km" />)}
         {f("Ghi chú", <Txt value={d.note} onChange={(x) => set({ note: x })} placeholder="…" />, true)}
+
+        <div style={{ gridColumn: "1 / -1" }}>
+          <ChkBox checked={!!d.material} onChange={(v) => set({ material: v })} label="Chi phí này là vật tư (lốp, ắc quy, lọc dầu…)" />
+        </div>
 
         {/* Ảnh thực tế (hóa đơn / đồng hồ km / phụ tùng) */}
         <div style={{ gridColumn: "1 / -1" }}>
@@ -417,7 +422,7 @@ function CostModal({ data, isNew, onChange, onSave, onClose, costTypes = [], pay
   );
 }
 
-function CostTab({ rows, onChange, costTypes, payMethods, saving, onUploadPhotos, highlightId, onCancel }) {
+function CostTab({ rows, onChange, costTypes, payMethods, payers = [], saving, onUploadPhotos, highlightId, onCancel }) {
   const { useState } = React;
   const isMobile = useIsMobile();
   const [filter, setFilter] = useState("all");   // all | fixed | recurring | due
@@ -429,8 +434,9 @@ function CostTab({ rows, onChange, costTypes, payMethods, saving, onUploadPhotos
   const latestByName = {};
   all.forEach((r) => { if (isRec(r) && r.dueDate) { const n = (r.name || "").trim().toLowerCase(); if (!latestByName[n] || r.dueDate > latestByName[n].due) latestByName[n] = { due: r.dueDate, invoice: (r.invoiceNo || "").trim() }; } });
   const supLatest = (r) => { if (!isRec(r)) return null; const L = latestByName[(r.name || "").trim().toLowerCase()]; return (L && (!r.dueDate || L.due > r.dueDate)) ? L : null; };
-  const match = (r) => filter === "fixed" ? !isRec(r) : filter === "recurring" ? isRec(r) : filter === "due" ? isDue(r) : true;
-  const FILTERS = [["all", "Tất cả", all.length], ["fixed", "Cố định", all.filter((r) => !isRec(r)).length], ["recurring", "Định kỳ", all.filter(isRec).length], ["due", "Hết / sắp hết hạn", all.filter(isDue).length]];
+  const match = (r) => filter === "fixed" ? !isRec(r) : filter === "recurring" ? isRec(r) : filter === "due" ? isDue(r) : filter === "material" ? !!r.material : true;
+  const matCount = all.filter((r) => r.material).length;
+  const FILTERS = [["all", "Tất cả", all.length], ["fixed", "Cố định", all.filter((r) => !isRec(r)).length], ["recurring", "Định kỳ", all.filter(isRec).length], ["due", "Hết / sắp hết hạn", all.filter(isDue).length], ...(matCount > 0 ? [["material", "Vật tư", matCount]] : [])];
   const shown = all.filter(match).length;
 
   // KM chênh lệch theo TÊN: so KM phiếu này với phiếu CŨ HƠN gần nhất cùng tên có KM → "+X km".
@@ -514,6 +520,7 @@ function CostTab({ rows, onChange, costTypes, payMethods, saving, onUploadPhotos
                     <td style={cell}>
                       <div style={{ fontWeight: 600, textDecoration: r.cancelled ? "line-through" : "none" }}>{r.name || <span style={{ color: "var(--ink-4)", fontWeight: 400 }}>(chưa đặt tên)</span>}</div>
                       <span style={{ fontSize: 10.5, fontWeight: 700, color: rec ? "var(--accent)" : "var(--ink-3)", background: rec ? "var(--accent-weak)" : "var(--line-2)", padding: "1px 8px", borderRadius: 999 }}>{rec ? "Định kỳ" : "Cố định"}</span>
+                      {r.material && <span title="Chi phí vật tư" style={{ fontSize: 10.5, fontWeight: 700, color: "#7c5b16", background: "#fbf0d3", padding: "1px 8px", borderRadius: 999, marginLeft: 6 }}><i className="bi bi-box-seam" /> Vật tư</span>}
                       {r.requester && <span style={{ fontSize: 11, color: "var(--ink-4)", marginLeft: 8 }} title="Người yêu cầu tạo phiếu"><i className="bi bi-person" /> {r.requester}</span>}
                       {r.supplier && <span style={{ fontSize: 11.5, color: "var(--ink-4)", marginLeft: 8 }}>{r.supplier}</span>}
                       {Array.isArray(r.photos) && r.photos.length > 0 && <span title={`${r.photos.length} ảnh thực tế`} style={{ fontSize: 10.5, fontWeight: 700, color: "var(--good)", background: "var(--good-weak)", padding: "1px 7px", borderRadius: 999, marginLeft: 8 }}><i className="bi bi-camera-fill" /> {r.photos.length}</span>}
@@ -561,7 +568,7 @@ function CostTab({ rows, onChange, costTypes, payMethods, saving, onUploadPhotos
 
       <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}><i className="bi bi-check2-circle" style={{ color: "var(--good)" }} /> Mọi thao tác ở mục Chi phí (thêm/sửa/duyệt/thanh toán/xóa) được <b>lưu ngay</b> — không cần bấm Lưu. Khoản <b>định kỳ</b> (bảo hiểm, đăng kiểm…): đến hạn bấm <i className="bi bi-arrow-repeat" /> để <b>tạo phiếu mới</b> → điền tiền + ngày hết hạn mới; phiếu cũ tự chuyển <b>“đã gia hạn ở HĐ #…”</b>. <b># hóa đơn tự sinh</b>.</span>
 
-      {edit && <CostModal data={edit.d} isNew={edit.i < 0} costTypes={costTypes} payMethods={payMethods} onUploadPhotos={onUploadPhotos} onChange={(d) => setEdit((e) => ({ ...e, d }))} onSave={saveModal} onClose={() => setEdit(null)} />}
+      {edit && <CostModal data={edit.d} isNew={edit.i < 0} costTypes={costTypes} payMethods={payMethods} payers={payers} onUploadPhotos={onUploadPhotos} onChange={(d) => setEdit((e) => ({ ...e, d }))} onSave={saveModal} onClose={() => setEdit(null)} />}
       {payIdx != null && all[payIdx] && <PayModal row={all[payIdx]} payMethods={payMethods} onConfirm={confirmPay} onClose={() => setPayIdx(null)} />}
     </div>
   );

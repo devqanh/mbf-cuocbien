@@ -421,7 +421,7 @@ function FleetApp({ modeSwitch }) {
             : tab === "deprecMonthly" ? <DeprecMonthlyTab rows={detail.depreciations || []} />
             : tab === "usage" ? <UsageTab rows={detail.usages || []} onChange={(rows) => upd({ usages: rows })} drivers={detail.drivers || []} />
             : tab === "fuel" ? <FuelTab vehicleId={selId} hashid={selHash.current} routes={ROUTES} />
-            : <CostTab rows={detail.costs || []} onChange={saveCosts} saving={costSaving} costTypes={detail.costTypes || []} payMethods={payMethods} onUploadPhotos={uploadCostPhotos} highlightId={hlCost} onCancel={cancelCost} />}
+            : <CostTab rows={detail.costs || []} onChange={saveCosts} saving={costSaving} costTypes={detail.costTypes || []} payMethods={payMethods} payers={B.payers || []} onUploadPhotos={uploadCostPhotos} highlightId={hlCost} onCancel={cancelCost} />}
         </div>
       </div>
     </div>

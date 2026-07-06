@@ -75,7 +75,7 @@ trait HandlesVehicleDetail
             'id' => $c->id, 'hashid' => Hashid::encode($c->id), 'name' => $c->name ?? '', 'costTypeId' => $c->cost_type_id, 'invoiceNo' => $c->invoice_no ?? '', 'kind' => ($c->kind === 'fixed' ? 'fixed' : 'recurring'),
             'spendDate' => $this->outDate($c->spend_date), 'dueDate' => $this->outDate($c->due_date), 'amount' => $this->outMoney($c->amount),
             'estAmount' => $c->est_amount !== null ? $this->outMoney($c->est_amount) : null,   // dự kiến (lái xe gửi qua yêu cầu chi)
-            'currentKm' => $this->outNum($c->current_km), 'supplier' => $c->supplier ?? '', 'note' => $c->note ?? '',
+            'currentKm' => $this->outNum($c->current_km), 'supplier' => $c->supplier ?? '', 'payer' => $c->payer ?? '', 'material' => (bool) $c->material, 'note' => $c->note ?? '',
             'paid' => (bool) $c->paid, 'approved' => (bool) $c->approved,
             'paidDate' => $this->outDate($c->paid_date), 'paidMethod' => $c->paid_method ?? '', 'paidRef' => $c->paid_ref ?? '', 'paidNote' => $c->paid_note ?? '',
             'requester' => $c->creator?->name ?? '', 'status' => $st['code'], 'statusLabel' => $st['label'],
@@ -360,6 +360,8 @@ trait HandlesVehicleDetail
                         'amount' => $this->inMoney($c['amount'] ?? null) ?? 0,
                         'current_km' => $this->inNum($c['currentKm'] ?? null),
                         'supplier' => $this->str($c['supplier'] ?? null),
+                        'payer' => $this->str($c['payer'] ?? null),
+                        'material' => ! empty($c['material']),
                         'note' => $this->str($c['note'] ?? null),
                         'paid' => ! empty($c['paid']),
                         'paid_date' => $this->inDate($c['paidDate'] ?? null),

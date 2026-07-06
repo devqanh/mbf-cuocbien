@@ -22,6 +22,7 @@ class FleetController extends BaseTruckingController
             'costItems'       => $this->svc->costItemNames(),
             'vehicleCostTypes' => $this->svc->vehicleCostTypesOut(),   // định mức km dùng đúng danh mục Loại chi phí xe
             'payMethods'      => $this->svc->payMethodsOut(),          // hình thức thanh toán (cấu hình ở Cài đặt)
+            'payers'          => $this->svc->vehiclePayerNames(),      // "Người chi" cho phiếu chi (danh mục ∪ đã dùng)
             'dueWarnDays'     => (int) TruckingSetting::get('due_warn_days', '30'),
         ], 'fleet.manage', 'fleet.manage'));
     }
@@ -72,6 +73,7 @@ class FleetController extends BaseTruckingController
             'costTypes'      => $this->svc->vehicleCostTypesOut(),   // mặc định (xe)
             'assetCostTypes' => $this->svc->assetCostTypesOut(),     // dùng khi phiếu là tài sản
             'payMethods'     => $this->svc->payMethodsOut(),         // hình thức thanh toán (cấu hình ở Cài đặt)
+            'payers'    => $this->svc->vehiclePayerNames(),          // "Người chi" cho phiếu chi
             'suppliers' => $this->svc->supplierSuggestions(),
             'initial'   => $this->svc->costManagementData(['status' => 'action', 'page' => 1]),
         ], 'fleet.manage', 'fleet.manage'));
@@ -95,13 +97,25 @@ class FleetController extends BaseTruckingController
         $d = $request->validate([
             'name' => ['nullable', 'string', 'max:255'], 'kind' => ['nullable', 'string'],
             'amount' => ['nullable'], 'spendDate' => ['nullable', 'string'], 'dueDate' => ['nullable', 'string'],
-            'currentKm' => ['nullable'], 'supplier' => ['nullable', 'string', 'max:255'], 'note' => ['nullable', 'string'],
+            'currentKm' => ['nullable'], 'supplier' => ['nullable', 'string', 'max:255'], 'payer' => ['nullable', 'string', 'max:255'], 'material' => ['nullable', 'boolean'], 'note' => ['nullable', 'string'],
             'approved' => ['nullable', 'boolean'], 'paid' => ['nullable', 'boolean'],
             'paidDate' => ['nullable', 'string'], 'paidMethod' => ['nullable', 'string', 'max:64'],
             'paidRef' => ['nullable', 'string', 'max:120'], 'paidNote' => ['nullable', 'string'],
             'photos' => ['nullable', 'array'],
         ]);
         return response()->json($this->svc->updateVehicleCost($cost, $d));
+    }
+
+    /** Hành động HÀNG LOẠT nhiều phiếu chi (theo hashid): approve | pay | cancel. */
+    public function costBulk(Request $request): JsonResponse
+    {
+        $d = $request->validate([
+            'ids'    => ['required', 'array', 'min:1'],
+            'ids.*'  => ['string'],
+            'action' => ['required', 'in:approve,pay,cancel'],
+        ]);
+        $done = $this->svc->bulkUpdateVehicleCosts($d['ids'], $d['action']);
+        return response()->json(['ok' => true, 'done' => $done]);
     }
 
     /** Upload ảnh thực tế cho phiếu chi (CostModal) → trả danh sách (kèm id + url). */
