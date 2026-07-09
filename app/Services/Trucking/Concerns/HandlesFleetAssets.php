@@ -173,12 +173,14 @@ trait HandlesFleetAssets
         $status = (string) ($f['status'] ?? 'action');
         $kind   = (string) ($f['kind'] ?? 'all');
         $q      = trim((string) ($f['q'] ?? ''));
+        $payer  = trim((string) ($f['payer'] ?? ''));
         $page   = max(1, (int) ($f['page'] ?? 1));
         $per    = min(100, max(5, (int) ($f['perPage'] ?? 20)));
 
         $base = TruckingVehicleCost::query()->with(['vehicle:id,plate,kind,info', 'creator:id,name']);
         if ($kind === 'vehicle')     $base->whereHas('vehicle', fn ($w) => $w->where('kind', '!=', 'asset'));
         elseif ($kind === 'asset')   $base->whereHas('vehicle', fn ($w) => $w->where('kind', 'asset'));
+        if ($payer !== '') $base->where('payer', $payer);   // lọc theo NGƯỜI CHI (để duyệt theo người)
         if ($q !== '') {
             $like = '%' . $q . '%';
             $base->where(fn ($w) => $w->where('name', 'like', $like)->orWhere('invoice_no', 'like', $like)

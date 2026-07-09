@@ -33,8 +33,10 @@ export function CostManagementApp() {
   const costTypes = B.costTypes || [];              // loại chi phí xe
   const assetCostTypes = B.assetCostTypes || [];    // loại chi phí tài sản
   const payMethods = B.payMethods || [];            // hình thức thanh toán (cai-dat#payMethods)
+  const payerOpts = B.payers || [];                 // "Người chi" (danh mục ∪ đã dùng)
   const [status, setStatus] = useState("action");
   const [kind, setKind] = useState("all");
+  const [payer, setPayer] = useState("");           // lọc theo người chi ("" = tất cả)
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [data, setData] = useState(B.initial || { rows: [], total: 0, page: 1, perPage: 20, counts: {} });
@@ -46,16 +48,16 @@ export function CostManagementApp() {
   const first = useRef(true);
 
   const load = useCallback((o = {}) => {
-    const st = o.status ?? status, kd = o.kind ?? kind, qq = o.q ?? q, pg = o.page ?? page;
+    const st = o.status ?? status, kd = o.kind ?? kind, qq = o.q ?? q, pg = o.page ?? page, py = o.payer ?? payer;
     const my = ++reqId.current; setLoading(true);
-    const url = ROUTES.list + "?status=" + encodeURIComponent(st) + "&kind=" + encodeURIComponent(kd) + "&q=" + encodeURIComponent(qq) + "&page=" + pg;
+    const url = ROUTES.list + "?status=" + encodeURIComponent(st) + "&kind=" + encodeURIComponent(kd) + "&q=" + encodeURIComponent(qq) + "&payer=" + encodeURIComponent(py) + "&page=" + pg;
     api("GET", url).then((r) => {
       if (my !== reqId.current) return;
       setData(r && r.ok ? r : { rows: [], total: 0, counts: {} }); setLoading(false); setSel(new Set());
     }).catch(() => { if (my === reqId.current) { setData({ rows: [], total: 0, counts: {} }); setLoading(false); } });
-  }, [status, kind, q, page]);
+  }, [status, kind, q, payer, page]);
 
-  useEffect(() => { if (first.current) { first.current = false; return; } load(); }, [status, kind, page]);
+  useEffect(() => { if (first.current) { first.current = false; return; } load(); }, [status, kind, payer, page]);
 
   const onSearch = (v) => { setQ(v); setPage(1); clearTimeout(qTimer.current); qTimer.current = setTimeout(() => load({ q: v, page: 1 }), 350); };
   const setTab = (st) => { if (st === status) return; setStatus(st); setPage(1); };
@@ -159,14 +161,16 @@ export function CostManagementApp() {
             <div style={{ fontSize: 12, color: "var(--ink-4)", marginTop: 4, display: "flex", gap: 10, flexWrap: "wrap" }}>
               <span><i className={"bi " + (row.kind === "asset" ? "bi-box-seam" : "bi-truck-front")} /> {row.kind === "asset" ? "Tài sản" : "Xe"} <b className="tnum" style={{ color: "var(--ink-2)" }}>{row.targetName || row.plate}</b></span>
               {row.requester && <span><i className="bi bi-person" /> {row.requester}</span>}
+              {row.payer && <span title="Người chi"><i className="bi bi-wallet2" /> {row.payer}</span>}
+              {row.material && <span style={{ color: "#7c5b16", fontWeight: 600 }} title="Chi phí vật tư"><i className="bi bi-box-seam" /> Vật tư</span>}
               {row.spendDate && <span className="tnum"><i className="bi bi-calendar3" /> {fmtDate(row.spendDate)}</span>}
               {row.supplier && <span><i className="bi bi-shop" /> {row.supplier}</span>}
               {row.vehicleHashid && <a href={ROUTES.fleet + "#" + row.vehicleHashid + "/cost"} onClick={(e) => e.stopPropagation()} title="Mở hồ sơ xe/tài sản" style={{ color: "var(--accent)", textDecoration: "none" }}><i className="bi bi-box-arrow-up-right" /> hồ sơ</a>}
             </div>
           </div>
           <div style={{ textAlign: "right" }}>
-            <div className="tnum" style={{ fontSize: 17, fontWeight: 800 }}>{fmtVND(row.amount)}</div>
-            {estDiff && <div className="tnum" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>Dự kiến: {fmtVND(row.estAmount)}</div>}
+            <div className="tnum" style={{ fontSize: 17, fontWeight: 800 }}>{fmtVND(toNum(row.amount))}</div>
+            {estDiff && <div className="tnum" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>Dự kiến: {fmtVND(toNum(row.estAmount))}</div>}
             {row.paid && row.paidDate && <div className="tnum" style={{ fontSize: 11, color: "var(--good)" }}>Đã chi {fmtDate(row.paidDate)}{row.paidMethod ? " · " + row.paidMethod : ""}</div>}
           </div>
         </div>
@@ -218,6 +222,19 @@ export function CostManagementApp() {
               style={{ padding: "6px 11px", fontSize: 12.5, fontWeight: 600, borderRadius: 8, cursor: "pointer",
                 border: "1px solid " + (kind === k ? "var(--accent)" : "var(--line)"), background: kind === k ? "var(--accent-weak-2)" : "#fff", color: kind === k ? "var(--accent)" : "var(--ink-3)" }}>{l}</button>
           ))}
+          {payerOpts.length > 0 && <>
+            <span style={{ width: 1, height: 20, background: "var(--line)", margin: "0 4px" }} />
+            <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+              <i className="bi bi-wallet2" style={{ position: "absolute", left: 10, color: payer ? "var(--accent)" : "var(--ink-4)", fontSize: 12, pointerEvents: "none" }} />
+              <select value={payer} onChange={(e) => { setPayer(e.target.value); setPage(1); }} title="Lọc theo Người chi"
+                style={{ appearance: "none", WebkitAppearance: "none", padding: "6px 26px 6px 28px", fontSize: 12.5, fontWeight: 600, borderRadius: 8, cursor: "pointer",
+                  border: "1px solid " + (payer ? "var(--accent)" : "var(--line)"), background: payer ? "var(--accent-weak-2)" : "#fff", color: payer ? "var(--accent)" : "var(--ink-3)" }}>
+                <option value="">Người chi: tất cả</option>
+                {payerOpts.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <i className="bi bi-chevron-down" style={{ position: "absolute", right: 9, color: "var(--ink-4)", fontSize: 10, pointerEvents: "none" }} />
+            </div>
+          </>}
         </div>
       </header>
 

@@ -86,6 +86,7 @@ class FleetController extends BaseTruckingController
             'status'  => (string) $request->query('status', 'action'),
             'kind'    => (string) $request->query('kind', 'all'),
             'q'       => (string) $request->query('q', ''),
+            'payer'   => (string) $request->query('payer', ''),
             'page'    => (int) $request->query('page', 1),
             'perPage' => (int) $request->query('perPage', 20),
         ]));
