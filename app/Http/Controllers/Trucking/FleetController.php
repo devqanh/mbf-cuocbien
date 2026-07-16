@@ -98,7 +98,7 @@ class FleetController extends BaseTruckingController
         $d = $request->validate([
             'name' => ['nullable', 'string', 'max:255'], 'kind' => ['nullable', 'string'],
             'amount' => ['nullable'], 'spendDate' => ['nullable', 'string'], 'dueDate' => ['nullable', 'string'],
-            'currentKm' => ['nullable'], 'supplier' => ['nullable', 'string', 'max:255'], 'payer' => ['nullable', 'string', 'max:255'], 'material' => ['nullable', 'boolean'], 'note' => ['nullable', 'string'],
+            'currentKm' => ['nullable'], 'supplier' => ['nullable', 'string', 'max:255'], 'payer' => ['nullable', 'string', 'max:255'], 'material' => ['nullable', 'boolean'], 'alloc' => ['nullable', 'boolean'], 'allocMonths' => ['nullable'], 'note' => ['nullable', 'string'],
             'approved' => ['nullable', 'boolean'], 'paid' => ['nullable', 'boolean'],
             'paidDate' => ['nullable', 'string'], 'paidMethod' => ['nullable', 'string', 'max:64'],
             'paidRef' => ['nullable', 'string', 'max:120'], 'paidNote' => ['nullable', 'string'],

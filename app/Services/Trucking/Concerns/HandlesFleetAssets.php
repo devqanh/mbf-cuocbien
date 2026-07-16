@@ -254,13 +254,23 @@ trait HandlesFleetAssets
             'spendDate' => $this->outDate($c->spend_date), 'dueDate' => $this->outDate($c->due_date),
             'amount' => $this->outMoney($c->amount),
             'estAmount' => $c->est_amount !== null ? $this->outMoney($c->est_amount) : null,
-            'currentKm' => $this->outNum($c->current_km), 'supplier' => $c->supplier ?? '', 'payer' => $c->payer ?? '', 'material' => (bool) $c->material, 'note' => $c->note ?? '',
+            'currentKm' => $this->outNum($c->current_km), 'supplier' => $c->supplier ?? '', 'payer' => $c->payer ?? '', 'material' => (bool) $c->material,
+            'alloc' => (bool) $c->alloc, 'allocMonths' => $c->alloc_months ?: '', 'allocPerMonth' => $this->allocPerMonth($c),
+            'note' => $c->note ?? '',
             'paid' => (bool) $c->paid, 'approved' => (bool) $c->approved,
             'paidDate' => $this->outDate($c->paid_date), 'paidMethod' => $c->paid_method ?? '', 'paidRef' => $c->paid_ref ?? '', 'paidNote' => $c->paid_note ?? '',
             'requester' => $c->creator?->name ?? '', 'status' => $st['code'], 'statusLabel' => $st['label'],
             'cancelled' => (bool) $c->cancelled_at, 'canCancel' => (! $c->cancelled_at && ! $c->paid),
             'photos' => $this->costPhotosOut(is_array($c->photos) ? $c->photos : [], $c->vehicle_id),
         ];
+    }
+
+    /** Chi phí/THÁNG của phiếu PHÂN BỔ = Số tiền ÷ số tháng phân bổ. 0 nếu không phân bổ / thiếu số tháng. */
+    private function allocPerMonth(TruckingVehicleCost $c): int
+    {
+        $m = (int) $c->alloc_months;
+        if (! $c->alloc || $m <= 0) return 0;
+        return (int) round(((float) $c->amount) / $m);
     }
 
     /** Danh mục "Người chi" cho phiếu chi xe = danh mục Người chi (Cài đặt) ∪ các giá trị đã dùng. */
@@ -296,6 +306,10 @@ trait HandlesFleetAssets
             'supplier'   => array_key_exists('supplier', $in) ? $this->str($in['supplier']) : $c->supplier,
             'payer'      => array_key_exists('payer', $in) ? $this->str($in['payer']) : $c->payer,
             'material'   => array_key_exists('material', $in) ? ! empty($in['material']) : $c->material,
+            'alloc'      => array_key_exists('alloc', $in) ? ! empty($in['alloc']) : $c->alloc,
+            'alloc_months' => array_key_exists('alloc', $in)
+                ? (! empty($in['alloc']) ? (((int) $this->inNum($in['allocMonths'] ?? null)) ?: null) : null)
+                : $c->alloc_months,
             'note'       => array_key_exists('note', $in) ? $this->str($in['note']) : $c->note,
             'photos'     => array_key_exists('photos', $in) ? $this->cleanCostPhotos($in['photos']) : ($c->photos ?? []),
             'approved'   => $approved,

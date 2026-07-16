@@ -152,6 +152,8 @@ Route::middleware('auth')->group(function () {
             Route::get('/phi-xe/{tripCost}/recompute', [TripCostController::class, 'recompute'])->name('tripCost.recompute');
             Route::get('/phi-xe/{tripCost}',         [TripCostController::class, 'view'])->name('tripCost.view');
             Route::get('/bao-cao',                   [ReportController::class, 'index'])->name('report');
+            Route::get('/bao-cao-tai-san',           [ReportController::class, 'assetIndex'])->name('assetReport');
+            Route::get('/bao-cao-tai-san/data',      [ReportController::class, 'assetData'])->name('assetReport.data');
             Route::get('/bao-cao/data',              [ReportController::class, 'data'])->name('report.data');
             Route::get('/bao-cao/trend',             [ReportController::class, 'trend'])->name('report.trend');
         });

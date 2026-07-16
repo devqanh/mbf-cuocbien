@@ -118,7 +118,8 @@ export function CostManagementApp() {
     if (!edit) return; const d = edit.d;
     const r = await api("PUT", ROUTES.costUpdate + d.hashid, {
       name: d.name, kind: d.kind, amount: dig(d.amount), spendDate: d.spendDate, dueDate: d.dueDate,
-      currentKm: dig(d.currentKm), supplier: d.supplier, payer: d.payer, material: !!d.material, note: d.note,
+      currentKm: dig(d.currentKm), supplier: d.supplier, payer: d.payer, material: !!d.material,
+      alloc: !!d.alloc, allocMonths: dig(d.allocMonths), note: d.note,
       approved: !!d.approved, paid: !!d.paid, paidDate: d.paidDate, paidMethod: d.paidMethod, paidRef: d.paidRef, paidNote: d.paidNote,
       photos: d.photos || [],
     });

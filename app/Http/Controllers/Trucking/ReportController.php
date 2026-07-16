@@ -26,6 +26,26 @@ class ReportController extends BaseTruckingController
         return response()->json(['ok' => true, 'report' => $this->svc->monthlyCostReport((int) $d['year'], (int) $d['month'])]);
     }
 
+    /** Trang Báo cáo tài sản — thống kê theo từng xe/tài sản (chi phí · phân bổ · khấu hao) theo khoảng tháng. */
+    public function assetIndex()
+    {
+        $ym = now()->format('Y-m');
+        return view('trucking2.bao-cao-tai-san', $this->pageData([
+            'report' => $this->svc->assetReport($ym, $ym),
+            'years'  => $this->svc->assetReportYears(),   // năm có dữ liệu → chọn Tháng + Năm
+        ], 'tripCost.view'));
+    }
+
+    /** JSON: báo cáo tài sản theo khoảng tháng (from, to = YYYY-MM). */
+    public function assetData(Request $request): JsonResponse
+    {
+        $d = $request->validate([
+            'from' => ['required', 'string', 'regex:/^\d{4}-\d{1,2}$/'],
+            'to'   => ['required', 'string', 'regex:/^\d{4}-\d{1,2}$/'],
+        ]);
+        return response()->json(['ok' => true, 'report' => $this->svc->assetReport($d['from'], $d['to'])]);
+    }
+
     /** JSON: xu hướng 12 tháng (kết tại year/month) — lazy-load vì có cộng route-pay theo ngày. */
     public function trend(Request $request): JsonResponse
     {

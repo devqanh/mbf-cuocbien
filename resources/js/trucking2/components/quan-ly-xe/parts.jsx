@@ -248,7 +248,7 @@ function UsageTab({ rows, onChange, drivers }) {
 /* ---- Tab: Chi phí — BẢNG hiển thị cột chính, bấm dòng → modal sửa, Thêm phiếu chi → modal ---- */
 const today10 = () => new Date().toISOString().slice(0, 10);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const blankCost = () => ({ id: Date.now() + Math.random(), name: "", invoiceNo: "", kind: "fixed", spendDate: today10(), dueDate: "", amount: "", currentKm: "", supplier: "", payer: "", material: false, note: "", paid: false, paidDate: "", paidMethod: "", paidRef: "", paidNote: "", approved: false });
+const blankCost = () => ({ id: Date.now() + Math.random(), name: "", invoiceNo: "", kind: "fixed", spendDate: today10(), dueDate: "", amount: "", currentKm: "", supplier: "", payer: "", material: false, alloc: false, allocMonths: "", note: "", paid: false, paidDate: "", paidMethod: "", paidRef: "", paidNote: "", approved: false });
 const PAY_METHODS = ["Chuyển khoản", "Tiền mặt", "Khác"];
 
 /* Modal DUYỆT THANH TOÁN — kế toán điền thông tin rồi mới duyệt */
@@ -365,9 +365,24 @@ function CostModal({ data, isNew, onChange, onSave, onClose, costTypes = [], pay
         {f("KM hiện tại", <Num value={d.currentKm} onChange={(x) => set({ currentKm: x })} suffix="km" />)}
         {f("Ghi chú", <Txt value={d.note} onChange={(x) => set({ note: x })} placeholder="…" />, true)}
 
-        <div style={{ gridColumn: "1 / -1" }}>
+        <div style={{ gridColumn: "1 / -1", display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center" }}>
           <ChkBox checked={!!d.material} onChange={(v) => set({ material: v })} label="Chi phí này là vật tư (lốp, ắc quy, lọc dầu…)" />
+          <ChkBox checked={!!d.alloc} onChange={(v) => set(v ? { alloc: true } : { alloc: false, allocMonths: "" })} label="Chi phí phân bổ (chia đều nhiều tháng)" />
         </div>
+        {d.alloc && (() => {
+          const m = num(d.allocMonths), amt = toNum(d.amount);
+          const per = m > 0 && amt > 0 ? Math.round(amt / m) : 0;
+          return (
+            <div style={{ gridColumn: "1 / -1", display: "grid", gridTemplateColumns: "minmax(180px, 220px) 1fr", gap: 12, alignItems: "center", padding: "11px 13px", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", borderRadius: 10 }}>
+              <div>{lbl("Số tháng phân bổ")}<Num value={d.allocMonths} onChange={(x) => set({ allocMonths: x })} suffix="tháng" /></div>
+              <div style={{ fontSize: 12.5, color: "var(--ink-3)", lineHeight: 1.6 }}>
+                {per > 0
+                  ? <>Chi phí <b style={{ color: "var(--accent)" }}>{fmtVND(per)}/tháng</b> <span style={{ color: "var(--ink-4)" }}>= {fmtVND(amt)} ÷ {m} tháng</span></>
+                  : <span style={{ color: "var(--ink-4)" }}>Nhập <b>Số tiền</b> và <b>Số tháng</b> để tính chi phí mỗi tháng.</span>}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Ảnh thực tế (hóa đơn / đồng hồ km / phụ tùng) */}
         <div style={{ gridColumn: "1 / -1" }}>
@@ -434,9 +449,14 @@ function CostTab({ rows, onChange, costTypes, payMethods, payers = [], saving, o
   const latestByName = {};
   all.forEach((r) => { if (isRec(r) && r.dueDate) { const n = (r.name || "").trim().toLowerCase(); if (!latestByName[n] || r.dueDate > latestByName[n].due) latestByName[n] = { due: r.dueDate, invoice: (r.invoiceNo || "").trim() }; } });
   const supLatest = (r) => { if (!isRec(r)) return null; const L = latestByName[(r.name || "").trim().toLowerCase()]; return (L && (!r.dueDate || L.due > r.dueDate)) ? L : null; };
-  const match = (r) => filter === "fixed" ? !isRec(r) : filter === "recurring" ? isRec(r) : filter === "due" ? isDue(r) : filter === "material" ? !!r.material : true;
+  const match = (r) => filter === "fixed" ? !isRec(r) : filter === "recurring" ? isRec(r) : filter === "due" ? isDue(r)
+    : filter === "material" ? !!r.material : filter === "alloc" ? !!r.alloc : filter === "normal" ? !r.alloc : true;
   const matCount = all.filter((r) => r.material).length;
-  const FILTERS = [["all", "Tất cả", all.length], ["fixed", "Cố định", all.filter((r) => !isRec(r)).length], ["recurring", "Định kỳ", all.filter(isRec).length], ["due", "Hết / sắp hết hạn", all.filter(isDue).length], ...(matCount > 0 ? [["material", "Vật tư", matCount]] : [])];
+  const allocCount = all.filter((r) => r.alloc).length;
+  const FILTERS = [["all", "Tất cả", all.length], ["fixed", "Cố định", all.filter((r) => !isRec(r)).length], ["recurring", "Định kỳ", all.filter(isRec).length], ["due", "Hết / sắp hết hạn", all.filter(isDue).length],
+    ...(matCount > 0 ? [["material", "Vật tư", matCount]] : []),
+    // Chi phí thường (không phân bổ) vs Chi phí phân bổ — chỉ hiện khi có phiếu phân bổ
+    ...(allocCount > 0 ? [["normal", "Chi phí thường", all.length - allocCount], ["alloc", "Chi phí phân bổ", allocCount]] : [])];
   const shown = all.filter(match).length;
 
   // KM chênh lệch theo TÊN: so KM phiếu này với phiếu CŨ HƠN gần nhất cùng tên có KM → "+X km".
@@ -521,13 +541,22 @@ function CostTab({ rows, onChange, costTypes, payMethods, payers = [], saving, o
                       <div style={{ fontWeight: 600, textDecoration: r.cancelled ? "line-through" : "none" }}>{r.name || <span style={{ color: "var(--ink-4)", fontWeight: 400 }}>(chưa đặt tên)</span>}</div>
                       <span style={{ fontSize: 10.5, fontWeight: 700, color: rec ? "var(--accent)" : "var(--ink-3)", background: rec ? "var(--accent-weak)" : "var(--line-2)", padding: "1px 8px", borderRadius: 999 }}>{rec ? "Định kỳ" : "Cố định"}</span>
                       {r.material && <span title="Chi phí vật tư" style={{ fontSize: 10.5, fontWeight: 700, color: "#7c5b16", background: "#fbf0d3", padding: "1px 8px", borderRadius: 999, marginLeft: 6 }}><i className="bi bi-box-seam" /> Vật tư</span>}
+                      {r.alloc && <span title={`Chi phí phân bổ ${num(r.allocMonths) || "?"} tháng`} style={{ fontSize: 10.5, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak)", padding: "1px 8px", borderRadius: 999, marginLeft: 6 }}><i className="bi bi-pie-chart" /> Phân bổ{num(r.allocMonths) > 0 ? ` ${num(r.allocMonths)}th` : ""}</span>}
                       {r.requester && <span style={{ fontSize: 11, color: "var(--ink-4)", marginLeft: 8 }} title="Người yêu cầu tạo phiếu"><i className="bi bi-person" /> {r.requester}</span>}
                       {r.supplier && <span style={{ fontSize: 11.5, color: "var(--ink-4)", marginLeft: 8 }}>{r.supplier}</span>}
                       {Array.isArray(r.photos) && r.photos.length > 0 && <span title={`${r.photos.length} ảnh thực tế`} style={{ fontSize: 10.5, fontWeight: 700, color: "var(--good)", background: "var(--good-weak)", padding: "1px 7px", borderRadius: 999, marginLeft: 8 }}><i className="bi bi-camera-fill" /> {r.photos.length}</span>}
                       {toNum(r.currentKm) > 0 && <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 3 }} className="tnum"><i className="bi bi-speedometer2" /> {fmtNum(toNum(r.currentKm))} km{kmDelta[i] ? <b style={{ color: "var(--good)", marginLeft: 6 }}>▲ +{fmtNum(kmDelta[i])} km</b> : ""}</div>}
                     </td>
                     <td style={cell} className="tnum">{fmtDate(r.spendDate) || "—"}</td>
-                    <td style={{ ...cell, textAlign: "right", fontWeight: 600 }} className="tnum">{fmtVND(toNum(r.amount))}</td>
+                    <td style={{ ...cell, textAlign: "right", fontWeight: 600 }} className="tnum">
+                      {fmtVND(toNum(r.amount))}
+                      {r.alloc && num(r.allocMonths) > 0 && (
+                        <div title={`Chi phí phân bổ ${num(r.allocMonths)} tháng`} style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", marginTop: 2 }}>
+                          {fmtVND(Math.round(toNum(r.amount) / num(r.allocMonths)))}/tháng
+                          <span style={{ fontWeight: 400, color: "var(--ink-4)" }}> · {num(r.allocMonths)} th</span>
+                        </div>
+                      )}
+                    </td>
                     <td style={cell}>
                       {!rec ? <span style={{ color: "var(--ink-4)" }}>—</span>
                         : <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>

@@ -140,7 +140,7 @@
                     {{-- Quản trị — hiện nếu có quyền quản trị HOẶC xem báo cáo --}}
                     @if(auth()->user()->hasAnyPermission(['users.view', 'roles.view', 'system.settings', 'tripCost.view']))
                     <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle {{ request()->routeIs('users.*','roles.*','system.*','trucking2.report') ? 'active' : '' }}"
+                        <a class="nav-link dropdown-toggle {{ request()->routeIs('users.*','roles.*','system.*','trucking2.report','trucking2.assetReport') ? 'active' : '' }}"
                            href="#" data-bs-toggle="dropdown" role="button">
                             <i class="bi bi-shield-lock"></i> Quản trị
                         </a>
@@ -149,6 +149,9 @@
                             <li><a class="dropdown-item {{ request()->routeIs('trucking2.report') ? 'active' : '' }}"
                                    href="{{ route('trucking2.report') }}">
                                 <i class="bi bi-bar-chart-line-fill"></i> Báo cáo chi phí</a></li>
+                            <li><a class="dropdown-item {{ request()->routeIs('trucking2.assetReport') ? 'active' : '' }}"
+                                   href="{{ route('trucking2.assetReport') }}">
+                                <i class="bi bi-truck-front-fill"></i> Báo cáo tài sản</a></li>
                             <li><hr class="dropdown-divider"></li>
                             @endcan
                             @can('users.view')
