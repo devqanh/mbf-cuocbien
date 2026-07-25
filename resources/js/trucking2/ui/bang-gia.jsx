@@ -7,19 +7,52 @@ const bookRange = (b) => (b && (b.from || b.to)) ? `${b.from ? fmtBD(b.from) : "
 // 2 khoảng [a.from,a.to] và [b.from,b.to] chồng nhau? (null = vô cực)
 const overlap = (a, b) => (a.from === null || b.to === null || a.from <= b.to) && (b.from === null || a.to === null || b.from <= a.to);
 
+// Khách + bảng giá đang xem lưu trong URL hash (#kh=<tên khách>&bg=<id book>) → reload / chia sẻ link vẫn đúng chỗ.
+const readHash = () => {
+  const p = new URLSearchParams((window.location.hash || "").replace(/^#/, ""));
+  const bg = p.get("bg");
+  return { kh: p.get("kh") || null, bg: bg != null && bg !== "" ? +bg : null };
+};
+const writeHash = (kh, bg) => {
+  const p = new URLSearchParams();
+  if (kh) p.set("kh", kh);
+  if (bg != null) p.set("bg", String(bg));
+  const s = p.toString();
+  const url = s ? "#" + s : window.location.pathname + window.location.search;
+  try { window.history.replaceState(null, "", url); } catch (e) { window.location.hash = s; }   // replaceState → không spam history
+};
+
 function BangGiaPage({ cfg, setBooks, api, routes }) {
-  const { useState, useEffect } = React;
+  const { useState, useEffect, useRef } = React;
   const isMobile = useIsMobile();
   const customers = cfg.customers || [];
   const info = cfg.customerInfo || {};
-  const [sel, setSel] = useState(customers[0] || null);
+  const hash0 = useRef(readHash()).current;   // hash lúc mở trang
+  const [sel, setSel] = useState(() => (hash0.kh && customers.includes(hash0.kh) ? hash0.kh : (customers[0] || null)));
   const cur = sel != null && customers.includes(sel) ? sel : (customers[0] || null);
   const data = (cur && info[cur]) || {};
   const books = data.priceBooks || [];
 
-  const [selBookId, setSelBookId] = useState(books[0]?.id ?? null);
-  useEffect(() => { setSelBookId(books[0]?.id ?? null); }, [cur]);
+  const [selBookId, setSelBookId] = useState(() => (books.some((b) => b.id === hash0.bg) ? hash0.bg : (books[0]?.id ?? null)));
+  // Đổi khách → về bảng giá đầu tiên; riêng khi hash chỉ định book (mở link / back-forward) thì giữ đúng book đó.
+  const wantBook = useRef(hash0.bg);
+  useEffect(() => {
+    const want = wantBook.current; wantBook.current = null;
+    setSelBookId(books.some((b) => b.id === want) ? want : (books[0]?.id ?? null));
+  }, [cur]);
   useEffect(() => { if ((selBookId == null || !books.some((b) => b.id === selBookId)) && books.length) setSelBookId(books[0].id); }, [books.length]);
+  // Ghi lại hash mỗi khi đổi khách / đổi bảng giá (kể cả sau khi tạo, xóa book).
+  useEffect(() => { writeHash(cur, selBookId); }, [cur, selBookId]);
+  // Người dùng sửa URL / bấm back-forward → nhảy về đúng khách + bảng giá trong hash.
+  useEffect(() => {
+    const onHash = () => {
+      const h = readHash();
+      if (h.kh && customers.includes(h.kh) && h.kh !== cur) { wantBook.current = h.bg; setSel(h.kh); }
+      else if (h.bg != null && h.bg !== selBookId) setSelBookId(h.bg);
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, [cur, selBookId, customers.length]);
   const curBook = books.find((b) => b.id === selBookId) || null;
 
   const [rowsByBook, setRowsByBook] = useState({});   // {bookId: rows[]}

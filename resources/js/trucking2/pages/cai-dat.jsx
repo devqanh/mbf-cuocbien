@@ -75,7 +75,11 @@ function SettingsApp() {
     setSel(tab); loadTab(tab, true);
     try { window.history.replaceState(null, "", "#" + tab); } catch (e) { window.location.hash = tab; }
   };
-  useEffect(() => { fetchTab(sel); }, []);   // tải tab đầu (theo hash) khi mở trang
+  // Tải tab đầu (theo hash) khi mở trang + ghi hash ngay để link luôn bookmark được tab đang xem.
+  useEffect(() => {
+    fetchTab(sel);
+    if (!hashTab()) { try { window.history.replaceState(null, "", "#" + sel); } catch (e) { window.location.hash = sel; } }
+  }, []);
   // Đồng bộ khi hash đổi do người dùng (sửa URL / back-forward)
   useEffect(() => {
     const onHash = () => { const t = hashTab(); if (t && t !== sel) { setSel(t); loadTab(t, true); } };
