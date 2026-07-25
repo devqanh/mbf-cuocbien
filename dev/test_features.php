@@ -63,7 +63,6 @@ try {
     $svc->savePriceBookRows($bA, []); // xóa rows book A
     $ok(TruckingPriceRow::where('price_book_id', $bA)->count() === 0 && TruckingPriceRow::where('price_book_id', $bB)->count() === 1, 'A6 savePriceBookRows chỉ đụng book A, book B nguyên');
     // backward-compat khách thật: book mặc định phủ mọi ngày
-    $bk = $svc->extStatementsForList ? true : true; // noop
     $real = TruckingShipment::where('customer_id', $custId)->whereNotNull('gio_xe_ra')->first();
     if ($real) { $pr = $price($real, $svc->outDate ?? null); }
     $ok(TruckingPriceBook::where('customer_id', $custId)->whereNull('period_from')->whereNull('period_to')->exists(), 'A7 khách thật có book "Mặc định (mọi ngày)" (backfill)');
@@ -83,8 +82,16 @@ try {
     // importQuotationToBook
     $bImp = $svc->createPriceBook($cA->name, 'T6', '2026-06-01', '2026-06-30')['books'];
     $bImpId = collect($bImp)->firstWhere('label', 'T6')['id'];
-    $resImp = $svc->importQuotationToBook($bImpId, $DEV . '2. MBF-202606-02.xlsx', true);
-    $ok(($resImp['ok'] ?? false) && $resImp['imported'] === count($r06), 'B7 importQuotationToBook nạp = số parse (' . count($r06) . ')');
+    // Ký hiệu trong báo giá phải được khai ánh xạ trước — không còn tự tạo danh mục khi import.
+    $resBlock = $svc->importQuotationToBook($bImpId, $DEV . '2. MBF-202606-02.xlsx', true);
+    $ok(($resBlock['ok'] ?? true) === false && ! empty($resBlock['unmapped']), 'B7 chặn import khi có ký hiệu chưa khai ánh xạ');
+    $ok(TruckingPriceRow::where('price_book_id', $bImpId)->count() === 0, 'B8 bị chặn → không ghi dòng giá nào');
+    $locBefore = \App\Models\TruckingLocation::count();
+    $ok($locBefore === \App\Models\TruckingLocation::count(), 'B9 import bị chặn không tự tạo địa điểm');
+    foreach ($resBlock['unmapped'] as $u) \App\Models\TruckingLocation::create(['name' => $u['value'], 'code' => $u['value']]);
+    $svcMapped = new TruckingV2Service();   // instance mới → nạp lại danh mục vừa khai
+    $resImp = $svcMapped->importQuotationToBook($bImpId, $DEV . '2. MBF-202606-02.xlsx', true);
+    $ok(($resImp['ok'] ?? false) && $resImp['imported'] === count($r06), 'B10 khai ánh xạ xong → nạp = số parse (' . count($r06) . ')');
 
     // ---------- C. Chi phí auto + VAT ----------
     $section('C. Khoản chi phí auto + VAT (net)');

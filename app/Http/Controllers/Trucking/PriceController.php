@@ -75,7 +75,8 @@ class PriceController extends BaseTruckingController
         ]);
         $res = $this->svc->importPriceRows($data['customer'], $data['rows'], (bool) ($data['replace'] ?? false), $data['book'] ?? null);
 
-        return response()->json(['ok' => true] + $res);
+        // $res + [...]: giữ 'ok' của service (false khi bị chặn vì thiếu ánh xạ ký hiệu).
+        return response()->json($res + ['ok' => true]);
     }
 
     /** KIỂM TRA (dry-run) báo giá gốc: chọn sheet → báo cáo + rows (KHÔNG ghi DB). */

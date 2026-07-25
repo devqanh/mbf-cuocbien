@@ -50,7 +50,7 @@ function BangGiaPage({ cfg, setBooks, api, routes }) {
     api("PUT", routes.priceBookCreate + "/" + curBook.id + "/rows", { rows })
       .then((r) => { setSaving(false);
         if (r && r.ok) { setDirtyBook(null); const pl = r.priceList || rows; setRowsByBook((s) => ({ ...s, [curBook.id]: pl })); bumpCount(curBook.id, pl.length); setMsg("Đã lưu"); }
-        else setMsg("Lưu lỗi"); })
+        else setMsg((r && r.msg) || "Lưu lỗi"); })   // msg: nêu rõ ký hiệu nào chưa khai ánh xạ
       .catch(() => { setSaving(false); setMsg("Lưu lỗi kết nối"); });
   };
 
@@ -303,6 +303,23 @@ function BangGiaPage({ cfg, setBooks, api, routes }) {
                   </>
                 ) : (
                   <div style={{ fontSize: 13, fontWeight: 600, color: "var(--danger)" }}><i className="bi bi-x-octagon-fill" /> {qm.report.msg || (qm.report.warnings || [])[0] || "Sheet không có dòng giá hợp lệ — chọn sheet khác."}</div>
+                )}
+                {/* Tên chưa có ký hiệu trong danh mục → không import được, phải khai ánh xạ trước. */}
+                {(qm.report.unmapped || []).length > 0 && (
+                  <div style={{ marginTop: 10, borderTop: "1px solid #f3c9c9", paddingTop: 9 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--danger)", marginBottom: 6 }}>Chưa khai ánh xạ ({qm.report.unmapped.length} giá trị):</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 150, overflowY: "auto" }}>
+                      {qm.report.unmapped.map((u) => (
+                        <div key={u.col + "|" + u.value} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, color: "var(--ink-2)" }}>
+                          <span><b>{u.value}</b> <span style={{ color: "var(--ink-4)" }}>· {u.col}</span></span>
+                          <span className="tnum" style={{ color: "var(--ink-4)" }}>{u.count} dòng</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 7 }}>
+                      Mở <a href="/trucking-v2/cai-dat#locations" target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontWeight: 600 }}>Cài đặt → Địa điểm</a> thêm dòng <b>Tên = giá trị trên</b>, <b>Ký hiệu = mã đang dùng</b> (vd “HAI PHONG” → <b>HPP</b>), rồi bấm Kiểm tra lại. Nhà máy (cột TO) khai ở <b>Kho</b>.
+                    </div>
+                  </div>
                 )}
               </div>
             )}

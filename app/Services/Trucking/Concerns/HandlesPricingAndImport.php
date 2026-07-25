@@ -39,6 +39,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 /** Tach tu TruckingV2Service - nhom HandlesPricingAndImport. */
 trait HandlesPricingAndImport
@@ -191,6 +192,9 @@ trait HandlesPricingAndImport
     /** Lưu toàn bộ dòng giá của 1 BOOK — xóa-hết-tạo-lại TRONG PHẠM VI book (không đụng book khác). */
     public function savePriceBookRows(int $bookId, array $rows): array
     {
+        $unmapped = $this->unmappedPriceValues($rows);
+        if ($unmapped) return $this->unmappedPriceError($unmapped) + ['priceList' => $this->priceBookRows($bookId)];
+
         return DB::transaction(function () use ($bookId, $rows) {
             $book = TruckingPriceBook::find($bookId);
             if (! $book) return ['ok' => false, 'priceList' => []];
@@ -198,25 +202,56 @@ trait HandlesPricingAndImport
             foreach ($rows as $i => $p) {
                 TruckingPriceRow::create($this->priceRowAttrs($p, $i) + ['customer_id' => $book->customer_id, 'price_book_id' => $bookId]);
             }
-            $this->registerPriceRowCodes($rows);
             return ['ok' => true, 'priceList' => $this->priceBookRows($bookId)];
         });
     }
 
-    /** Đăng ký ký hiệu FROM (địa điểm) + TO1..4 (địa điểm + kho) từ các dòng giá. */
-    private function registerPriceRowCodes(array $rows): void
+    /**
+     * Điểm hạ / FROM / TO chưa khai trong danh mục (Địa điểm + Kho) → CHẶN ghi bảng giá.
+     *
+     * Dùng ĐÚNG bảng chuẩn hóa mà khớp giá dùng (normalizedCodeMap: khớp cả tên lẫn ký
+     * hiệu, bỏ dấu + khoảng trắng) nên "ghi được" đồng nghĩa "khớp giá được" — không còn
+     * dòng giá nằm chết trong bảng vì tên cảng trong báo giá không có ký hiệu tương ứng
+     * (vd báo giá ghi "HAI PHONG" mà danh mục chưa ánh xạ sang HPP).
+     * Danh mục KHÔNG tự sinh từ bảng giá: người dùng phải khai ánh xạ Tên → Ký hiệu.
+     *
+     * @return array<int,array{col:string,value:string,count:int}>
+     */
+    private function unmappedPriceValues(array $rows): array
     {
-        $whNames = [];
+        $map  = $this->normalizedCodeMap();
+        $norm = fn ($v) => mb_strtoupper(preg_replace('/\s+/u', '', trim(Str::ascii((string) $v))) ?? '');
+        $cols = ['loc' => 'Điểm hạ', 'from' => 'FROM', 'to1' => 'TO', 'to2' => 'TO', 'to3' => 'TO', 'to4' => 'TO'];
+
+        // Gom theo GIÁ TRỊ (1 ký hiệu hay xuất hiện ở nhiều cột) → user khai 1 lần là xong.
+        $bad = [];
         foreach ($rows as $p) {
-            $this->registerLocationCode($p['from'] ?? null);
-            foreach (['to1', 'to2', 'to3', 'to4'] as $k) {
+            foreach ($cols as $k => $label) {
                 $v = trim((string) ($p[$k] ?? ''));
-                if ($v === '') continue;
-                $this->registerLocationCode($v);
-                $whNames[$v] = true;
+                if ($v === '' || isset($map[$norm($v)])) continue;
+                $bad[$v] ??= ['col' => [], 'value' => $v, 'count' => 0];
+                $bad[$v]['col'][$label] = true;
+                $bad[$v]['count']++;
             }
         }
-        foreach (array_keys($whNames) as $name) TruckingWarehouse::firstOrCreate(['name' => $name], ['code' => $name]);
+        $bad = array_map(fn ($b) => ['col' => implode('/', array_keys($b['col'])), 'value' => $b['value'], 'count' => $b['count']], $bad);
+        usort($bad, fn ($a, $b) => $b['count'] <=> $a['count']);
+        return array_values($bad);
+    }
+
+    /** Kết quả CHẶN kèm thông báo chỉ rõ giá trị nào phải khai ánh xạ. */
+    private function unmappedPriceError(array $unmapped): array
+    {
+        $head = array_slice($unmapped, 0, 5);
+        $list = implode(', ', array_map(fn ($u) => '"' . $u['value'] . '" (' . $u['col'] . ' · ' . $u['count'] . ' dòng)', $head));
+        if (count($unmapped) > count($head)) $list .= ' … và ' . (count($unmapped) - count($head)) . ' giá trị khác';
+
+        return [
+            'ok'       => false,
+            'unmapped' => $unmapped,
+            'msg'      => 'Chưa có ký hiệu cho: ' . $list . '. Vào Cài đặt → Địa điểm (hoặc Kho) khai ánh xạ Tên → Ký hiệu '
+                        . '(vd tên "HAI PHONG" ↔ ký hiệu "HPP") rồi làm lại — nếu để nguyên, các dòng giá này sẽ không bao giờ khớp với lô hàng.',
+        ];
     }
 
     /** Lưu toàn bộ cfg (tương thích cũ) — gọi reconcile cho mọi key có mặt. */
@@ -788,6 +823,9 @@ trait HandlesPricingAndImport
      */
     public function importPriceRows(string $customerName, array $rows, bool $replace = false, ?int $bookId = null): array
     {
+        $unmapped = $this->unmappedPriceValues($rows);
+        if ($unmapped) return $this->unmappedPriceError($unmapped) + ['created' => 0, 'updated' => 0, 'imported' => 0, 'priceList' => $bookId ? $this->priceBookRows($bookId) : []];
+
         return DB::transaction(function () use ($customerName, $rows, $replace, $bookId) {
             $cust = TruckingCustomer::firstOrCreate(['name' => trim($customerName)]);
             $bookId = $bookId ?: $this->defaultBookId((int) $cust->id);   // không chỉ book → book mở mặc định
@@ -821,7 +859,6 @@ trait HandlesPricingAndImport
                 }
             }
 
-            $this->registerPriceRowCodes($rows);
             return [
                 'created'   => $created,
                 'updated'   => $updated,
@@ -956,8 +993,12 @@ trait HandlesPricingAndImport
         $warnings = [];
         if (! $rows) $warnings[] = "Sheet '{$pick}' không có dòng giá hợp lệ — chọn đúng sheet báo giá (thường tên 'import').";
         foreach ($rows as $x) { if ($x['loc'] === '' || $x['from'] === '') { $warnings[] = 'Có dòng thiếu Điểm hạ/FROM.'; break; } }
+        // Tên cảng/nhà máy chưa khai ánh xạ → CHẶN import (xem unmappedPriceValues).
+        $unmapped = $this->unmappedPriceValues($rows);
+        if ($unmapped) $warnings[] = $this->unmappedPriceError($unmapped)['msg'];
         return [
-            'ok'      => count($rows) > 0,
+            'ok'       => count($rows) > 0 && ! $unmapped,
+            'unmapped' => $unmapped,
             'sheets'  => array_values($sheets),
             'sheet'   => $pick,
             'total'   => count($rows),
@@ -976,6 +1017,9 @@ trait HandlesPricingAndImport
         if (! $book) return ['ok' => false, 'msg' => 'Bảng giá không tồn tại.'];
         $rows = $this->parseQuotationRows($path, $sheet);
         if (! $rows) return ['ok' => false, 'msg' => "Không đọc được dòng giá nào — kiểm tra sheet đúng định dạng báo giá."];
+        // Chặn TRƯỚC khi ghi: tên trong báo giá phải khai được ánh xạ sang ký hiệu.
+        $unmapped = $this->unmappedPriceValues($rows);
+        if ($unmapped) return $this->unmappedPriceError($unmapped);
         $cust = TruckingCustomer::find($book->customer_id);
         $res = $replace
             ? $this->savePriceBookRows($bookId, $rows)
