@@ -182,6 +182,8 @@ Route::middleware('auth')->group(function () {
             Route::post('/shipments/bulk',      [TruckingShipmentController::class, 'bulkUpdate'])->name('shipments.bulkUpdate');
             Route::post('/csht-import/check',   [TruckingShipmentController::class, 'cshtCheck'])->name('cshtCheck');
             Route::post('/csht-import',         [TruckingShipmentController::class, 'cshtImport'])->name('cshtImport');
+            Route::post('/shipment-update/check', [TruckingShipmentController::class, 'updateCheck'])->name('shipmentUpdateCheck');
+            Route::post('/shipment-update',       [TruckingShipmentController::class, 'updateImport'])->name('shipmentUpdateImport');
             Route::put('/shipments/{shipment}', [TruckingShipmentController::class, 'update'])->name('shipments.update');
         });
         Route::middleware('permission:shipments.delete')->group(function () {

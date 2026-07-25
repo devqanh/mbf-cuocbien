@@ -141,12 +141,16 @@ export function buildTemplateWb(c) {
   const exFrom = locs[0] || "ICD Quế Võ";
   const exTo = locs[1] || locs[0] || "KCN Tiên Sơn";
   const exCust = custs[0] || "Canon Vietnam";
+  // Loại cont ví dụ phải LẤY TỪ DANH MỤC — import chặn loại ngoài danh mục, mẫu gõ cứng sẽ lỗi ngay.
+  const cts = c.contTypes || [];
+  const exCT1 = cts[0] || "40HC";
+  const exCT2 = cts[1] || exCT1;
   // KHO ví dụ = ký hiệu kho CÓ THẬT (tránh import mẫu bị lỗi "chưa có trong danh mục kho")
   const whTok = (n) => whCodeOf[n] || n;
   const exKho1 = whs.length >= 2 ? `${whTok(whs[0])} → ${whTok(whs[1])}` : (whs[0] ? whTok(whs[0]) : "");
   const exKho2 = whs[0] ? whTok(whs[0]) : "";
-  const ex1 = { "Khách hàng *": exCust, "SỐ BOOKING/BILL *": "BL-ICD-0001", "NHẬP/XUẤT": "Nhập", "SỐ LƯỢNG CONT *": 3, "LOẠI CONT": "40HC", "SỐ CONTAINER": "TGHU1234567\nMSKU9981122\nCSNU4567788", "CẮT MÁNG": "14/05/2026 10:00", "NƠI LẤY": exFrom, "NƠI HẠ": exTo, "NƠI HẠ SÀ LAN": "HPP", "NGÀY ĐẾN DỰ KIẾN": "14/05/2026", "GIỜ ĐẾN DỰ KIẾN": "08:00", "KHO": exKho1, "INVOICE": "INV-001" };
-  const ex2 = { "Khách hàng *": exCust, "SỐ BOOKING/BILL *": "BL-ICD-0002", "NHẬP/XUẤT": "Xuất", "SỐ LƯỢNG CONT *": 2, "LOẠI CONT": "20DC", "SỐ CONTAINER": "", "CẮT MÁNG": "15/05/2026 09:00", "NƠI LẤY": codeOf[exFrom] || exFrom, "NƠI HẠ": exTo, "NƠI HẠ SÀ LAN": "", "NGÀY ĐẾN DỰ KIẾN": "15/05/2026", "GIỜ ĐẾN DỰ KIẾN": "07:30", "KHO": exKho2, "INVOICE": "INV-002" };
+  const ex1 = { "Khách hàng *": exCust, "SỐ BOOKING/BILL *": "BL-ICD-0001", "NHẬP/XUẤT": "Nhập", "SỐ LƯỢNG CONT *": 3, "LOẠI CONT": exCT1, "SỐ CONTAINER": "TGHU1234567\nMSKU9981122\nCSNU4567788", "CẮT MÁNG": "14/05/2026 10:00", "NƠI LẤY": exFrom, "NƠI HẠ": exTo, "NƠI HẠ SÀ LAN": "HPP", "NGÀY ĐẾN DỰ KIẾN": "14/05/2026", "GIỜ ĐẾN DỰ KIẾN": "08:00", "KHO": exKho1, "INVOICE": "INV-001" };
+  const ex2 = { "Khách hàng *": exCust, "SỐ BOOKING/BILL *": "BL-ICD-0002", "NHẬP/XUẤT": "Xuất", "SỐ LƯỢNG CONT *": 2, "LOẠI CONT": exCT2, "SỐ CONTAINER": "", "CẮT MÁNG": "15/05/2026 09:00", "NƠI LẤY": codeOf[exFrom] || exFrom, "NƠI HẠ": exTo, "NƠI HẠ SÀ LAN": "", "NGÀY ĐẾN DỰ KIẾN": "15/05/2026", "GIỜ ĐẾN DỰ KIẾN": "07:30", "KHO": exKho2, "INVOICE": "INV-002" };
   const ws = XLSX.utils.json_to_sheet([ex1, ex2], { header: IMP_COLS });
   ws["!cols"] = IMP_COLS.map((col) => ({ wch: Math.max(12, col.length + 2) }));
   const wb = XLSX.utils.book_new();
@@ -168,6 +172,11 @@ export function buildTemplateWb(c) {
     ww["!cols"] = [{ wch: 28 }, { wch: 14 }];
     XLSX.utils.book_append_sheet(wb, ww, "Kho hợp lệ");
   }
+  if (cts.length) {
+    const wct = XLSX.utils.json_to_sheet(cts.map((n) => ({ "Loại cont": n })), { header: ["Loại cont"] });
+    wct["!cols"] = [{ wch: 16 }];
+    XLSX.utils.book_append_sheet(wb, wct, "Loại cont hợp lệ");
+  }
   // Nơi hạ sà lan hợp lệ — CHỈ 2 cảng (hoặc để trống)
   const wb2 = XLSX.utils.json_to_sheet(BARGE_DROPS.map((c) => ({ "Nơi hạ sà lan": c })), { header: ["Nơi hạ sà lan"] });
   wb2["!cols"] = [{ wch: 16 }];
@@ -183,7 +192,7 @@ export function buildTemplateWb(c) {
     { "Cột": "GIỜ ĐẾN DỰ KIẾN", "Bắt buộc": "không", "Ý nghĩa": "Giờ xe DỰ KIẾN đến (HH:MM) — ghép với Ngày đến dự kiến" },
     { "Cột": "CẮT MÁNG", "Bắt buộc": "không", "Ý nghĩa": "Hạn cắt máng/tàu (dd/mm/yyyy HH:MM)" },
     { "Cột": "NHẬP/XUẤT", "Bắt buộc": "không", "Ý nghĩa": "Nhập hoặc Xuất" },
-    { "Cột": "LOẠI CONT", "Bắt buộc": "không", "Ý nghĩa": "Loại cont: 40HC, 20DC…" },
+    { "Cột": "LOẠI CONT", "Bắt buộc": "không", "Ý nghĩa": "Phải có trong danh mục Loại cont (xem sheet 'Loại cont hợp lệ'); nhập loại chưa khai sẽ báo lỗi — thêm ở Cài đặt → Loại cont" },
     { "Cột": "SỐ CONTAINER", "Bắt buộc": "không", "Ý nghĩa": "Số cont — nhiều cont thì XUỐNG DÒNG trong 1 ô" },
     { "Cột": "KHO", "Bắt buộc": "không", "Ý nghĩa": "Tuyến kho — TÊN hoặc KÝ HIỆU trong danh mục Kho (xem sheet 'Kho hợp lệ'); nhiều đoạn nối bằng → hoặc dấu phẩy (vd TL → TS); dùng khớp phí xe; nhập sai sẽ báo lỗi" },
     { "Cột": "INVOICE", "Bắt buộc": "không", "Ý nghĩa": "Số invoice (nếu có)" },
@@ -193,3 +202,126 @@ export function buildTemplateWb(c) {
   XLSX.utils.book_append_sheet(wb, wg, "Hướng dẫn");
   return wb;
 }
+
+// ===================== IMPORT CẬP NHẬT LÔ ĐÃ CÓ =====================
+// Vòng lặp an toàn: Xuất để cập nhật (kèm cột ID) → sửa ô cần đổi → Import cập nhật.
+// Ô TRỐNG = giữ nguyên; gõ "--" mới xóa giá trị. Backend là nơi kiểm tra/quyết định cuối.
+export const CLEAR_TOKEN = "--";
+
+// key = field backend · col = tiêu đề cột · kw = từ khóa nhận diện cột ở file ngoài · dt = ô ngày+giờ
+const UPD_FIELDS = [
+  { key: "id",           col: "ID",              kw: ["id"] },
+  { key: "contNo",       col: "SỐ CONT",         kw: ["số cont", "so cont", "container"] },
+  { key: "contType",     col: "LOẠI CONT",       kw: ["loại", "loai"] },
+  { key: "gioDenDuKien", col: "GIỜ ĐẾN DỰ KIẾN", kw: ["dự kiến", "du kien"], dt: true },
+  { key: "gioXeDen",     col: "GIỜ XE ĐẾN",      kw: ["xe đến", "xe den"], dt: true },
+  { key: "gioXeRa",      col: "GIỜ XE RA",       kw: ["xe ra"], dt: true },
+  { key: "bksVao",       col: "BKS VÀO",         kw: ["bks vào", "bks vao", "biển số vào"] },
+  { key: "bksRa",        col: "BKS RA",          kw: ["bks ra", "biển số ra"] },
+  { key: "declNo",       col: "SỐ TỜ KHAI",      kw: ["tờ khai", "to khai"] },
+  { key: "inv",          col: "INVOICE",         kw: ["invoice", "inv"] },
+  { key: "from",         col: "NƠI LẤY",         kw: ["lấy", "lay"] },
+  { key: "to",           col: "NƠI HẠ",          kw: ["hạ", "ha"] },
+  { key: "bargeDrop",    col: "NƠI HẠ SÀ LAN",   kw: ["sà lan", "sa lan"] },
+  { key: "kho",          col: "KHO",             kw: ["kho"] },
+  { key: "cutOff",       col: "CẮT MÁNG",        kw: ["máng", "mang"], dt: true },
+  { key: "driver",       col: "TÀI XẾ",          kw: ["tài xế", "tai xe"] },
+  { key: "extVendor",    col: "NHÀ XE NGOÀI",    kw: ["nhà xe", "nha xe"] },
+  { key: "ghiChu",       col: "GHI CHÚ",         kw: ["ghi chú", "ghi chu"] },
+];
+export const UPD_COLS = UPD_FIELDS.map((f) => f.col);
+
+// "2026-06-29T21:45" → "29/06/2026 21:45" (định dạng người dùng đọc/sửa trong Excel)
+const dtOut = (iso) => {
+  const s = String(iso || "");
+  if (s.length < 16) return s.length >= 10 ? s.slice(0, 10).split("-").reverse().join("/") : "";
+  return `${s.slice(8, 10)}/${s.slice(5, 7)}/${s.slice(0, 4)} ${s.slice(11, 16)}`;
+};
+
+// Dựng workbook "Xuất để cập nhật": ID + các cột sửa được, đổ sẵn giá trị hiện tại.
+export function buildUpdateWb(list) {
+  const val = (s, k) => {
+    if (k === "id") return s.id;
+    if (k === "ghiChu") return (s.rev && s.rev.ghiChu) || "";
+    const v = s[k];
+    return v == null ? "" : v;
+  };
+  const data = (list || []).map((s) => {
+    const o = {};
+    for (const f of UPD_FIELDS) o[f.col] = f.dt ? dtOut(val(s, f.key)) : val(s, f.key);
+    return o;
+  });
+  const ws = XLSX.utils.json_to_sheet(data, { header: UPD_COLS });
+  ws["!cols"] = UPD_COLS.map((c) => ({ wch: Math.max(12, c.length + 2) }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Cập nhật lô");
+  const guide = [
+    { "Quy tắc": "Cột ID", "Ý nghĩa": "KHÓA khớp lô — ĐỪNG sửa, đừng xóa cột này. Xóa ID thì hệ thống khớp theo SỐ CONT (cont trùng nhiều lô sẽ báo lỗi)" },
+    { "Quy tắc": "Ô để trống", "Ý nghĩa": "GIỮ NGUYÊN giá trị đang có — không xóa dữ liệu" },
+    { "Quy tắc": `Gõ ${CLEAR_TOKEN}`, "Ý nghĩa": "XÓA giá trị của ô đó" },
+    { "Quy tắc": "Ngày giờ", "Ý nghĩa": "dd/mm/yyyy HH:MM (vd 29/06/2026 21:45)" },
+    { "Quy tắc": "Nơi lấy / Nơi hạ / Kho / Loại cont / Nhà xe ngoài", "Ý nghĩa": "Phải có sẵn trong danh mục — sai là báo lỗi, hệ thống KHÔNG tự thêm" },
+    { "Quy tắc": "Nơi hạ sà lan", "Ý nghĩa": "Chỉ HPP hoặc LHP" },
+    { "Quy tắc": "Kiểm tra trước", "Ý nghĩa": "Hệ thống liệt kê từng ô cũ → mới để bạn duyệt; 1 dòng lỗi là KHÔNG ghi gì cả" },
+    { "Quy tắc": "Không sửa được ở đây", "Ý nghĩa": "Khách hàng, số lượng, chi phí, doanh thu — sửa trong popup lô hoặc luồng riêng" },
+  ];
+  const wg = XLSX.utils.json_to_sheet(guide, { header: ["Quy tắc", "Ý nghĩa"] });
+  wg["!cols"] = [{ wch: 42 }, { wch: 78 }];
+  XLSX.utils.book_append_sheet(wb, wg, "Hướng dẫn");
+  return wb;
+}
+
+// Parse sheet cập nhật → [{ line, id, contNo, values:{field:giá trị}, raws:{field:chữ gốc} }].
+// Chỉ gửi ô CÓ nội dung (ô trống = giữ nguyên nên không cần gửi).
+export function parseUpdateRows(wb, sheetName) {
+  const aoa = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, raw: true, defval: "" });
+  let hi = aoa.findIndex((r) => (r || []).some((c) => { const h = normH(c); return h === "id" || h.includes("cont"); }));
+  if (hi < 0) hi = 0;
+  const header = (aoa[hi] || []).map(normH);
+  // Ưu tiên khớp CHÍNH XÁC tiêu đề (file do hệ thống xuất), rồi mới tới từ khóa (file ngoài).
+  const used = new Set();
+  const C = {};
+  for (const f of UPD_FIELDS) {
+    let idx = header.findIndex((h, i) => !used.has(i) && h === normH(f.col));
+    if (idx < 0) idx = header.findIndex((h, i) => !used.has(i) && f.kw.some((k) => h.includes(k)));
+    if (idx >= 0) { C[f.key] = idx; used.add(idx); }
+  }
+  const out = [];
+  for (let r = hi + 1; r < aoa.length; r++) {
+    const row = aoa[r] || [];
+    const cell = (i) => (i == null || i < 0 ? null : row[i]);
+    const text = (i) => { const v = cell(i); return v instanceof Date ? "" : String(v == null ? "" : v).trim(); };
+    const id = text(C.id).replace(/[^\d]/g, "");
+    const contNo = text(C.contNo);
+    if (!id && !contNo) continue;   // dòng trắng
+
+    const values = {}; const raws = {};
+    for (const f of UPD_FIELDS) {
+      if (f.key === "id" || C[f.key] == null) continue;
+      const v = cell(C[f.key]);
+      const raw = v instanceof Date ? "" : String(v == null ? "" : v).trim();
+      if (v instanceof Date || (typeof v === "number" && f.dt)) {
+        // ô ngày thật của Excel
+        const d = cellDate(v); const t = cellTime(v);
+        values[f.key] = d.iso ? `${d.iso}T${t || "00:00"}` : "";
+        raws[f.key] = d.display || String(v);
+        if (!values[f.key]) values[f.key] = raws[f.key];   // để backend báo sai định dạng
+        continue;
+      }
+      if (raw === "") continue;
+      if (raw === CLEAR_TOKEN) { values[f.key] = CLEAR_TOKEN; continue; }
+      if (f.dt) {
+        const d = cellDate(raw); const t = cellTime(raw);
+        values[f.key] = d.iso ? `${d.iso}T${t || "00:00"}` : raw;   // không parse được → gửi nguyên để backend báo lỗi
+        raws[f.key] = raw;
+        continue;
+      }
+      values[f.key] = raw;
+    }
+    out.push({ line: r + 1, id, contNo, values, raws });
+  }
+  return out;
+}
+
+// Đếm dòng có dữ liệu (hiện số trước khi gửi kiểm tra).
+export const updRowCount = (rows) => (rows || []).length;

@@ -509,15 +509,56 @@ trait HandlesPricingAndImport
         }
     }
 
-    /** Map lower(name|code) ⇒ tên địa điểm chuẩn (để validate + chuẩn hóa NƠI LẤY/HẠ). */
-    private function locationNameMap(): array
+    /** @var array{names:array<string,string>,codes:array<string,array<int,string>>}|null */
+    private ?array $locNameIndexCache = null;
+
+    /**
+     * Quy 1 giá trị người dùng nhập về TÊN địa điểm trong danh mục (lô lưu TÊN, không lưu ký hiệu).
+     *
+     * Nhập TÊN → dùng luôn. Nhập KÝ HIỆU → chỉ nhận khi ký hiệu ứng ĐÚNG 1 địa điểm; nhiều địa
+     * điểm chung ký hiệu (mã HPP có TÂN VŨ, GIC, ĐÌNH VŨ…) thì bắt ghi rõ tên — tuyệt đối không
+     * chọn bừa, vì chọn bừa là ghi sai nơi lấy/hạ mà người dùng không hay biết.
+     * Dùng chung cho import tạo lô và import cập nhật lô.
+     *
+     * @return string|false tên chuẩn, hoặc false khi có lỗi (đã ghi vào $reasons)
+     */
+    private function resolveLocationName(string $v, array &$reasons, string $label): string|false
     {
-        $map = [];
-        foreach (TruckingLocation::get(['name', 'code']) as $l) {
-            if ($l->name) $map[mb_strtolower(trim($l->name))] = $l->name;
-            if ($l->code) $map[mb_strtolower(trim($l->code))] = $l->name ?: $l->code;
+        $idx = $this->locationNameIndex();
+        $key = mb_strtolower(trim($v));
+        if (isset($idx['names'][$key])) return $idx['names'][$key];
+
+        $names = $idx['codes'][$key] ?? [];
+        if (count($names) === 1) return $names[0];
+        if (count($names) > 1) {
+            $show = implode(', ', array_slice($names, 0, 5)) . (count($names) > 5 ? '…' : '');
+            $reasons[] = "{$label} “{$v}” là ký hiệu dùng chung của " . count($names) . " địa điểm ({$show}) — ghi rõ TÊN địa điểm";
+            return false;
         }
-        return $map;
+        $reasons[] = "{$label} “{$v}” chưa có trong danh mục Địa điểm";
+        return false;
+    }
+
+    /** Có địa điểm nào mang TÊN hoặc KÝ HIỆU này không (cột lưu ký hiệu, vd Nơi hạ sà lan). */
+    private function locationExists(string $v): bool
+    {
+        $idx = $this->locationNameIndex();
+        $key = mb_strtolower(trim($v));
+        return isset($idx['names'][$key]) || ! empty($idx['codes'][$key]);
+    }
+
+    /** [names: lower(tên)=>tên · codes: lower(ký hiệu)=>[các tên]] — memoize / request. */
+    private function locationNameIndex(): array
+    {
+        if ($this->locNameIndexCache !== null) return $this->locNameIndexCache;
+        $idx = ['names' => [], 'codes' => []];
+        foreach (TruckingLocation::get(['name', 'code']) as $l) {
+            $name = trim((string) $l->name);
+            $code = trim((string) $l->code);
+            if ($name !== '') $idx['names'][mb_strtolower($name)] = $name;
+            if ($code !== '' && $name !== '') $idx['codes'][mb_strtolower($code)][] = $name;
+        }
+        return $this->locNameIndexCache = $idx;
     }
 
     /**
@@ -556,8 +597,8 @@ trait HandlesPricingAndImport
             fn ($n) => mb_strtolower(preg_replace('/\s+/u', ' ', trim((string) $n)) ?? ''),
             TruckingCustomer::toBase()->pluck('name')->all()
         ));
-        $locMap = $this->locationNameMap();
         $whMap = $this->warehouseCodeMap();
+        $ctSet = array_flip(array_map('mb_strtolower', TruckingContType::toBase()->pluck('name')->all()));
         $errors = [];
 
         foreach ($rows as $i => $row) {
@@ -578,17 +619,28 @@ trait HandlesPricingAndImport
             elseif ($qd === '')                                   $reasons[] = "Số lượng cont “{$qtyRaw}” không phải số";
             elseif ((int) $qd < 1)                                $reasons[] = 'Số lượng cont phải ≥ 1';
 
-            // Nơi lấy/hạ — KHÔNG bắt buộc; chỉ kiểm tra khi có nhập
+            // Nơi lấy/hạ — KHÔNG bắt buộc; có nhập thì phải quy được về ĐÚNG 1 địa điểm trong danh mục
             $from = trim((string) ($row['from'] ?? ''));
-            if ($from !== '' && ! isset($locMap[mb_strtolower($from)])) $reasons[] = "Nơi lấy “{$from}” chưa có trong danh mục địa điểm";
+            if ($from !== '') $this->resolveLocationName($from, $reasons, 'Nơi lấy');
 
             $to = trim((string) ($row['to'] ?? ''));
-            if ($to !== '' && ! isset($locMap[mb_strtolower($to)]))     $reasons[] = "Nơi hạ “{$to}” chưa có trong danh mục địa điểm";
+            if ($to !== '') $this->resolveLocationName($to, $reasons, 'Nơi hạ');
+
+            // LOẠI CONT — có nhập thì phải có trong danh mục (trước đây nhận mọi chuỗi → sinh loại rác)
+            $ct = trim((string) ($row['contType'] ?? ''));
+            if ($ct !== '' && ! isset($ctSet[mb_strtolower($ct)]))
+                $reasons[] = "Loại cont “{$ct}” chưa có trong danh mục — thêm ở Cài đặt → Loại cont rồi import lại";
 
             // Nơi hạ sà lan — KHÔNG bắt buộc; nếu có thì CHỈ nhận HPP hoặc LHP (cảng hạ sà lan).
             $bargeDrop = strtoupper(trim((string) ($row['bargeDrop'] ?? '')));
-            if ($bargeDrop !== '' && ! in_array($bargeDrop, ['HPP', 'LHP'], true))
-                $reasons[] = "Nơi hạ sà lan “{$bargeDrop}” không hợp lệ (chỉ nhận HPP hoặc LHP)";
+            if ($bargeDrop !== '') {
+                if (! in_array($bargeDrop, ['HPP', 'LHP'], true)) {
+                    $reasons[] = "Nơi hạ sà lan “{$bargeDrop}” không hợp lệ (chỉ nhận HPP hoặc LHP)";
+                } elseif (! $this->locationExists($bargeDrop)) {
+                    // Cột này lưu dạng KÝ HIỆU nên chỉ cần ký hiệu có thật trong danh mục.
+                    $reasons[] = "Nơi hạ sà lan “{$bargeDrop}” chưa có trong danh mục Địa điểm";
+                }
+            }
 
             // KHO — KHÔNG bắt buộc; tuyến nhiều đoạn → kiểm tra TỪNG đoạn theo danh mục Kho (tên hoặc ký hiệu)
             $kho = trim((string) ($row['kho'] ?? ''));
@@ -661,8 +713,14 @@ trait HandlesPricingAndImport
         }
 
         $vat = (string) TruckingSetting::get($sheet === 'hph' ? 'vat_default_hph' : 'vat_default_icd', '0');
-        $locMap = $this->locationNameMap();
-        $norm = fn ($v) => $locMap[mb_strtolower(trim((string) $v))] ?? $v;
+        // Quy về TÊN địa điểm chuẩn (đã validate ở trên nên không còn lỗi; $skip chỉ để thỏa chữ ký).
+        $norm = function ($v) {
+            $t = trim((string) $v);
+            if ($t === '') return $v;
+            $skip = [];
+            $hit = $this->resolveLocationName($t, $skip, '');
+            return $hit === false ? $v : $hit;
+        };
         // Chuẩn hóa cột KHO: mỗi đoạn về ký hiệu chuẩn của danh mục Kho, nối " → " (giữ tuyến).
         $whMap = $this->warehouseCodeMap();
         $normKho = function ($v) use ($whMap) {

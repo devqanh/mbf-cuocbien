@@ -169,6 +169,70 @@ try {
     $arr = $svc->extStatementToArray($st->fresh(['lines', 'payments']));
     $ok((int) $arr['total'] === 3500000 && (int) $arr['paid'] === 2500000 && (int) $arr['conNo'] === 1000000, 'G4 total 3.5tr − đã trả 2.5tr = công nợ 1tr');
 
+    // ---------- H. Import CẬP NHẬT lô đã có ----------
+    // Chỉ đụng lô TỰ TẠO trong mục này rồi XÓA ngay — không dựa vào rollback để cứu dữ liệu thật.
+    $section('H. Import cập nhật lô từ Excel');
+    $mkH = function (array $over = []) use ($svc) {
+        return $svc->saveShipment($over + [
+            'customer' => '__TEST_UPD__', 'booking' => 'TEST-UPD', 'io' => 'Nhập', 'qty' => 1,
+            'contType' => '40HC', 'contNo' => 'ZZTU' . random_int(1000000, 9999999), 'from' => 'HPP', 'to' => 'HPP',
+            'kho' => 'TS', 'gioXeDen' => '2026-07-01T08:00', 'gioXeRa' => '2026-07-01T10:00', 'bksVao' => '29H-00001',
+            'cost' => ['items' => []], 'rev' => ['vatRate' => '0', 'doanhThu' => [], 'choHo' => [], 'payments' => []],
+        ], 'icd')->fresh();
+    };
+    $rowH = fn ($id, array $values, $cont = '') => ['line' => 1, 'id' => (string) $id, 'contNo' => $cont, 'values' => $values, 'raws' => []];
+    $h1 = $mkH();
+    $hDup1 = $mkH(['contNo' => 'ZZDUP7654321']);
+    $hDup2 = $mkH(['contNo' => 'ZZDUP7654321']);
+    try {
+        $r = $svc->validateShipmentUpdate('icd', [$rowH($h1->id, ['gioXeRa' => '', 'bksVao' => ''])]);
+        $ok($r['valid'] && ! $r['changes'] && $r['noChange'] === 1, 'H1 ô trống = giữ nguyên (0 thay đổi)');
+
+        $r = $svc->validateShipmentUpdate('icd', [$rowH($h1->id, ['gioXeRa' => '2026-07-01T15:30'])]);
+        $cells = $r['changes'][0]['cells'] ?? [];
+        $ok(count($cells) === 1 && $cells[0]['old'] === '2026-07-01T10:00' && $cells[0]['new'] === '2026-07-01T15:30', 'H2 diff đúng 1 ô cũ→mới');
+
+        $res = $svc->importShipmentUpdate('icd', [$rowH($h1->id, ['gioXeRa' => '2026-07-01T15:30'])]);
+        $h1f = TruckingShipment::find($h1->id);
+        $ok($res['updated'] === 1 && $res['cells'] === 1 && substr((string) $h1f->gio_xe_ra, 0, 16) === '2026-07-01 15:30', 'H3 ghi đúng 1 ô');
+        $ok($h1f->bks_vao === '29H-00001' && $h1f->kho === 'TS', 'H4 cột khác nguyên vẹn');
+
+        $svc->importShipmentUpdate('icd', [$rowH($h1->id, ['bksVao' => '--'])]);
+        $ok(trim((string) TruckingShipment::find($h1->id)->bks_vao) === '', 'H5 “--” xóa giá trị');
+
+        $before = TruckingShipment::find($h1->id)->to_loc;
+        $res = $svc->importShipmentUpdate('icd', [
+            $rowH($h1->id, ['bksRa' => '29H-88888']),
+            $rowH($h1->id + 999999, ['bksRa' => '29H-99999']),
+        ]);
+        $ok($res['valid'] === false && $res['updated'] === 0 && TruckingShipment::find($h1->id)->to_loc === $before, 'H6 all-or-nothing: 1 dòng lỗi là không ghi gì');
+
+        $r = $svc->validateShipmentUpdate('icd', [$rowH('', ['bksRa' => '29H-1'], 'ZZDUP7654321')]);
+        $ok(! $r['valid'] && str_contains(implode(' ', $r['errors'][0]['reasons']), 'trùng ở 2 lô'), 'H7 cont trùng 2 lô → chặn, đòi ID');
+
+        $r = $svc->validateShipmentUpdate('icd', [$rowH('', ['contNo' => 'ZZKHAC1', 'bksRa' => '29H-2'], $h1->cont_no)]);
+        $ok($r['valid'] && array_column($r['changes'][0]['cells'], 'field') === ['bksRa'], 'H8 cột Số cont bị bỏ qua khi dùng làm khóa');
+
+        $r = $svc->validateShipmentUpdate('icd', [$rowH($h1->id, ['gioXeRa' => '2026-07-01T06:00'])]);
+        $ok($r['valid'] && count($r['warnings']) === 1 && str_contains($r['warnings'][0]['text'], 'sớm hơn'), 'H9 giờ ra sớm hơn giờ đến → cảnh báo, không chặn');
+
+        $r = $svc->validateShipmentUpdate('icd', [$rowH($h1->id, ['to' => 'KHONG-CO-TRONG-DANH-MUC'])]);
+        $ok(! $r['valid'] && str_contains(implode(' ', $r['errors'][0]['reasons']), 'danh mục Địa điểm'), 'H10 chặn địa điểm ngoài danh mục');
+
+        // Xuất → nhập lại nguyên vẹn: 0 lỗi, 0 ô đổi. Giá trị cũ có thể không còn hợp lệ theo
+        // danh mục hiện tại (loại cont 20DC/40RHC) — ô KHÔNG sửa thì không được kiểm tra.
+        $h1->forceFill(['cont_type' => '20DC', 'gio_xe_ra' => '2026-07-01 06:00:00'])->save();
+        $h1r = TruckingShipment::find($h1->id);
+        $r = $svc->validateShipmentUpdate('icd', [$rowH($h1r->id, [
+            'contType' => $h1r->cont_type, 'from' => $h1r->from_loc, 'to' => $h1r->to_loc, 'kho' => $h1r->kho,
+            'gioXeDen' => '2026-07-01T08:00', 'gioXeRa' => '2026-07-01T06:00',
+        ])]);
+        $ok($r['valid'] && ! $r['changes'] && ! $r['warnings'], 'H11 xuất→nhập lại nguyên vẹn: 0 lỗi, 0 ô đổi, 0 cảnh báo');
+    } finally {
+        foreach ([$h1, $hDup1, $hDup2] as $x) TruckingShipment::find($x->id)?->delete();
+        TruckingCustomer::where('name', '__TEST_UPD__')->delete();
+    }
+
     echo "\n========================================\n";
     echo "TỔNG: PASS $pass · FAIL $fail\n";
     if ($fail) echo "LỖI: \n  - " . implode("\n  - ", $fails) . "\n";

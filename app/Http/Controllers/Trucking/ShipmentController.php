@@ -116,6 +116,33 @@ class ShipmentController extends BaseTruckingController
         return response()->json(['ok' => true] + $this->svc->importCshtImport($data['sheet'], $data['rows']));
     }
 
+    /** Import CẬP NHẬT lô — kiểm tra trước (dry-run): trả lỗi + diff từng ô, không ghi DB. */
+    public function updateCheck(Request $request): JsonResponse
+    {
+        $data = $this->validateUpdateImport($request);
+        return response()->json(['ok' => true] + $this->svc->validateShipmentUpdate($data['sheet'], $data['rows']));
+    }
+
+    /** Import CẬP NHẬT lô đã có từ Excel — ALL-OR-NOTHING, chỉ ghi ô thực sự đổi. */
+    public function updateImport(Request $request): JsonResponse
+    {
+        $data = $this->validateUpdateImport($request);
+        return response()->json(['ok' => true] + $this->svc->importShipmentUpdate($data['sheet'], $data['rows']));
+    }
+
+    /** Payload chung của 2 action import cập nhật. */
+    private function validateUpdateImport(Request $request): array
+    {
+        return $request->validate([
+            'sheet'          => ['required', 'in:hph,icd'],
+            'rows'           => ['present', 'array'],
+            'rows.*.id'      => ['nullable'],
+            'rows.*.contNo'  => ['nullable', 'string'],
+            'rows.*.values'  => ['nullable', 'array'],
+            'rows.*.raws'    => ['nullable', 'array'],
+        ]);
+    }
+
     private function validateShipment(Request $request): array
     {
         $data = $request->validate([

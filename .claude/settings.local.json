@@ -19,7 +19,23 @@
       "PowerShell(git add app/Models/TruckingExtStatementLine.php app/Services/Trucking/Concerns/HandlesExtStatements.php database/migrations/2026_06_29_000001_add_choho_to_ext_statement_lines.php resources/js/trucking2/ui/ext-statement.jsx)",
       "PowerShell(php artisan migrate --force --path=database/migrations/2026_06_29_000002_add_customer_vat_to_ext_statement_lines.php)",
       "PowerShell(git add app/Models/TruckingExtStatementLine.php app/Services/Trucking/Concerns/HandlesExtStatements.php database/migrations/2026_06_29_000002_add_customer_vat_to_ext_statement_lines.php resources/js/trucking2/ui/ext-statement.jsx)",
-      "PowerShell(php artisan migrate:rollback --force --path=database/migrations/2026_06_29_000002_add_customer_vat_to_ext_statement_lines.php)"
+      "PowerShell(php artisan migrate:rollback --force --path=database/migrations/2026_06_29_000002_add_customer_vat_to_ext_statement_lines.php)",
+      "PowerShell(php artisan tinker \"C:\\\\Users\\\\QUYENA~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--laragon-www-cuocbien\\\\82b9434c-38aa-476e-b12e-41a99f10bdeb\\\\scratchpad\\\\diag-price-403.php\" --execute=\"exit;\")",
+      "PowerShell(php \"C:\\\\Users\\\\QUYENA~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--laragon-www-cuocbien\\\\82b9434c-38aa-476e-b12e-41a99f10bdeb\\\\scratchpad\\\\run-diag.php\")",
+      "PowerShell(php \"C:\\\\Users\\\\QUYENA~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--laragon-www-cuocbien\\\\82b9434c-38aa-476e-b12e-41a99f10bdeb\\\\scratchpad\\\\diag-locations.php\")",
+      "PowerShell(php \"C:\\\\Users\\\\QUYENA~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--laragon-www-cuocbien\\\\82b9434c-38aa-476e-b12e-41a99f10bdeb\\\\scratchpad\\\\diag-simulate-fix.php\")",
+      "PowerShell(php \"C:\\\\Users\\\\QUYENA~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--laragon-www-cuocbien\\\\82b9434c-38aa-476e-b12e-41a99f10bdeb\\\\scratchpad\\\\diag-group-haiphong.php\")",
+      "PowerShell(php \"C:\\\\Users\\\\QUYENA~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--laragon-www-cuocbien\\\\82b9434c-38aa-476e-b12e-41a99f10bdeb\\\\scratchpad\\\\diag-unresolved-codes.php\")",
+      "PowerShell(php -l app\\\\Services\\\\Trucking\\\\Concerns\\\\HandlesPricingAndImport.php)",
+      "PowerShell(php -l app\\\\Http\\\\Controllers\\\\Trucking\\\\PriceController.php)",
+      "PowerShell(php \"C:\\\\Users\\\\QUYENA~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--laragon-www-cuocbien\\\\82b9434c-38aa-476e-b12e-41a99f10bdeb\\\\scratchpad\\\\test-price-guard.php\")",
+      "PowerShell(php dev\\\\test_features.php 2>&1)",
+      "PowerShell(php \"C:\\\\Users\\\\QUYENA~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--laragon-www-cuocbien\\\\82b9434c-38aa-476e-b12e-41a99f10bdeb\\\\scratchpad\\\\run-feature-tests.php\" 2>&1)",
+      "PowerShell(php \"C:\\\\Users\\\\QUYENA~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--laragon-www-cuocbien\\\\82b9434c-38aa-476e-b12e-41a99f10bdeb\\\\scratchpad\\\\diag-quotation-file.php\")",
+      "PowerShell(npx --no-install esbuild --loader=jsx --log-level=warning \"resources/js/trucking2/components/config.jsx\" --outfile=NUL 2>&1 | Select-Object -First 20; \"exit=$LASTEXITCODE\")",
+      "PowerShell(php \"C:\\\\Users\\\\QUYENA~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--laragon-www-cuocbien\\\\82b9434c-38aa-476e-b12e-41a99f10bdeb\\\\scratchpad\\\\test-price-guard.php\" 2>&1)",
+      "PowerShell(npx --no-install esbuild --loader:.jsx=jsx --log-level=warning \"resources/js/trucking2/components/config.jsx\" --outfile=nul.js; \"exit=$LASTEXITCODE\"; if \\(Test-Path nul.js\\) { Remove-Item nul.js })",
+      "PowerShell(git log -S'hashTab' --oneline -- resources/js/trucking2/pages/cai-dat.jsx)"
     ]
   }
 }

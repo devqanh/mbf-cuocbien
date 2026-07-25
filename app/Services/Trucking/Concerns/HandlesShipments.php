@@ -887,6 +887,7 @@ trait HandlesShipments
             'bksRa'        => $s->bks_ra ?? '',
             'raMode'       => $s->ra_mode ?? 'self',
             'raOtherId'    => $s->ra_other_id,
+            'driver'       => $s->driver ?? '',   // cột file "Xuất để cập nhật" (import cập nhật lô)
             'extVendor'    => $s->ext_vendor ?? '',
             'extFee'       => $this->outMoney($s->ext_fee),
             'sailDate'     => $this->outDate($s->sail_date),

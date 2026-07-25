@@ -3,7 +3,7 @@ const { useState, useMemo, useEffect, useRef } = React;
 import { I, fmtVND, fmtShort, fmtDate, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, Combo, MultiCombo, useIsMobile, DateField } from "@trk/lib.jsx";
 import { CostPopup, InfoPopup, colorHex } from "@trk/pop.jsx";
 import { SortBtn, CellBtn, Badge, EditCell, TH, TD } from "@trk/ui.jsx";
-import { loCountOf, parseImportRows, buildTemplateWb, parseCshtRows, buildCshtTemplateWb, cshtRowCount } from "./excel.js";
+import { loCountOf, parseImportRows, buildTemplateWb, parseCshtRows, buildCshtTemplateWb, cshtRowCount, parseUpdateRows, buildUpdateWb } from "./excel.js";
 
 // Chip số INV — nổi bật để kế toán dễ dò
 const invChip = { display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", padding: "1px 8px", borderRadius: 7 };
@@ -97,6 +97,15 @@ function ShipmentsApp() {
   const [cshtRows, setCshtRows] = useState([]);
   const [cshtCheck, setCshtCheck] = useState(null); // null | { valid, total, errors:[] }
   const cshtFileRef = useRef(null);
+  // ---- Import CẬP NHẬT lô đã có (Xuất để cập nhật → sửa → nhập lại) ----
+  const [showUpd, setShowUpd] = useState(false);
+  const [updWb, setUpdWb] = useState(null);        // {names, wb}
+  const [updSheet, setUpdSheet] = useState("");
+  const [updBusy, setUpdBusy] = useState(false);
+  const [updMsg, setUpdMsg] = useState("");
+  const [updRows, setUpdRows] = useState([]);
+  const [updCheck, setUpdCheck] = useState(null);  // null | { valid, total, errors, changes, warnings, noChange }
+  const updFileRef = useRef(null);
 
   // Tải 1 trang từ server theo tham số hiện tại. reqId chống race (chỉ áp phản hồi mới nhất).
   const reqId = useRef(0);
@@ -452,6 +461,59 @@ function ShipmentsApp() {
     } catch (err) { setCshtBusy(false); setCshtMsg("Import lỗi kết nối."); }
   };
 
+  // ---- Import CẬP NHẬT lô đã có ----
+  // Xuất file kèm cột ID (khóa khớp) + giá trị hiện tại → nhân viên sửa ô cần đổi → nhập lại.
+  const exportForUpdate = async () => {
+    if (exporting) return;
+    if (typeof XLSX === "undefined") { window.alert("Thư viện Excel chưa tải xong."); return; }
+    setExporting(true);
+    try {
+      // Xuất theo ĐÚNG bộ lọc đang xem (all=1 để lấy hết trang), tránh xuất nhầm cả nghìn lô.
+      const r = await window.trkApi("GET", ROUTES.shipmentsPage + "?" + buildParams({ page: 1 }).toString() + "&all=1");
+      const list = (r && r.ok) ? (r.data || []) : [];
+      if (!list.length) { window.trkToast && window.trkToast("Không có lô nào để xuất", "error"); return; }
+      XLSX.writeFile(buildUpdateWb(list), `cap-nhat-lo-${new Date().toISOString().slice(0, 10)}.xlsx`);
+      setShowUpd(true);
+    } catch (e) { window.trkToast && window.trkToast("Lỗi tải dữ liệu xuất Excel", "error"); }
+    finally { setExporting(false); }
+  };
+  const onUpdFile = (e) => {
+    const f = e.target.files && e.target.files[0]; e.target.value = "";
+    if (!f) return;
+    if (typeof XLSX === "undefined") { setUpdMsg("Thư viện Excel chưa tải xong."); return; }
+    setUpdMsg(""); setUpdCheck(null); setUpdRows([]);
+    const rd = new FileReader();
+    rd.onload = () => { const wb = XLSX.read(rd.result, { type: "array", cellDates: true }); setUpdWb({ names: wb.SheetNames, wb }); setUpdSheet(wb.SheetNames[0] || ""); };
+    rd.readAsArrayBuffer(f);
+  };
+  const doUpdCheck = async () => {
+    if (!updWb || !updSheet) return;
+    setUpdBusy(true); setUpdMsg(""); setUpdCheck(null);
+    const out = parseUpdateRows(updWb.wb, updSheet); setUpdRows(out);
+    if (!out.length) { setUpdBusy(false); setUpdCheck({ valid: false, total: 0, errors: [{ line: 0, reasons: ["Sheet không có dòng dữ liệu (cần cột ID hoặc SỐ CONT)"] }] }); return; }
+    try {
+      const res = await api("POST", ROUTES.shipUpdateCheck, { sheet, rows: out });
+      setUpdBusy(false);
+      if (res && res.ok) setUpdCheck(res);
+      else setUpdCheck({ valid: false, total: out.length, errors: [{ line: 0, reasons: [(res && res.message) || "Lỗi kiểm tra"] }] });
+    } catch (err) { setUpdBusy(false); setUpdMsg("Lỗi kết nối khi kiểm tra."); }
+  };
+  const doUpdImport = async () => {
+    if (!updCheck || !updCheck.valid || !(updCheck.changes || []).length) return;
+    setUpdBusy(true); setUpdMsg("");
+    try {
+      const res = await api("POST", ROUTES.shipUpdateImport, { sheet, rows: updRows });
+      setUpdBusy(false);
+      if (res && res.ok && res.valid) {
+        setUpdMsg(`Đã cập nhật ${res.cells} ô trên ${res.updated} lô.`); setUpdWb(null); setUpdCheck(null); setUpdRows([]);
+        await load();
+      } else if (res && res.errors) {
+        setUpdCheck({ valid: false, total: updRows.length, errors: res.errors, changes: [], warnings: [] });
+        setUpdMsg("Dữ liệu có lỗi — chưa cập nhật gì.");
+      } else setUpdMsg("Cập nhật lỗi: " + ((res && res.message) || "không rõ"));
+    } catch (err) { setUpdBusy(false); setUpdMsg("Cập nhật lỗi kết nối."); }
+  };
+
   const toggleSort = (key) => { setSort((s) => s.key === key ? { key, dir: -s.dir } : { key, dir: 1 }); setPage(1); };
   const setPerPageP = (n) => { setPerPage(n); setPage(1); };   // đổi số/trang → về trang 1
   // ----- Chọn nhiều lô + thao tác hàng loạt -----
@@ -563,6 +625,12 @@ function ShipmentsApp() {
             <i className="bi bi-receipt" style={{ color: "var(--accent)" }} /> Import CSHT
           </button>
           <input ref={cshtFileRef} type="file" accept=".xlsx,.xls,.csv" onChange={onCshtFile} style={{ display: "none" }} />
+          <button type="button" onClick={() => setShowUpd(true)} title="Cập nhật hàng loạt lô ĐÃ CÓ bằng Excel (xuất → sửa → nhập lại)"
+            style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "var(--ink-2)", background: "#fff", border: "1px solid var(--line)", borderRadius: 10 }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
+            <i className="bi bi-pencil-square" style={{ color: "var(--accent)" }} /> Cập nhật lô
+          </button>
+          <input ref={updFileRef} type="file" accept=".xlsx,.xls" onChange={onUpdFile} style={{ display: "none" }} />
           <div style={{ position: "relative" }}>
             <button type="button" onClick={() => setShowExport((v) => !v)} title="Xuất danh sách lô hàng ra Excel"
               style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer", color: "#fff", background: "var(--good)", border: "none", borderRadius: 10, boxShadow: "0 1px 2px rgba(31,138,91,.45)", transition: "background .12s" }}
@@ -1318,6 +1386,146 @@ function ShipmentsApp() {
           </div>
         </Modal>
       )}
+
+      {showUpd && (() => {
+        const changes = (updCheck && updCheck.changes) || [];
+        const cells = changes.reduce((a, c) => a + c.cells.length, 0);
+        const warns = (updCheck && updCheck.warnings) || [];
+        return (
+        <Modal title="Cập nhật lô từ Excel" subtitle="Sửa hàng loạt lô ĐÃ CÓ (không tạo lô mới). Xuất file kèm cột ID → sửa ô cần đổi → nhập lại · ô TRỐNG = giữ nguyên, gõ -- để xóa · xem trước từng ô cũ → mới · 1 dòng lỗi là không ghi gì cả" width={860} icon={<I.truck />}
+          onClose={() => setShowUpd(false)}
+          footer={
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <div style={{ fontSize: 12.5, color: updCheck ? (updCheck.valid ? "var(--good)" : "var(--danger)") : "var(--ink-3)", fontWeight: updCheck ? 600 : 400 }}>
+                {updCheck
+                  ? (updCheck.valid
+                      ? `✓ ${cells} ô sẽ đổi trên ${changes.length} lô` + (updCheck.noChange ? ` · ${updCheck.noChange} dòng không đổi gì` : "")
+                      : `${updCheck.errors.length} dòng lỗi — chưa cập nhật gì`)
+                  : (updWb ? "Đã chọn file — bấm Kiểm tra" : "Xuất file để sửa, hoặc chọn file có sẵn")}
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <Btn onClick={() => setShowUpd(false)}>Đóng</Btn>
+                {updCheck && updCheck.valid && cells > 0 && <Btn variant="primary" onClick={doUpdImport}>{updBusy ? "Đang cập nhật…" : `Cập nhật ${cells} ô`}</Btn>}
+              </div>
+            </div>
+          }>
+          <div style={{ padding: "12px 0 4px" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
+              <button type="button" onClick={exportForUpdate} disabled={exporting}
+                style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--ink-2)", cursor: exporting ? "default" : "pointer" }}>
+                <i className="bi bi-download" /> {exporting ? "Đang xuất…" : "Xuất để cập nhật"}
+              </button>
+              <button type="button" onClick={() => updFileRef.current && updFileRef.current.click()}
+                style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13, fontWeight: 600, border: "none", borderRadius: 9, background: "var(--accent)", color: "#fff", cursor: "pointer" }}>
+                <i className="bi bi-file-earmark-arrow-up" /> {updWb ? "Chọn file khác" : "Chọn file"}
+              </button>
+              {updWb && <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Đã đọc file · {updWb.names.length} sheet</span>}
+            </div>
+            <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginBottom: 14, lineHeight: 1.6 }}>
+              File xuất theo đúng bộ lọc đang xem, kèm cột <b>ID</b> làm khóa — đừng sửa hay xóa cột đó.
+              Không có ID thì khớp theo <b>Số cont</b>, cont trùng nhiều lô sẽ báo lỗi.
+            </div>
+
+            {updWb && (
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-end", marginBottom: 14 }}>
+                <label style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>Sheet cần đọc</div>
+                  <div style={{ position: "relative" }}>
+                    <select value={updSheet} onChange={(e) => { setUpdSheet(e.target.value); setUpdCheck(null); }}
+                      style={{ width: "100%", appearance: "none", WebkitAppearance: "none", padding: "9px 28px 9px 11px", fontSize: 13.5, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 10, background: "#fff", cursor: "pointer" }}>
+                      {updWb.names.map((n) => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                    <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: "var(--ink-3)", pointerEvents: "none" }}><I.chev /></span>
+                  </div>
+                </label>
+                <Btn onClick={doUpdCheck}>{updBusy && !updCheck ? "Đang kiểm tra…" : "Kiểm tra dữ liệu"}</Btn>
+              </div>
+            )}
+
+            {/* Cảnh báo (không chặn) — lô đã lên bảng kê, số cont trùng… */}
+            {warns.length > 0 && (
+              <div style={{ border: "1px solid #f0dcae", background: "#fdf8ec", borderRadius: 10, padding: "10px 13px", marginBottom: 12 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: "#9a6700", marginBottom: 5 }}><i className="bi bi-exclamation-triangle-fill" /> {warns.length} cảnh báo (vẫn cập nhật được)</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 130, overflowY: "auto" }}>
+                  {warns.map((w, i) => <div key={i} style={{ fontSize: 11.5, color: "var(--ink-2)" }}>Dòng {w.line} · lô #{w.id}: {w.text}</div>)}
+                </div>
+              </div>
+            )}
+
+            {/* Xem trước: từng Ô sẽ đổi, cũ → mới */}
+            {updCheck && updCheck.valid && cells > 0 && (
+              <div style={{ border: "1px solid #bfe4d1", borderRadius: 10, overflow: "hidden" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--good)", padding: "10px 13px", background: "var(--good-weak)", borderBottom: "1px solid #bfe4d1" }}>
+                  <i className="bi bi-check-circle-fill" /> {cells} ô sẽ thay đổi trên {changes.length} lô — ô không có trong bảng này giữ nguyên.
+                </div>
+                <div style={{ maxHeight: "42vh", overflow: "auto", overscrollBehavior: "contain" }}>
+                  <table style={{ borderCollapse: "collapse", fontSize: 12.5, width: "100%", minWidth: 640 }}>
+                    <thead>
+                      <tr>
+                        {["Dòng", "Lô", "Cột", "Giá trị cũ", "Giá trị mới"].map((h, i) => (
+                          <th key={i} style={{ textAlign: "left", padding: "7px 11px", fontSize: 10.5, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.03em", borderBottom: "1px solid var(--line)", position: "sticky", top: 0, background: "#fafbfc", whiteSpace: "nowrap", zIndex: 1 }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {changes.map((ch) => ch.cells.map((c, ci) => (
+                        <tr key={ch.id + "|" + c.field}>
+                          {ci === 0 && <td className="tnum" rowSpan={ch.cells.length} style={{ padding: "6px 11px", borderBottom: "1px solid var(--line-2)", borderRight: "1px solid var(--line-2)", color: "var(--ink-3)", verticalAlign: "top", whiteSpace: "nowrap" }}>{ch.line}</td>}
+                          {ci === 0 && <td rowSpan={ch.cells.length} style={{ padding: "6px 11px", borderBottom: "1px solid var(--line-2)", borderRight: "1px solid var(--line-2)", verticalAlign: "top", whiteSpace: "nowrap" }}>
+                            <div className="tnum" style={{ fontWeight: 700, color: "var(--ink)" }}>#{ch.id}</div>
+                            <div className="tnum" style={{ fontSize: 11, color: "var(--ink-4)" }}>{ch.contNo || ch.booking || ""}</div>
+                          </td>}
+                          <td style={{ padding: "6px 11px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)", fontWeight: 600, whiteSpace: "nowrap" }}>{c.label}</td>
+                          <td style={{ padding: "6px 11px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-4)", textDecoration: c.old ? "line-through" : "none" }}>{c.old || "(trống)"}</td>
+                          <td style={{ padding: "6px 11px", borderBottom: "1px solid var(--line-2)", color: c.new ? "var(--good)" : "var(--danger)", fontWeight: 600 }}>{c.new || "(xóa)"}</td>
+                        </tr>
+                      )))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {updCheck && updCheck.valid && cells === 0 && (
+              <div style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "12px 13px", fontSize: 12.5, color: "var(--ink-3)" }}>
+                File hợp lệ nhưng <b>không có ô nào khác dữ liệu hiện tại</b> ({updCheck.total} dòng đã đọc). Sửa giá trị trong file rồi kiểm tra lại.
+              </div>
+            )}
+
+            {updCheck && !updCheck.valid && (
+              <div style={{ border: "1px solid #f3c9c9", borderRadius: 10, overflow: "hidden" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--danger)", padding: "10px 13px", background: "#fef6f6", borderBottom: "1px solid #f3c9c9" }}>
+                  <i className="bi bi-exclamation-triangle-fill" /> {updCheck.errors.length} dòng lỗi — sửa file rồi Kiểm tra lại. Chưa cập nhật gì cả.
+                </div>
+                <div style={{ maxHeight: "42vh", overflowY: "auto", overscrollBehavior: "contain" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                    <thead>
+                      <tr style={{ background: "#fafbfc" }}>
+                        {["Dòng", "ID", "Số cont", "Lý do"].map((h, i) => (
+                          <th key={i} style={{ textAlign: "left", padding: "7px 12px", fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "1px solid var(--line)", position: "sticky", top: 0, background: "#fafbfc", whiteSpace: "nowrap" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {updCheck.errors.map((er, i) => (
+                        <tr key={i}>
+                          <td className="tnum" style={{ padding: "7px 12px", borderBottom: "1px solid var(--line-2)", fontWeight: 600, color: "var(--ink-2)", whiteSpace: "nowrap" }}>{er.line}</td>
+                          <td className="tnum" style={{ padding: "7px 12px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{er.id || "—"}</td>
+                          <td className="tnum" style={{ padding: "7px 12px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{er.cont || "—"}</td>
+                          <td style={{ padding: "7px 12px", borderBottom: "1px solid var(--line-2)", color: "var(--danger)" }}>{(er.reasons || []).join("; ")}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {updMsg && <div style={{ fontSize: 12.5, fontWeight: 600, marginTop: 10, color: updMsg.startsWith("Đã cập nhật") ? "var(--good)" : "var(--danger)" }}>{updMsg}</div>}
+          </div>
+        </Modal>
+        );
+      })()}
     </div>
   );
 }
