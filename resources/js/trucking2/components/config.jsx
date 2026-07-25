@@ -45,6 +45,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
   const geoArr = cfg[geoArrKey] || [];
   const setGeo = (i, val) => { const a = [...geoArr]; while (a.length < list.length) a.push(""); a[i] = val; setCfg(geoArrKey, a); };
   const [pickIdx, setPickIdx] = useState(null);   // dòng đang mở MapPicker
+  const [focusIdx, setFocusIdx] = useState(null); // dòng vừa thêm → tự focus ô tên
   const mapsKey = (window.__TRK && window.__TRK.boot && window.__TRK.boot.mapsKey) || "";
   const parseGeo = (s) => { const m = /(-?\d+(?:\.\d+)?)\s*[,;\s]\s*(-?\d+(?:\.\d+)?)/.exec(s || ""); return m ? { lat: parseFloat(m[1]), lng: parseFloat(m[2]) } : null; };
   // Phát hiện trùng ký hiệu (chuẩn hóa hoa + bỏ khoảng trắng)
@@ -93,13 +94,18 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
     setDraft("");
   };
   // Thêm 1 dòng đã biết KÝ HIỆU (dùng cho giao diện gom nhóm — Địa điểm): mỗi ký hiệu có thể nhiều tên.
-  const addRow = (code, name) => {
-    setCfg(sel, [...list, (name || "").trim()]);
-    const a = [...codeArr]; while (a.length < list.length) a.push(""); a.push((code || "").trim()); setCfg(codeArrKey, a);
-    const ia = [...idArr]; while (ia.length < list.length) ia.push(null); ia.push(null); setCfg(idArrKey, ia);   // dòng mới: chưa có id
-    // Kho (addressed/geo): đẩy thêm ô địa chỉ + tọa độ rỗng để mảng thẳng hàng theo CHỈ SỐ với codeArr/idArr.
-    if (g && g.addressed) { const aa = [...addrArr]; while (aa.length < list.length) aa.push(""); aa.push(""); setCfg(addrArrKey, aa); }
-    if (g && g.geo) { const ga = [...geoArr]; while (ga.length < list.length) ga.push(""); ga.push(""); setCfg(geoArrKey, ga); }
+  // `at` = chèn vào CHỈ SỐ này (dùng để đưa dòng mới lên đầu nhóm, khỏi phải cuộn xuống cuối); bỏ trống = thêm cuối.
+  const addRow = (code, name, at = null) => {
+    const pos = at == null ? list.length : Math.max(0, Math.min(at, list.length));
+    // Mọi mảng phụ lưu theo CHỈ SỐ dòng → phải chèn cùng vị trí để thẳng hàng với list.
+    const insert = (arr, val, pad) => { const a = [...arr]; while (a.length < list.length) a.push(pad); a.splice(pos, 0, val); return a; };
+    setCfg(sel, insert(list, (name || "").trim(), ""));
+    setCfg(codeArrKey, insert(codeArr, (code || "").trim(), ""));
+    setCfg(idArrKey, insert(idArr, null, null));   // dòng mới: chưa có id
+    // Kho (addressed/geo): chèn ô địa chỉ + tọa độ rỗng.
+    if (g && g.addressed) setCfg(addrArrKey, insert(addrArr, "", ""));
+    if (g && g.geo) setCfg(geoArrKey, insert(geoArr, "", ""));
+    setFocusIdx(pos);
   };
   // Đổi ký hiệu cho TẤT CẢ dòng trong 1 nhóm (sửa ở header nhóm → áp cho mọi tên cùng nhóm).
   const setGroupCode = (indices, code) => {
@@ -316,7 +322,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                             style={{ width: 130, padding: "5px 9px", fontSize: 13, fontWeight: 700, textTransform: "uppercase", border: "1px solid var(--line)", borderRadius: 7, outline: "none", background: codeSaved ? "var(--line-2)" : "#fff", color: codeSaved ? "var(--ink-3)" : "var(--ink)", cursor: codeSaved ? "not-allowed" : "text" }}
                             onFocus={(e) => { if (!codeSaved) e.target.style.borderColor = "var(--accent)"; }} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
                           <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--ink-4)" }}>{grp.idxs.length} {noun}</span>
-                          <button type="button" onClick={() => addRow(grp.code, "")} title={"Thêm 1 " + noun + " vào nhóm này"}
+                          <button type="button" onClick={() => addRow(grp.code, "", grp.idxs[0])} title={"Thêm 1 " + noun + " vào nhóm này"}
                             style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer", borderRadius: 7, border: "1px solid var(--accent)", background: "#fff", color: "var(--accent)" }}>
                             <I.plus /> Thêm tên
                           </button>
@@ -332,6 +338,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                               : "22px 1fr 28px";
                             const nameInput = (
                               <input value={list[i]} onChange={(e) => rename(i, e.target.value)} placeholder={(g && g.codeNameLabel) || "Tên địa điểm"}
+                                ref={(el) => { if (el && focusIdx === i) { setFocusIdx(null); el.focus(); el.scrollIntoView({ block: "nearest" }); } }}
                                 style={{ width: "100%", padding: "7px 10px", fontSize: 13.5, border: "1px solid transparent", borderRadius: 8, outline: "none", background: "transparent" }}
                                 onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.background = "#fff"; }}
                                 onBlur={(e) => { e.target.style.borderColor = "transparent"; e.target.style.background = "transparent"; }} />
