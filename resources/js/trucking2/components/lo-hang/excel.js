@@ -14,9 +14,21 @@ const p2 = (n) => String(n).padStart(2, "0");
 
 // --- Xử lý ngày/giờ an toàn cho mọi dạng ô Excel (Date object, serial number, text dd/mm/yyyy) ---
 // Excel + cellDates:true → Date object tường minh, không phụ thuộc locale. Text giữ dd/mm/yyyy (file mẫu).
+
+// Ô ngày/giờ ĐỊNH DẠNG NGÀY THẬT của Excel bị lệch ~30 giây khi đổi sang Date: thư viện quy đổi
+// mốc 30/12/1899 sang giờ địa phương và chỉ bù lệch múi giờ theo PHÚT NGUYÊN, trong khi giờ chuẩn
+// Sài Gòn năm 1899 lẻ 30 giây. Hệ quả: 14/05/2026 thành 13/05/2026 23:59:30 (lùi 1 ngày) và
+// 10:30 thành 10:29:30 (hụt 1 phút). Người dùng chỉ nhập tới PHÚT nên cắt/làm tròn phần giây
+// theo giờ địa phương là trả lại đúng giá trị trong file.
+function snapToMinute(d) {
+  const rest = d.getSeconds() * 1000 + d.getMilliseconds();
+  return rest === 0 ? d : new Date(d.getTime() + (rest >= 30000 ? 60000 - rest : -rest));
+}
+
 function cellDate(v) {
   if (v == null || v === "") return { iso: "", display: "" };
   if (v instanceof Date && !isNaN(v)) {
+    v = snapToMinute(v);
     const y = v.getFullYear(), m = v.getMonth() + 1, d = v.getDate();
     if (y < 2000 || y > 2099) return { iso: "", display: String(v) };   // năm vô lý → cảnh báo
     return { iso: `${y}-${p2(m)}-${p2(d)}`, display: `${p2(d)}/${p2(m)}/${y}` };
@@ -37,7 +49,7 @@ function cellDate(v) {
 }
 function cellTime(v) {
   if (v == null || v === "") return "";
-  if (v instanceof Date && !isNaN(v)) return `${p2(v.getHours())}:${p2(v.getMinutes())}`;
+  if (v instanceof Date && !isNaN(v)) { const t = snapToMinute(v); return `${p2(t.getHours())}:${p2(t.getMinutes())}`; }
   const m = /(\d{1,2}):(\d{2})/.exec(String(v));
   return m ? `${p2(+m[1])}:${m[2]}` : "";
 }
@@ -61,7 +73,9 @@ export function parseImportRows(wb, sheetName) {
     if (!g(C.customer) && !g(C.booking) && !g(C.from) && !g(C.to)) continue;
     // Ngày: Date object → tường minh; text → dd/mm/yyyy; năm ngoài 2000-2099 → lỗi.
     const ngay = cellDate(C.ngay >= 0 ? row[C.ngay] : null);
-    const hm = cellTime(C.gio >= 0 ? row[C.gio] : null);
+    // Giờ lấy ở cột GIỜ; cột trống thì lấy phần giờ nằm trong chính ô NGÀY (người dùng hay gộp
+    // "14/05/2026 08:00" vào 1 ô) — ô chỉ có ngày thì phần giờ là 00:00 nên không đổi kết quả.
+    const hm = cellTime(C.gio >= 0 ? row[C.gio] : null) || cellTime(C.ngay >= 0 ? row[C.ngay] : null);
     const gioDenDuKien = ngay.iso ? `${ngay.iso}T${hm || "00:00"}` : "";
     const cm = cellDate(C.cutOff >= 0 ? row[C.cutOff] : null);
     const cmHm = cellTime(C.cutOff >= 0 ? row[C.cutOff] : null);
@@ -147,7 +161,7 @@ export function buildTemplateWb(c) {
   const exCT2 = cts[1] || exCT1;
   // KHO ví dụ = ký hiệu kho CÓ THẬT (tránh import mẫu bị lỗi "chưa có trong danh mục kho")
   const whTok = (n) => whCodeOf[n] || n;
-  const exKho1 = whs.length >= 2 ? `${whTok(whs[0])} → ${whTok(whs[1])}` : (whs[0] ? whTok(whs[0]) : "");
+  const exKho1 = whs.length >= 2 ? `${whTok(whs[0])}, ${whTok(whs[1])}` : (whs[0] ? whTok(whs[0]) : "");
   const exKho2 = whs[0] ? whTok(whs[0]) : "";
   const ex1 = { "Khách hàng *": exCust, "SỐ BOOKING/BILL *": "BL-ICD-0001", "NHẬP/XUẤT": "Nhập", "SỐ LƯỢNG CONT *": 3, "LOẠI CONT": exCT1, "SỐ CONTAINER": "TGHU1234567\nMSKU9981122\nCSNU4567788", "CẮT MÁNG": "14/05/2026 10:00", "NƠI LẤY": exFrom, "NƠI HẠ": exTo, "NƠI HẠ SÀ LAN": "HPP", "NGÀY ĐẾN DỰ KIẾN": "14/05/2026", "GIỜ ĐẾN DỰ KIẾN": "08:00", "KHO": exKho1, "INVOICE": "INV-001" };
   const ex2 = { "Khách hàng *": exCust, "SỐ BOOKING/BILL *": "BL-ICD-0002", "NHẬP/XUẤT": "Xuất", "SỐ LƯỢNG CONT *": 2, "LOẠI CONT": exCT2, "SỐ CONTAINER": "", "CẮT MÁNG": "15/05/2026 09:00", "NƠI LẤY": codeOf[exFrom] || exFrom, "NƠI HẠ": exTo, "NƠI HẠ SÀ LAN": "", "NGÀY ĐẾN DỰ KIẾN": "15/05/2026", "GIỜ ĐẾN DỰ KIẾN": "07:30", "KHO": exKho2, "INVOICE": "INV-002" };
@@ -194,7 +208,7 @@ export function buildTemplateWb(c) {
     { "Cột": "NHẬP/XUẤT", "Bắt buộc": "không", "Ý nghĩa": "Nhập hoặc Xuất" },
     { "Cột": "LOẠI CONT", "Bắt buộc": "không", "Ý nghĩa": "Phải có trong danh mục Loại cont (xem sheet 'Loại cont hợp lệ'); nhập loại chưa khai sẽ báo lỗi — thêm ở Cài đặt → Loại cont" },
     { "Cột": "SỐ CONTAINER", "Bắt buộc": "không", "Ý nghĩa": "Số cont — nhiều cont thì XUỐNG DÒNG trong 1 ô" },
-    { "Cột": "KHO", "Bắt buộc": "không", "Ý nghĩa": "Tuyến kho — TÊN hoặc KÝ HIỆU trong danh mục Kho (xem sheet 'Kho hợp lệ'); nhiều đoạn nối bằng → hoặc dấu phẩy (vd TL → TS); dùng khớp phí xe; nhập sai sẽ báo lỗi" },
+    { "Cột": "KHO", "Bắt buộc": "không", "Ý nghĩa": "Tuyến kho — TÊN hoặc KÝ HIỆU trong danh mục Kho (xem sheet 'Kho hợp lệ'); nhiều đoạn nối bằng dấu phẩy (vd TL, TS); dùng khớp phí xe; nhập sai sẽ báo lỗi" },
     { "Cột": "INVOICE", "Bắt buộc": "không", "Ý nghĩa": "Số invoice (nếu có)" },
   ];
   const wg = XLSX.utils.json_to_sheet(guide, { header: ["Cột", "Bắt buộc", "Ý nghĩa"] });
@@ -209,25 +223,33 @@ export function buildTemplateWb(c) {
 export const CLEAR_TOKEN = "--";
 
 // key = field backend · col = tiêu đề cột · kw = từ khóa nhận diện cột ở file ngoài · dt = ô ngày+giờ
+// ro = CHỈ ĐỌC: chỉ để người sửa file biết dòng nào là lô nào (lô chưa điền cont thì nhìn vào
+// đây mới nhận ra), KHÔNG gửi lên server nên sửa nhầm cũng không đụng dữ liệu.
 const UPD_FIELDS = [
   { key: "id",           col: "ID",              kw: ["id"] },
+  { key: "customer",     col: "KHÁCH HÀNG (không sửa)",     kw: ["khách", "khach"], ro: true },
+  { key: "booking",      col: "SỐ BOOKING/BILL (không sửa)", kw: ["booking", "bill"], ro: true },
   { key: "contNo",       col: "SỐ CONT",         kw: ["số cont", "so cont", "container"] },
   { key: "contType",     col: "LOẠI CONT",       kw: ["loại", "loai"] },
+  { key: "io",           col: "NHẬP/XUẤT",       kw: ["nhập/xuất", "nhap/xuat", "nhập", "xuất"] },
   { key: "gioDenDuKien", col: "GIỜ ĐẾN DỰ KIẾN", kw: ["dự kiến", "du kien"], dt: true },
   { key: "gioXeDen",     col: "GIỜ XE ĐẾN",      kw: ["xe đến", "xe den"], dt: true },
-  { key: "gioXeRa",      col: "GIỜ XE RA",       kw: ["xe ra"], dt: true },
+  { key: "gioXeRa",      col: "GIỜ XE RA",       kw: ["giờ xe ra", "gio xe ra"], dt: true },
+  // Chỉ dùng cho lô ở kiểu "Không kéo cont ra" — free time khi đó lấy giờ ra của XE, không phải của cont.
+  { key: "gioXeRaXe",    col: "GIỜ XE RA (XE)",  kw: ["xe ra (xe)", "ra cua xe", "ra (xe)"], dt: true },
+  { key: "contDen",      col: "NGÀY CONT ĐẾN",   kw: ["cont đến", "cont den"], date: true },
+  { key: "sailDate",     col: "NGÀY TÀU CHẠY",   kw: ["tàu chạy", "tau chay"], date: true },
   { key: "bksVao",       col: "BKS VÀO",         kw: ["bks vào", "bks vao", "biển số vào"] },
   { key: "bksRa",        col: "BKS RA",          kw: ["bks ra", "biển số ra"] },
-  { key: "declNo",       col: "SỐ TỜ KHAI",      kw: ["tờ khai", "to khai"] },
+  // Nhiều tờ khai / lô: 2 cột SONG SONG theo thứ tự (giữ 1 dòng/lô cho dễ sửa hàng loạt).
   { key: "inv",          col: "INVOICE",         kw: ["invoice", "inv"] },
   { key: "from",         col: "NƠI LẤY",         kw: ["lấy", "lay"] },
   { key: "to",           col: "NƠI HẠ",          kw: ["hạ", "ha"] },
   { key: "bargeDrop",    col: "NƠI HẠ SÀ LAN",   kw: ["sà lan", "sa lan"] },
   { key: "kho",          col: "KHO",             kw: ["kho"] },
-  { key: "cutOff",       col: "CẮT MÁNG",        kw: ["máng", "mang"], dt: true },
-  { key: "driver",       col: "TÀI XẾ",          kw: ["tài xế", "tai xe"] },
   { key: "extVendor",    col: "NHÀ XE NGOÀI",    kw: ["nhà xe", "nha xe"] },
-  { key: "ghiChu",       col: "GHI CHÚ",         kw: ["ghi chú", "ghi chu"] },
+  { key: "extFee",       col: "CƯỚC XE NGOÀI",   kw: ["cước xe", "cuoc xe"], money: true },
+  { key: "infoNote",     col: "GHI CHÚ LÔ HÀNG", kw: ["ghi chú", "ghi chu"] },
 ];
 export const UPD_COLS = UPD_FIELDS.map((f) => f.col);
 
@@ -239,35 +261,69 @@ const dtOut = (iso) => {
 };
 
 // Dựng workbook "Xuất để cập nhật": ID + các cột sửa được, đổ sẵn giá trị hiện tại.
-export function buildUpdateWb(list) {
+// c = cfg (danh mục Cài đặt) → kèm các sheet GIÁ TRỊ HỢP LỆ cho mọi cột có ánh xạ danh mục,
+// vì import chặn giá trị ngoài danh mục — người sửa file phải tra được ngay trong file.
+export function buildUpdateWb(list, c) {
+  c = c || {};
   const val = (s, k) => {
     if (k === "id") return s.id;
-    if (k === "ghiChu") return (s.rev && s.rev.ghiChu) || "";
+    if (k === "infoNote") return s.infoNote || "";
     const v = s[k];
     return v == null ? "" : v;
   };
   const data = (list || []).map((s) => {
     const o = {};
-    for (const f of UPD_FIELDS) o[f.col] = f.dt ? dtOut(val(s, f.key)) : val(s, f.key);
+    for (const f of UPD_FIELDS) {
+      const v = val(s, f.key);
+      // Tiền xuất ra dạng SỐ để Excel tính/sửa được (rỗng nếu chưa có, không ghi 0 gây nhầm).
+      o[f.col] = f.dt ? dtOut(v)
+        : f.date ? (String(v).length >= 10 ? String(v).slice(0, 10).split("-").reverse().join("/") : "")
+        : (f.money ? (String(v).replace(/[^\d]/g, "") ? +String(v).replace(/[^\d]/g, "") : "") : v);
+    }
     return o;
   });
   const ws = XLSX.utils.json_to_sheet(data, { header: UPD_COLS });
   ws["!cols"] = UPD_COLS.map((c) => ({ wch: Math.max(12, c.length + 2) }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Cập nhật lô");
+
   const guide = [
     { "Quy tắc": "Cột ID", "Ý nghĩa": "KHÓA khớp lô — ĐỪNG sửa, đừng xóa cột này. Xóa ID thì hệ thống khớp theo SỐ CONT (cont trùng nhiều lô sẽ báo lỗi)" },
+    { "Quy tắc": "KHÁCH HÀNG / SỐ BOOKING (không sửa)", "Ý nghĩa": "Chỉ để bạn nhận ra dòng nào là lô nào — hệ thống KHÔNG đọc 2 cột này, sửa cũng không có tác dụng. Đổi khách/booking thì mở popup lô" },
+    { "Quy tắc": "File này chỉ CẬP NHẬT", "Ý nghĩa": "Không tạo lô mới. Dòng không khớp lô nào sẽ báo lỗi — muốn thêm lô thì dùng nút “Import lô”" },
     { "Quy tắc": "Ô để trống", "Ý nghĩa": "GIỮ NGUYÊN giá trị đang có — không xóa dữ liệu" },
     { "Quy tắc": `Gõ ${CLEAR_TOKEN}`, "Ý nghĩa": "XÓA giá trị của ô đó" },
-    { "Quy tắc": "Ngày giờ", "Ý nghĩa": "dd/mm/yyyy HH:MM (vd 29/06/2026 21:45)" },
-    { "Quy tắc": "Nơi lấy / Nơi hạ / Kho / Loại cont / Nhà xe ngoài", "Ý nghĩa": "Phải có sẵn trong danh mục — sai là báo lỗi, hệ thống KHÔNG tự thêm" },
-    { "Quy tắc": "Nơi hạ sà lan", "Ý nghĩa": "Chỉ HPP hoặc LHP" },
+    { "Quy tắc": "Ngày giờ", "Ý nghĩa": "Cột giờ: dd/mm/yyyy HH:MM (vd 29/06/2026 21:45) · Cột ngày: dd/mm/yyyy" },
+    { "Quy tắc": "GIỜ XE RA vs GIỜ XE RA (XE)", "Ý nghĩa": "Free time = Giờ xe ra − Giờ xe đến, nhưng lấy giờ ra nào là do KIỂU RA của lô (đặt trong popup, mục Xe vào – xe ra): “Không cắt móc” → cột GIỜ XE RA · “Cắt móc — không kéo ra” → cột GIỜ XE RA (XE) · “Cắt móc — cont khác ra” → lấy giờ của cont khác, 2 cột này không tính. Điền nhầm ô sẽ có CẢNH BÁO ở bước Kiểm tra" },
+    { "Quy tắc": "Tờ khai", "Ý nghĩa": "KHÔNG sửa ở file này — 1 lô có thể nhiều tờ khai, mỗi tờ khai một phí mở, nên có luồng riêng: nút “Cập nhật tờ khai” ở trang Lô hàng" },
+    { "Quy tắc": "CƯỚC XE NGOÀI", "Ý nghĩa": "Chỉ dùng khi thuê xe ngoài — ghi vào dòng chi phí “Cước xe ngoài” của lô (các khoản chi phí khác không bị đụng). Phải có NHÀ XE NGOÀI mới nhập được cước" },
+    { "Quy tắc": "Cột ánh xạ danh mục", "Ý nghĩa": "Nơi lấy · Nơi hạ · Kho · Loại cont · Nhà xe ngoài · BKS vào/ra — chỉ nhận giá trị CÓ SẴN trong danh mục Cài đặt (xem các sheet “… hợp lệ” trong file này). Sai là báo lỗi, hệ thống KHÔNG tự thêm" },
+    { "Quy tắc": "Nơi hạ sà lan", "Ý nghĩa": "Chỉ HPP hoặc LHP (sheet “Sà lan hợp lệ”)" },
+    { "Quy tắc": "Cột nhập tự do", "Ý nghĩa": "Số cont · Invoice · Ghi chú · Cước xe ngoài · các cột giờ — không ràng buộc danh mục" },
     { "Quy tắc": "Kiểm tra trước", "Ý nghĩa": "Hệ thống liệt kê từng ô cũ → mới để bạn duyệt; 1 dòng lỗi là KHÔNG ghi gì cả" },
     { "Quy tắc": "Không sửa được ở đây", "Ý nghĩa": "Khách hàng, số lượng, chi phí, doanh thu — sửa trong popup lô hoặc luồng riêng" },
   ];
   const wg = XLSX.utils.json_to_sheet(guide, { header: ["Quy tắc", "Ý nghĩa"] });
   wg["!cols"] = [{ wch: 42 }, { wch: 78 }];
   XLSX.utils.book_append_sheet(wb, wg, "Hướng dẫn");
+
+  // ---- Sheet GIÁ TRỊ HỢP LỆ: mỗi cột ánh xạ danh mục đều phải tra được ngay trong file ----
+  const addSheet = (name, rows, header, widths) => {
+    if (!rows.length) return;
+    const ws2 = XLSX.utils.json_to_sheet(rows, { header });
+    ws2["!cols"] = widths.map((w) => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, ws2, name);
+  };
+  const locCode = c.locationCode || {};
+  const whCode = c.warehouseCode || {};
+  addSheet("Địa điểm hợp lệ", (c.locations || []).map((n) => ({ "Tên địa điểm": n, "Ký hiệu": locCode[n] || "" })),
+    ["Tên địa điểm", "Ký hiệu"], [32, 14]);
+  addSheet("Kho hợp lệ", (c.warehouses || []).map((n) => ({ "Tên kho": n, "Ký hiệu": whCode[n] || "" })),
+    ["Tên kho", "Ký hiệu"], [28, 14]);
+  addSheet("Loại cont hợp lệ", (c.contTypes || []).map((n) => ({ "Loại cont": n })), ["Loại cont"], [16]);
+  addSheet("Nhà xe ngoài hợp lệ", (c.extVendors || []).map((n) => ({ "Đơn vị xe ngoài": n })), ["Đơn vị xe ngoài"], [34]);
+  addSheet("Biển số hợp lệ", (c.vehicles || []).map((n) => ({ "Biển số": n })), ["Biển số"], [18]);
+  addSheet("Sà lan hợp lệ", BARGE_DROPS.map((n) => ({ "Nơi hạ sà lan": n })), ["Nơi hạ sà lan"], [16]);
   return wb;
 }
 
@@ -297,22 +353,24 @@ export function parseUpdateRows(wb, sheetName) {
 
     const values = {}; const raws = {};
     for (const f of UPD_FIELDS) {
-      if (f.key === "id" || C[f.key] == null) continue;
+      if (f.key === "id" || f.ro || C[f.key] == null) continue;   // cột khóa + cột chỉ đọc: không gửi lên
       const v = cell(C[f.key]);
       const raw = v instanceof Date ? "" : String(v == null ? "" : v).trim();
-      if (v instanceof Date || (typeof v === "number" && f.dt)) {
+      if (v instanceof Date || (typeof v === "number" && (f.dt || f.date))) {
         // ô ngày thật của Excel
         const d = cellDate(v); const t = cellTime(v);
-        values[f.key] = d.iso ? `${d.iso}T${t || "00:00"}` : "";
+        values[f.key] = d.iso ? (f.date ? d.iso : `${d.iso}T${t || "00:00"}`) : "";
         raws[f.key] = d.display || String(v);
         if (!values[f.key]) values[f.key] = raws[f.key];   // để backend báo sai định dạng
         continue;
       }
       if (raw === "") continue;
+      if (raw.startsWith("(")) continue;   // ô chỉ dẫn kiểu "(xem sheet Tờ khai)" — không phải dữ liệu
       if (raw === CLEAR_TOKEN) { values[f.key] = CLEAR_TOKEN; continue; }
-      if (f.dt) {
+      if (f.money) { values[f.key] = raw.replace(/[^\d]/g, ""); raws[f.key] = raw; continue; }   // tiền: chỉ giữ chữ số
+      if (f.dt || f.date) {
         const d = cellDate(raw); const t = cellTime(raw);
-        values[f.key] = d.iso ? `${d.iso}T${t || "00:00"}` : raw;   // không parse được → gửi nguyên để backend báo lỗi
+        values[f.key] = d.iso ? (f.date ? d.iso : `${d.iso}T${t || "00:00"}`) : raw;   // không parse được → gửi nguyên để backend báo lỗi
         raws[f.key] = raw;
         continue;
       }
@@ -320,7 +378,73 @@ export function parseUpdateRows(wb, sheetName) {
     }
     out.push({ line: r + 1, id, contNo, values, raws });
   }
+
   return out;
+}
+
+// ===================== CẬP NHẬT TỜ KHAI (luồng riêng) =====================
+// 1 lô nhiều tờ khai, mỗi tờ khai 1 phí mở → mỗi TỜ KHAI là 1 dòng, mỗi ô đúng 1 giá trị.
+// Tách khỏi file cập nhật lô để không phải nhồi danh sách vào 1 ô (dấu phẩy đụng dấu phân cách nghìn).
+export const DECL_COLS = ["ID LÔ", "SỐ CONT (không sửa)", "KHÁCH HÀNG (không sửa)", "SỐ TỜ KHAI", "PHÍ MỞ TỜ KHAI"];
+
+// Dựng workbook "Xuất tờ khai": mỗi tờ khai 1 dòng; lô CHƯA có tờ khai vẫn có 1 dòng trống để điền.
+export function buildDeclarationWb(list) {
+  const rows = [];
+  for (const s of (list || [])) {
+    const base = { "ID LÔ": s.id, "SỐ CONT (không sửa)": s.contNo || "", "KHÁCH HÀNG (không sửa)": s.customer || "" };
+    const ds = Array.isArray(s.declarations) ? s.declarations : [];
+    if (!ds.length) { rows.push({ ...base, "SỐ TỜ KHAI": "", "PHÍ MỞ TỜ KHAI": "" }); continue; }
+    for (const d of ds) {
+      const fee = String(d.fee || "").replace(/[^\d]/g, "");
+      rows.push({ ...base, "SỐ TỜ KHAI": d.no || "", "PHÍ MỞ TỜ KHAI": fee ? +fee : "" });
+    }
+  }
+  const ws = XLSX.utils.json_to_sheet(rows, { header: DECL_COLS });
+  ws["!cols"] = [{ wch: 9 }, { wch: 20 }, { wch: 24 }, { wch: 22 }, { wch: 16 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Tờ khai");
+  const guide = [
+    { "Quy tắc": "Cột ID LÔ", "Ý nghĩa": "KHÓA khớp lô — đừng sửa. Một lô nhiều tờ khai thì lặp lại ID ở nhiều dòng" },
+    { "Quy tắc": "Thêm tờ khai", "Ý nghĩa": "Chèn dòng mới, điền ID LÔ + SỐ TỜ KHAI + PHÍ MỞ TỜ KHAI" },
+    { "Quy tắc": "Sửa phí", "Ý nghĩa": "Sửa thẳng ô PHÍ MỞ TỜ KHAI của dòng đó (mỗi ô 1 số, gõ 250000 hay 250.000 đều được)" },
+    { "Quy tắc": "Xóa 1 tờ khai", "Ý nghĩa": "Xóa dòng đó đi — các tờ khai còn lại của lô vẫn giữ" },
+    { "Quy tắc": `Xóa HẾT tờ khai của 1 lô`, "Ý nghĩa": `Để lại 1 dòng của lô đó và gõ ${CLEAR_TOKEN} ở ô SỐ TỜ KHAI` },
+    { "Quy tắc": "Lô không đụng tới", "Ý nghĩa": "Giữ nguyên dòng (hoặc xóa khỏi file) — chỉ lô có mặt trong file mới bị ghi" },
+    { "Quy tắc": "Phí mở tờ khai", "Ý nghĩa": "Tổng phí các tờ khai của lô tự vào chi phí lô ở khoản “Phí mở tờ khai”" },
+    { "Quy tắc": "Kiểm tra trước", "Ý nghĩa": "Hệ thống liệt kê từng lô cũ → mới để bạn duyệt; 1 dòng lỗi là KHÔNG ghi gì cả" },
+  ];
+  const wg = XLSX.utils.json_to_sheet(guide, { header: ["Quy tắc", "Ý nghĩa"] });
+  wg["!cols"] = [{ wch: 30 }, { wch: 84 }];
+  XLSX.utils.book_append_sheet(wb, wg, "Hướng dẫn");
+  return wb;
+}
+
+// Parse sheet tờ khai → gom theo lô: [{ line, id, values: { declPairs: [{no, fee}] } }].
+// Gửi lên CÙNG endpoint cập nhật lô (backend đã hiểu declPairs).
+export function parseDeclarationRows(wb, sheetName) {
+  const aoa = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, raw: true, defval: "" });
+  let hi = aoa.findIndex((r) => (r || []).some((c) => normH(c).includes("id")));
+  if (hi < 0) hi = 0;
+  const header = (aoa[hi] || []).map(normH);
+  const col = (...kws) => header.findIndex((h) => kws.some((k) => h.includes(k)));
+  const cId = col("id"), cNo = col("số tờ khai", "so to khai", "tờ khai"), cFee = col("phí", "phi");
+
+  const byId = {}; const lineOf = {};
+  for (let r = hi + 1; r < aoa.length; r++) {
+    const row = aoa[r] || [];
+    const g = (i) => (i < 0 ? "" : String(row[i] == null ? "" : row[i]).trim());
+    const id = g(cId).replace(/[^\d]/g, "");
+    if (!id) continue;
+    const no = g(cNo);
+    if (lineOf[id] == null) lineOf[id] = r + 1;
+    if (!byId[id]) byId[id] = [];
+    if (no === CLEAR_TOKEN) { byId[id] = "clear"; continue; }      // xóa hết tờ khai của lô
+    if (no === "" || byId[id] === "clear") continue;               // dòng trống = lô chưa có tờ khai
+    byId[id].push({ no, fee: g(cFee).replace(/[^\d]/g, "") });
+  }
+  return Object.entries(byId)
+    .filter(([, v]) => v === "clear" || v.length)                  // lô không điền gì → không gửi
+    .map(([id, v]) => ({ line: lineOf[id], id, contNo: "", raws: {}, values: { declPairs: v === "clear" ? [] : v } }));
 }
 
 // Đếm dòng có dữ liệu (hiện số trước khi gửi kiểm tra).

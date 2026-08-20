@@ -3,7 +3,7 @@ const { useState, useMemo, useEffect, useRef } = React;
 import { I, fmtVND, fmtShort, fmtDate, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, Combo, MultiCombo, useIsMobile, DateField } from "@trk/lib.jsx";
 import { CostPopup, InfoPopup, colorHex } from "@trk/pop.jsx";
 import { SortBtn, CellBtn, Badge, EditCell, TH, TD } from "@trk/ui.jsx";
-import { loCountOf, parseImportRows, buildTemplateWb, parseCshtRows, buildCshtTemplateWb, cshtRowCount, parseUpdateRows, buildUpdateWb } from "./excel.js";
+import { loCountOf, parseImportRows, buildTemplateWb, parseCshtRows, buildCshtTemplateWb, cshtRowCount, parseUpdateRows, buildUpdateWb, parseDeclarationRows, buildDeclarationWb } from "./excel.js";
 
 // Chip số INV — nổi bật để kế toán dễ dò
 const invChip = { display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", padding: "1px 8px", borderRadius: 7 };
@@ -20,6 +20,9 @@ function InvChip({ value, max = 150 }) {
   );
 }
 const tagChip = { display: "inline-flex", alignItems: "center", fontSize: 10.5, fontWeight: 600, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", padding: "1px 7px", borderRadius: 999, whiteSpace: "nowrap" };
+// Nút "Cập nhật lô" (xuất Excel kèm ID → sửa → nhập lại) đang TẮT trên thanh công cụ.
+// Toàn bộ luồng (popup, kiểm tra, endpoint) vẫn còn nguyên — đổi cờ này thành true là hiện lại.
+const SHOW_UPDATE_IMPORT = true;
 // Màu badge Nhập/Xuất/Khác cho dễ phân biệt: Nhập=xanh dương · Xuất=xanh lá · Khác=hổ phách
 const ioTone = (io) => { const v = (io || "").toLowerCase(); return v.includes("nh") ? "blue" : v.includes("xu") ? "good" : "amber"; };
 
@@ -106,6 +109,15 @@ function ShipmentsApp() {
   const [updRows, setUpdRows] = useState([]);
   const [updCheck, setUpdCheck] = useState(null);  // null | { valid, total, errors, changes, warnings, noChange }
   const updFileRef = useRef(null);
+  // ---- Cập nhật TỜ KHAI (luồng riêng: mỗi tờ khai 1 dòng, 1 lô nhiều tờ khai) ----
+  const [showDecl, setShowDecl] = useState(false);
+  const [declWb, setDeclWb] = useState(null);
+  const [declSheet, setDeclSheet] = useState("");
+  const [declBusy, setDeclBusy] = useState(false);
+  const [declMsg, setDeclMsg] = useState("");
+  const [declRows, setDeclRows] = useState([]);
+  const [declCheck, setDeclCheck] = useState(null);
+  const declFileRef = useRef(null);
 
   // Tải 1 trang từ server theo tham số hiện tại. reqId chống race (chỉ áp phản hồi mới nhất).
   const reqId = useRef(0);
@@ -177,8 +189,9 @@ function ShipmentsApp() {
   const cfgLoaded = useRef(false);
   const cfgRef = useRef(cfg);
   useEffect(() => { cfgRef.current = cfg; }, [cfg]);
-  const ensureCfg = async () => {
-    if (cfgLoaded.current) return cfgRef.current;
+  // force = tải lại danh mục dù đã có (sửa danh mục ở tab Cài đặt xong quay lại tab này vẫn thấy giá trị mới).
+  const ensureCfg = async (force = false) => {
+    if (cfgLoaded.current && !force) return cfgRef.current;
     cfgLoaded.current = true;
     try {
       const r = await window.trkApi("GET", ROUTES.config);
@@ -342,7 +355,9 @@ function ShipmentsApp() {
     if (typeof XLSX === "undefined") { window.alert("Thư viện Excel chưa tải xong, thử lại sau giây lát."); return; }
     setExporting(true);
     try {
-    const fullCfg = await ensureCfg();   // export cần MST/email từ customerInfo
+    // force: lấy danh mục MỚI NHẤT — MST/email khách + ghi chú kho (cột Địa chỉ đóng hàng) hay được
+    // sửa ở tab Cài đặt ngay trước khi xuất; dùng bản cache từ lúc mở trang sẽ ra file thiếu dữ liệu.
+    const fullCfg = await ensureCfg(true);
     const info = fullCfg.customerInfo || {};
     const plannedDate = (s) => (s.gioDenDuKien || "").slice(0, 10); // YYYY-MM-DD
     // Xuất TẤT CẢ lô (không chỉ trang hiện tại) — lấy qua endpoint với all=1, rồi lọc theo ngày.
@@ -358,16 +373,30 @@ function ShipmentsApp() {
       if (expTo && (!d || d > expTo)) return false;
       return true;
     });
-    const cols = ["NHÀ MÁY", "SỐ BOOKING/BILL", "NHẬP/XUẤT", "SỐ LƯỢNG", "LOẠI", "CẮT MÁNG", "NƠI LẤY", "NƠI HẠ", "NGÀY", "GIỜ", "KHO", "INVOICE", "MÃ SỐ THUẾ", "EMAIL CÔNG TY"];
+    // "Địa chỉ đóng hàng" = GHI CHÚ của kho (Cài đặt → Kho). Lô lưu kho bằng ký hiệu (đôi khi là tên)
+    // nên tra theo TÊN trước, không có thì theo KÝ HIỆU; tuyến nhiều kho thì nối ghi chú của từng chặng.
+    const noteByName = {}, noteByCode = {};
+    Object.entries(fullCfg.warehouseNote || {}).forEach(([n, v]) => { if (v) noteByName[String(n).trim().toLowerCase()] = v; });
+    Object.entries(fullCfg.warehouseNoteCode || {}).forEach(([c, v]) => { if (v) noteByCode[String(c).trim().toLowerCase()] = v; });
+    const khoNote = (kho) => {
+      const segs = String(kho || "").split(/\s*(?:,|→|->|–|—|\s-\s)\s*/).map((x) => x.trim()).filter(Boolean);
+      const out = [];
+      segs.forEach((seg) => { const k = seg.toLowerCase(); const v = noteByName[k] || noteByCode[k] || ""; if (v && !out.includes(v)) out.push(v); });
+      return out.join(" · ");
+    };
+    const cols = ["NHÀ MÁY", "SỐ BOOKING/BILL", "NHẬP/XUẤT", "SỐ LƯỢNG", "LOẠI", "CẮT MÁNG", "NƠI LẤY", "NƠI HẠ", "NGÀY", "GIỜ", "KHO", "ĐỊA CHỈ ĐÓNG HÀNG", "INVOICE", "MÃ SỐ THUẾ / ĐỊA CHỈ / EMAIL"];
     const data = list.map((s) => {
       const ci = info[s.customer] || {};
       const dt = s.gioDenDuKien || "";
       const ngay = dt.length >= 10 ? dt.slice(0, 10).split("-").reverse().join("/") : "";
       const gio = dt.length >= 16 ? dt.slice(11, 16) : "";
-      return { "NHÀ MÁY": s.customer || "", "SỐ BOOKING/BILL": s.booking || "", "NHẬP/XUẤT": s.io || "", "SỐ LƯỢNG": s.qty == null ? "" : s.qty, "LOẠI": s.contType || "", "CẮT MÁNG": fmtCM(s.cutOff), "NƠI LẤY": s.from || "", "NƠI HẠ": s.to || "", "NGÀY": ngay, "GIỜ": gio, "KHO": s.kho || "", "INVOICE": s.inv || "", "MÃ SỐ THUẾ": ci.taxCode || "", "EMAIL CÔNG TY": ci.email || "" };
+      // Thông tin công ty gộp 1 ô (MST · địa chỉ · email) — khỏi tách nhiều cột thưa dữ liệu.
+      const congTy = [ci.taxCode, ci.address, ci.email].map((v) => String(v || "").trim()).filter(Boolean).join(" · ");
+      return { "NHÀ MÁY": s.customer || "", "SỐ BOOKING/BILL": s.booking || "", "NHẬP/XUẤT": s.io || "", "SỐ LƯỢNG": s.qty == null ? "" : s.qty, "LOẠI": s.contType || "", "CẮT MÁNG": fmtCM(s.cutOff), "NƠI LẤY": s.from || "", "NƠI HẠ": s.to || "", "NGÀY": ngay, "GIỜ": gio, "KHO": s.kho || "", "ĐỊA CHỈ ĐÓNG HÀNG": khoNote(s.kho), "INVOICE": s.inv || "", "MÃ SỐ THUẾ / ĐỊA CHỈ / EMAIL": congTy };
     });
     const ws = XLSX.utils.json_to_sheet(data, { header: cols });
-    ws["!cols"] = cols.map((c) => ({ wch: Math.max(12, c.length + 2) }));
+    // Cột ghi chú kho thường dài (địa chỉ) → cho rộng hơn để không phải kéo tay.
+    ws["!cols"] = cols.map((c) => ({ wch: (c === "ĐỊA CHỈ ĐÓNG HÀNG" || c === "MÃ SỐ THUẾ / ĐỊA CHỈ / EMAIL") ? 42 : Math.max(12, c.length + 2) }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Lô hàng");
     const stamp = new Date().toISOString().slice(0, 10);
@@ -463,17 +492,20 @@ function ShipmentsApp() {
 
   // ---- Import CẬP NHẬT lô đã có ----
   // Xuất file kèm cột ID (khóa khớp) + giá trị hiện tại → nhân viên sửa ô cần đổi → nhập lại.
-  const exportForUpdate = async () => {
+  // scope: "view" = đúng bộ lọc đang xem · "notout" = chỉ lô chưa ra · "all" = tất cả lô
+  const exportForUpdate = async (scope) => {
     if (exporting) return;
     if (typeof XLSX === "undefined") { window.alert("Thư viện Excel chưa tải xong."); return; }
     setExporting(true);
     try {
-      // Xuất theo ĐÚNG bộ lọc đang xem (all=1 để lấy hết trang), tránh xuất nhầm cả nghìn lô.
-      const r = await window.trkApi("GET", ROUTES.shipmentsPage + "?" + buildParams({ page: 1 }).toString() + "&all=1");
+      const qs = scope === "view" ? buildParams({ page: 1 }).toString() + "&all=1"
+        : (scope === "notout" ? "all=1&filter=notout" : "all=1");
+      const [r, c] = await Promise.all([window.trkApi("GET", ROUTES.shipmentsPage + "?" + qs), ensureCfg()]);
       const list = (r && r.ok) ? (r.data || []) : [];
       if (!list.length) { window.trkToast && window.trkToast("Không có lô nào để xuất", "error"); return; }
-      XLSX.writeFile(buildUpdateWb(list), `cap-nhat-lo-${new Date().toISOString().slice(0, 10)}.xlsx`);
-      setShowUpd(true);
+      // cfg → các sheet "… hợp lệ" (địa điểm, kho, loại cont, nhà xe ngoài, biển số) đi kèm file
+      XLSX.writeFile(buildUpdateWb(list, c || cfgRef.current || {}), `cap-nhat-lo-${new Date().toISOString().slice(0, 10)}.xlsx`);
+      setUpdMsg(`Đã xuất ${list.length} lô — sửa file rồi chọn lại để cập nhật.`);
     } catch (e) { window.trkToast && window.trkToast("Lỗi tải dữ liệu xuất Excel", "error"); }
     finally { setExporting(false); }
   };
@@ -514,6 +546,59 @@ function ShipmentsApp() {
     } catch (err) { setUpdBusy(false); setUpdMsg("Cập nhật lỗi kết nối."); }
   };
 
+  // ---- Cập nhật TỜ KHAI: xuất mỗi tờ khai 1 dòng → sửa → nhập lại (dùng chung endpoint cập nhật lô) ----
+  const exportDeclarations = async (scope) => {
+    if (exporting) return;
+    if (typeof XLSX === "undefined") { window.alert("Thư viện Excel chưa tải xong."); return; }
+    setExporting(true);
+    try {
+      const qs = scope === "view" ? buildParams({ page: 1 }).toString() + "&all=1" : "all=1";
+      const r = await window.trkApi("GET", ROUTES.shipmentsPage + "?" + qs);
+      const list = (r && r.ok) ? (r.data || []) : [];
+      if (!list.length) { window.trkToast && window.trkToast("Không có lô nào để xuất", "error"); return; }
+      XLSX.writeFile(buildDeclarationWb(list), `to-khai-${new Date().toISOString().slice(0, 10)}.xlsx`);
+      const nDecl = list.reduce((a, s) => a + ((s.declarations || []).length || 0), 0);
+      setDeclMsg(`Đã xuất ${list.length} lô · ${nDecl} tờ khai — sửa file rồi chọn lại để cập nhật.`);
+    } catch (e) { window.trkToast && window.trkToast("Lỗi tải dữ liệu xuất Excel", "error"); }
+    finally { setExporting(false); }
+  };
+  const onDeclFile = (e) => {
+    const f = e.target.files && e.target.files[0]; e.target.value = "";
+    if (!f) return;
+    if (typeof XLSX === "undefined") { setDeclMsg("Thư viện Excel chưa tải xong."); return; }
+    setDeclMsg(""); setDeclCheck(null); setDeclRows([]);
+    const rd = new FileReader();
+    rd.onload = () => { const wb = XLSX.read(rd.result, { type: "array", cellDates: true }); setDeclWb({ names: wb.SheetNames, wb }); setDeclSheet(wb.SheetNames[0] || ""); };
+    rd.readAsArrayBuffer(f);
+  };
+  const doDeclCheck = async () => {
+    if (!declWb || !declSheet) return;
+    setDeclBusy(true); setDeclMsg(""); setDeclCheck(null);
+    const out = parseDeclarationRows(declWb.wb, declSheet); setDeclRows(out);
+    if (!out.length) { setDeclBusy(false); setDeclCheck({ valid: false, total: 0, errors: [{ line: 0, reasons: ["Sheet không có dòng nào có ID LÔ + SỐ TỜ KHAI"] }] }); return; }
+    try {
+      const res = await api("POST", ROUTES.shipUpdateCheck, { sheet, rows: out });
+      setDeclBusy(false);
+      if (res && res.ok) setDeclCheck(res);
+      else setDeclCheck({ valid: false, total: out.length, errors: [{ line: 0, reasons: [(res && res.message) || "Lỗi kiểm tra"] }] });
+    } catch (err) { setDeclBusy(false); setDeclMsg("Lỗi kết nối khi kiểm tra."); }
+  };
+  const doDeclImport = async () => {
+    if (!declCheck || !declCheck.valid || !(declCheck.changes || []).length) return;
+    setDeclBusy(true); setDeclMsg("");
+    try {
+      const res = await api("POST", ROUTES.shipUpdateImport, { sheet, rows: declRows });
+      setDeclBusy(false);
+      if (res && res.ok && res.valid) {
+        setDeclMsg(`Đã cập nhật tờ khai cho ${res.updated} lô.`); setDeclWb(null); setDeclCheck(null); setDeclRows([]);
+        await load();
+      } else if (res && res.errors) {
+        setDeclCheck({ valid: false, total: declRows.length, errors: res.errors, changes: [], warnings: [] });
+        setDeclMsg("Dữ liệu có lỗi — chưa cập nhật gì.");
+      } else setDeclMsg("Cập nhật lỗi: " + ((res && res.message) || "không rõ"));
+    } catch (err) { setDeclBusy(false); setDeclMsg("Cập nhật lỗi kết nối."); }
+  };
+
   const toggleSort = (key) => { setSort((s) => s.key === key ? { key, dir: -s.dir } : { key, dir: 1 }); setPage(1); };
   const setPerPageP = (n) => { setPerPage(n); setPage(1); };   // đổi số/trang → về trang 1
   // ----- Chọn nhiều lô + thao tác hàng loạt -----
@@ -540,6 +625,86 @@ function ShipmentsApp() {
     } catch (e) { window.trkToast && window.trkToast("Lỗi cập nhật hàng loạt", "error"); }
     finally { setBulkBusy(false); }
   };
+  // ----- Điền số cont cho cả BOOKING -----
+  // Import "số lượng cont = 3" đẻ ra 3 lô trống cont → gõ cả 3 số trong 1 popup, khỏi tìm từng lô.
+  // Đếm theo sibs (mọi lô của sheet, kể cả trang khác) để biết booking nào còn thiếu bao nhiêu cont.
+  const bookingCont = useMemo(() => {
+    const m = {};
+    (sibs || []).forEach((s) => {
+      const b = String(s.booking || "").trim();
+      if (!b) return;
+      const e = m[b] || (m[b] = { total: 0, filled: 0 });
+      e.total++;
+      if (String(s.contNo || "").trim()) e.filled++;
+    });
+    return m;
+  }, [sibs]);
+  const [contFill, setContFill] = useState(null);   // {booking, customer, rows[], loading, busy, err}
+  const contRefs = useRef([]);
+  const openContFill = async (s) => {
+    const booking = String(s.booking || "").trim();
+    if (!booking) { window.trkToast && window.trkToast("Lô chưa có số booking", "error"); return; }
+    setContFill({ booking, customer: s.customer || "", rows: [], loading: true, busy: false, err: "" });
+    try {
+      const qs = new URLSearchParams({ booking, customer: s.customer || "", sheet });
+      const r = await api("GET", ROUTES.shipmentConts + "?" + qs.toString());
+      setContFill((c) => (c ? { ...c, loading: false, rows: (r && r.ok) ? (r.list || []) : [], err: (r && r.ok) ? "" : "Không tải được danh sách lô" } : c));
+    } catch (e) { setContFill((c) => (c ? { ...c, loading: false, err: "Lỗi kết nối" } : c)); }
+  };
+  const setContAt = (i, v) => setContFill((c) => ({ ...c, rows: c.rows.map((r, j) => (j === i ? { ...r, contNo: v } : r)) }));
+  // Dán NHIỀU số cont (copy cả cột Excel) vào 1 ô → rải xuống các ô từ ô đó trở đi.
+  const onContPaste = (i) => (e) => {
+    const txt = ((e.clipboardData || window.clipboardData) || {}).getData ? (e.clipboardData || window.clipboardData).getData("text") : "";
+    const parts = String(txt || "").split(/[\r\n\t;,]+/).map((x) => x.trim()).filter(Boolean);
+    if (parts.length < 2) return;   // dán 1 giá trị → để trình duyệt dán như bình thường
+    e.preventDefault();
+    setContFill((c) => ({ ...c, rows: c.rows.map((r, j) => (j >= i && parts[j - i] != null ? { ...r, contNo: parts[j - i] } : r)) }));
+  };
+  // Số cont trùng nhau trong cùng popup = gõ nhầm → chặn lưu (cont là khóa dò của CSHT/bảng kê).
+  const contDupes = (() => {
+    const seen = {}, dup = new Set();
+    ((contFill && contFill.rows) || []).forEach((r) => {
+      const v = String(r.contNo || "").trim().toUpperCase();
+      if (!v) return;
+      if (seen[v]) dup.add(v); else seen[v] = 1;
+    });
+    return dup;
+  })();
+  // Cont đang gõ mà đã nằm ở lô KHÁC (ngoài nhóm booking này) → chỉ CẢNH BÁO: cont quay vòng là
+  // chuyện thường, nhưng trùng sống sẽ làm import CSHT / dò cont không biết chọn lô nào.
+  const contReused = (() => {
+    if (!contFill || !contFill.rows.length) return [];
+    const mine = new Set(contFill.rows.map((r) => r.id));
+    const used = {};
+    (sibs || []).forEach((s) => { const v = String(s.contNo || "").trim().toUpperCase(); if (v && !mine.has(s.id)) used[v] = true; });
+    return [...new Set(contFill.rows.map((r) => String(r.contNo || "").trim().toUpperCase()).filter((v) => v && used[v]))];
+  })();
+  const saveContFill = async () => {
+    if (!contFill || contFill.busy || contDupes.size) return;
+    setContFill((c) => ({ ...c, busy: true }));
+    try {
+      const rows = contFill.rows.map((r) => ({ id: r.id, contNo: String(r.contNo || "").trim() }));
+      const res = await api("POST", ROUTES.shipmentConts, { sheet, rows });
+      if (res && res.ok) {
+        window.trkToast && window.trkToast(res.updated ? `Đã điền cont cho ${res.updated} lô` : "Không có thay đổi", res.updated ? "success" : undefined);
+        setContFill(null); load();
+      } else { setContFill((c) => ({ ...c, busy: false, err: "Lưu lỗi" })); }
+    } catch (e) { setContFill((c) => ({ ...c, busy: false, err: "Lưu lỗi kết nối" })); }
+  };
+
+  // Ô số cont còn trống → nút mở popup điền cont cho cả booking (kèm tiến độ đã điền/tổng của booking).
+  const FillContBtn = ({ ship }) => {
+    const st = bookingCont[String(ship.booking || "").trim()];
+    return (
+      <button type="button" onClick={(e) => { e.stopPropagation(); openContFill(ship); }}
+        title={`Điền số cont cho cả booking ${ship.booking || ""}`}
+        style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 700, padding: "3px 9px", borderRadius: 999, cursor: "pointer",
+          border: "1px dashed var(--accent)", background: "var(--accent-weak-2)", color: "var(--accent)" }}>
+        <I.plus /> Điền cont{st && st.total > 1 ? ` (${st.filled}/${st.total})` : ""}
+      </button>
+    );
+  };
+
   const locCodeList = () => [...new Set(Object.values(cfg.locationCode || {}).filter(Boolean))].sort();
   const setFilterP = (f) => { setFilter(f); setPage(1); };
   const setFollowP = (f) => { setFollowFilter(f); setPage(1); };
@@ -613,24 +778,34 @@ function ShipmentsApp() {
               <i className="bi bi-link-45deg" style={{ color: "var(--accent)" }} /> Link kế hoạch
             </a>
           )}
-          <button type="button" onClick={() => { ensureCfg(); setShowImport(true); }} title="Import lô hàng từ Excel"
+          <button type="button" onClick={() => { ensureCfg(); setImpMsg(""); setShowImport(true); }} title="Import lô hàng từ Excel"
             style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "var(--ink-2)", background: "#fff", border: "1px solid var(--line)", borderRadius: 10 }}
             onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
             <i className="bi bi-upload" style={{ color: "var(--accent)" }} /> Import lô
           </button>
           <input ref={impFileRef} type="file" accept=".xlsx,.xls" onChange={onImpFile} style={{ display: "none" }} />
-          <button type="button" onClick={() => setShowCsht(true)} title="Import phí CSHT + Thanh lý vào chi phí lô hàng theo số cont"
+          <button type="button" onClick={() => { setCshtMsg(""); setShowCsht(true); }} title="Import phí CSHT + Thanh lý vào chi phí lô hàng theo số cont"
             style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "var(--ink-2)", background: "#fff", border: "1px solid var(--line)", borderRadius: 10 }}
             onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
             <i className="bi bi-receipt" style={{ color: "var(--accent)" }} /> Import CSHT
           </button>
           <input ref={cshtFileRef} type="file" accept=".xlsx,.xls,.csv" onChange={onCshtFile} style={{ display: "none" }} />
-          <button type="button" onClick={() => setShowUpd(true)} title="Cập nhật hàng loạt lô ĐÃ CÓ bằng Excel (xuất → sửa → nhập lại)"
+          {SHOW_UPDATE_IMPORT && (
+            <>
+              <button type="button" onClick={() => { setUpdMsg(""); setShowUpd(true); }} title="Cập nhật hàng loạt lô ĐÃ CÓ bằng Excel (xuất → sửa → nhập lại)"
+                style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "var(--ink-2)", background: "#fff", border: "1px solid var(--line)", borderRadius: 10 }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
+                <i className="bi bi-pencil-square" style={{ color: "var(--accent)" }} /> Cập nhật lô
+              </button>
+              <input ref={updFileRef} type="file" accept=".xlsx,.xls" onChange={onUpdFile} style={{ display: "none" }} />
+            </>
+          )}
+          <button type="button" onClick={() => { setDeclMsg(""); setShowDecl(true); }} title="Cập nhật tờ khai hàng loạt — 1 lô có thể nhiều tờ khai, mỗi tờ khai một phí mở"
             style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "var(--ink-2)", background: "#fff", border: "1px solid var(--line)", borderRadius: 10 }}
             onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
-            <i className="bi bi-pencil-square" style={{ color: "var(--accent)" }} /> Cập nhật lô
+            <i className="bi bi-file-earmark-text" style={{ color: "var(--accent)" }} /> Cập nhật tờ khai
           </button>
-          <input ref={updFileRef} type="file" accept=".xlsx,.xls" onChange={onUpdFile} style={{ display: "none" }} />
+          <input ref={declFileRef} type="file" accept=".xlsx,.xls" onChange={onDeclFile} style={{ display: "none" }} />
           <div style={{ position: "relative" }}>
             <button type="button" onClick={() => setShowExport((v) => !v)} title="Xuất danh sách lô hàng ra Excel"
               style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer", color: "#fff", background: "var(--good)", border: "none", borderRadius: 10, boxShadow: "0 1px 2px rgba(31,138,91,.45)", transition: "background .12s" }}
@@ -850,7 +1025,9 @@ function ShipmentsApp() {
                       </div>
                     )}
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
-                      <span className="tnum" style={{ fontSize: 14.5, fontWeight: 700, color: "var(--ink)" }}>{s.contNo || "—"}</span>
+                      {String(s.contNo || "").trim()
+                        ? <span className="tnum" style={{ fontSize: 14.5, fontWeight: 700, color: "var(--ink)" }}>{s.contNo}</span>
+                        : <FillContBtn ship={s} />}
                       <span className="tnum" style={{ fontSize: 12, color: "var(--ink-4)" }}>{s.contType}{s.kho ? " · " + s.kho : ""}</span>
                       <InvChip value={s.inv} />
                     </div>
@@ -937,7 +1114,9 @@ function ShipmentsApp() {
                           </>
                         ) : (
                           <>
-                            <div style={{ fontWeight: 700, fontSize: 14.5, color: "var(--ink)" }} className="tnum">{s.contNo || "—"}</div>
+                            {String(s.contNo || "").trim()
+                              ? <div style={{ fontWeight: 700, fontSize: 14.5, color: "var(--ink)" }} className="tnum">{s.contNo}</div>
+                              : <FillContBtn ship={s} />}
                             <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 2 }} className="tnum">{s.contType}{s.kho ? " · " + s.kho : ""}</div>
                             {s.inv && <div style={{ marginTop: 4 }}><InvChip value={s.inv} /></div>}
                             {(() => { const out = !!(s.gioXeRa && s.gioXeRa.trim()); return (
@@ -1095,6 +1274,57 @@ function ShipmentsApp() {
 
       {active && modal.type === "cost" && <CostPopup ship={active} patch={(np) => patch(active.id, np)} onSave={() => commitDirty()} isDirty={isDirty} onClose={() => setModal(null)} cfg={cfg} addCfg={addCfg} tagOptions={tagOptions} />}
       {active && modal.type === "info" && <InfoPopup ship={active} isHph={isHph} patch={(np) => patch(active.id, np)} patchOther={(id, np) => patch(id, np)} onSave={() => commitDirty()} isDirty={isDirty} siblings={sibs.filter((x) => x.id !== active.id)} onClose={closeInfo} onDelete={active._new ? null : () => delShip(active.id)} canDelete={T.canDelete} cfg={cfg} addCfg={addCfg} tagOptions={tagOptions} />}
+
+      {/* Popup ĐIỀN SỐ CONT cho cả booking — mỗi lô 1 ô, dán cả cột Excel vào 1 ô là rải hết */}
+      {contFill && (
+        <Modal title={`Điền số cont · ${contFill.booking}`} subtitle={`${contFill.customer || ""}${contFill.rows.length ? ` · ${contFill.rows.length} lô cùng booking` : ""} — dán cả cột số cont vào ô đầu là tự rải xuống các ô dưới`} width={520} icon={<I.truck />}
+          onClose={() => setContFill(null)}
+          footer={
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: contDupes.size ? "var(--danger)" : (contReused.length ? "#9a6700" : "var(--ink-4)") }}>
+                {contDupes.size ? `Số cont bị trùng trong danh sách: ${[...contDupes].join(", ")}`
+                  : contReused.length ? `Đã có lô khác dùng số cont: ${contReused.join(", ")} — vẫn lưu được`
+                  : (contFill.err || "Ô để trống = giữ nguyên lô đó chưa có cont")}
+              </span>
+              <div style={{ display: "flex", gap: 10 }}>
+                <Btn onClick={() => setContFill(null)}>Hủy</Btn>
+                <Btn variant="primary" onClick={saveContFill} disabled={contFill.loading || contFill.busy || !contFill.rows.length || contDupes.size > 0}>
+                  {contFill.busy ? "Đang lưu…" : `Lưu ${contFill.rows.length} lô`}
+                </Btn>
+              </div>
+            </div>
+          }>
+          <div style={{ padding: "12px 0 4px" }}>
+            {contFill.loading
+              ? <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 30, color: "var(--ink-4)", fontSize: 13.5 }}><i className="bi bi-arrow-repeat" style={{ animation: "trk-spin 0.7s linear infinite" }} /> Đang tải lô của booking…</div>
+              : !contFill.rows.length
+                ? <div style={{ padding: "20px 2px", fontSize: 13, color: "var(--ink-4)" }}>Không tìm thấy lô nào của booking này.</div>
+                : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: "52vh", overflowY: "auto" }}>
+                    {contFill.rows.map((r, i) => {
+                      const dup = contDupes.has(String(r.contNo || "").trim().toUpperCase());
+                      return (
+                        <div key={r.id} style={{ display: "grid", gridTemplateColumns: "26px 1fr 150px", gap: 10, alignItems: "center" }}>
+                          <span className="tnum" style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-4)" }}>{i + 1}.</span>
+                          <input value={r.contNo || ""} onChange={(e) => setContAt(i, e.target.value)} onPaste={onContPaste(i)}
+                            ref={(el) => { contRefs.current[i] = el; }}
+                            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); const nx = contRefs.current[i + 1]; if (nx) nx.focus(); else saveContFill(); } }}
+                            placeholder="TGHU1234567" className="tnum" autoFocus={i === 0}
+                            style={{ width: "100%", padding: "9px 11px", fontSize: 13.5, fontWeight: 600, borderRadius: 9, outline: "none", background: "#fff",
+                              border: "1px solid " + (dup ? "var(--danger)" : "var(--line)") }}
+                            onFocus={(e) => { if (!dup) e.target.style.borderColor = "var(--accent)"; }}
+                            onBlur={(e) => { e.target.style.borderColor = dup ? "var(--danger)" : "var(--line)"; }} />
+                          <span style={{ fontSize: 11.5, color: "var(--ink-4)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={`#${r.id}`}>
+                            {r.io || "—"}{r.contType ? " · " + r.contType : ""}{r.kho ? " · " + r.kho : ""}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+          </div>
+        </Modal>
+      )}
 
       {/* Popup THAO TÁC HÀNG LOẠT — tạm thời chỉ Nơi hạ (cảng) + Nơi hạ sà lan */}
       {showBulk && (
@@ -1391,6 +1621,14 @@ function ShipmentsApp() {
         const changes = (updCheck && updCheck.changes) || [];
         const cells = changes.reduce((a, c) => a + c.cells.length, 0);
         const warns = (updCheck && updCheck.warnings) || [];
+        // Backend gửi ngày/giờ dạng ISO (dùng để so sánh) — hiển thị phải là dd/mm/yyyy kiểu VN.
+        const fmtCell = (v) => {
+          const s = String(v == null ? "" : v);
+          const dt = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2})$/.exec(s);
+          if (dt) return `${dt[3]}/${dt[2]}/${dt[1]} ${dt[4]}`;
+          const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+          return d ? `${d[3]}/${d[2]}/${d[1]}` : s;
+        };
         return (
         <Modal title="Cập nhật lô từ Excel" subtitle="Sửa hàng loạt lô ĐÃ CÓ (không tạo lô mới). Xuất file kèm cột ID → sửa ô cần đổi → nhập lại · ô TRỐNG = giữ nguyên, gõ -- để xóa · xem trước từng ô cũ → mới · 1 dòng lỗi là không ghi gì cả" width={860} icon={<I.truck />}
           onClose={() => setShowUpd(false)}
@@ -1410,11 +1648,22 @@ function ShipmentsApp() {
             </div>
           }>
           <div style={{ padding: "12px 0 4px" }}>
+            {/* Xuất theo phạm vi để file không bị phình vì lô không cần sửa */}
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 12, color: "var(--ink-3)", fontWeight: 600 }}>Xuất để cập nhật:</span>
+              {[
+                { k: "view", label: "Theo bộ lọc đang xem", title: "Đúng danh sách + bộ lọc bạn đang mở ở trang Lô hàng" },
+                { k: "notout", label: `Chỉ lô chưa ra${filterCounts.notout ? " (" + filterCounts.notout + ")" : ""}`, title: "Cont chưa có Giờ xe ra — nhóm hay phải điền giờ/BKS nhất" },
+                { k: "all", label: `Tất cả${filterCounts.all ? " (" + filterCounts.all + ")" : ""}`, title: "Toàn bộ lô của sheet đang xem" },
+              ].map((o) => (
+                <button key={o.k} type="button" title={o.title} onClick={() => exportForUpdate(o.k)} disabled={exporting}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", fontSize: 12.5, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--ink-2)", cursor: exporting ? "default" : "pointer" }}>
+                  <i className="bi bi-download" /> {o.label}
+                </button>
+              ))}
+              {exporting && <span style={{ fontSize: 12, color: "var(--ink-4)" }}>Đang xuất…</span>}
+            </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
-              <button type="button" onClick={exportForUpdate} disabled={exporting}
-                style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--ink-2)", cursor: exporting ? "default" : "pointer" }}>
-                <i className="bi bi-download" /> {exporting ? "Đang xuất…" : "Xuất để cập nhật"}
-              </button>
               <button type="button" onClick={() => updFileRef.current && updFileRef.current.click()}
                 style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13, fontWeight: 600, border: "none", borderRadius: 9, background: "var(--accent)", color: "#fff", cursor: "pointer" }}>
                 <i className="bi bi-file-earmark-arrow-up" /> {updWb ? "Chọn file khác" : "Chọn file"}
@@ -1476,8 +1725,8 @@ function ShipmentsApp() {
                             <div className="tnum" style={{ fontSize: 11, color: "var(--ink-4)" }}>{ch.contNo || ch.booking || ""}</div>
                           </td>}
                           <td style={{ padding: "6px 11px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)", fontWeight: 600, whiteSpace: "nowrap" }}>{c.label}</td>
-                          <td style={{ padding: "6px 11px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-4)", textDecoration: c.old ? "line-through" : "none" }}>{c.old || "(trống)"}</td>
-                          <td style={{ padding: "6px 11px", borderBottom: "1px solid var(--line-2)", color: c.new ? "var(--good)" : "var(--danger)", fontWeight: 600 }}>{c.new || "(xóa)"}</td>
+                          <td style={{ padding: "6px 11px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-4)", textDecoration: c.old ? "line-through" : "none" }}>{fmtCell(c.old) || "(trống)"}</td>
+                          <td style={{ padding: "6px 11px", borderBottom: "1px solid var(--line-2)", color: c.new ? "var(--good)" : "var(--danger)", fontWeight: 600 }}>{fmtCell(c.new) || "(xóa)"}</td>
                         </tr>
                       )))}
                     </tbody>
@@ -1522,6 +1771,133 @@ function ShipmentsApp() {
             )}
 
             {updMsg && <div style={{ fontSize: 12.5, fontWeight: 600, marginTop: 10, color: updMsg.startsWith("Đã cập nhật") ? "var(--good)" : "var(--danger)" }}>{updMsg}</div>}
+          </div>
+        </Modal>
+        );
+      })()}
+
+      {showDecl && (() => {
+        const changes = (declCheck && declCheck.changes) || [];
+        return (
+        <Modal title="Cập nhật tờ khai từ Excel" subtitle="1 lô có thể NHIỀU tờ khai, mỗi tờ khai một phí mở. Mỗi tờ khai là 1 DÒNG (lặp lại ID lô) · thêm dòng = thêm tờ khai, xóa dòng = bỏ tờ khai · xem trước rồi mới ghi" width={860} icon={<I.truck />}
+          onClose={() => setShowDecl(false)}
+          footer={
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <div style={{ fontSize: 12.5, color: declCheck ? (declCheck.valid ? "var(--good)" : "var(--danger)") : "var(--ink-3)", fontWeight: declCheck ? 600 : 400 }}>
+                {declCheck
+                  ? (declCheck.valid
+                      ? `✓ ${changes.length} lô đổi tờ khai` + (declCheck.noChange ? ` · ${declCheck.noChange} lô không đổi` : "")
+                      : `${declCheck.errors.length} dòng lỗi — chưa cập nhật gì`)
+                  : (declWb ? "Đã chọn file — bấm Kiểm tra" : "Xuất file để sửa, hoặc chọn file có sẵn")}
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <Btn onClick={() => setShowDecl(false)}>Đóng</Btn>
+                {declCheck && declCheck.valid && changes.length > 0 && <Btn variant="primary" onClick={doDeclImport}>{declBusy ? "Đang cập nhật…" : `Cập nhật ${changes.length} lô`}</Btn>}
+              </div>
+            </div>
+          }>
+          <div style={{ padding: "12px 0 4px" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 12, color: "var(--ink-3)", fontWeight: 600 }}>Xuất tờ khai:</span>
+              {[{ k: "view", label: "Theo bộ lọc đang xem" }, { k: "all", label: `Tất cả${filterCounts.all ? " (" + filterCounts.all + ")" : ""}` }].map((o) => (
+                <button key={o.k} type="button" onClick={() => exportDeclarations(o.k)} disabled={exporting}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", fontSize: 12.5, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--ink-2)", cursor: exporting ? "default" : "pointer" }}>
+                  <i className="bi bi-download" /> {o.label}
+                </button>
+              ))}
+              <button type="button" onClick={() => declFileRef.current && declFileRef.current.click()}
+                style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 13px", fontSize: 12.5, fontWeight: 600, border: "none", borderRadius: 9, background: "var(--accent)", color: "#fff", cursor: "pointer" }}>
+                <i className="bi bi-file-earmark-arrow-up" /> {declWb ? "Chọn file khác" : "Chọn file"}
+              </button>
+              {exporting && <span style={{ fontSize: 12, color: "var(--ink-4)" }}>Đang xuất…</span>}
+            </div>
+            <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginBottom: 14, lineHeight: 1.6 }}>
+              File có sẵn mỗi lô 1 dòng (lô chưa có tờ khai để trống 2 ô cuối). Lô nhiều tờ khai thì <b>lặp lại ID LÔ</b> ở nhiều dòng.
+              Xóa hết tờ khai của 1 lô: để lại 1 dòng và gõ <b>--</b> ở ô Số tờ khai. Tổng phí tự vào chi phí lô ở khoản <b>Phí mở tờ khai</b>.
+            </div>
+
+            {declWb && (
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-end", marginBottom: 14 }}>
+                <label style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>Sheet cần đọc</div>
+                  <div style={{ position: "relative" }}>
+                    <select value={declSheet} onChange={(e) => { setDeclSheet(e.target.value); setDeclCheck(null); }}
+                      style={{ width: "100%", appearance: "none", WebkitAppearance: "none", padding: "9px 28px 9px 11px", fontSize: 13.5, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 10, background: "#fff", cursor: "pointer" }}>
+                      {declWb.names.map((n) => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                    <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: "var(--ink-3)", pointerEvents: "none" }}><I.chev /></span>
+                  </div>
+                </label>
+                <Btn onClick={doDeclCheck}>{declBusy && !declCheck ? "Đang kiểm tra…" : "Kiểm tra dữ liệu"}</Btn>
+              </div>
+            )}
+
+            {declCheck && declCheck.valid && changes.length > 0 && (
+              <div style={{ border: "1px solid #bfe4d1", borderRadius: 10, overflow: "hidden" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--good)", padding: "10px 13px", background: "var(--good-weak)", borderBottom: "1px solid #bfe4d1" }}>
+                  <i className="bi bi-check-circle-fill" /> {changes.length} lô sẽ đổi danh sách tờ khai
+                </div>
+                <div style={{ maxHeight: "42vh", overflow: "auto", overscrollBehavior: "contain" }}>
+                  <table style={{ borderCollapse: "collapse", fontSize: 12.5, width: "100%", minWidth: 620 }}>
+                    <thead>
+                      <tr>
+                        {["Lô", "Tờ khai hiện tại", "Sau khi cập nhật"].map((h, i) => (
+                          <th key={i} style={{ textAlign: "left", padding: "7px 11px", fontSize: 10.5, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.03em", borderBottom: "1px solid var(--line)", position: "sticky", top: 0, background: "#fafbfc", whiteSpace: "nowrap", zIndex: 1 }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {changes.map((ch) => (
+                        <tr key={ch.id}>
+                          <td style={{ padding: "6px 11px", borderBottom: "1px solid var(--line-2)", whiteSpace: "nowrap", verticalAlign: "top" }}>
+                            <div className="tnum" style={{ fontWeight: 700, color: "var(--ink)" }}>#{ch.id}</div>
+                            <div className="tnum" style={{ fontSize: 11, color: "var(--ink-4)" }}>{ch.contNo || ch.booking || ""}</div>
+                          </td>
+                          <td style={{ padding: "6px 11px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-4)" }}>{(ch.cells[0] || {}).old || "(chưa có)"}</td>
+                          <td style={{ padding: "6px 11px", borderBottom: "1px solid var(--line-2)", color: (ch.cells[0] || {}).new ? "var(--good)" : "var(--danger)", fontWeight: 600 }}>{(ch.cells[0] || {}).new || "(xóa hết)"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {declCheck && declCheck.valid && changes.length === 0 && (
+              <div style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "12px 13px", fontSize: 12.5, color: "var(--ink-3)" }}>
+                File hợp lệ nhưng <b>không lô nào đổi tờ khai</b> ({declCheck.total} lô đã đọc).
+              </div>
+            )}
+
+            {declCheck && !declCheck.valid && (
+              <div style={{ border: "1px solid #f3c9c9", borderRadius: 10, overflow: "hidden" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--danger)", padding: "10px 13px", background: "#fef6f6", borderBottom: "1px solid #f3c9c9" }}>
+                  <i className="bi bi-exclamation-triangle-fill" /> {declCheck.errors.length} dòng lỗi — sửa file rồi Kiểm tra lại. Chưa cập nhật gì cả.
+                </div>
+                <div style={{ maxHeight: "42vh", overflowY: "auto", overscrollBehavior: "contain" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                    <thead>
+                      <tr style={{ background: "#fafbfc" }}>
+                        {["Dòng", "ID lô", "Lý do"].map((h, i) => (
+                          <th key={i} style={{ textAlign: "left", padding: "7px 12px", fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "1px solid var(--line)", position: "sticky", top: 0, background: "#fafbfc", whiteSpace: "nowrap" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {declCheck.errors.map((er, i) => (
+                        <tr key={i}>
+                          <td className="tnum" style={{ padding: "7px 12px", borderBottom: "1px solid var(--line-2)", fontWeight: 600, color: "var(--ink-2)" }}>{er.line}</td>
+                          <td className="tnum" style={{ padding: "7px 12px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{er.id || "—"}</td>
+                          <td style={{ padding: "7px 12px", borderBottom: "1px solid var(--line-2)", color: "var(--danger)" }}>{(er.reasons || []).join("; ")}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {declMsg && <div style={{ fontSize: 12.5, fontWeight: 600, marginTop: 10, color: declMsg.startsWith("Đã cập nhật") || declMsg.startsWith("Đã xuất") ? "var(--good)" : "var(--danger)" }}>{declMsg}</div>}
           </div>
         </Modal>
         );

@@ -317,6 +317,7 @@ trait HandlesPricingAndImport
             $nameMap  = $cfg[$coded] ?? [];                  // map tên→mã (tương thích bản cũ)
             $addrArr  = $key === 'warehouses' ? ($cfg['warehouseAddrArr'] ?? null) : null;   // Kho có thêm Địa chỉ
             $geoArr   = $key === 'warehouses' ? ($cfg['warehouseGeoArr'] ?? null) : null;    // Kho có thêm Tọa độ "lat,lng"
+            $noteArr  = $key === 'warehouses' ? ($cfg['warehouseNoteArr'] ?? null) : null;   // Kho có thêm Ghi chú (địa chỉ đóng hàng)
             $keepIds = [];
             $sort = 0;
             foreach ($rawNames as $i => $rawName) {
@@ -326,6 +327,7 @@ trait HandlesPricingAndImport
                 $attrs = ['name' => $name, 'code' => ($code !== '' ? $code : null), 'sort' => $sort];
                 if ($addrArr !== null) $attrs['address'] = (trim((string) ($addrArr[$i] ?? '')) ?: null);
                 if ($geoArr !== null) { [$lat, $lng] = $this->parseLatLng($geoArr[$i] ?? ''); $attrs['lat'] = $lat; $attrs['lng'] = $lng; }
+                if ($noteArr !== null) $attrs['note'] = (trim((string) ($noteArr[$i] ?? '')) ?: null);
                 // Ưu tiên KHỚP THEO ID (dòng đã có sẵn) → cho phép SỬA mã mà không đứt link.
                 // Có idArr (payload mới, authoritative): id rỗng = dòng MỚI → LUÔN tạo mới, KHÔNG gộp theo mã
                 // → cho phép NHIỀU TÊN dùng chung 1 ký hiệu (vd: Địa điểm). Không có idArr (payload cũ):
@@ -721,12 +723,12 @@ trait HandlesPricingAndImport
             $hit = $this->resolveLocationName($t, $skip, '');
             return $hit === false ? $v : $hit;
         };
-        // Chuẩn hóa cột KHO: mỗi đoạn về ký hiệu chuẩn của danh mục Kho, nối " → " (giữ tuyến).
+        // Chuẩn hóa cột KHO: mỗi đoạn về ký hiệu chuẩn của danh mục Kho, nối ", " (giữ tuyến).
         $whMap = $this->warehouseCodeMap();
         $normKho = function ($v) use ($whMap) {
             $segs = $this->khoSegments((string) $v);
             if (! $segs) return $this->str($v);
-            return implode(' → ', array_map(fn ($s) => $whMap[mb_strtolower($s)] ?? $s, $segs));
+            return implode(', ', array_map(fn ($s) => $whMap[mb_strtolower($s)] ?? $s, $segs));
         };
 
         return DB::transaction(function () use ($sheet, $rows, $vat, $norm, $normKho) {

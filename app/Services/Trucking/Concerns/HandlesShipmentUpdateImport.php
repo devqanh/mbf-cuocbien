@@ -36,38 +36,46 @@ trait HandlesShipmentUpdateImport
         return [
             'gioXeDen'     => ['Giờ xe đến', 'datetime'],
             'gioXeRa'      => ['Giờ xe ra', 'datetime'],
+            // Giờ xe (đầu kéo) ra — CHỈ có hiệu lực cho Free time khi lô ở kiểu "không kéo cont ra".
+            'gioXeRaXe'    => ['Giờ xe ra (xe)', 'datetime'],
             'gioDenDuKien' => ['Giờ đến dự kiến', 'datetime'],
-            'bksVao'       => ['Biển số vào', 'text'],
-            'bksRa'        => ['Biển số ra', 'text'],
+            'io'           => ['Nhập/Xuất', 'io'],
+            'contDen'      => ['Ngày cont đến', 'date'],
+            'sailDate'     => ['Ngày tàu chạy', 'date'],
+            // Biển số phải khớp danh mục Xe: recompute map vehicle_id bằng so khớp CHUỖI CHÍNH XÁC
+            // (TruckingVehicle::where('plate', …)) — gõ sai là lô mất liên kết xe, báo cáo hụt.
+            'bksVao'       => ['Biển số vào', 'plate'],
+            'bksRa'        => ['Biển số ra', 'plate'],
             'contNo'       => ['Số cont', 'text'],
             'contType'     => ['Loại cont', 'contType'],
-            'declNo'       => ['Số tờ khai', 'text'],
             'inv'          => ['Invoice', 'text'],
             'from'         => ['Nơi lấy', 'location'],
             'to'           => ['Nơi hạ', 'location'],
             'kho'          => ['Kho', 'kho'],
             'bargeDrop'    => ['Nơi hạ sà lan', 'bargeDrop'],
-            'cutOff'       => ['Cắt máng', 'datetime'],   // 364/364 lô đang lưu đúng dạng ISO → kiểm định dạng được
-            'driver'       => ['Tài xế', 'text'],
             'extVendor'    => ['Nhà xe ngoài', 'extVendor'],
-            'ghiChu'       => ['Ghi chú', 'text'],
+            'infoNote'     => ['Ghi chú', 'text'],
         ];
+        // Ngoài danh sách trên còn 2 nhóm xử lý RIÊNG (không map 1-1 với 1 cột DB):
+        //  - Tờ khai: 2 cột song song SỐ TỜ KHAI / PHÍ TỜ KHAI → cột JSON declarations.
+        //  - Cước xe ngoài: ghi vào DÒNG CHI PHÍ src=extTruck, ext_fee tự chốt lại.
     }
 
     /** Cột DB tương ứng để đọc giá trị CŨ (dựng diff). */
     private function updatableFieldColumns(): array
     {
         return [
-            'gioXeDen' => 'gio_xe_den', 'gioXeRa' => 'gio_xe_ra', 'gioDenDuKien' => 'gio_den_du_kien',
+            'gioXeDen' => 'gio_xe_den', 'gioXeRa' => 'gio_xe_ra', 'gioXeRaXe' => 'gio_xe_ra_xe',
+            'gioDenDuKien' => 'gio_den_du_kien', 'io' => 'io', 'contDen' => 'cont_den', 'sailDate' => 'sail_date',
             'bksVao' => 'bks_vao', 'bksRa' => 'bks_ra', 'contNo' => 'cont_no', 'contType' => 'cont_type',
-            'declNo' => 'declaration_no', 'inv' => 'inv', 'from' => 'from_loc', 'to' => 'to_loc',
-            'kho' => 'kho', 'bargeDrop' => 'barge_drop', 'cutOff' => 'cut_off', 'driver' => 'driver',
-            'extVendor' => 'ext_vendor', 'ghiChu' => 'ghi_chu',
+            'inv' => 'inv', 'from' => 'from_loc', 'to' => 'to_loc',
+            'kho' => 'kho', 'bargeDrop' => 'barge_drop',
+            'extVendor' => 'ext_vendor', 'infoNote' => 'info_note',
         ];
     }
 
     /** Field ảnh hưởng SỐ TIỀN của bảng kê (đổi khi lô đã lên bảng kê → cảnh báo mạnh). */
-    private const MONEY_FIELDS = ['gioXeRa', 'from', 'to', 'kho', 'contType', 'bargeDrop'];
+    private const MONEY_FIELDS = ['gioXeRa', 'from', 'to', 'kho', 'contType', 'bargeDrop', 'declarations'];
 
     /** Dry-run: kiểm tra + dựng diff, KHÔNG ghi DB. */
     public function validateShipmentUpdate(string $sheet, array $rows): array
@@ -93,11 +101,11 @@ trait HandlesShipmentUpdateImport
             foreach ($plans as $p) {
                 /** @var TruckingShipment $s */
                 $s = $p['ship'];
-                // ghi_chu thuộc nhóm 'rev' của saveShipment — nhóm đó XÓA-TẠO LẠI doanh thu/thanh toán,
-                // nên gán thẳng vào model (save() bên trong saveShipment sẽ ghi luôn), không bật $only='rev'.
-                if (array_key_exists('ghiChu', $p['patch'])) $s->ghi_chu = $p['patch']['ghiChu'];
-                $only = array_values(array_diff(array_keys($p['patch']), ['ghiChu']));
+                // Cước xe ngoài nằm ở DÒNG CHI PHÍ, không phải cột → tách ra ghi riêng sau khi lưu lô.
+                $extFee = $p['patch']['extFee'] ?? null;
+                $only = array_values(array_diff(array_keys($p['patch']), ['extFee']));
                 $this->saveShipment($p['patch'], $sheet, $s, $only);
+                if ($extFee !== null) $this->applyExtTruckFee($s, (int) $extFee);
                 $updated++;
                 $cells += count($p['cells']);
             }
@@ -159,6 +167,10 @@ trait HandlesShipmentUpdateImport
                 $cells[] = ['field' => $f, 'label' => $label, 'old' => $old, 'new' => $new];
             }
 
+            // 2 nhóm không map 1-1 với cột DB, xử lý sau vòng lặp trên.
+            $this->collectDeclarationChange($s, $row, $patch, $cells, $reasons);
+            $this->collectExtFeeChange($s, $row, $patch, $cells, $reasons);
+
             if ($reasons) { $errors[] = $this->updateError($line, $row, $reasons, $s); continue; }
             if (! $cells) { $noChange++; continue; }
 
@@ -169,10 +181,30 @@ trait HandlesShipmentUpdateImport
             if (isset($inStatement[$s->id])) {
                 $money = array_intersect(array_column($cells, 'field'), self::MONEY_FIELDS);
                 $warnings[] = ['line' => $line, 'id' => $s->id, 'text' => 'Lô đã nằm trong bảng kê ' . $inStatement[$s->id]
-                    . ($money ? ' — sửa ' . implode(', ', array_map(fn ($f) => $fields[$f][0], $money)) . ' làm lệch số đã chốt, vào Bảng kê bấm Tính lại' : '')];
+                    . ($money ? ' — sửa ' . implode(', ', array_map(fn ($f) => $fields[$f][0] ?? 'Tờ khai', $money)) . ' làm lệch số đã chốt, vào Bảng kê bấm Tính lại' : '')];
             }
             if (isset($patch['contNo']) && $this->contNoTakenBy($sheet, $patch['contNo'], $s->id)) {
                 $warnings[] = ['line' => $line, 'id' => $s->id, 'text' => "Số cont “{$patch['contNo']}” đang trùng với lô khác"];
+            }
+            // Giờ ra điền vào ô KHÔNG có hiệu lực cho Free time (do kiểu giờ ra của lô) → phải nói rõ,
+            // nếu không người dùng tưởng đã cập nhật xong mà Free time không hề đổi.
+            $raMode = $s->ra_mode ?? 'self';
+            if (isset($patch['gioXeRa']) && $raMode !== 'self') {
+                if ($raMode === 'other') {
+                    // Chỉ ĐÍCH DANH lô phải sửa: free time của lô này follow giờ ra của cont kia,
+                    // mà cont kia cũng là 1 lô có ID → sửa ngay ở dòng của nó trong file này.
+                    $o = $s->raOther;
+                    $who = $o ? ('lô #' . $o->id . ($o->cont_no ? ' (cont ' . $o->cont_no . ')' : '')) : 'cont khác (chưa chọn cont nào)';
+                    $warnings[] = ['line' => $line, 'id' => $s->id, 'text' => 'Lô ở kiểu “Cắt móc — cont khác ra”: Free time follow ' . $who
+                        . ' — Giờ xe ra vừa nhập chỉ là giờ ra riêng của cont này, KHÔNG đổi Free time. Muốn đổi Free time thì sửa GIỜ XE RA ở dòng của ' . $who];
+                } else {
+                    $warnings[] = ['line' => $line, 'id' => $s->id,
+                        'text' => 'Lô ở kiểu “Cắt móc — không kéo ra” — Free time lấy cột GIỜ XE RA (XE), không lấy ô này'];
+                }
+            }
+            if (isset($patch['gioXeRaXe']) && $raMode !== 'none') {
+                $warnings[] = ['line' => $line, 'id' => $s->id,
+                    'text' => 'Giờ xe ra (xe) chỉ có tác dụng khi lô ở kiểu “Cắt móc — không kéo ra” — lô này đang ở kiểu khác nên Free time không đổi'];
             }
             // Giờ ra sớm hơn giờ đến: CẢNH BÁO, không chặn — 4% lô thật đang vậy, chủ yếu do
             // ra_mode='other' (giờ ra hiệu lực nằm ở cont khác). Chỉ nhắc khi người dùng động vào 2 ô này.
@@ -180,7 +212,7 @@ trait HandlesShipmentUpdateImport
                 $den = $patch['gioXeDen'] ?? $this->outDateTime($s->gio_xe_den);
                 $ra  = $patch['gioXeRa']  ?? $this->outDateTime($s->gio_xe_ra);
                 if ($den && $ra && $ra < $den) {
-                    $warnings[] = ['line' => $line, 'id' => $s->id, 'text' => "Giờ xe ra ({$ra}) sớm hơn Giờ xe đến ({$den})"
+                    $warnings[] = ['line' => $line, 'id' => $s->id, 'text' => 'Giờ xe ra (' . $this->dtVn($ra) . ') sớm hơn Giờ xe đến (' . $this->dtVn($den) . ')'
                         . (($s->ra_mode ?? 'self') !== 'self' ? ' — lô này lấy giờ ra từ cont khác nên có thể bình thường' : ' — kiểm tra lại nếu nhập nhầm')];
                 }
             }
@@ -195,6 +227,100 @@ trait HandlesShipmentUpdateImport
             'noChange' => $noChange,
             '_plans'   => $plans,
         ];
+    }
+
+    /**
+     * Ghi cước thuê xe ngoài = 1 dòng chi phí src=extTruck (tạo / sửa / xóa), KHÔNG đụng khoản khác.
+     * ext_fee tự chốt lại qua recompute nên Bảng kê xe ngoài query được ngay.
+     */
+    private function applyExtTruckFee(TruckingShipment $s, int $fee): void
+    {
+        $line = $s->costLines()->where('src', 'extTruck')->orderBy('sort')->first();
+        if ($fee <= 0) {
+            if ($line) $line->delete();
+        } elseif ($line) {
+            $line->fill(['amount' => $fee])->save();
+        } else {
+            $item = \App\Models\TruckingCostItem::where('name', 'Cước xe ngoài')->first();
+            $s->costLines()->create([
+                'item'         => 'Cước xe ngoài',
+                'amount'       => $fee,
+                'src'          => 'extTruck',
+                'payer'        => 'Xe ngoài',
+                'vat'          => $item?->vat ?? 0,
+                'color'        => $item?->color,
+                'cost_item_id' => $item?->id,
+                'billable'     => false,
+                'sort'         => (int) $s->costLines()->max('sort') + 1,
+            ]);
+        }
+        $s->unsetRelation('costLines');
+        $this->recomputeShipmentDerived($s, ['cost']);
+    }
+
+    /**
+     * TỜ KHAI — luồng RIÊNG ("Cập nhật tờ khai"): mỗi tờ khai 1 dòng Excel, frontend gom theo lô
+     * thành values.declPairs = [{no, fee}] → cột JSON declarations. Mảng rỗng = xóa hết tờ khai.
+     * File "Cập nhật lô" KHÔNG có cột tờ khai nên không bao giờ đụng vào đây.
+     */
+    private function collectDeclarationChange(TruckingShipment $s, array $row, array &$patch, array &$cells, array &$reasons): void
+    {
+        $vals = $row['values'] ?? [];
+        $old  = $this->declListLabel((array) ($s->declarations ?? []));
+
+        if (! array_key_exists('declPairs', $vals) || ! is_array($vals['declPairs'])) return;   // file lô hàng không đụng tờ khai
+
+        $list = []; $seen = [];
+        foreach ($vals['declPairs'] as $p) {
+            $no = trim((string) ($p['no'] ?? ''));
+            if ($no === '') continue;
+            if (isset($seen[mb_strtolower($no)])) { $reasons[] = "Số tờ khai “{$no}” bị lặp ở 2 dòng của cùng lô"; return; }
+            $seen[mb_strtolower($no)] = true;
+            $list[] = ['no' => $no, 'fee' => (int) preg_replace('/[^\d]/', '', (string) ($p['fee'] ?? ''))];
+        }
+
+        $new = $this->declListLabel($list);
+        if ($new === $old) return;
+
+        $patch['declarations'] = $list;   // mảng rỗng = xóa hết tờ khai của lô
+        $cells[] = ['field' => 'declarations', 'label' => 'Tờ khai', 'old' => $old ?: '(chưa có)', 'new' => $new];
+    }
+
+    /** "103456789012 (250.000đ), 103456789013" — chuỗi so sánh + hiển thị diff cho tờ khai. */
+    private function declListLabel(array $list): string
+    {
+        return implode(', ', array_map(function ($d) {
+            $fee = (int) round((float) ($d['fee'] ?? 0));
+            return trim((string) ($d['no'] ?? '')) . ($fee > 0 ? ' (' . number_format($fee, 0, ',', '.') . 'đ)' : '');
+        }, $list));
+    }
+
+    /**
+     * CƯỚC XE NGOÀI — không phải cột: ext_fee được chốt từ DÒNG CHI PHÍ src=extTruck.
+     * Nên cột này ghi vào đúng dòng đó (các khoản chi phí khác của lô không bị đụng).
+     * Bắt buộc có Nhà xe ngoài (giống quy tắc lưu ở popup). '--' hoặc 0 = xóa dòng cước.
+     */
+    private function collectExtFeeChange(TruckingShipment $s, array $row, array &$patch, array &$cells, array &$reasons): void
+    {
+        $raw = $row['values']['extFee'] ?? null;
+        if ($raw === null || trim((string) $raw) === '') return;
+
+        $clear = trim((string) $raw) === self::CLEAR_TOKEN;
+        $new   = $clear ? 0 : (int) preg_replace('/[^\d]/', '', (string) $raw);
+        $old   = (int) round((float) $s->ext_fee);
+        if ($new === $old) return;
+
+        // Nhà xe ngoài: lấy giá trị SAU khi áp patch (file có thể vừa điền ở cột NHÀ XE NGOÀI).
+        $vendor = trim((string) ($patch['extVendor'] ?? $s->ext_vendor ?? ''));
+        if ($new > 0 && $vendor === '') {
+            $reasons[] = 'Có Cước xe ngoài nhưng lô chưa có Nhà xe ngoài — điền cột NHÀ XE NGOÀI';
+            return;
+        }
+
+        $patch['extFee'] = $new;
+        $cells[] = ['field' => 'extFee', 'label' => 'Cước xe ngoài',
+            'old' => $old > 0 ? number_format($old, 0, ',', '.') : '',
+            'new' => $new > 0 ? number_format($new, 0, ',', '.') : ''];
     }
 
     /** Chuẩn hóa + kiểm tra 1 ô. Trả giá trị đã chuẩn hóa (null = xóa), hoặc false nếu lỗi. */
@@ -212,6 +338,21 @@ trait HandlesShipmentUpdateImport
                 }
                 return $v;
 
+            case 'date':
+                if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $v)) {
+                    $reasons[] = "{$label} “{$rawShow}” sai định dạng (cần dd/mm/yyyy)";
+                    return false;
+                }
+                return $v;
+
+            case 'io':
+                $hit = $this->canonIo($v);
+                if (! in_array($hit, ['Nhập', 'Xuất', 'Khác'], true)) {
+                    $reasons[] = "{$label} “{$v}” không hợp lệ (chỉ nhận Nhập / Xuất / Khác)";
+                    return false;
+                }
+                return $hit;
+
             case 'location':
                 return $this->resolveLocationName($v, $reasons, $label);
 
@@ -224,7 +365,7 @@ trait HandlesShipmentUpdateImport
                     if (! isset($wh[mb_strtolower($seg)])) { $reasons[] = "Kho “{$seg}” chưa có trong danh mục Kho"; return false; }
                     $out[] = $wh[mb_strtolower($seg)];
                 }
-                return implode(' → ', $out);
+                return implode(', ', $out);
 
             case 'bargeDrop':
                 $u = mb_strtoupper($v);
@@ -241,9 +382,32 @@ trait HandlesShipmentUpdateImport
                 if (! $hit) { $reasons[] = "{$label} “{$v}” chưa có trong danh mục — thêm ở Cài đặt → Đơn vị xe ngoài rồi làm lại"; return false; }
                 return $hit;
 
+            case 'plate':
+                // Trả về ĐÚNG chuỗi biển số trong danh mục để vehicle_id luôn map được.
+                $hit = $this->plateIndex()[mb_strtolower($v)] ?? null;
+                if (! $hit) { $reasons[] = "{$label} “{$v}” chưa có trong danh mục Xe — thêm ở Quản lý xe rồi làm lại"; return false; }
+                return $hit;
+
             default:
                 return $v;
         }
+    }
+
+    /** ISO 'Y-m-dTH:i' / 'Y-m-d' → dd/mm/yyyy [HH:MM] cho thông báo người dùng đọc. */
+    private function dtVn(string $iso): string
+    {
+        if (preg_match('/^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2})$/', $iso, $m)) return "{$m[3]}/{$m[2]}/{$m[1]} {$m[4]}";
+        if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $iso, $m)) return "{$m[3]}/{$m[2]}/{$m[1]}";
+        return $iso;
+    }
+
+    /** @var array<string,string>|null lower(biển số) => biển số chuẩn trong danh mục Xe. */
+    private ?array $plateIndexCache = null;
+
+    private function plateIndex(): array
+    {
+        return $this->plateIndexCache ??= \App\Models\TruckingVehicle::whereNotNull('plate')->where('plate', '!=', '')
+            ->pluck('plate')->mapWithKeys(fn ($p) => [mb_strtolower(trim($p)) => trim($p)])->all();
     }
 
     /** Giá trị CŨ dạng chuỗi để so sánh/hiển thị diff (datetime về 'Y-m-dTH:i' như frontend gửi). */
@@ -251,7 +415,8 @@ trait HandlesShipmentUpdateImport
     {
         $v = $s->{$col};
         if ($v === null) return '';
-        if (in_array($col, ['gio_xe_den', 'gio_xe_ra', 'gio_den_du_kien'], true)) return (string) $this->outDateTime($v);
+        if (in_array($col, ['gio_xe_den', 'gio_xe_ra', 'gio_xe_ra_xe', 'gio_den_du_kien'], true)) return (string) $this->outDateTime($v);
+        if (in_array($col, ['cont_den', 'sail_date'], true)) return (string) $this->outDate($v);
         return trim((string) $v);
     }
 
@@ -267,8 +432,10 @@ trait HandlesShipmentUpdateImport
             ->map(fn ($r) => mb_strtoupper(trim((string) ($r['contNo'] ?? ''))))
             ->filter()->unique()->values();
 
-        $byId = $ids->isEmpty() ? collect() : TruckingShipment::ofSheet($sheet)->whereIn('id', $ids->all())->get()->keyBy('id');
-        $byCont = $conts->isEmpty() ? collect() : TruckingShipment::ofSheet($sheet)
+        // raOther: lô "cont khác ra" trỏ tới — cần để chỉ đúng lô phải sửa giờ ra (xem cảnh báo bên dưới).
+        $with = ['raOther:id,cont_no,booking'];
+        $byId = $ids->isEmpty() ? collect() : TruckingShipment::ofSheet($sheet)->with($with)->whereIn('id', $ids->all())->get()->keyBy('id');
+        $byCont = $conts->isEmpty() ? collect() : TruckingShipment::ofSheet($sheet)->with($with)
             ->whereIn(DB::raw('UPPER(cont_no)'), $conts->all())->get()
             ->groupBy(fn ($s) => mb_strtoupper(trim((string) $s->cont_no)));
 

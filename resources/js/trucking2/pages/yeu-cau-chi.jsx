@@ -109,7 +109,8 @@ function App() {
   const vehicles = B.vehicles || [];
   const assets = B.assets || [];
   const hasAssets = assets.length > 0;
-  const costItems = B.costItems || [];
+  const vehicleCostItems = B.costItems || [];
+  const assetCostItems = B.assetCostItems || [];
   const suppliers = B.suppliers || [];   // nhà cung cấp đã từng nhập (gợi ý select; gõ mới tự lưu)
   const auth = B.auth || {};
   const [tab, setTab] = useState("form");   // 'form' | 'history'
@@ -136,6 +137,7 @@ function App() {
   const [target, setTarget] = useState("vehicle");   // 'vehicle' | 'asset'
   const [vehicleId, setVehicleId] = useState(vehicles.length === 1 ? String(vehicles[0].id) : "");
   const isAsset = target === "asset";
+  const costItems = isAsset ? assetCostItems : vehicleCostItems;
   const targetOpts = isAsset
     ? assets.map((a) => ({ v: String(a.id), t: a.name + (a.code ? " · " + a.code : "") }))
     : vehicles.map((v) => ({ v: String(v.id), t: v.plate }));
@@ -252,7 +254,7 @@ function App() {
               {[["vehicle", "Xe", "bi-truck"], ["asset", "Tài sản", "bi-box-seam"]].map(([k, t, ic]) => {
                 const on = target === k;
                 return (
-                  <button key={k} type="button" onClick={() => { setTarget(k); setVehicleId(""); }}
+                  <button key={k} type="button" onClick={() => { setTarget(k); setVehicleId(""); setCostItem(""); }}
                     style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, border: "none", cursor: "pointer", fontSize: 14.5, fontWeight: 700, padding: "10px 12px", borderRadius: 9, background: on ? "#fff" : "transparent", color: on ? "#2a6fdb" : "#6b7585", boxShadow: on ? "0 1px 3px rgba(16,24,40,.12)" : "none" }}>
                     <i className={"bi " + ic} /> {t}
                   </button>
