@@ -368,9 +368,9 @@ trait HandlesShipmentUpdateImport
                 return implode(', ', $out);
 
             case 'bargeDrop':
-                $code = $this->resolveBargeDropCode($v);
-                if (! $code) { $reasons[] = $label . ' “' . $v . '” không khớp địa điểm nào có ký hiệu HPP hoặc LHP trong danh mục'; return false; }
-                return $code;
+                $name = $this->resolveBargeDropValue($v);
+                if (! $name) { $reasons[] = $label . ' “' . $v . '” không khớp địa điểm nào có ký hiệu HPP hoặc LHP trong danh mục'; return false; }
+                return $name;
 
             case 'contType':
                 $hit = TruckingContType::whereRaw('LOWER(name) = ?', [mb_strtolower($v)])->value('name');

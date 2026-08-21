@@ -556,6 +556,15 @@ trait HandlesPricingAndImport
      */
     private function resolveBargeDropCode(string $v): ?string
     {
+        return $this->resolveBargeDropValue($v, false);
+    }
+
+    /**
+     * Quy giá trị Nơi hạ sà lan — trả TÊN chuẩn (giữ tên địa điểm) hoặc CODE tùy $returnName.
+     * Nhập code (HPP) → giữ nguyên. Nhập tên (NAM ĐÌNH VŨ) → trả tên chuẩn từ DB.
+     */
+    private function resolveBargeDropValue(string $v, bool $returnName = true): ?string
+    {
         $key = mb_strtolower(trim($v));
         if ($key === '') return null;
 
@@ -564,10 +573,11 @@ trait HandlesPricingAndImport
         if (in_array($upper, ['HPP', 'LHP'], true)) return $upper;
 
         // Nhập tên địa điểm → tìm code của địa điểm đó
-        $loc = TruckingLocation::whereRaw('LOWER(name) = ?', [$key])->first(['code']);
+        $loc = TruckingLocation::whereRaw('LOWER(name) = ?', [$key])->first(['name', 'code']);
         if ($loc) {
             $code = strtoupper(trim((string) $loc->code));
-            return in_array($code, ['HPP', 'LHP'], true) ? $code : null;
+            if (! in_array($code, ['HPP', 'LHP'], true)) return null;
+            return $returnName ? trim((string) $loc->name) : $code;
         }
 
         return null;
@@ -766,7 +776,7 @@ trait HandlesPricingAndImport
                     'cutOff'       => $row['cutOff'] ?? null,
                     'from'         => $norm($row['from'] ?? null),
                     'to'           => $norm($row['to'] ?? null),
-                    'bargeDrop'    => $this->resolveBargeDropCode($row['bargeDrop'] ?? '') ?: null,
+                    'bargeDrop'    => $this->resolveBargeDropValue($row['bargeDrop'] ?? '') ?: null,
                     'kho'          => $normKho($row['kho'] ?? null),
                     'gioDenDuKien' => $row['gioDenDuKien'] ?? null,
                     'cost'         => ['items' => []],
