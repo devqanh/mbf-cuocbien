@@ -324,7 +324,7 @@ export function buildUpdateWb(list, c) {
   addSheet("Loại cont hợp lệ", (c.contTypes || []).map((n) => ({ "Loại cont": n })), ["Loại cont"], [16]);
   addSheet("Nhà xe ngoài hợp lệ", (c.extVendors || []).map((n) => ({ "Đơn vị xe ngoài": n })), ["Đơn vị xe ngoài"], [34]);
   addSheet("Biển số hợp lệ", (c.vehicles || []).map((n) => ({ "Biển số": n })), ["Biển số"], [18]);
-  addSheet("Sà lan hợp lệ", BARGE_DROPS.map((n) => ({ "Nơi hạ sà lan": n })), ["Nơi hạ sà lan"], [16]);
+  addSheet("Sà lan hợp lệ", (c.locations || []).filter((n) => BARGE_DROPS.includes(locCode[n])).map((n) => ({ "Tên địa điểm": n, "Ký hiệu": locCode[n] || "" })), ["Tên địa điểm", "Ký hiệu"], [22, 10]);
   return wb;
 }
 

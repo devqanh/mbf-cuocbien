@@ -18,9 +18,15 @@ const locOptions = (cfg) => (cfg.locations || []).map((n) => {
 });
 // Loại cont sà lan SUY TỪ Loại cont: reefer (RF/RHC) → NOR, còn lại → DRY (vd 40HC→DRY, 40RF/40RHC→NOR).
 const bargeKindOf = (ct) => /R(F|HC|EEF)/i.test(String(ct || "")) ? "NOR" : "DRY";
-// Nơi hạ sà lan: CHỈ 2 cảng hạ sà lan (HPP, LHP). Giữ luôn giá trị đang lưu nếu khác (lô cũ).
-const BARGE_DROPS = ["HPP", "LHP"];
-const bargeDropOptions = (cur) => [...new Set([...BARGE_DROPS, ...(cur ? [cur] : [])])].map((c) => ({ value: c, label: c }));
+// Nơi hạ sà lan: địa điểm có ký hiệu HPP hoặc LHP. Lưu TÊN (giống Nơi lấy/hạ), backend tự quy về code.
+const BARGE_CODES = ["HPP", "LHP"];
+const bargeDropOptions = (cfg, cur) => {
+  const code = cfg.locationCode || {};
+  const opts = (cfg.locations || []).filter((n) => BARGE_CODES.includes(code[n])).map((n) => ({ value: n, label: code[n] ? `${n} \u2014 ${code[n]}` : n }));
+  // Giữ giá trị đang lưu (lô cũ có thể lưu HPP/LHP trực tiếp hoặc tên khác)
+  if (cur && !opts.some((o) => o.value === cur)) opts.unshift({ value: cur, label: cur });
+  return opts;
+};
 // Kho (nhà máy): danh sách MÃ kho DEDUPE (1 ký hiệu có thể nhiều tên → chỉ hiện 1 mã); MultiCombo lưu chuỗi = mã.
 const whCodes = (cfg) => [...new Set((cfg.warehouses || []).map((n) => (cfg.warehouseCode || {})[n] || n).filter(Boolean))];
 
@@ -285,8 +291,11 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
   const add = (k, v) => addCfg && addCfg(k, v);
   // Biển số gõ tạo mới ở các ô BKS lô hàng → mặc định "Xe ngoài" (xe thuê ngoài, không lọt đội xe MBF)
   const addVehExt = (v) => addCfg && addCfg("vehicles", v, { external: true });
-  const hqFee = ((ship.cost && ship.cost.items) || []).some((it) => it.src === "thanhLyFee" && toNum(it.amount) > 0);
-  const hqFilled = [ship.declNo, ship.declNote, ship.thanhLy, ship.cshtNote].filter((v) => (v || "").toString().trim()).length + (hqFee ? 1 : 0);
+  // Tờ khai: 1 lô nhiều tờ khai, mỗi tờ khai 1 phí — [{no, fee}]. Tổng phí tự sang dòng chi phí ở backend.
+  const decls = Array.isArray(ship.declarations) ? ship.declarations : [];
+  const setDecls = (arr) => patch({ declarations: arr });
+  const declTotal = decls.reduce((a, d) => a + toNum(d.fee), 0);
+  const hqFilled = decls.length + [ship.declNote, ship.thanhLy, ship.cshtNote].filter((v) => (v || "").toString().trim()).length;
   const [hqOpen, setHqOpen] = useState(false);
   // Thuê xe ngoài → 1 dòng chi phí "Cước xe ngoài" (src=extTruck) link sang Chi phí lô hàng
   const cost = ship.cost || {};
@@ -302,16 +311,6 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
     } else if (!on && extLine) { setCostItems(costItems.filter((it) => it.src !== "extTruck")); patch({ extVendor: "" }); }   // bỏ tích → xóa nhà xe
   };
   const setExt = (np) => setCostItems(costItems.map((it) => (it.src === "extTruck" ? { ...it, ...np } : it)));
-  // Phí thanh lý tờ khai (Hải Quan) → 1 dòng chi phí "Phí thanh lý tờ khai" (src=thanhLyFee) link sang Chi phí lô hàng
-  const tlLine = costItems.find((it) => it.src === "thanhLyFee");
-  const setTlFee = (val) => {
-    if (toNum(val) > 0) {
-      if (tlLine) setCostItems(costItems.map((it) => (it.src === "thanhLyFee" ? { ...it, amount: val } : it)));
-      else setCostItems([...costItems, { id: Date.now() + Math.random(), src: "thanhLyFee", item: "Phí thanh lý tờ khai", amount: val, payer: "", date: "", billable: false, color: "", note: "" }]);
-    } else if (tlLine) {
-      setCostItems(costItems.filter((it) => it.src !== "thanhLyFee"));
-    }
-  };
   // Chỉ liệt kê cont CHƯA RA = chưa có Giờ xe ra (của cont) — khớp quy tắc "đã ra = có gio_xe_ra".
   // Giữ cont đang chọn để không mất hiển thị lựa chọn.
   const sibOpts = siblings
@@ -389,10 +388,7 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
               <Field label="Loại cont" hint="danh mục"><Combo value={ship.contType} onChange={(x) => set({ contType: x })} options={cfg.contTypes || []} onCreate={(v) => add("contTypes", v)} placeholder="40HC…" /></Field>
               <Field label="Kho (nhà máy)" hint="chọn trong Cài đặt"><MultiCombo values={(ship.kho || "").split(/\s*,\s*/).filter(Boolean)} onChange={(arr) => set({ kho: arr.join(", ") })} options={whCodes(cfg)} max={Infinity} strict placeholder="Chọn kho (nhà máy) theo thứ tự đi qua…" /></Field>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: "12px 0 0" }}>
-              <Field label="BKS vào"><Combo value={ship.bksVao} onChange={(x) => set({ bksVao: x })} options={cfg.vehicles || []} onCreate={addVehExt} placeholder="15C-123.45…" /></Field>
-              <Field label="BKS ra"><Combo value={ship.bksRa} onChange={(x) => set({ bksRa: x })} options={cfg.vehicles || []} onCreate={addVehExt} placeholder="15C-678.90…" /></Field>
-            </div>
+            {/* BKS vào / BKS ra nằm ở khối "Xe vào – xe ra" bên dưới, đứng cạnh đúng mốc giờ của nó. */}
           </>
         )}
       </Section>
@@ -407,12 +403,34 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
         </button>
         {hqOpen && (
           <div style={{ padding: "0 0 14px" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <Field label="Số tờ khai"><Txt value={ship.declNo} onChange={(x) => set({ declNo: x })} placeholder="VD: 103456789012" /></Field>
-              <Field label="Ngày thanh lý"><DateField value={ship.thanhLy} onChange={(x) => set({ thanhLy: x })} /></Field>
-            </div>
+            {/* Tờ khai: mỗi dòng = 1 số tờ khai + 1 phí mở. Tổng phí tự thành dòng chi phí "Phí mở tờ khai". */}
+            <Field label="Tờ khai" hint="mỗi tờ khai một phí mở · tổng link sang Chi phí">
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                {decls.map((d, i) => (
+                  <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <div style={{ flex: 1 }}>
+                      <Txt value={d.no || ""} onChange={(x) => setDecls(decls.map((r, j) => (j === i ? { ...r, no: x } : r)))} placeholder="Số tờ khai, VD 103456789012" />
+                    </div>
+                    <div style={{ width: 150 }}>
+                      <Money value={d.fee || ""} onChange={(x) => setDecls(decls.map((r, j) => (j === i ? { ...r, fee: x } : r)))} dim />
+                    </div>
+                    <button type="button" title="Xóa tờ khai" onClick={() => setDecls(decls.filter((_, j) => j !== i))}
+                      style={{ width: 30, height: 30, flexShrink: 0, display: "grid", placeItems: "center", border: "1px solid var(--line)", borderRadius: 8, background: "#fff", color: "var(--ink-4)", cursor: "pointer" }}>
+                      <I.trash />
+                    </button>
+                  </div>
+                ))}
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <button type="button" onClick={() => setDecls([...decls, { no: "", fee: "" }])}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", fontSize: 12.5, fontWeight: 600, border: "1px dashed var(--line)", borderRadius: 8, background: "#fff", color: "var(--accent)", cursor: "pointer" }}>
+                    <I.plus /> Thêm tờ khai
+                  </button>
+                  {declTotal > 0 && <span className="tnum" style={{ fontSize: 12, color: "var(--ink-3)" }}>Tổng phí: <b>{fmtVND(declTotal)}</b></span>}
+                </div>
+              </div>
+            </Field>
             <div style={{ marginTop: 12, maxWidth: 240 }}>
-              <Field label="Phí thanh lý tờ khai" hint="link sang Chi phí"><Money value={tlLine ? tlLine.amount : ""} onChange={(x) => setTlFee(x)} dim /></Field>
+              <Field label="Ngày thanh lý"><DateField value={ship.thanhLy} onChange={(x) => set({ thanhLy: x })} /></Field>
             </div>
             <div style={{ marginTop: 12 }}>
               <Field label="Ghi chú tờ khai">
@@ -468,7 +486,7 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
         <div style={{ padding: "10px 12px", marginTop: 8, borderRadius: 9, background: ship.bargeDrop ? "var(--accent-weak-2)" : "#fafbfc", border: "1px solid " + (ship.bargeDrop ? "var(--accent-weak)" : "var(--line-2)") }}>
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, alignItems: "end" }}>
             <Field label="Nơi hạ sà lan (điểm đến)">
-              <Combo value={ship.bargeDrop} onChange={(x) => set({ bargeDrop: x })} options={bargeDropOptions(ship.bargeDrop)} placeholder="Chọn cảng hạ sà lan (HPP / LHP)…" clearable strict />
+              <Combo value={ship.bargeDrop} onChange={(x) => set({ bargeDrop: x })} options={bargeDropOptions(cfg, ship.bargeDrop)} placeholder="Chọn cảng hạ sà lan…" clearable />
             </Field>
             <div style={{ fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.5, paddingBottom: 4 }}>
               {ship.bargeDrop ? (
@@ -511,31 +529,49 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
       </Section>
 
       {!isHph && (() => {
-        // Free time tính theo giờ xe ra CỦA CHÍNH cont này. "Cont khác ra" → cont này KHÔNG tự ra
-        // (gio_xe_ra rỗng) → không có free time ở đây; chuyến ra (giờ + BKS) ghi ở cont đã chọn.
+        // Một khối duy nhất cho cả chuyến: XE VÀO (giờ + BKS vào) → XE RA (cắt móc hay không + giờ + BKS ra).
+        // Nghiệp vụ gọi theo MÓC: không cắt móc = xe vào kéo luôn chính cont này ra; cắt móc = để cont lại,
+        // xe ra kéo cont khác hoặc ra tay không. Free time tính theo giờ ra ứng với lựa chọn đó.
         const ft = calcFreeTime(ship, (cfg.freeTimeHours == null ? "4" : cfg.freeTimeHours), cfg.freeTimeRules);
+        const gutter = { fontSize: 10, fontWeight: 700, color: "var(--ink-4)", letterSpacing: ".06em", paddingTop: 11 };
+        // Không cắt móc = xe vào cũng là xe ra → điền sẵn BKS ra khi ô đang trống (gõ tay rồi thì không đè).
+        const setBksVao = (x) => set(raMode === "self" && !String(ship.bksRa || "").trim() ? { bksVao: x, bksRa: x } : { bksVao: x });
+        // Điền giờ ra khi BKS vào đã có sẵn từ trước → cũng lấy luôn BKS đó làm BKS ra (nếu đang trống).
+        const setGioXeRa = (x) => set(!String(ship.bksRa || "").trim() && String(ship.bksVao || "").trim() && String(x || "").trim()
+          ? { gioXeRa: x, bksRa: ship.bksVao } : { gioXeRa: x });
+        const nowBtn = (onClick) => (
+          <button type="button" onClick={onClick} title="Điền giờ hiện tại"
+            style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", borderRadius: 8, padding: "8px 11px", cursor: "pointer", whiteSpace: "nowrap" }}>Bây giờ</button>
+        );
         return (
-          <Section title="Free time & kết nối">
-            <div style={{ fontSize: 11.5, color: "var(--ink-4)", padding: "2px 0 6px", lineHeight: 1.5 }}>Free time = <b style={{ color: "var(--ink-3)" }}>Giờ xe ra − Giờ xe đến</b> (follow theo xe ra). Giờ xe ra lấy theo lựa chọn dưới: <b>chính cont này</b> → Giờ xe ra (của cont); <b>cont khác ra</b> → giờ ra cont kia; <b>không kéo cont</b> → Giờ xe ra (của XE). Ngưỡng <b style={{ color: "var(--ink-3)" }}>{ft ? ft.threshold : (cfg.freeTimeHours || 4)}h</b> chỉnh trong Cấu hình. <span style={{ color: "var(--ink-4)" }}>(Giờ đến kế hoạch chỉ để theo dõi kế hoạch, KHÔNG tính free time.)</span></div>
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr", gap: 12, padding: "4px 0 6px" }}>
-              <Field label="Giờ đến kế hoạch"><DTField value={ship.gioDenDuKien} onChange={(x) => set({ gioDenDuKien: x })} /></Field>
-              <Field label="Giờ xe đến"><DTField value={ship.gioXeDen} onChange={(x) => set({ gioXeDen: x })} /></Field>
-              <Field label="Giờ xe ra (của cont)"><DTField value={ship.gioXeRa} onChange={(x) => set({ gioXeRa: x })} /></Field>
+          <Section title="Xe vào – xe ra">
+            <div style={{ fontSize: 11.5, color: "var(--ink-4)", padding: "2px 0 8px", lineHeight: 1.5 }}>
+              Free time = <b style={{ color: "var(--ink-3)" }}>Giờ xe ra − Giờ xe đến</b>, ngưỡng <b style={{ color: "var(--ink-3)" }}>{ft ? ft.threshold : (cfg.freeTimeHours || 4)}h</b> (đổi trong Cấu hình). Giờ đến kế hoạch chỉ để theo dõi, <b style={{ color: "var(--ink-3)" }}>không</b> tính free time.
             </div>
-            <div style={{ background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", borderRadius: 10, padding: "10px 12px", margin: "2px 0 12px" }}>
-              <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 7, fontWeight: 500 }}>Giờ xe ra này là của:</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 8, padding: 2, flexWrap: "wrap" }}>
-                  {[["self", "Chính cont này"], ["other", "Cont khác ra"], ["none", "Không kéo công ra"]].map(([k, lbl]) => {
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "44px 1fr", gap: 10, alignItems: "start" }}>
+              <div style={gutter}>VÀO</div>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr", gap: 10 }}>
+                <Field label="Giờ xe đến"><DTField value={ship.gioXeDen} onChange={(x) => set({ gioXeDen: x })} /></Field>
+                <Field label="BKS vào"><Combo value={ship.bksVao} onChange={setBksVao} options={cfg.vehicles || []} onCreate={addVehExt} placeholder="15C-123.45…" /></Field>
+                <Field label="Giờ đến kế hoạch" hint="chỉ theo dõi"><DTField value={ship.gioDenDuKien} onChange={(x) => set({ gioDenDuKien: x })} /></Field>
+              </div>
+            </div>
+            {/* RA: chọn theo MÓC trước, rồi chỉ hiện đúng ô cần điền của kiểu đó */}
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "44px 1fr", gap: 10, alignItems: "start", padding: "12px 0 2px" }}>
+              <div style={gutter}>RA</div>
+              <div>
+                <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 8, padding: 2, flexWrap: "wrap", marginBottom: 9 }}>
+                  {[["self", "Không cắt móc", "Xe vào kéo luôn chính cont này ra"],
+                    ["other", "Cắt móc — cont khác ra", "Để cont này lại, xe kéo cont khác ra"],
+                    ["none", "Cắt móc — không kéo ra", "Để cont này lại, xe ra tay không (không kéo cont nào)"]].map(([k, lbl, tip]) => {
                     const on = raMode === k;
-                    // Ô "Giờ xe ra (của cont)" luôn cho nhập (giờ ra RIÊNG của cont), độc lập với lựa chọn này.
                     // self/other → xóa gioXeRaXe (chỉ dùng cho 'none'); self/none → bỏ liên kết cont khác.
-                    // KHÔNG xóa gioXeRa/bksRa của cont hiện tại nữa.
+                    // KHÔNG xóa gioXeRa/bksRa của cont hiện tại.
                     const onPick = k === "none" ? { raMode: "none", raOtherId: null }
                       : k === "self" ? { raMode: "self", raOtherId: null, gioXeRaXe: "" }
                       : { raMode: "other", gioXeRaXe: "" };
                     return (
-                      <button key={k} type="button" onClick={() => set(onPick)}
+                      <button key={k} type="button" title={tip} onClick={() => set(onPick)}
                         style={{ border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, padding: "6px 13px", borderRadius: 6, whiteSpace: "nowrap",
                           background: on ? "#fff" : "transparent", color: on ? "var(--accent)" : "var(--ink-3)", boxShadow: on ? "0 1px 2px rgba(16,19,23,.12)" : "none", transition: "all .12s" }}>
                         {lbl}
@@ -543,56 +579,82 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
                     );
                   })}
                 </div>
-                {raMode === "other" && (
-                  <div style={{ flex: 1, minWidth: 240 }}>
-                    <Combo value={ship.raOtherId != null ? (sibOpts.find((o) => o.value === ship.raOtherId) || {}).label : ""}
-                      options={sibOpts.map((o) => o.label)}
-                      onChange={(label) => { const opt = sibOpts.find((o) => o.label === label); set({ raOtherId: opt ? opt.value : null }); }}
-                      placeholder="Chọn cont ra cùng chuyến…" small />
+
+                {/* Không cắt móc: chính cont này ra — xe ra cũng là xe vào nên BKS ra tự điền theo BKS vào */}
+                {raMode === "self" && (
+                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
+                    <Field label="Giờ xe ra (cont này)">
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}><DTField value={ship.gioXeRa} onChange={setGioXeRa} /></div>
+                        {nowBtn(() => setGioXeRa(nowLocalDT()))}
+                      </div>
+                    </Field>
+                    <Field label="BKS ra" hint="mặc định = BKS vào">
+                      <Combo value={ship.bksRa} onChange={(x) => set({ bksRa: x })} options={cfg.vehicles || []} onCreate={addVehExt} placeholder={ship.bksVao ? `${ship.bksVao} (như BKS vào)` : "15C-678.90…"} />
+                    </Field>
                   </div>
                 )}
+
+                {/* Cắt móc — cont khác ra: giờ & BKS nhập ở đây ghi cho CONT ĐÃ CHỌN (backend đẩy theo id) */}
+                {raMode === "other" && (
+                  <>
+                    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : (ship.raOtherId != null ? "1.2fr 1fr 1fr" : "1fr"), gap: 10 }}>
+                      <Field label="Cont ra thay" hint="cùng chuyến">
+                        <Combo value={ship.raOtherId != null ? (sibOpts.find((o) => o.value === ship.raOtherId) || {}).label : ""}
+                          options={sibOpts.map((o) => o.label)}
+                          onChange={(label) => { const opt = sibOpts.find((o) => o.label === label); set({ raOtherId: opt ? opt.value : null }); }}
+                          placeholder="Chọn cont ra cùng chuyến…" />
+                      </Field>
+                      {ship.raOtherId != null && (
+                        <>
+                          <Field label="Giờ ra (cont đó)">
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <div style={{ flex: 1, minWidth: 0 }}><DTField value={otherGioXeRa} onChange={(x) => setRa(x)} /></div>
+                              {nowBtn(() => setRa(nowLocalDT()))}
+                            </div>
+                          </Field>
+                          <Field label="BKS ra (cont đó)">
+                            <Combo value={otherBksRa} onChange={(x) => setRaBks(x)} options={cfg.vehicles || []} onCreate={addVehExt} placeholder={ship.bksVao || "BKS ra…"} />
+                          </Field>
+                        </>
+                      )}
+                    </div>
+                    {ship.raOtherId == null
+                      ? <div style={{ fontSize: 11.5, color: "var(--warn)", marginTop: 7, fontWeight: 500 }}>Chọn cont ra cùng chuyến để nhập giờ ra cho cont đó.</div>
+                      : (otherGioXeRa || otherBksRa) && (
+                        <div style={{ fontSize: 12, color: "var(--accent)", marginTop: 7, fontWeight: 600, display: "flex", alignItems: "flex-start", gap: 6, lineHeight: 1.5 }}>
+                          <i className="bi bi-check-circle-fill" style={{ marginTop: 1 }} />
+                          <span>{otherBksRa ? <>BKS <b>{otherBksRa}</b> kéo cont <b>{otherLabel}</b> ra</> : <>Cont <b>{otherLabel}</b> ra</>}{otherGioXeRa ? <> lúc <b>{fmtDateTime(otherGioXeRa)}</b></> : ""} — lưu khi bấm <b>Lưu thông tin</b>.</span>
+                        </div>
+                      )}
+                  </>
+                )}
+
+                {/* Cắt móc — không kéo ra: mốc là giờ XE rời đi, cont vẫn "chưa ra" */}
+                {raMode === "none" && (
+                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
+                    <Field label="Giờ xe ra (của XE)" hint="cont vẫn tính chưa ra">
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}><DTField value={ship.gioXeRaXe} onChange={(x) => set({ gioXeRaXe: x })} /></div>
+                        {nowBtn(() => set({ gioXeRaXe: nowLocalDT() }))}
+                      </div>
+                    </Field>
+                  </div>
+                )}
+
+                {/* Cắt móc: cont này thường chưa rời đi — giờ ra riêng của nó gấp lại, mở khi cần */}
+                {raMode !== "self" && (
+                  <details open={!!String(ship.gioXeRa || "").trim()} style={{ marginTop: 9 }}>
+                    <summary style={{ fontSize: 11.5, color: "var(--ink-4)", cursor: "pointer" }}>Giờ ra riêng của chính cont này (nếu sau đó cont này cũng rời đi)</summary>
+                    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10, marginTop: 7 }}>
+                      <Field label="Giờ xe ra (cont này)"><DTField value={ship.gioXeRa} onChange={(x) => set({ gioXeRa: x })} /></Field>
+                      <Field label="BKS ra (cont này)"><Combo value={ship.bksRa} onChange={(x) => set({ bksRa: x })} options={cfg.vehicles || []} onCreate={addVehExt} placeholder="15C-678.90…" /></Field>
+                    </div>
+                  </details>
+                )}
               </div>
-              {raMode === "other" && (
-                ship.raOtherId != null ? (
-                  <div style={{ marginTop: 10 }}>
-                    <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>Giờ ra & biển số của <b style={{ color: "var(--ink-2)" }}>{(sibOpts.find((o) => o.value === ship.raOtherId) || {}).label}</b></div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                      <div style={{ width: 220 }}><DTField value={otherGioXeRa} onChange={(x) => setRa(x)} /></div>
-                      <div style={{ width: 190 }}>
-                        <Combo value={otherBksRa} onChange={(x) => setRaBks(x)} options={cfg.vehicles || []} onCreate={addVehExt} placeholder="BKS ra…" small />
-                      </div>
-                    </div>
-                    {(otherGioXeRa || otherBksRa) && (
-                      <div style={{ fontSize: 12, color: "var(--accent)", marginTop: 8, fontWeight: 600, display: "flex", alignItems: "flex-start", gap: 6, lineHeight: 1.5 }}>
-                        <i className="bi bi-check-circle-fill" style={{ marginTop: 1 }} />
-                        <span>{otherBksRa ? <>BKS <b>{otherBksRa}</b> kéo cont <b>{otherLabel}</b> ra</> : <>Cont <b>{otherLabel}</b> ra</>}{otherGioXeRa ? <> lúc <b>{fmtDateTime(otherGioXeRa)}</b></> : ""}.</span>
-                      </div>
-                    )}
-                    <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 7, lineHeight: 1.5 }}>
-                      Giờ ra & biển số ở đây cập nhật cho <b style={{ color: "var(--ink-3)" }}>cont đã chọn</b> (cont thực sự rời đi). Giờ xe ra của cont hiện tại nhập ở ô <b style={{ color: "var(--ink-3)" }}>“Giờ xe ra (của cont)”</b> phía trên. Thay đổi lưu khi bấm <b style={{ color: "var(--ink-3)" }}>Lưu thông tin</b>.
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ fontSize: 11.5, color: "var(--warn)", marginTop: 8, fontWeight: 500 }}>Chọn cont ra cùng chuyến để nhập giờ ra cập nhật cho cont đó.</div>
-                )
-              )}
-              {raMode === "none" && (
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>Giờ xe ra <b style={{ color: "var(--ink-2)" }}>(của XE — đầu kéo)</b></div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <div style={{ width: 220 }}><DTField value={ship.gioXeRaXe} onChange={(x) => set({ gioXeRaXe: x })} /></div>
-                    <button type="button" onClick={() => set({ gioXeRaXe: nowLocalDT() })}
-                      style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", borderRadius: 8, padding: "8px 12px", cursor: "pointer", whiteSpace: "nowrap" }}>
-                      Bây giờ
-                    </button>
-                  </div>
-                  <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 7, lineHeight: 1.5 }}>
-                    Xe ra nhưng <b style={{ color: "var(--ink-3)" }}>không kéo cont nào ra</b> — mốc này là <b style={{ color: "var(--ink-3)" }}>giờ XE rời đi</b> (không phải giờ cont), để sau tính phí hạng mục khác. Cont vẫn tính <b style={{ color: "var(--ink-3)" }}>"chưa ra"</b>.
-                  </div>
-                </div>
-              )}
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "4px 0 4px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 0 4px" }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
                 <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Free time</span>
                 <span className="tnum" style={{ fontSize: 20, fontWeight: 700 }}>{ft ? fmtHours(ft.hours) : "—"}</span>
