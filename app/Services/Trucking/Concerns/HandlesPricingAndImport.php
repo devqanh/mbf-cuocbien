@@ -549,6 +549,30 @@ trait HandlesPricingAndImport
         return isset($idx['names'][$key]) || ! empty($idx['codes'][$key]);
     }
 
+    /**
+     * Quy giá trị Nơi hạ sà lan về KÝ HIỆU (HPP/LHP).
+     * Nhận: ký hiệu (HPP), tên địa điểm (NAM ĐÌNH VŨ), hoặc tên+code bất kỳ có code HPP/LHP.
+     * Trả null nếu không khớp hoặc code không phải HPP/LHP.
+     */
+    private function resolveBargeDropCode(string $v): ?string
+    {
+        $key = mb_strtolower(trim($v));
+        if ($key === '') return null;
+
+        // Nhập đúng ký hiệu HPP/LHP
+        $upper = mb_strtoupper($key);
+        if (in_array($upper, ['HPP', 'LHP'], true)) return $upper;
+
+        // Nhập tên địa điểm → tìm code của địa điểm đó
+        $loc = TruckingLocation::whereRaw('LOWER(name) = ?', [$key])->first(['code']);
+        if ($loc) {
+            $code = strtoupper(trim((string) $loc->code));
+            return in_array($code, ['HPP', 'LHP'], true) ? $code : null;
+        }
+
+        return null;
+    }
+
     /** [names: lower(tên)=>tên · codes: lower(ký hiệu)=>[các tên]] — memoize / request. */
     private function locationNameIndex(): array
     {
@@ -633,14 +657,12 @@ trait HandlesPricingAndImport
             if ($ct !== '' && ! isset($ctSet[mb_strtolower($ct)]))
                 $reasons[] = "Loại cont “{$ct}” chưa có trong danh mục — thêm ở Cài đặt → Loại cont rồi import lại";
 
-            // Nơi hạ sà lan — KHÔNG bắt buộc; nếu có thì CHỈ nhận HPP hoặc LHP (cảng hạ sà lan).
-            $bargeDrop = strtoupper(trim((string) ($row['bargeDrop'] ?? '')));
-            if ($bargeDrop !== '') {
-                if (! in_array($bargeDrop, ['HPP', 'LHP'], true)) {
-                    $reasons[] = "Nơi hạ sà lan “{$bargeDrop}” không hợp lệ (chỉ nhận HPP hoặc LHP)";
-                } elseif (! $this->locationExists($bargeDrop)) {
-                    // Cột này lưu dạng KÝ HIỆU nên chỉ cần ký hiệu có thật trong danh mục.
-                    $reasons[] = "Nơi hạ sà lan “{$bargeDrop}” chưa có trong danh mục Địa điểm";
+            // Nơi hạ sà lan — KHÔNG bắt buộc; nhận TÊN hoặc KÝ HIỆU địa điểm, quy về code (HPP/LHP).
+            $bargeRaw = trim((string) ($row['bargeDrop'] ?? ''));
+            if ($bargeRaw !== '') {
+                $bargeCode = $this->resolveBargeDropCode($bargeRaw);
+                if ($bargeCode === null) {
+                    $reasons[] = 'Nơi hạ sà lan “' . $bargeRaw . '” không khớp địa điểm nào có ký hiệu HPP hoặc LHP trong danh mục';
                 }
             }
 
@@ -744,7 +766,7 @@ trait HandlesPricingAndImport
                     'cutOff'       => $row['cutOff'] ?? null,
                     'from'         => $norm($row['from'] ?? null),
                     'to'           => $norm($row['to'] ?? null),
-                    'bargeDrop'    => strtoupper(trim((string) ($row['bargeDrop'] ?? ''))) ?: null,   // HPP/LHP → đi sà lan
+                    'bargeDrop'    => $this->resolveBargeDropCode($row['bargeDrop'] ?? '') ?: null,
                     'kho'          => $normKho($row['kho'] ?? null),
                     'gioDenDuKien' => $row['gioDenDuKien'] ?? null,
                     'cost'         => ['items' => []],

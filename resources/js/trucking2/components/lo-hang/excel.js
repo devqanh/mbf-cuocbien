@@ -191,17 +191,18 @@ export function buildTemplateWb(c) {
     wct["!cols"] = [{ wch: 16 }];
     XLSX.utils.book_append_sheet(wb, wct, "Loại cont hợp lệ");
   }
-  // Nơi hạ sà lan hợp lệ — CHỈ 2 cảng (hoặc để trống)
-  const wb2 = XLSX.utils.json_to_sheet(BARGE_DROPS.map((c) => ({ "Nơi hạ sà lan": c })), { header: ["Nơi hạ sà lan"] });
-  wb2["!cols"] = [{ wch: 16 }];
-  XLSX.utils.book_append_sheet(wb, wb2, "Sà lan hợp lệ");
+  // Nơi hạ sà lan hợp lệ — địa điểm có ký hiệu HPP hoặc LHP
+  const bargeLocRows = locs.map((n) => ({ name: n, code: codeOf[n] || "" })).filter((r) => BARGE_DROPS.includes(r.code));
+  const bargeSheet = XLSX.utils.json_to_sheet(bargeLocRows.map((r) => ({ "Tên địa điểm": r.name, "Ký hiệu": r.code })), { header: ["Tên địa điểm", "Ký hiệu"] });
+  bargeSheet["!cols"] = [{ wch: 22 }, { wch: 10 }];
+  XLSX.utils.book_append_sheet(wb, bargeSheet, "Sà lan hợp lệ");
   const guide = [
     { "Cột": "Khách hàng *", "Bắt buộc": "CÓ", "Ý nghĩa": "Tên khách — phải trùng danh mục (xem sheet 'Khách hàng hợp lệ')" },
     { "Cột": "SỐ BOOKING/BILL *", "Bắt buộc": "CÓ", "Ý nghĩa": "Số booking / số bill" },
     { "Cột": "SỐ LƯỢNG CONT *", "Bắt buộc": "CÓ", "Ý nghĩa": "Số lượng container (số ≥ 1) — cont để trống sẽ nhân bản theo số này" },
     { "Cột": "NƠI LẤY", "Bắt buộc": "không", "Ý nghĩa": "Điểm lấy hàng — TÊN hoặc KÝ HIỆU trong danh mục Địa điểm (nếu nhập sai sẽ báo lỗi)" },
     { "Cột": "NƠI HẠ", "Bắt buộc": "không", "Ý nghĩa": "Điểm hạ hàng — TÊN hoặc KÝ HIỆU trong danh mục Địa điểm (nếu nhập sai sẽ báo lỗi)" },
-    { "Cột": "NƠI HẠ SÀ LAN", "Bắt buộc": "không", "Ý nghĩa": "Điểm đến sà lan — CHỈ nhận HPP hoặc LHP (xem sheet 'Sà lan hợp lệ'). Có giá trị = lô đi sà lan; nhập khác HPP/LHP sẽ báo lỗi, để trống = không đi sà lan" },
+    { "Cột": "NƠI HẠ SÀ LAN", "Bắt buộc": "không", "Ý nghĩa": "Điểm đến sà lan — nhập TÊN hoặc KÝ HIỆU địa điểm có mã HPP/LHP (xem sheet 'Sà lan hợp lệ'). Có giá trị = lô đi sà lan; để trống = không đi sà lan" },
     { "Cột": "NGÀY ĐẾN DỰ KIẾN", "Bắt buộc": "không", "Ý nghĩa": "Ngày xe DỰ KIẾN đến (dd/mm/yyyy)" },
     { "Cột": "GIỜ ĐẾN DỰ KIẾN", "Bắt buộc": "không", "Ý nghĩa": "Giờ xe DỰ KIẾN đến (HH:MM) — ghép với Ngày đến dự kiến" },
     { "Cột": "CẮT MÁNG", "Bắt buộc": "không", "Ý nghĩa": "Hạn cắt máng/tàu (dd/mm/yyyy HH:MM)" },
@@ -298,7 +299,7 @@ export function buildUpdateWb(list, c) {
     { "Quy tắc": "Tờ khai", "Ý nghĩa": "KHÔNG sửa ở file này — 1 lô có thể nhiều tờ khai, mỗi tờ khai một phí mở, nên có luồng riêng: nút “Cập nhật tờ khai” ở trang Lô hàng" },
     { "Quy tắc": "CƯỚC XE NGOÀI", "Ý nghĩa": "Chỉ dùng khi thuê xe ngoài — ghi vào dòng chi phí “Cước xe ngoài” của lô (các khoản chi phí khác không bị đụng). Phải có NHÀ XE NGOÀI mới nhập được cước" },
     { "Quy tắc": "Cột ánh xạ danh mục", "Ý nghĩa": "Nơi lấy · Nơi hạ · Kho · Loại cont · Nhà xe ngoài · BKS vào/ra — chỉ nhận giá trị CÓ SẴN trong danh mục Cài đặt (xem các sheet “… hợp lệ” trong file này). Sai là báo lỗi, hệ thống KHÔNG tự thêm" },
-    { "Quy tắc": "Nơi hạ sà lan", "Ý nghĩa": "Chỉ HPP hoặc LHP (sheet “Sà lan hợp lệ”)" },
+    { “Quy tắc”: “Nơi hạ sà lan”, “Ý nghĩa”: “TÊN hoặc KÝ HIỆU địa điểm có mã HPP/LHP (sheet “Sà lan hợp lệ”)” },
     { "Quy tắc": "Cột nhập tự do", "Ý nghĩa": "Số cont · Invoice · Ghi chú · Cước xe ngoài · các cột giờ — không ràng buộc danh mục" },
     { "Quy tắc": "Kiểm tra trước", "Ý nghĩa": "Hệ thống liệt kê từng ô cũ → mới để bạn duyệt; 1 dòng lỗi là KHÔNG ghi gì cả" },
     { "Quy tắc": "Không sửa được ở đây", "Ý nghĩa": "Khách hàng, số lượng, chi phí, doanh thu — sửa trong popup lô hoặc luồng riêng" },
