@@ -35,13 +35,10 @@ trait HandlesShipmentUpdateImport
     {
         return [
             'gioXeDen'     => ['Giờ xe đến', 'datetime'],
-            'gioXeRa'      => ['Giờ xe ra', 'datetime'],
             // Giờ xe (đầu kéo) ra — CHỈ có hiệu lực cho Free time khi lô ở kiểu "không kéo cont ra".
             'gioXeRaXe'    => ['Giờ xe ra (xe)', 'datetime'],
             'gioDenDuKien' => ['Giờ đến dự kiến', 'datetime'],
             'io'           => ['Nhập/Xuất', 'io'],
-            'contDen'      => ['Ngày cont đến', 'date'],
-            'sailDate'     => ['Ngày tàu chạy', 'date'],
             // Biển số phải khớp danh mục Xe: recompute map vehicle_id bằng so khớp CHUỖI CHÍNH XÁC
             // (TruckingVehicle::where('plate', …)) — gõ sai là lô mất liên kết xe, báo cáo hụt.
             'bksVao'       => ['Biển số vào', 'plate'],
@@ -54,7 +51,8 @@ trait HandlesShipmentUpdateImport
             'kho'          => ['Kho', 'kho'],
             'bargeDrop'    => ['Nơi hạ sà lan', 'bargeDrop'],
             'extVendor'    => ['Nhà xe ngoài', 'extVendor'],
-            'infoNote'     => ['Ghi chú', 'text'],
+            'infoNote'         => ['Ghi chú', 'text'],
+            // raOtherContNo xử lý riêng qua collectRaOtherChange (không map 1-1 với cột DB).
         ];
         // Ngoài danh sách trên còn 2 nhóm xử lý RIÊNG (không map 1-1 với 1 cột DB):
         //  - Tờ khai: 2 cột song song SỐ TỜ KHAI / PHÍ TỜ KHAI → cột JSON declarations.
@@ -65,12 +63,13 @@ trait HandlesShipmentUpdateImport
     private function updatableFieldColumns(): array
     {
         return [
-            'gioXeDen' => 'gio_xe_den', 'gioXeRa' => 'gio_xe_ra', 'gioXeRaXe' => 'gio_xe_ra_xe',
-            'gioDenDuKien' => 'gio_den_du_kien', 'io' => 'io', 'contDen' => 'cont_den', 'sailDate' => 'sail_date',
+            'gioXeDen' => 'gio_xe_den', 'gioXeRaXe' => 'gio_xe_ra_xe',
+            'gioDenDuKien' => 'gio_den_du_kien', 'io' => 'io',
             'bksVao' => 'bks_vao', 'bksRa' => 'bks_ra', 'contNo' => 'cont_no', 'contType' => 'cont_type',
             'inv' => 'inv', 'from' => 'from_loc', 'to' => 'to_loc',
             'kho' => 'kho', 'bargeDrop' => 'barge_drop',
             'extVendor' => 'ext_vendor', 'infoNote' => 'info_note',
+            // raOtherContNo không map 1-1 với cột DB — xử lý riêng trong applyUpdate
         ];
     }
 
@@ -103,15 +102,44 @@ trait HandlesShipmentUpdateImport
                 $s = $p['ship'];
                 // Cước xe ngoài nằm ở DÒNG CHI PHÍ, không phải cột → tách ra ghi riêng sau khi lưu lô.
                 $extFee = $p['patch']['extFee'] ?? null;
-                $only = array_values(array_diff(array_keys($p['patch']), ['extFee']));
+                // Số cont ra (cắt móc): tìm sibling cùng booking → gán ra_other_id + ra_mode.
+                $raContNo = $p['patch']['raOtherContNo'] ?? null;
+                $only = array_values(array_diff(array_keys($p['patch']), ['extFee', 'raOtherContNo']));
                 $this->saveShipment($p['patch'], $sheet, $s, $only);
                 if ($extFee !== null) $this->applyExtTruckFee($s, (int) $extFee);
+                if ($raContNo !== null) $this->applyRaOtherContNo($s, $raContNo);
                 $updated++;
                 $cells += count($p['cells']);
             }
         });
 
         return $res + ['updated' => $updated, 'cells' => $cells];
+    }
+
+    /**
+     * Gán liên kết "cont khác ra" theo số cont: tìm lô cùng booking có cont_no khớp.
+     * $contNo = null → xóa liên kết (về ra_mode=self). Chuỗi → tìm sibling.
+     */
+    private function applyRaOtherContNo(TruckingShipment $s, ?string $contNo): void
+    {
+        if ($contNo === null || trim($contNo) === '') {
+            // Xóa liên kết (user gõ --)
+            $s->ra_mode = 'self';
+            $s->ra_other_id = null;
+            $s->save();
+            return;
+        }
+        $contNo = trim($contNo);
+        $sibling = TruckingShipment::where('sheet', $s->sheet)
+            ->where('booking', $s->booking)
+            ->where('id', '!=', $s->id)
+            ->whereRaw('LOWER(cont_no) = ?', [mb_strtolower($contNo)])
+            ->first();
+        if ($sibling) {
+            $s->ra_mode = 'other';
+            $s->ra_other_id = $sibling->id;
+            $s->save();
+        }
     }
 
     /**
@@ -167,9 +195,10 @@ trait HandlesShipmentUpdateImport
                 $cells[] = ['field' => $f, 'label' => $label, 'old' => $old, 'new' => $new];
             }
 
-            // 2 nhóm không map 1-1 với cột DB, xử lý sau vòng lặp trên.
+            // Nhóm không map 1-1 với cột DB, xử lý sau vòng lặp trên.
             $this->collectDeclarationChange($s, $row, $patch, $cells, $reasons);
             $this->collectExtFeeChange($s, $row, $patch, $cells, $reasons);
+            $this->collectRaOtherChange($s, $row, $patch, $cells, $reasons);
 
             if ($reasons) { $errors[] = $this->updateError($line, $row, $reasons, $s); continue; }
             if (! $cells) { $noChange++; continue; }
@@ -321,6 +350,42 @@ trait HandlesShipmentUpdateImport
         $cells[] = ['field' => 'extFee', 'label' => 'Cước xe ngoài',
             'old' => $old > 0 ? number_format($old, 0, ',', '.') : '',
             'new' => $new > 0 ? number_format($new, 0, ',', '.') : ''];
+    }
+
+    /** Xử lý cột "Số cont ra (cắt móc)": tìm sibling cùng booking, gán ra_other_id. */
+    private function collectRaOtherChange(TruckingShipment $s, array $row, array &$patch, array &$cells, array &$reasons): void
+    {
+        $raw = $row['values']['raOtherContNo'] ?? null;
+        if ($raw === null || trim((string) $raw) === '') return;
+
+        $clear = trim((string) $raw) === self::CLEAR_TOKEN;
+        $oldContNo = ($s->ra_mode === 'other' && $s->ra_other_id)
+            ? (TruckingShipment::where('id', $s->ra_other_id)->value('cont_no') ?: '')
+            : '';
+
+        if ($clear) {
+            if ($oldContNo === '') return;   // đã không có → không đổi
+            $patch['raOtherContNo'] = null;
+            $cells[] = ['field' => 'raOtherContNo', 'label' => 'Cont ra (cắt móc)', 'old' => $oldContNo, 'new' => ''];
+            return;
+        }
+
+        $contNo = trim((string) $raw);
+        if (mb_strtolower($contNo) === mb_strtolower($oldContNo)) return;   // y cũ
+
+        // Tìm sibling cùng booking
+        $sibling = TruckingShipment::where('sheet', $s->sheet)
+            ->where('booking', $s->booking)
+            ->where('id', '!=', $s->id)
+            ->whereRaw('LOWER(cont_no) = ?', [mb_strtolower($contNo)])
+            ->first();
+        if (! $sibling) {
+            $reasons[] = 'Số cont ra "' . $contNo . '" không khớp lô nào cùng booking "' . $s->booking . '"';
+            return;
+        }
+
+        $patch['raOtherContNo'] = $contNo;
+        $cells[] = ['field' => 'raOtherContNo', 'label' => 'Cont ra (cắt móc)', 'old' => $oldContNo, 'new' => $sibling->cont_no];
     }
 
     /** Chuẩn hóa + kiểm tra 1 ô. Trả giá trị đã chuẩn hóa (null = xóa), hoặc false nếu lỗi. */

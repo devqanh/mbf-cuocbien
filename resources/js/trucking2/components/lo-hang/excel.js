@@ -235,13 +235,13 @@ const UPD_FIELDS = [
   { key: "io",           col: "NHẬP/XUẤT",       kw: ["nhập/xuất", "nhap/xuat", "nhập", "xuất"] },
   { key: "gioDenDuKien", col: "GIỜ ĐẾN DỰ KIẾN", kw: ["dự kiến", "du kien"], dt: true },
   { key: "gioXeDen",     col: "GIỜ XE ĐẾN",      kw: ["xe đến", "xe den"], dt: true },
-  { key: "gioXeRa",      col: "GIỜ XE RA",       kw: ["giờ xe ra", "gio xe ra"], dt: true },
-  // Chỉ dùng cho lô ở kiểu "Không kéo cont ra" — free time khi đó lấy giờ ra của XE, không phải của cont.
+  // Giờ xe ra (xe): chỉ dùng khi lô ở kiểu "không kéo cont ra" — free time lấy giờ ra của XE.
   { key: "gioXeRaXe",    col: "GIỜ XE RA (XE)",  kw: ["xe ra (xe)", "ra cua xe", "ra (xe)"], dt: true },
-  { key: "contDen",      col: "NGÀY CONT ĐẾN",   kw: ["cont đến", "cont den"], date: true },
-  { key: "sailDate",     col: "NGÀY TÀU CHẠY",   kw: ["tàu chạy", "tau chay"], date: true },
   { key: "bksVao",       col: "BKS VÀO",         kw: ["bks vào", "bks vao", "biển số vào"] },
   { key: "bksRa",        col: "BKS RA",          kw: ["bks ra", "biển số ra"] },
+  // Cắt móc — cont khác ra: điền SỐ CONT ra → hệ thống tìm lô cùng booking khớp cont đó, tự gán liên kết.
+  // Để trống = giữ nguyên; gõ -- = bỏ liên kết (về "Không cắt móc").
+  { key: "raOtherContNo", col: "SỐ CONT RA (CẮT MÓC)", kw: ["cont ra", "cắt móc", "cat moc"] },
   // Nhiều tờ khai / lô: 2 cột SONG SONG theo thứ tự (giữ 1 dòng/lô cho dễ sửa hàng loạt).
   { key: "inv",          col: "INVOICE",         kw: ["invoice", "inv"] },
   { key: "from",         col: "NƠI LẤY",         kw: ["lấy", "lay"] },
@@ -266,9 +266,13 @@ const dtOut = (iso) => {
 // vì import chặn giá trị ngoài danh mục — người sửa file phải tra được ngay trong file.
 export function buildUpdateWb(list, c) {
   c = c || {};
+  // Map id → contNo cho tra cứu cont ra (cắt móc)
+  const idContMap = {};
+  (list || []).forEach((s) => { if (s.id && s.contNo) idContMap[s.id] = s.contNo; });
   const val = (s, k) => {
     if (k === "id") return s.id;
     if (k === "infoNote") return s.infoNote || "";
+    if (k === "raOtherContNo") return (s.raMode === "other" && s.raOtherId) ? (idContMap[s.raOtherId] || "") : "";
     const v = s[k];
     return v == null ? "" : v;
   };
@@ -295,7 +299,8 @@ export function buildUpdateWb(list, c) {
     { "Quy tắc": "Ô để trống", "Ý nghĩa": "GIỮ NGUYÊN giá trị đang có — không xóa dữ liệu" },
     { "Quy tắc": `Gõ ${CLEAR_TOKEN}`, "Ý nghĩa": "XÓA giá trị của ô đó" },
     { "Quy tắc": "Ngày giờ", "Ý nghĩa": "Cột giờ: dd/mm/yyyy HH:MM (vd 29/06/2026 21:45) · Cột ngày: dd/mm/yyyy" },
-    { "Quy tắc": "GIỜ XE RA vs GIỜ XE RA (XE)", "Ý nghĩa": "Free time = Giờ xe ra - Giờ xe đến, nhưng lấy giờ ra nào là do KIỂU RA của lô (đặt trong popup, mục Xe vào - xe ra): Không cắt móc = cột GIỜ XE RA · Cắt móc — không kéo ra = cột GIỜ XE RA (XE) · Cắt móc — cont khác ra = lấy giờ của cont khác, 2 cột này không tính. Điền nhầm ô sẽ có CẢNH BÁO ở bước Kiểm tra" },
+    { "Quy tắc": "GIỜ XE RA (XE)", "Ý nghĩa": "Giờ xe (đầu kéo) ra khi cắt móc không kéo cont ra. Free time lấy giờ này thay vì giờ cont ra" },
+    { "Quy tắc": "SỐ CONT RA (CẮT MÓC)", "Ý nghĩa": "Điền SỐ CONT của lô ra cùng chuyến — hệ thống tìm lô cùng booking khớp cont đó, tự gán liên kết cắt móc. Để trống = giữ nguyên, gõ -- = bỏ liên kết (về Không cắt móc)" },
     { "Quy tắc": "Tờ khai", "Ý nghĩa": "KHÔNG sửa ở file này — 1 lô có thể nhiều tờ khai, mỗi tờ khai một phí mở, nên có luồng riêng: nút Cập nhật tờ khai ở trang Lô hàng" },
     { "Quy tắc": "CƯỚC XE NGOÀI", "Ý nghĩa": "Chỉ dùng khi thuê xe ngoài — ghi vào dòng chi phí Cước xe ngoài của lô (các khoản chi phí khác không bị đụng). Phải có NHÀ XE NGOÀI mới nhập được cước" },
     { "Quy tắc": "Cột ánh xạ danh mục", "Ý nghĩa": "Nơi lấy · Nơi hạ · Kho · Loại cont · Nhà xe ngoài · BKS vào/ra — chỉ nhận giá trị CÓ SẴN trong danh mục Cài đặt (xem các sheet hợp lệ trong file này). Sai là báo lỗi, hệ thống KHÔNG tự thêm" },
