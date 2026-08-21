@@ -299,7 +299,7 @@ export function buildUpdateWb(list, c) {
     { "Quy tắc": "Tờ khai", "Ý nghĩa": "KHÔNG sửa ở file này — 1 lô có thể nhiều tờ khai, mỗi tờ khai một phí mở, nên có luồng riêng: nút “Cập nhật tờ khai” ở trang Lô hàng" },
     { "Quy tắc": "CƯỚC XE NGOÀI", "Ý nghĩa": "Chỉ dùng khi thuê xe ngoài — ghi vào dòng chi phí “Cước xe ngoài” của lô (các khoản chi phí khác không bị đụng). Phải có NHÀ XE NGOÀI mới nhập được cước" },
     { "Quy tắc": "Cột ánh xạ danh mục", "Ý nghĩa": "Nơi lấy · Nơi hạ · Kho · Loại cont · Nhà xe ngoài · BKS vào/ra — chỉ nhận giá trị CÓ SẴN trong danh mục Cài đặt (xem các sheet “… hợp lệ” trong file này). Sai là báo lỗi, hệ thống KHÔNG tự thêm" },
-    { “Quy tắc”: “Nơi hạ sà lan”, “Ý nghĩa”: “TÊN hoặc KÝ HIỆU địa điểm có mã HPP/LHP (sheet “Sà lan hợp lệ”)” },
+    { “Quy tắc”: “Nơi hạ sà lan”, “Ý nghĩa”: “TÊN hoặc KÝ HIỆU địa điểm có mã HPP/LHP (sheet \u201CSà lan hợp lệ\u201D)” },
     { "Quy tắc": "Cột nhập tự do", "Ý nghĩa": "Số cont · Invoice · Ghi chú · Cước xe ngoài · các cột giờ — không ràng buộc danh mục" },
     { "Quy tắc": "Kiểm tra trước", "Ý nghĩa": "Hệ thống liệt kê từng ô cũ → mới để bạn duyệt; 1 dòng lỗi là KHÔNG ghi gì cả" },
     { "Quy tắc": "Không sửa được ở đây", "Ý nghĩa": "Khách hàng, số lượng, chi phí, doanh thu — sửa trong popup lô hoặc luồng riêng" },
