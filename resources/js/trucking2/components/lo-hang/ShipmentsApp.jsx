@@ -700,7 +700,7 @@ function ShipmentsApp() {
         title={`Điền số cont cho cả booking ${ship.booking || ""}`}
         style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 700, padding: "3px 9px", borderRadius: 999, cursor: "pointer",
           border: "1px dashed var(--accent)", background: "var(--accent-weak-2)", color: "var(--accent)" }}>
-        <I.plus /> Điền cont{st && st.total > 1 ? ` (${st.filled}/${st.total} lô)` : ""}
+        <I.plus /> Điền cont
       </button>
     );
   };
