@@ -372,7 +372,7 @@ function ShipmentsApp() {
       if (expFrom && (!d || d < expFrom)) return false;
       if (expTo && (!d || d > expTo)) return false;
       return true;
-    });
+    }).sort((a, b) => (a.gioDenDuKien || "").localeCompare(b.gioDenDuKien || ""));
     // "Địa chỉ đóng hàng" = GHI CHÚ của kho (Cài đặt → Kho). Lô lưu kho bằng ký hiệu (đôi khi là tên)
     // nên tra theo TÊN trước, không có thì theo KÝ HIỆU; tuyến nhiều kho thì nối ghi chú của từng chặng.
     const noteByName = {}, noteByCode = {};
