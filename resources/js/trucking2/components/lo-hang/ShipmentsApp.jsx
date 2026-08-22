@@ -692,16 +692,35 @@ function ShipmentsApp() {
     } catch (e) { setContFill((c) => ({ ...c, busy: false, err: "Lưu lỗi kết nối" })); }
   };
 
-  // Ô số cont còn trống → nút mở popup điền cont cho cả booking (kèm tiến độ đã điền/tổng của booking).
+  // Ô số cont còn trống → input inline điền cont ngay cho lô đó.
   const FillContBtn = ({ ship }) => {
-    const st = bookingCont[String(ship.booking || "").trim()];
-    return (
-      <button type="button" onClick={(e) => { e.stopPropagation(); openContFill(ship); }}
-        title={`Điền số cont cho cả booking ${ship.booking || ""}`}
+    const [editing, setEditing] = useState(false);
+    const [val, setVal] = useState("");
+    const [saving, setSaving] = useState(false);
+    const inputRef = useRef(null);
+    const save = async () => {
+      const v = val.trim(); if (!v || saving) return;
+      setSaving(true);
+      const res = await api("POST", ROUTES.shipmentConts, { sheet, rows: [{ id: ship.id, contNo: v }] });
+      setSaving(false);
+      if (res && res.ok) { window.trkToast && window.trkToast("Đã điền cont"); setEditing(false); setVal(""); load(); }
+    };
+    if (!editing) return (
+      <button type="button" onClick={(e) => { e.stopPropagation(); setEditing(true); setTimeout(() => inputRef.current && inputRef.current.focus(), 50); }}
+        title="Điền số cont cho lô này"
         style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 700, padding: "3px 9px", borderRadius: 999, cursor: "pointer",
           border: "1px dashed var(--accent)", background: "var(--accent-weak-2)", color: "var(--accent)" }}>
         <I.plus /> Điền cont
       </button>
+    );
+    return (
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }} onClick={(e) => e.stopPropagation()}>
+        <input ref={inputRef} autoFocus value={val} onChange={(e) => setVal(e.target.value.toUpperCase())}
+          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") { setEditing(false); setVal(""); } }}
+          placeholder="TGHU1234567" style={{ width: 130, padding: "3px 7px", fontSize: 13, fontWeight: 700, border: "1px solid var(--accent)", borderRadius: 7, outline: "none", fontFamily: "inherit" }} />
+        <button type="button" onClick={save} disabled={saving || !val.trim()} style={{ padding: "3px 8px", fontSize: 11.5, fontWeight: 700, border: "none", borderRadius: 6, background: "var(--accent)", color: "#fff", cursor: "pointer" }}>{saving ? "…" : "OK"}</button>
+        <button type="button" onClick={() => { setEditing(false); setVal(""); }} style={{ padding: "3px 6px", fontSize: 11, border: "none", borderRadius: 6, background: "var(--line)", color: "var(--ink-3)", cursor: "pointer" }}>Hủy</button>
+      </span>
     );
   };
 
