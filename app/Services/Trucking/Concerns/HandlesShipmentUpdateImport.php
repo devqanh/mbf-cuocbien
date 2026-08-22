@@ -100,13 +100,15 @@ trait HandlesShipmentUpdateImport
             foreach ($plans as $p) {
                 /** @var TruckingShipment $s */
                 $s = $p['ship'];
-                // Cước xe ngoài nằm ở DÒNG CHI PHÍ, không phải cột → tách ra ghi riêng sau khi lưu lô.
-                $extFee = $p['patch']['extFee'] ?? null;
-                // Số cont ra (cắt móc): tìm sibling cùng booking → gán ra_other_id + ra_mode.
+                // Các field xử lý RIÊNG (không đi qua saveShipment):
+                $extFee   = $p['patch']['extFee'] ?? null;
                 $raContNo = $p['patch']['raOtherContNo'] ?? null;
-                $only = array_values(array_diff(array_keys($p['patch']), ['extFee', 'raOtherContNo']));
+                $raMode   = $p['patch']['raMode'] ?? null;
+                $only = array_values(array_diff(array_keys($p['patch']), ['extFee', 'raOtherContNo', 'raMode']));
                 $this->saveShipment($p['patch'], $sheet, $s, $only);
                 if ($extFee !== null) $this->applyExtTruckFee($s, (int) $extFee);
+                // Kiểu ra + cont ra: gán ra_mode trước, applyRaOtherContNo gán cont sau.
+                if ($raMode !== null) { $s->ra_mode = $raMode; if ($raMode !== 'other') $s->ra_other_id = null; $s->save(); }
                 if ($raContNo !== null) $this->applyRaOtherContNo($s, $raContNo);
                 $updated++;
                 $cells += count($p['cells']);
@@ -352,39 +354,79 @@ trait HandlesShipmentUpdateImport
             'new' => $new > 0 ? number_format($new, 0, ',', '.') : ''];
     }
 
-    /** Xử lý cột "Số cont ra (cắt móc)": tìm sibling cùng booking, gán ra_other_id. */
+    /** Nhãn hiển thị cho ra_mode. */
+    private const RA_MODE_LABELS = [
+        'self'  => 'Không cắt móc',
+        'none'  => 'Không kéo ra',
+        'other' => 'Cont khác ra',
+    ];
+
+    /** Xử lý 2 cột KIỂU RA + SỐ CONT RA (CẮT MÓC). */
     private function collectRaOtherChange(TruckingShipment $s, array $row, array &$patch, array &$cells, array &$reasons): void
     {
-        $raw = $row['values']['raOtherContNo'] ?? null;
-        if ($raw === null || trim((string) $raw) === '') return;
+        $oldMode = $s->ra_mode ?? 'self';
+        $oldLabel = self::RA_MODE_LABELS[$oldMode] ?? $oldMode;
 
-        $clear = trim((string) $raw) === self::CLEAR_TOKEN;
-        $oldContNo = ($s->ra_mode === 'other' && $s->ra_other_id)
+        // ---- Cột KIỂU RA ----
+        $modeRaw = trim((string) ($row['values']['raMode'] ?? ''));
+        $newMode = null;
+        if ($modeRaw !== '') {
+            $ml = mb_strtolower($modeRaw);
+            if (str_contains($ml, 'khác') || str_contains($ml, 'other'))       $newMode = 'other';
+            elseif (str_contains($ml, 'không kéo') || str_contains($ml, 'none') || str_contains($ml, 'tay không')) $newMode = 'none';
+            elseif (str_contains($ml, 'không cắt') || str_contains($ml, 'self') || str_contains($ml, 'kéo ra'))   $newMode = 'self';
+            else {
+                $reasons[] = 'Kiểu ra "' . $modeRaw . '" không hợp lệ (nhận: Không cắt móc / Không kéo ra / Cont khác ra)';
+                return;
+            }
+            if ($newMode !== $oldMode) {
+                $patch['raMode'] = $newMode;
+                $cells[] = ['field' => 'raMode', 'label' => 'Kiểu ra', 'old' => $oldLabel, 'new' => self::RA_MODE_LABELS[$newMode]];
+            }
+        }
+
+        $effectiveMode = $newMode ?? $oldMode;
+
+        // ---- Cột SỐ CONT RA ----
+        $contRaw = trim((string) ($row['values']['raOtherContNo'] ?? ''));
+        if ($contRaw === '' && $effectiveMode !== 'other') return;
+
+        $oldContNo = ($oldMode === 'other' && $s->ra_other_id)
             ? (TruckingShipment::where('id', $s->ra_other_id)->value('cont_no') ?: '')
             : '';
 
-        if ($clear) {
-            if ($oldContNo === '') return;   // đã không có → không đổi
+        // Chuyển sang self/none → xóa liên kết nếu có
+        if ($effectiveMode !== 'other') {
+            if ($oldContNo !== '') {
+                $patch['raOtherContNo'] = null;
+                $cells[] = ['field' => 'raOtherContNo', 'label' => 'Cont ra (cắt móc)', 'old' => $oldContNo, 'new' => ''];
+            }
+            return;
+        }
+
+        // other: cần SỐ CONT RA
+        if ($contRaw === '') return;   // giữ nguyên
+
+        if ($contRaw === self::CLEAR_TOKEN) {
+            if ($oldContNo === '') return;
             $patch['raOtherContNo'] = null;
             $cells[] = ['field' => 'raOtherContNo', 'label' => 'Cont ra (cắt móc)', 'old' => $oldContNo, 'new' => ''];
             return;
         }
 
-        $contNo = trim((string) $raw);
-        if (mb_strtolower($contNo) === mb_strtolower($oldContNo)) return;   // y cũ
+        if (mb_strtolower($contRaw) === mb_strtolower($oldContNo)) return;
 
-        // Tìm sibling cùng booking
         $sibling = TruckingShipment::where('sheet', $s->sheet)
             ->where('booking', $s->booking)
             ->where('id', '!=', $s->id)
-            ->whereRaw('LOWER(cont_no) = ?', [mb_strtolower($contNo)])
+            ->whereRaw('LOWER(cont_no) = ?', [mb_strtolower($contRaw)])
             ->first();
         if (! $sibling) {
-            $reasons[] = 'Số cont ra "' . $contNo . '" không khớp lô nào cùng booking "' . $s->booking . '"';
+            $reasons[] = 'Số cont ra "' . $contRaw . '" không khớp lô nào cùng booking "' . $s->booking . '"';
             return;
         }
 
-        $patch['raOtherContNo'] = $contNo;
+        $patch['raOtherContNo'] = $contRaw;
         $cells[] = ['field' => 'raOtherContNo', 'label' => 'Cont ra (cắt móc)', 'old' => $oldContNo, 'new' => $sibling->cont_no];
     }
 

@@ -239,8 +239,10 @@ const UPD_FIELDS = [
   { key: "gioXeRaXe",    col: "GIỜ XE RA (XE)",  kw: ["xe ra (xe)", "ra cua xe", "ra (xe)"], dt: true },
   { key: "bksVao",       col: "BKS VÀO",         kw: ["bks vào", "bks vao", "biển số vào"] },
   { key: "bksRa",        col: "BKS RA",          kw: ["bks ra", "biển số ra"] },
+  // Kiểu ra: "Không cắt móc" / "Không kéo ra" / "Cont khác ra" — trống = giữ nguyên.
+  { key: "raMode",         col: "KIỂU RA",           kw: ["kiểu ra", "kieu ra"] },
   // Cắt móc — cont khác ra: điền SỐ CONT ra → hệ thống tìm lô cùng booking khớp cont đó, tự gán liên kết.
-  // Để trống = giữ nguyên; gõ -- = bỏ liên kết (về "Không cắt móc").
+  // Chỉ dùng khi KIỂU RA = "Cont khác ra". Để trống = giữ nguyên; gõ -- = bỏ liên kết.
   { key: "raOtherContNo", col: "SỐ CONT RA (CẮT MÓC)", kw: ["cont ra", "cắt móc", "cat moc"] },
   // Nhiều tờ khai / lô: 2 cột SONG SONG theo thứ tự (giữ 1 dòng/lô cho dễ sửa hàng loạt).
   { key: "inv",          col: "INVOICE",         kw: ["invoice", "inv"] },
@@ -272,6 +274,7 @@ export function buildUpdateWb(list, c) {
   const val = (s, k) => {
     if (k === "id") return s.id;
     if (k === "infoNote") return s.infoNote || "";
+    if (k === "raMode") return ({ self: "Không cắt móc", other: "Cont khác ra", none: "Không kéo ra" })[s.raMode || "self"] || "";
     if (k === "raOtherContNo") return (s.raMode === "other" && s.raOtherId) ? (idContMap[s.raOtherId] || "") : "";
     const v = s[k];
     return v == null ? "" : v;
@@ -299,8 +302,9 @@ export function buildUpdateWb(list, c) {
     { "Quy tắc": "Ô để trống", "Ý nghĩa": "GIỮ NGUYÊN giá trị đang có — không xóa dữ liệu" },
     { "Quy tắc": `Gõ ${CLEAR_TOKEN}`, "Ý nghĩa": "XÓA giá trị của ô đó" },
     { "Quy tắc": "Ngày giờ", "Ý nghĩa": "Cột giờ: dd/mm/yyyy HH:MM (vd 29/06/2026 21:45) · Cột ngày: dd/mm/yyyy" },
-    { "Quy tắc": "GIỜ XE RA (XE)", "Ý nghĩa": "Giờ xe (đầu kéo) ra khi cắt móc không kéo cont ra. Free time lấy giờ này thay vì giờ cont ra" },
-    { "Quy tắc": "SỐ CONT RA (CẮT MÓC)", "Ý nghĩa": "Điền SỐ CONT của lô ra cùng chuyến — hệ thống tìm lô cùng booking khớp cont đó, tự gán liên kết cắt móc. Để trống = giữ nguyên, gõ -- = bỏ liên kết (về Không cắt móc)" },
+    { "Quy tắc": "KIỂU RA", "Ý nghĩa": "3 giá trị: Không cắt móc (xe vào kéo cont ra) · Không kéo ra (cắt móc, xe ra tay không) · Cont khác ra (cắt móc, xe kéo cont khác). Để trống = giữ nguyên" },
+    { "Quy tắc": "SỐ CONT RA (CẮT MÓC)", "Ý nghĩa": "Dùng khi KIỂU RA = Cont khác ra: điền SỐ CONT lô ra cùng booking. Hệ thống tự tìm + gán liên kết. Gõ -- = bỏ liên kết" },
+    { "Quy tắc": "GIỜ XE RA (XE)", "Ý nghĩa": "Dùng khi KIỂU RA = Không kéo ra: giờ xe (đầu kéo) rời đi. Free time lấy giờ này" },
     { "Quy tắc": "Tờ khai", "Ý nghĩa": "KHÔNG sửa ở file này — 1 lô có thể nhiều tờ khai, mỗi tờ khai một phí mở, nên có luồng riêng: nút Cập nhật tờ khai ở trang Lô hàng" },
     { "Quy tắc": "CƯỚC XE NGOÀI", "Ý nghĩa": "Chỉ dùng khi thuê xe ngoài — ghi vào dòng chi phí Cước xe ngoài của lô (các khoản chi phí khác không bị đụng). Phải có NHÀ XE NGOÀI mới nhập được cước" },
     { "Quy tắc": "Cột ánh xạ danh mục", "Ý nghĩa": "Nơi lấy · Nơi hạ · Kho · Loại cont · Nhà xe ngoài · BKS vào/ra — chỉ nhận giá trị CÓ SẴN trong danh mục Cài đặt (xem các sheet hợp lệ trong file này). Sai là báo lỗi, hệ thống KHÔNG tự thêm" },
@@ -329,6 +333,11 @@ export function buildUpdateWb(list, c) {
   addSheet("Loại cont hợp lệ", (c.contTypes || []).map((n) => ({ "Loại cont": n })), ["Loại cont"], [16]);
   addSheet("Nhà xe ngoài hợp lệ", (c.extVendors || []).map((n) => ({ "Đơn vị xe ngoài": n })), ["Đơn vị xe ngoài"], [34]);
   addSheet("Biển số hợp lệ", (c.vehicles || []).map((n) => ({ "Biển số": n })), ["Biển số"], [18]);
+  addSheet("Kiểu ra hợp lệ", [
+    { "Giá trị": "Không cắt móc", "Ý nghĩa": "Xe vào kéo luôn chính cont này ra (mặc định)" },
+    { "Giá trị": "Không kéo ra", "Ý nghĩa": "Cắt móc, xe ra tay không — điền GIỜ XE RA (XE)" },
+    { "Giá trị": "Cont khác ra", "Ý nghĩa": "Cắt móc, xe kéo cont khác — điền SỐ CONT RA" },
+  ], ["Giá trị", "Ý nghĩa"], [20, 55]);
   addSheet("Sà lan hợp lệ", (c.locations || []).filter((n) => BARGE_DROPS.includes(locCode[n])).map((n) => ({ "Tên địa điểm": n, "Ký hiệu": locCode[n] || "" })), ["Tên địa điểm", "Ký hiệu"], [22, 10]);
   return wb;
 }
