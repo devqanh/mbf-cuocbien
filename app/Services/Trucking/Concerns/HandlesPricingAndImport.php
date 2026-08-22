@@ -613,6 +613,21 @@ trait HandlesPricingAndImport
         return $map;
     }
 
+    /**
+     * Map lower(name) ⇒ TÊN kho chuẩn (giữ tên gốc, VD "2" thay vì code "QV").
+     * Dùng khi import lưu vào DB — hiển thị/export giữ đúng tên kho người dùng nhập.
+     * Tính giá/báo cáo backend tự quy tên→code qua warehouseCodeMap.
+     */
+    private function warehouseNameMap(): array
+    {
+        $map = [];
+        foreach (TruckingWarehouse::get(['name']) as $w) {
+            $name = trim((string) $w->name);
+            if ($name !== '') $map[mb_strtolower($name)] = $name;
+        }
+        return $map;
+    }
+
     /** Tách 1 chuỗi tuyến kho thành các đoạn (cùng dấu phân tách với routeKey/khoRouteDisplay). */
     private function khoSegments(string $kho): array
     {
@@ -755,12 +770,13 @@ trait HandlesPricingAndImport
             $hit = $this->resolveLocationName($t, $skip, '');
             return $hit === false ? $v : $hit;
         };
-        // Chuẩn hóa cột KHO: mỗi đoạn về ký hiệu chuẩn của danh mục Kho, nối ", " (giữ tuyến).
-        $whMap = $this->warehouseCodeMap();
-        $normKho = function ($v) use ($whMap) {
+        // Chuẩn hóa cột KHO: mỗi đoạn về TÊN chuẩn của danh mục Kho, nối ", " (giữ tuyến).
+        // Lưu TÊN (vd "2") chứ không phải code ("QV") — để xuất/hiển thị giữ đúng kho nhỏ.
+        $whNameMap = $this->warehouseNameMap();
+        $normKho = function ($v) use ($whNameMap) {
             $segs = $this->khoSegments((string) $v);
             if (! $segs) return $this->str($v);
-            return implode(', ', array_map(fn ($s) => $whMap[mb_strtolower($s)] ?? $s, $segs));
+            return implode(', ', array_map(fn ($s) => $whNameMap[mb_strtolower($s)] ?? $s, $segs));
         };
 
         return DB::transaction(function () use ($sheet, $rows, $vat, $norm, $normKho) {

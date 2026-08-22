@@ -465,12 +465,13 @@ trait HandlesShipmentUpdateImport
 
             case 'kho':
                 $wh = $this->warehouseCodeMap();
+                $whName = $this->warehouseNameMap();
                 $segs = $this->khoSegments($v);
                 if (! $segs) { $reasons[] = "{$label} “{$v}” không đọc được"; return false; }
                 $out = [];
                 foreach ($segs as $seg) {
                     if (! isset($wh[mb_strtolower($seg)])) { $reasons[] = "Kho “{$seg}” chưa có trong danh mục Kho"; return false; }
-                    $out[] = $wh[mb_strtolower($seg)];
+                    $out[] = $whName[mb_strtolower($seg)] ?? $wh[mb_strtolower($seg)];
                 }
                 return implode(', ', $out);
 
