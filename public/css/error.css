@@ -318,3 +318,41 @@ body {
     padding: 3px 9px; border-radius: 999px;
     margin: 0 2px;
 }
+
+/* ---------- Chi tiết lỗi 500 (chỉ quản trị viên / APP_DEBUG) ---------- */
+.err-info-hint { color: #8792a8; font-size: 12px; }
+
+.err-detail {
+    margin-top: 14px;
+    padding: 14px 16px;
+    text-align: left;
+    background: rgba(255, 91, 91, .05);
+    border: 1px solid rgba(255, 91, 91, .22);
+    border-radius: 14px;
+}
+.err-detail-head {
+    display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px;
+    font-size: 12px; font-weight: 700; color: var(--err-c2);
+    text-transform: uppercase; letter-spacing: .04em;
+}
+.err-detail-head span { font-size: 11px; font-weight: 400; letter-spacing: 0; text-transform: none; color: #8792a8; }
+.err-detail-type {
+    margin-top: 9px; font-size: 12.5px; font-weight: 700; color: var(--err-c2);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.err-detail-msg {
+    margin: 5px 0 0; font-size: 13.5px; line-height: 1.55; color: #1c273c;
+    word-break: break-word; white-space: pre-wrap;
+}
+.err-detail-at { margin-top: 9px; }
+.err-detail code {
+    display: inline-block; max-width: 100%; overflow-wrap: anywhere;
+    background: rgba(255, 255, 255, .75); padding: 2px 8px; border-radius: 5px;
+    color: #5b6680; font-size: 11.5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.err-detail-trace {
+    margin: 9px 0 0; padding: 9px 0 0; list-style: none;
+    border-top: 1px dashed rgba(255, 91, 91, .25);
+    display: flex; flex-direction: column; gap: 4px;
+}

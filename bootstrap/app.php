@@ -5,6 +5,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -62,5 +63,11 @@ return Application::configure(basePath: dirname(__DIR__))
             ->withoutOverlapping(5);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        // MÃ LỖI ngắn cho mỗi sự cố: ghi kèm vào laravel.log VÀ in trên trang 500 → người dùng đọc mã,
+        // kỹ thuật grep đúng dòng log, khỏi dò theo giờ. Sinh 1 lần/request rồi giữ trong container
+        // để view 500 (render sau report) đọc lại đúng mã vừa ghi.
+        $exceptions->context(function (): array {
+            if (! app()->bound('sys.errorRef')) app()->instance('sys.errorRef', strtoupper(Str::random(6)));
+            return ['ref' => app('sys.errorRef')];
+        });
     })->create();
