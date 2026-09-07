@@ -388,7 +388,9 @@ function ShipmentsApp() {
       segs.forEach((seg) => { const k = seg.toLowerCase(); const v = noteByName[k] || noteByCode[k] || ""; if (v && !out.includes(v)) out.push(v); });
       return out.join(" · ");
     };
-    const cols = ["NHÀ MÁY", "SỐ BOOKING/BILL", "NHẬP/XUẤT", "SỐ LƯỢNG", "LOẠI", "CẮT MÁNG", "NƠI LẤY", "NƠI HẠ", "NGÀY", "GIỜ", "KHO", "ĐỊA CHỈ ĐÓNG HÀNG", "INVOICE", "MÃ SỐ THUẾ / ĐỊA CHỈ / EMAIL"];
+    // SỐ CONT đứng cạnh LOẠI (cùng mô tả container) · BIỂN SỐ XE ngay sau NGÀY/GIỜ (xe nào đến lúc đó).
+    // Biển số lấy BKS VÀO — xe nhận việc; không lô nào có BKS ra mà thiếu BKS vào nên không cần fallback.
+    const cols = ["NHÀ MÁY", "SỐ BOOKING/BILL", "NHẬP/XUẤT", "SỐ LƯỢNG", "LOẠI", "SỐ CONT", "CẮT MÁNG", "NƠI LẤY", "NƠI HẠ", "NGÀY", "GIỜ", "BIỂN SỐ XE", "KHO", "ĐỊA CHỈ ĐÓNG HÀNG", "INVOICE", "MÃ SỐ THUẾ / ĐỊA CHỈ / EMAIL"];
     const data = list.map((s) => {
       const ci = info[s.customer] || {};
       const dt = s.gioDenDuKien || "";
@@ -396,7 +398,7 @@ function ShipmentsApp() {
       const gio = dt.length >= 16 ? dt.slice(11, 16) : "";
       // Thông tin công ty gộp 1 ô (MST · địa chỉ · email) — khỏi tách nhiều cột thưa dữ liệu.
       const congTy = [ci.taxCode, ci.address, ci.email].map((v) => String(v || "").trim()).filter(Boolean).join(" · ");
-      return { "NHÀ MÁY": s.customer || "", "SỐ BOOKING/BILL": s.booking || "", "NHẬP/XUẤT": s.io || "", "SỐ LƯỢNG": s.qty == null ? "" : s.qty, "LOẠI": s.contType || "", "CẮT MÁNG": fmtCM(s.cutOff), "NƠI LẤY": s.from || "", "NƠI HẠ": s.to || "", "NGÀY": ngay, "GIỜ": gio, "KHO": s.kho || "", "ĐỊA CHỈ ĐÓNG HÀNG": khoNote(s.kho), "INVOICE": s.inv || "", "MÃ SỐ THUẾ / ĐỊA CHỈ / EMAIL": congTy };
+      return { "NHÀ MÁY": s.customer || "", "SỐ BOOKING/BILL": s.booking || "", "NHẬP/XUẤT": s.io || "", "SỐ LƯỢNG": s.qty == null ? "" : s.qty, "LOẠI": s.contType || "", "SỐ CONT": s.contNo || "", "CẮT MÁNG": fmtCM(s.cutOff), "NƠI LẤY": s.from || "", "NƠI HẠ": s.to || "", "NGÀY": ngay, "GIỜ": gio, "BIỂN SỐ XE": s.bksVao || "", "KHO": s.kho || "", "ĐỊA CHỈ ĐÓNG HÀNG": khoNote(s.kho), "INVOICE": s.inv || "", "MÃ SỐ THUẾ / ĐỊA CHỈ / EMAIL": congTy };
     });
     const ws = XLSX.utils.json_to_sheet(data, { header: cols });
     // Cột ghi chú kho thường dài (địa chỉ) → cho rộng hơn để không phải kéo tay.
