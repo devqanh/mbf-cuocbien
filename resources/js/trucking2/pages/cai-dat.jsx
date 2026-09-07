@@ -16,7 +16,7 @@ const CAT_KEYS = {
   costItems: ["costItems", "prices", "costColors", "costAuto", "costVat"],
   choHoItems: ["choHoItems", "prices"],
   revItems: ["revItems", "prices"],
-  vehicles: ["vehicles", "vehicleType", "vehicleAxle", "vehicleGps"],
+  vehicles: ["vehicles", "vehicleType", "vehicleAxle", "vehicleGps", "vehicleDriverId"],
   drivers: ["drivers"],
   salaryItems: ["salaryItems"],
   extVendors: ["extVendors"],
@@ -39,7 +39,7 @@ const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&":
 
 function SettingsApp() {
   const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
-  const DEFAULT_CFG = { locations: [], locationCode: {}, locationCodeArr: [], locationsIdArr: [], locationLocked: [], customers: [], customerInfo: {}, contTypes: [], warehouses: [], warehouseCode: {}, warehouseCodeArr: [], warehousesIdArr: [], warehouseAddr: {}, warehouseAddrArr: [], warehouseNote: {}, warehouseNoteArr: [], warehouseNoteCode: {}, warehouseGeoArr: [], payers: [], costItems: [], choHoItems: [], revItems: [], vehicles: [], vehicleType: {}, vehicleAxle: {}, vehicleGps: {}, gpsVehicles: [], drivers: [], salaryItems: [], extVendors: [], vehicleCostTypes: [], assetCategories: [], assetCostTypes: [], payMethods: [], routeFees: [], fuelPrices: [], prices: {}, costColors: {}, vatDefault: { hph: "8", icd: "0" }, freeTimeHours: "4", freeTimeRules: [], dueWarnDays: "30" };
+  const DEFAULT_CFG = { locations: [], locationCode: {}, locationCodeArr: [], locationsIdArr: [], locationLocked: [], customers: [], customerInfo: {}, contTypes: [], warehouses: [], warehouseCode: {}, warehouseCodeArr: [], warehousesIdArr: [], warehouseAddr: {}, warehouseAddrArr: [], warehouseNote: {}, warehouseNoteArr: [], warehouseNoteCode: {}, warehouseGeoArr: [], payers: [], costItems: [], choHoItems: [], revItems: [], vehicles: [], vehicleType: {}, vehicleAxle: {}, vehicleGps: {}, vehicleDriverId: {}, gpsVehicles: [], driverOptions: [], drivers: [], salaryItems: [], extVendors: [], vehicleCostTypes: [], assetCategories: [], assetCostTypes: [], payMethods: [], routeFees: [], fuelPrices: [], prices: {}, costColors: {}, vatDefault: { hph: "8", icd: "0" }, freeTimeHours: "4", freeTimeRules: [], dueWarnDays: "30" };
   const api = (method, url, body) => window.trkApi(method, url, body);
   const [cfg, setCfgState] = useState(DEFAULT_CFG);
   const [counts, setCounts] = useState(B.counts || {});   // badge sidebar (boot, nhẹ)

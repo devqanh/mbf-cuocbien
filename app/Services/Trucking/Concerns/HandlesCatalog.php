@@ -262,6 +262,10 @@ trait HandlesCatalog
                 'vehicleAxle' => $v->filter(fn ($x) => $x->axle)->mapWithKeys(fn ($x) => [$x->plate => $x->axle])->all(),
                 'vehicleGps'  => $v->filter(fn ($x) => $x->gps_ref)->mapWithKeys(fn ($x) => [$x->plate => $x->gps_ref])->all(),
                 'gpsVehicles' => $gpsVehicles,   // danh sách xe GPS cho dropdown (gộp mọi nguồn)
+                // Lái xe mặc định: map theo ID (tên lái xe có thể trùng) + danh sách chọn "Tên · SĐT" từ danh mục Lái xe.
+                'vehicleDriverId' => $v->filter(fn ($x) => $x->driver_id)->mapWithKeys(fn ($x) => [$x->plate => $x->driver_id])->all(),
+                'driverOptions'   => \App\Models\TruckingDriver::orderBy('sort')->orderBy('name')->get(['id', 'name', 'phones'])
+                    ->map(fn ($d) => ['id' => $d->id, 'label' => $d->name . ((is_array($d->phones) && $d->phones) ? ' · ' . $d->phones[0] : '')])->all(),
             ];
         }
         if ($key === '__general') {   // cấu hình chung: VAT mặc định + Free time + cảnh báo hạn (+ mở rộng sau)

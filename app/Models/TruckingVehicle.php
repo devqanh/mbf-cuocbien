@@ -4,14 +4,21 @@ namespace App\Models;
 
 use App\Concerns\HasHashid;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-/** Đội xe — biển số + loại (Xe MBF | Xe ngoài) + số cầu. */
+/** Đội xe — biển số + loại (Xe MBF | Xe ngoài) + số cầu + lái xe mặc định. */
 class TruckingVehicle extends Model
 {
     use HasHashid;
 
-    protected $fillable = ['plate', 'type', 'kind', 'axle', 'gps_ref', 'info', 'documents', 'allowances'];
+    protected $fillable = ['plate', 'type', 'kind', 'axle', 'gps_ref', 'driver_id', 'info', 'documents', 'allowances'];
+
+    /** Lái xe mặc định (Cài đặt → Biển số xe) — theo id vì tên lái xe có thể trùng. */
+    public function driver(): BelongsTo
+    {
+        return $this->belongsTo(TruckingDriver::class, 'driver_id');
+    }
 
     protected $casts = [
         'info'       => 'array',

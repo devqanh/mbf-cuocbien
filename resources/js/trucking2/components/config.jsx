@@ -28,6 +28,9 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
   const vehGps = cfg.vehicleGps || {};     // liên kết xe GPS: plate => "provider:deviceId"
   const setVehGps = (name, val) => { const m = { ...vehGps }; if (val) m[name] = val; else delete m[name]; setCfg("vehicleGps", m); };
   const gpsVehicles = cfg.gpsVehicles || [];   // danh sách xe GPS để chọn (từ catalogData)
+  const vehDriver = cfg.vehicleDriverId || {};   // lái xe mặc định: plate => ID lái xe (id vì tên có thể trùng)
+  const setVehDriver = (name, val) => { const m = { ...vehDriver }; if (val) m[name] = val; else delete m[name]; setCfg("vehicleDriverId", m); };
+  const driverOptions = cfg.driverOptions || [];   // [{id, label "Tên · SĐT"}] từ danh mục Lái xe (catalogData)
   const codeKey = (g && g.codeKey) || "locationCode";
   // Mã (ký hiệu) lưu theo CHỈ SỐ dòng → tên được phép trùng, chỉ mã là định danh duy nhất.
   const codeArrKey = codeKey + "Arr";
@@ -73,6 +76,9 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
   if (g && g.fleet) Object.keys(vehGps).forEach((plate) => { const r = vehGps[plate]; if (r && (vehType[plate] || "MBF") === "MBF") (gpsUsedBy[r] = gpsUsedBy[r] || []).push(plate); });
   const isDupGps = (plate) => { const r = vehGps[plate]; return !!r && (gpsUsedBy[r] || []).length > 1; };
   const hasDupGps = !!(g && g.fleet) && Object.values(gpsUsedBy).some((a) => a.length > 1);
+  // Lái xe mặc định: 1 người có thể phụ trách nhiều xe (không chặn) — chỉ ghi chú "đang lái xe X" trong dropdown.
+  const driverUsedBy = {};   // driverId => [plate...]
+  if (g && g.fleet) Object.keys(vehDriver).forEach((plate) => { const d = vehDriver[plate]; if (d && (vehType[plate] || "MBF") === "MBF") (driverUsedBy[d] = driverUsedBy[d] || []).push(plate); });
   const blockSave = hasDupCode || hasEmptyCode || hasDupRoute || hasDupGps;   // chặn lưu khi còn trùng / thiếu ký hiệu
   const costColors = cfg.costColors || {};
   const setColor = (name, val) => { const nc = { ...costColors }; if (val) nc[name] = val; else delete nc[name]; setCfg("costColors", nc); };
@@ -125,7 +131,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
     if (v === old) return;
     if (g && g.priced)  rekey("prices", prices, old, v);
     if (g && g.colored) { rekey("costColors", costColors, old, v); rekey("costAuto", costAuto, old, v); rekey("costVat", costVat, old, v); }
-    if (g && g.fleet) { rekey("vehicleType", vehType, old, v); rekey("vehicleAxle", vehAxle, old, v); rekey("vehicleGps", vehGps, old, v); }
+    if (g && g.fleet) { rekey("vehicleType", vehType, old, v); rekey("vehicleAxle", vehAxle, old, v); rekey("vehicleGps", vehGps, old, v); rekey("vehicleDriverId", vehDriver, old, v); }
   };
   const remove = (i) => {
     const old = list[i]; setCfg(sel, list.filter((_, j) => j !== i));
@@ -136,7 +142,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
     const drop = (mapKey, map) => { if (map[old] === undefined) return; const m = { ...map }; delete m[old]; setCfg(mapKey, m); };
     if (g && g.priced)  drop("prices", prices);
     if (g && g.colored) { drop("costColors", costColors); drop("costAuto", costAuto); drop("costVat", costVat); }
-    if (g && g.fleet) { drop("vehicleType", vehType); drop("vehicleAxle", vehAxle); drop("vehicleGps", vehGps); }
+    if (g && g.fleet) { drop("vehicleType", vehType); drop("vehicleAxle", vehAxle); drop("vehicleGps", vehGps); drop("vehicleDriverId", vehDriver); }
   };
   return (
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "210px 1fr", gap: isMobile ? 12 : 18, padding: "14px 0 4px", minHeight: isMobile ? 0 : 380 }}>
@@ -486,6 +492,27 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                             </select>
                           </div>
                         )}
+                        {/* Hàng 4: lái xe mặc định (MBF) — link danh mục Lái xe theo ID (tên có thể trùng, nhãn kèm SĐT).
+                            Dùng Combo (có ô tìm kiếm) như mọi chỗ chọn lái xe khác — danh mục 30+ người, select thường khó dò. */}
+                        {isMbf && (() => {
+                          const cur = String(vehDriver[it] || "");   // map có thể giữ số (từ DB) hoặc chuỗi (vừa chọn)
+                          const dOpts = driverOptions.map((d) => {
+                            const otherV = (driverUsedBy[d.id] || []).filter((pl) => pl !== it);
+                            return { value: String(d.id), label: d.label + (otherV.length ? ` · đang lái ${otherV.join(", ")}` : "") };
+                          });
+                          // Lái xe đã xóa khỏi danh mục mà xe còn giữ id → vẫn liệt kê để biết mà chọn lại, không trơ ra số id.
+                          if (cur && !dOpts.some((o) => o.value === cur)) dOpts.unshift({ value: cur, label: "(lái xe không còn trong danh mục)" });
+                          return (
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}
+                              title="Lái xe mặc định của xe — chọn từ danh mục Lái xe (mục Lái xe bên trái)">
+                              <i className="bi bi-person-badge" style={{ color: cur ? "var(--accent)" : "var(--ink-4)", fontSize: 14, flexShrink: 0 }} />
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <Combo value={cur} onChange={(v) => setVehDriver(it, v)} options={dOpts}
+                                  placeholder="Chọn lái xe mặc định…" small clearable />
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     );
                   }

@@ -467,8 +467,9 @@ trait HandlesPricingAndImport
         // Xóa xe KHÔNG match (biển xóa hẳn)
         TruckingVehicle::whereNotIn('id', $matchedIds ?: [0])->whereNotIn('plate', $plates ?: [''])->delete();
 
-        // Tạo / cập nhật attrs (type/axle/gps) — updateOrCreate theo plate (giờ plate đã đồng bộ)
+        // Tạo / cập nhật attrs (type/axle/gps/lái xe) — updateOrCreate theo plate (giờ plate đã đồng bộ)
         $usedGps = [];
+        $driverIds = array_key_exists('vehicleDriverId', $cfg) ? \App\Models\TruckingDriver::pluck('id')->flip()->all() : [];
         foreach ($plates as $plate) {
             // Lookup attrs by current plate HOẶC plate gốc (trước khi chuẩn hóa) — vì frontend gửi key cũ
             $lookupKeys = [$plate, str_replace('-', '', $plate)];
@@ -481,6 +482,11 @@ trait HandlesPricingAndImport
                 if ($ref !== null && isset($usedGps[$ref])) $ref = null;
                 if ($ref !== null) $usedGps[$ref] = $plate;
                 $attrs['gps_ref'] = $ref;
+            }
+            if (array_key_exists('vehicleDriverId', $cfg)) {
+                // Lái xe mặc định: chỉ xe MBF, và phải còn trong danh mục (lái xe vừa bị xóa thì về null, không vỡ FK).
+                $did = $type === 'MBF' ? $first($cfg['vehicleDriverId'] ?? []) : null;
+                $attrs['driver_id'] = ($did !== null && isset($driverIds[(int) $did])) ? (int) $did : null;
             }
             TruckingVehicle::updateOrCreate(['plate' => $plate], $attrs);
         }
