@@ -231,7 +231,10 @@ function ShipmentsApp() {
         if (key === "locations")  { partial.locationCode = n.locationCode;  partial.locationCodeArr = n.locationCodeArr; partial.locationsIdArr = n.locationsIdArr; }
         if (key === "warehouses") { partial.warehouseCode = n.warehouseCode; partial.warehouseCodeArr = n.warehouseCodeArr; partial.warehousesIdArr = n.warehousesIdArr; }
       }
-      if (url) api("PUT", url, { cfg: partial });
+      // addOnly: THÊM NHANH thì CHỈ được thêm, không được xóa. Danh sách gửi kèm lấy từ cfg trong trình
+      // duyệt nên có thể đã cũ (người khác vừa thêm mục mới / tab mở từ sáng) — thiếu cờ này backend sẽ
+      // coi mọi mục vắng mặt là "đã xóa" và xóa thật kèm cascade. Trang Cài đặt vẫn xóa được như cũ.
+      if (url) api("PUT", url, { cfg: { ...partial, addOnly: true } });
     }, 700);
   };
   const addCfg = (key, v, opts) => setCfgState((c) => {

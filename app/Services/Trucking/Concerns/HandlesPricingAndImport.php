@@ -305,6 +305,20 @@ trait HandlesPricingAndImport
     /** @return string[] danh sách cfgKey lookup hợp lệ (cho validate route). */
     public function catalogKeys(): array { return array_keys($this->lookups()); }
 
+    /**
+     * Payload có phải kiểu "THÊM NHANH" (gõ giá trị mới ngay trong popup Lô hàng) không?
+     *
+     * Ở đó client gửi kèm CẢ DANH SÁCH đang có trong bộ nhớ trình duyệt, mà danh sách đó có thể đã CŨ
+     * (người khác vừa thêm mục mới, hoặc tab mở từ sáng). Reconcile bình thường sẽ coi mọi mục không
+     * có trong danh sách là "đã bị xóa" và xóa thật — kèm cascade. Thêm 1 mục thì không bao giờ được
+     * phép xóa mục khác, nên ở chế độ này CHỈ thêm/cập nhật, tuyệt đối không delete.
+     * Trang Cài đặt vẫn xóa được (nó có hộp thoại xác nhận "sắp xóa N mục").
+     */
+    private function isAddOnly(array $cfg): bool
+    {
+        return ! empty($cfg['addOnly']);
+    }
+
     // --- reconcile từng bảng (dùng chung cho saveConfig & endpoint riêng) ---
     private function reconcileLookup(string $cls, bool $priced, $coded, bool $colored, array $cfg, string $key): void
     {
@@ -347,13 +361,13 @@ trait HandlesPricingAndImport
                 $keepIds[] = $row->id;
                 $sort++;
             }
-            $cls::whereNotIn('id', $keepIds ?: [0])->delete();
+            if (! $this->isAddOnly($cfg)) $cls::whereNotIn('id', $keepIds ?: [0])->delete();
             return;
         }
 
         // Danh mục KHÔNG mã: định danh theo TÊN (như cũ).
         $names = array_values(array_filter(array_map('trim', $cfg[$key] ?? []), fn ($v) => $v !== ''));
-        $cls::whereNotIn('name', $names ?: [''])->delete();
+        if (! $this->isAddOnly($cfg)) $cls::whereNotIn('name', $names ?: [''])->delete();
         foreach ($names as $i => $name) {
             $attrs = ['sort' => $i];
             if ($priced)  $attrs['default_price'] = isset($cfg['prices'][$name]) ? $this->inMoney($cfg['prices'][$name]) : null;
@@ -383,7 +397,7 @@ trait HandlesPricingAndImport
         // ở đây chuẩn hóa thêm payload là chốt chặn cuối.
         $collapse = fn ($v) => preg_replace('/\s+/u', ' ', trim((string) $v)) ?? '';
         $names = array_values(array_filter(array_map($collapse, $cfg['customers'] ?? []), fn ($v) => $v !== ''));
-        TruckingCustomer::whereNotIn('name', $names ?: [''])->delete();
+        if (! $this->isAddOnly($cfg)) TruckingCustomer::whereNotIn('name', $names ?: [''])->delete();
         // Re-key customerInfo theo tên đã collapse — tránh miss contact/priceList khi key payload còn raw.
         $info = [];
         foreach (($cfg['customerInfo'] ?? []) as $k => $v) $info[$collapse($k)] = $v;
@@ -441,12 +455,13 @@ trait HandlesPricingAndImport
         // GỘP XE TRÙNG sẵn có trong DB: nhiều xe cùng DẠNG CHUẨN HÓA (vd "29E72123" và "29E-72123")
         // → giữ 1 xe (id nhỏ nhất), repoint Lô hàng + route_pays sang xe giữ, xóa xe thừa. Phải gộp
         // TRƯỚC khi đổi format, nếu không đổi format xe này sẽ đụng unique 'plate' của xe trùng kia.
+        $addOnly = $this->isAddOnly($cfg);
         $byNorm = [];   // normKey => [vehicle...] (sắp theo id)
         foreach (TruckingVehicle::where('kind', 'vehicle')->orderBy('id')->get() as $v) $byNorm[$normP($v->plate)][] = $v;
         $survivors = [];   // normKey => xe giữ lại
         foreach ($byNorm as $nk => $list) {
             $keep = $list[0];
-            for ($i = 1; $i < count($list); $i++) {
+            for ($i = $addOnly ? count($list) : 1; $i < count($list); $i++) {
                 $dup = $list[$i];
                 TruckingShipment::where('vehicle_id', $dup->id)->update(['vehicle_id' => $keep->id]);
                 TruckingShipment::where('bks_vao', $dup->plate)->update(['bks_vao' => $keep->plate]);
@@ -474,8 +489,10 @@ trait HandlesPricingAndImport
         }
         // Xóa XE không match (biển xóa hẳn). where('kind','vehicle') là chốt chặn: tài sản không nằm
         // trong danh mục này nên không được coi là "đã bị xóa khỏi danh sách".
-        TruckingVehicle::where('kind', 'vehicle')
-            ->whereNotIn('id', $matchedIds ?: [0])->whereNotIn('plate', $plates ?: [''])->delete();
+        if (! $addOnly) {
+            TruckingVehicle::where('kind', 'vehicle')
+                ->whereNotIn('id', $matchedIds ?: [0])->whereNotIn('plate', $plates ?: [''])->delete();
+        }
 
         // Tạo / cập nhật attrs (type/axle/gps/lái xe) — updateOrCreate theo plate (giờ plate đã đồng bộ)
         $usedGps = [];
@@ -485,8 +502,13 @@ trait HandlesPricingAndImport
             $lookupKeys = [$plate, str_replace('-', '', $plate)];
             $first = fn ($map) => collect($lookupKeys)->map(fn ($k) => $map[$k] ?? null)->filter()->first();
             $type = $first($cfg['vehicleType'] ?? []) ?? 'MBF';
-            $axle = $type === 'MBF' ? ($first($cfg['vehicleAxle'] ?? []) ?: null) : null;
-            $attrs = ['type' => $type, 'axle' => $axle];
+            $attrs = ['type' => $type];
+            // Số cầu chỉ ghi khi payload CÓ gửi — cùng quy tắc với gps/lái xe bên dưới. Trước đây ghi vô
+            // điều kiện nên mọi lần thêm nhanh biển số ở trang Lô hàng (payload chỉ có vehicles+vehicleType)
+            // là xóa sạch Số cầu của toàn đội xe → sai tiền dầu theo Phí tuyến đường.
+            if (array_key_exists('vehicleAxle', $cfg)) {
+                $attrs['axle'] = $type === 'MBF' ? ($first($cfg['vehicleAxle'] ?? []) ?: null) : null;
+            }
             if (array_key_exists('vehicleGps', $cfg)) {
                 $ref = $type === 'MBF' ? ($first($cfg['vehicleGps'] ?? []) ?: null) : null;
                 if ($ref !== null && isset($usedGps[$ref])) $ref = null;
