@@ -30,27 +30,34 @@ class BackupDatabase extends Command
         $file = $conn['database'] . '_' . now()->format('Y_m_d_His') . '.sql.gz';
         $path = $dir . DIRECTORY_SEPARATOR . $file;
 
-        $command = sprintf(
-            'mysqldump --single-transaction --quick --no-tablespaces '
-            . '--host=%s --port=%s --user=%s %s | gzip > %s',
-            escapeshellarg($conn['host']),
-            escapeshellarg((string) $conn['port']),
-            escapeshellarg($conn['username']),
-            escapeshellarg($conn['database']),
-            escapeshellarg($path)
-        );
+        // KHÔNG dùng shell pipe `mysqldump | gzip`: exit code của pipe là của gzip, nên mysqldump chết
+        // giữa chừng vẫn báo THÀNH CÔNG và để lại file cụt (đã gặp: dump đúng 1/68 bảng mà vẫn "Backup xong").
+        // Ở đây gzip ngay trong PHP và chỉ giữ file khi mysqldump trả exit code 0.
+        $args = ['mysqldump', '--single-transaction', '--quick', '--no-tablespaces',
+            '--host=' . $conn['host'], '--port=' . (string) $conn['port'], '--user=' . $conn['username']];
+        // mysqldump của MySQL 8 hỏi bảng COLUMN_STATISTICS — MariaDB không có, dump chết ngay bảng đầu.
+        // Chỉ thêm cờ khi bản mysqldump này hiểu nó (mysqldump của MariaDB không có cờ và sẽ báo unknown option).
+        if ($this->supportsColumnStatistics()) $args[] = '--column-statistics=0';
+        $args[] = $conn['database'];
 
         // truyền password qua env để không lộ trong `ps`
-        $process = Process::fromShellCommandline($command, null, [
-            'MYSQL_PWD' => $conn['password'],
-        ]);
+        $process = new Process($args, null, ['MYSQL_PWD' => $conn['password']]);
         $process->setTimeout(null); // 10GB dump có thể vài phút, đừng để timeout cắt
 
-        $process->run();
+        $gz = gzopen($path, 'wb6');
+        if (! $gz) {
+            $this->record(false, null, 0, $started, 'Không mở được file ghi: ' . $path);
+            $this->error('Backup thất bại: không ghi được ' . $path);
+            return self::FAILURE;
+        }
+        $process->run(function ($type, $buf) use ($gz) {
+            if ($type === Process::OUT) gzwrite($gz, $buf);
+        });
+        gzclose($gz);
 
-        if (! $process->isSuccessful()) {
-            @unlink($path); // bỏ file rỗng/hỏng nếu có
-            $err = trim($process->getErrorOutput()) ?: 'Lỗi không rõ';
+        if ($process->getExitCode() !== 0) {
+            @unlink($path); // bỏ file cụt — thà không có backup còn hơn tưởng là có
+            $err = trim($process->getErrorOutput()) ?: 'mysqldump trả về mã ' . $process->getExitCode();
             $this->record(false, null, 0, $started, $err);
             $this->error('Backup thất bại: ' . $err);
             return self::FAILURE;
@@ -61,6 +68,15 @@ class BackupDatabase extends Command
         $this->record(true, $file, $bytes, $started, null);
         $this->info("Backup xong: {$file} (" . $this->human($bytes) . "). Giữ {$kept} bản gần nhất.");
         return self::SUCCESS;
+    }
+
+    /** mysqldump này có cờ --column-statistics không (MySQL 8 có, MariaDB không)? */
+    private function supportsColumnStatistics(): bool
+    {
+        $p = new Process(['mysqldump', '--help']);
+        $p->setTimeout(20);
+        try { $p->run(); } catch (\Throwable) { return false; }
+        return str_contains($p->getOutput(), 'column-statistics');
     }
 
     /** Giữ N file .sql.gz mới nhất, xóa phần dư. Trả về số file còn giữ. */
