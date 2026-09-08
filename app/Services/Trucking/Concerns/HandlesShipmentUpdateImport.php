@@ -627,7 +627,9 @@ trait HandlesShipmentUpdateImport
 
     private function plateIndex(): array
     {
-        return $this->plateIndexCache ??= \App\Models\TruckingVehicle::whereNotNull('plate')->where('plate', '!=', '')
+        // Chỉ XE mới là biển số hợp lệ cho BKS vào/ra — tài sản (kind='asset') dùng chung bảng nhưng không phải xe.
+        return $this->plateIndexCache ??= \App\Models\TruckingVehicle::where('kind', 'vehicle')
+            ->whereNotNull('plate')->where('plate', '!=', '')
             ->pluck('plate')->mapWithKeys(fn ($p) => [mb_strtolower(trim($p)) => trim($p)])->all();
     }
 

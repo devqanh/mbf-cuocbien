@@ -418,6 +418,14 @@ trait HandlesPricingAndImport
         return $p !== '' ? $p : null;
     }
 
+    /**
+     * Đồng bộ danh mục Biển số xe (Cài đặt) với bảng trucking_vehicles.
+     *
+     * QUAN TRỌNG — bảng này dùng CHUNG cho XE (kind='vehicle') và TÀI SẢN (kind='asset', vd moóc,
+     * quản lý ở trang Quản lý xe → tab Tài sản). Danh mục Biển số xe KHÔNG liệt kê tài sản, nên mọi
+     * truy vấn ở đây PHẢI lọc kind='vehicle': nếu không, bước "xóa xe không có trong danh sách" sẽ
+     * xóa sạch tài sản (kèm cascade phiếu chi + khấu hao) mỗi lần bấm "Lưu mục này".
+     */
     private function reconcileVehicles(array $cfg): void
     {
         $raw = array_values(array_filter(array_map('trim', $cfg['vehicles'] ?? []), fn ($v) => $v !== ''));
@@ -434,7 +442,7 @@ trait HandlesPricingAndImport
         // → giữ 1 xe (id nhỏ nhất), repoint Lô hàng + route_pays sang xe giữ, xóa xe thừa. Phải gộp
         // TRƯỚC khi đổi format, nếu không đổi format xe này sẽ đụng unique 'plate' của xe trùng kia.
         $byNorm = [];   // normKey => [vehicle...] (sắp theo id)
-        foreach (TruckingVehicle::orderBy('id')->get() as $v) $byNorm[$normP($v->plate)][] = $v;
+        foreach (TruckingVehicle::where('kind', 'vehicle')->orderBy('id')->get() as $v) $byNorm[$normP($v->plate)][] = $v;
         $survivors = [];   // normKey => xe giữ lại
         foreach ($byNorm as $nk => $list) {
             $keep = $list[0];
@@ -464,8 +472,10 @@ trait HandlesPricingAndImport
                 unset($newByN[$n]);
             }
         }
-        // Xóa xe KHÔNG match (biển xóa hẳn)
-        TruckingVehicle::whereNotIn('id', $matchedIds ?: [0])->whereNotIn('plate', $plates ?: [''])->delete();
+        // Xóa XE không match (biển xóa hẳn). where('kind','vehicle') là chốt chặn: tài sản không nằm
+        // trong danh mục này nên không được coi là "đã bị xóa khỏi danh sách".
+        TruckingVehicle::where('kind', 'vehicle')
+            ->whereNotIn('id', $matchedIds ?: [0])->whereNotIn('plate', $plates ?: [''])->delete();
 
         // Tạo / cập nhật attrs (type/axle/gps/lái xe) — updateOrCreate theo plate (giờ plate đã đồng bộ)
         $usedGps = [];
@@ -488,7 +498,11 @@ trait HandlesPricingAndImport
                 $did = $type === 'MBF' ? $first($cfg['vehicleDriverId'] ?? []) : null;
                 $attrs['driver_id'] = ($did !== null && isset($driverIds[(int) $did])) ? (int) $did : null;
             }
-            TruckingVehicle::updateOrCreate(['plate' => $plate], $attrs);
+            // plate là UNIQUE toàn bảng: nếu biển này đang là mã của một TÀI SẢN thì bỏ qua, tuyệt đối
+            // không updateOrCreate theo plate — sẽ biến bản ghi tài sản thành xe (mất tab Tài sản của nó).
+            $row = TruckingVehicle::where('plate', $plate)->first();
+            if ($row && ($row->kind ?? 'vehicle') === 'asset') continue;
+            $row ? $row->update($attrs) : TruckingVehicle::create($attrs + ['plate' => $plate, 'kind' => 'vehicle']);
         }
     }
 

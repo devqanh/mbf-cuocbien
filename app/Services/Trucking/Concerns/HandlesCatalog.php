@@ -120,8 +120,9 @@ trait HandlesCatalog
             return [$c->name => $entry];
         })->all();
 
-        // Đội xe + loại
-        $vehicles = TruckingVehicle::orderBy('plate')->get();
+        // Đội xe + loại — CHỈ kind='vehicle'; tài sản (moóc…) dùng chung bảng nhưng quản lý ở trang
+        // Quản lý xe → tab Tài sản, không thuộc danh mục Biển số xe (xem reconcileVehicles).
+        $vehicles = TruckingVehicle::where('kind', 'vehicle')->orderBy('plate')->get();
         $cfg['vehicles'] = $vehicles->pluck('plate')->all();
         $cfg['vehicleType'] = $vehicles->mapWithKeys(fn ($v) => [$v->plate => $v->type])->all();
         $cfg['vehicleAxle'] = $vehicles->filter(fn ($v) => $v->axle)->mapWithKeys(fn ($v) => [$v->plate => $v->axle])->all();
@@ -253,7 +254,7 @@ trait HandlesCatalog
             ];
         }
         if ($key === 'vehicles') {
-            $v = TruckingVehicle::orderBy('plate')->get();
+            $v = TruckingVehicle::where('kind', 'vehicle')->orderBy('plate')->get();   // tài sản không thuộc danh mục này
             $gpsVehicles = [];
             try { $gpsVehicles = app(\App\Services\Gps\GpsTrackingService::class)->vehicleOptions(); } catch (\Throwable) {}
             return [
