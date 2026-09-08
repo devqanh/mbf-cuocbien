@@ -4,6 +4,7 @@ import { OverviewTab } from "./OverviewTab.jsx";
 import { FleetTab } from "./FleetTab.jsx";
 import { CustomersTab } from "./CustomersTab.jsx";
 import { TrendTab } from "./TrendTab.jsx";
+import { OfficeTab } from "./OfficeTab.jsx";
 
 const { useState, useEffect, useRef } = React;
 
@@ -14,7 +15,7 @@ const T = window.__TRK || {};
 const ROUTES = T.routes || {};
 const B = T.boot || {};
 const TAB_KEY = "trk:baocao:tab";
-export const TABS = [["overview", "Tổng quan", "bi-speedometer2"], ["fleet", "Đội xe", "bi-truck"], ["customers", "Khách & sản lượng", "bi-people"], ["trend", "Xu hướng 12 tháng", "bi-graph-up"]];
+export const TABS = [["overview", "Tổng quan", "bi-speedometer2"], ["fleet", "Đội xe", "bi-truck"], ["customers", "Khách & sản lượng", "bi-people"], ["office", "Văn phòng", "bi-building"], ["trend", "Xu hướng 12 tháng", "bi-graph-up"]];
 const ymKey = (y, m) => `${y}-${String(m).padStart(2, "0")}`;
 const prevOf = (y, m) => (m === 1 ? [y - 1, 12] : [y, m - 1]);
 const btnIcon = { width: 32, height: 32, display: "grid", placeItems: "center", border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--ink-2)", cursor: "pointer", fontSize: 16 };
@@ -125,6 +126,7 @@ export function ReportApp() {
           {tab === "overview" && <OverviewTab rep={rep} prev={prev} prevLabel={prevLabel} isMobile={isMobile} routes={ROUTES} onGoTab={setTab} />}
           {tab === "fleet" && <FleetTab rep={rep} prev={prev} isMobile={isMobile} routes={ROUTES} />}
           {tab === "customers" && <CustomersTab rep={rep} prev={prev} isMobile={isMobile} />}
+          {tab === "office" && <OfficeTab rep={rep} prev={prev} prevLabel={prevLabel} isMobile={isMobile} routes={ROUTES} />}
           {tab === "trend" && <TrendTab rows={trend} loading={trendLoading} monthLabel={monthLabel} isMobile={isMobile} />}
         </div>
       </div>

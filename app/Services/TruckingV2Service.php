@@ -58,6 +58,7 @@ class TruckingV2Service
     use \App\Services\Trucking\Concerns\HandlesCshtImport;
     use \App\Services\Trucking\Concerns\HandlesShipmentUpdateImport;
     use \App\Services\Trucking\Concerns\HandlesAssetReport;
+    use \App\Services\Trucking\Concerns\HandlesOfficeReport;
     use \App\Services\Trucking\Concerns\HandlesStatements;
     use \App\Services\Trucking\Concerns\HandlesStatementPricing;
     use \App\Services\Trucking\Concerns\HandlesExtStatements;

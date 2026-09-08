@@ -15,6 +15,7 @@ window.__TRK = {
     data: '{{ route("trucking2.report.data") }}',
     trend: '{{ route("trucking2.report.trend") }}',
     fleet: '{{ url("trucking-v2/quan-ly-xe") }}',   // deep-link hồ sơ xe: #<hashid>/cost
+    office: '{{ url("trucking-v2/quan-ly-xe") }}#office',   // tab Chi phí văn phòng
   },
   boot: @json($boot),
 };

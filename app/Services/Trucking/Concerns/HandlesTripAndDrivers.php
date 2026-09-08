@@ -1177,6 +1177,7 @@ trait HandlesTripAndDrivers
             'byCustomer' => $byCustomer,
             'byRoute' => $mkTop($byRoute),
             'byKho'   => $mkTop($byKho),
+            'office'  => $this->officeReport($year, $month),   // tab "Văn phòng" — chi phí quản lý (spent khớp nhóm office ở trên)
         ];
     }
 
