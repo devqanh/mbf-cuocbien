@@ -160,12 +160,12 @@ trait HandlesSpendRequests
             ->where('created_by', $userId)->orderByDesc('id')->limit(100)->get()
             ->map(function ($c) {
                 $st = $this->vehicleCostStatus($c);
-                $isAsset = ($c->vehicle?->kind ?? 'vehicle') === 'asset';
+                $kind = in_array($c->vehicle?->kind, ['asset', 'office'], true) ? $c->vehicle->kind : 'vehicle';
                 $vinfo = is_array($c->vehicle?->info) ? $c->vehicle->info : [];
                 return [
                     'id' => $c->id, 'hashid' => Hashid::encode($c->id), 'vehicleId' => $c->vehicle_id, 'plate' => $c->vehicle?->plate ?? '', 'name' => $c->name ?? '',
-                    'kind' => $isAsset ? 'asset' : 'vehicle',
-                    'targetName' => $isAsset ? (($vinfo['name'] ?? '') ?: ($c->vehicle?->plate ?? '')) : ($c->vehicle?->plate ?? ''),
+                    'kind' => $kind,
+                    'targetName' => $kind !== 'vehicle' ? (($vinfo['name'] ?? '') ?: ($c->vehicle?->plate ?? '')) : ($c->vehicle?->plate ?? ''),
                     'note' => $c->note ?? '',
                     'invoiceNo' => $c->invoice_no ?? '', 'amount' => $this->outMoney($c->amount),
                     'estAmount' => $c->est_amount !== null ? $this->outMoney($c->est_amount) : null,   // dự kiến lái xe gửi

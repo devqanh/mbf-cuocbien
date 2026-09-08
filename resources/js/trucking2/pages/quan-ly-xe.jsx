@@ -4,6 +4,7 @@ import "@trk/shared.js";
 const { useState, useEffect, useRef } = React;
 import { FleetApp } from "@trk/components/quan-ly-xe/FleetApp.jsx";
 import { AssetApp } from "@trk/components/quan-ly-xe/asset.jsx";
+import { OfficeApp } from "@trk/components/quan-ly-xe/office.jsx";
 
 /* ---- Toggle Xe | Tài sản + Root ---- */
 function ModeToggle({ mode, setMode }) {
@@ -17,6 +18,7 @@ function ModeToggle({ mode, setMode }) {
     <div style={{ display: "inline-flex", background: "#eceef1", borderRadius: 10, padding: 4, gap: 2, marginBottom: 16 }}>
       {opt("vehicle", "Xe", "bi-truck")}
       {opt("asset", "Tài sản", "bi-box-seam")}
+      {opt("office", "Chi phí văn phòng", "bi-building")}
     </div>
   );
 }
@@ -24,8 +26,8 @@ function ModeToggle({ mode, setMode }) {
 function Root() {
   const ROUTES = (window.__TRK || {}).routes || {};
   const [mode, setMode] = useState(() => {
-    try { const h = window.location.hash || ""; if (/^#asset\//.test(h)) return "asset"; if (/^#\d+/.test(h)) return "vehicle"; } catch (e) {}
-    try { return localStorage.getItem("trk-fleet-mode") === "asset" ? "asset" : "vehicle"; } catch (e) { return "vehicle"; }
+    try { const h = window.location.hash || ""; if (/^#office/.test(h)) return "office"; if (/^#asset\//.test(h)) return "asset"; if (/^#\d+/.test(h)) return "vehicle"; } catch (e) {}
+    try { const m = localStorage.getItem("trk-fleet-mode"); return (m === "asset" || m === "office") ? m : "vehicle"; } catch (e) { return "vehicle"; }
   });
   const [aData, setAData] = useState({ loaded: false, assets: [], categories: [] });
   const fetched = useRef(false);
@@ -42,6 +44,8 @@ function Root() {
   const sw = <ModeToggle mode={mode} setMode={change} />;
   return mode === "asset"
     ? <AssetApp modeSwitch={sw} assets={aData.assets} setAssets={setAssets} categories={aData.categories} setCategories={setCategories} loaded={aData.loaded} />
+    : mode === "office"
+    ? <OfficeApp modeSwitch={sw} />
     : <FleetApp modeSwitch={sw} />;
 }
 

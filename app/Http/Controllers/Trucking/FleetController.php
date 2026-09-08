@@ -33,6 +33,12 @@ class FleetController extends BaseTruckingController
         return response()->json(['ok' => true, 'assets' => $this->svc->assetList(), 'assetCategories' => $this->svc->assetCategories()]);
     }
 
+    /** Tab Chi phí văn phòng: trung tâm chi phí quản lý (tự tạo lần đầu) + phiếu chi + loại chi phí văn phòng. */
+    public function officeData(): JsonResponse
+    {
+        return response()->json(['ok' => true, 'vehicle' => $this->svc->officeData()]);
+    }
+
     /** Tạo tài sản mới. */
     public function createAsset(Request $request): JsonResponse
     {
@@ -72,6 +78,7 @@ class FleetController extends BaseTruckingController
         return view('trucking2.quan-ly-chi-phi', $this->pageData([
             'costTypes'      => $this->svc->vehicleCostTypesOut(),   // mặc định (xe)
             'assetCostTypes' => $this->svc->assetCostTypesOut(),     // dùng khi phiếu là tài sản
+            'officeCostTypes' => $this->svc->officeCostTypesOut(),   // dùng khi phiếu là chi phí văn phòng
             'payMethods'     => $this->svc->payMethodsOut(),         // hình thức thanh toán (cấu hình ở Cài đặt)
             'payers'    => $this->svc->vehiclePayerNames(),          // "Người chi" cho phiếu chi
             'suppliers' => $this->svc->supplierSuggestions(),

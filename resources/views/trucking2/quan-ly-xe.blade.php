@@ -23,6 +23,7 @@ window.__TRK = {
     costItem: '{{ route("trucking2.fleet.costItem") }}',
     spendRequest: '{{ route("trucking2.spendRequest") }}',   // link public gửi yêu cầu chi
     assetList: '{{ route("trucking2.asset.list") }}',   // lazy-load danh sách tài sản
+    officeData: '{{ route("trucking2.office.data") }}',   // lazy-load tab Chi phí văn phòng (trung tâm chi phí + phiếu)
     assetCreate: '{{ route("trucking2.asset.create") }}',
     assetCategory: '{{ route("trucking2.asset.category") }}',
     assetDestroy: '{{ url("trucking-v2/quan-ly-tai-san") }}/',   // + {id} (DELETE)

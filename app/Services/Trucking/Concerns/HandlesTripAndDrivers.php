@@ -1017,7 +1017,7 @@ trait HandlesTripAndDrivers
     }
 
     /** Nhãn 4 NHÓM chi phí lớn của báo cáo (sếp nhìn nhóm trước, khoản chi tiết sau). */
-    private const COST_GROUPS = ['driver' => 'Lương & vận hành lái xe', 'vehicle' => 'Chi phí xe', 'asset' => 'Chi phí tài sản', 'shipment' => 'Chi phí lô hàng'];
+    private const COST_GROUPS = ['driver' => 'Lương & vận hành lái xe', 'vehicle' => 'Chi phí xe', 'asset' => 'Chi phí tài sản', 'office' => 'Chi phí văn phòng', 'shipment' => 'Chi phí lô hàng'];
 
     /**
      * Báo cáo chi phí công ty theo THÁNG: Doanh thu − Chi phí = Lợi nhuận, cơ cấu chi phí theo
@@ -1079,17 +1079,20 @@ trait HandlesTripAndDrivers
         // 3) Chi phí xe / tài sản (vehicle_costs) theo spend_date, BỎ phiếu đã hủy — NHÓM THEO THAM CHIẾU
         //    loại chi phí (cost_type_id) phân giải theo ĐÚNG NGUỒN (xe → "Loại chi phí xe";
         //    tài sản → "Loại chi phí tài sản"); fallback tên chuỗi khi chưa gắn danh mục.
-        $vehTypeName   = \App\Models\TruckingVehicleCostType::pluck('name', 'id');
-        $assetTypeName = \App\Models\TruckingAssetCostType::pluck('name', 'id');
+        // 3 nguồn danh mục theo kind: xe · tài sản · văn phòng (chi phí quản lý — không gắn xe nào nên không vào bảng "theo xe").
+        $typeNames = [
+            'vehicle' => \App\Models\TruckingVehicleCostType::pluck('name', 'id'),
+            'asset'   => \App\Models\TruckingAssetCostType::pluck('name', 'id'),
+            'office'  => \App\Models\TruckingOfficeCostType::pluck('name', 'id'),
+        ];
         foreach (TruckingVehicleCost::with('vehicle:id,plate,kind')->whereNull('cancelled_at')->whereNotNull('spend_date')
             ->whereDate('spend_date', '>=', $s)->whereDate('spend_date', '<=', $e)->get() as $vc) {
-            $isAsset = (($vc->vehicle?->kind) ?? 'vehicle') === 'asset';
-            $type = $vc->cost_type_id
-                ? ($isAsset ? ($assetTypeName[$vc->cost_type_id] ?? null) : ($vehTypeName[$vc->cost_type_id] ?? null))
-                : null;
+            $kind  = in_array($vc->vehicle?->kind, ['asset', 'office'], true) ? $vc->vehicle->kind : 'vehicle';
+            $type  = $vc->cost_type_id ? ($typeNames[$kind][$vc->cost_type_id] ?? null) : null;
             $type  = $type ?: (trim((string) $vc->name) ?: null);
-            $label = ($isAsset ? 'Chi phí tài sản' : 'Chi phí xe') . ($type !== null ? ' · ' . $type : '');
-            $addCat($label, $vc->amount, $isAsset ? 'asset' : 'vehicle'); $addPlate($vc->vehicle?->plate ?? '—', $vc->amount);
+            $label = self::COST_GROUPS[$kind] . ($type !== null ? ' · ' . $type : '');
+            $addCat($label, $vc->amount, $kind);
+            if ($kind !== 'office') $addPlate($vc->vehicle?->plate ?? '—', $vc->amount);
         }
 
         // 4) Chi phí lô hàng (cost_lines, KHÔNG tính chi hộ khách) — dùng số NET (đã trừ VAT).
@@ -1129,7 +1132,7 @@ trait HandlesTripAndDrivers
             $g = $catGroup[$label] ?? 'driver';
             $grouped[$g] ??= ['key' => $g, 'label' => self::COST_GROUPS[$g], 'amount' => 0, 'items' => []];
             $grouped[$g]['amount'] += $amt;
-            $grouped[$g]['items'][] = ['label' => preg_replace('/^Chi phí (xe|tài sản|lô) · /u', '', $label), 'amount' => $amt];
+            $grouped[$g]['items'][] = ['label' => preg_replace('/^Chi phí (xe|tài sản|văn phòng|lô) · /u', '', $label), 'amount' => $amt];
         }
         $costGroups = array_map(function ($g) use ($totalCost) {
             usort($g['items'], fn ($a, $b) => $b['amount'] <=> $a['amount']);

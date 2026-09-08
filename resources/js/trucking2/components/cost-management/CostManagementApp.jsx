@@ -32,6 +32,10 @@ export function CostManagementApp() {
   const canEdit = !!T.canEdit;
   const costTypes = B.costTypes || [];              // loại chi phí xe
   const assetCostTypes = B.assetCostTypes || [];    // loại chi phí tài sản
+  const officeCostTypes = B.officeCostTypes || [];  // loại chi phí văn phòng
+  // 3 đối tượng của phiếu chi — nhãn/icon/danh mục theo kind (xe · tài sản · văn phòng)
+  const KIND = { vehicle: { label: "Xe", icon: "bi-truck-front", types: costTypes }, asset: { label: "Tài sản", icon: "bi-box-seam", types: assetCostTypes }, office: { label: "Văn phòng", icon: "bi-building", types: officeCostTypes } };
+  const kindOf = (k) => KIND[k] || KIND.vehicle;
   const payMethods = B.payMethods || [];            // hình thức thanh toán (cai-dat#payMethods)
   const payerOpts = B.payers || [];                 // "Người chi" (danh mục ∪ đã dùng)
   const [status, setStatus] = useState("action");
@@ -160,7 +164,7 @@ export function CostManagementApp() {
               <span style={{ fontSize: 11, fontWeight: 700, color: st.color, background: st.bg, padding: "2px 9px", borderRadius: 999 }}>{row.statusLabel || st.label}</span>
             </div>
             <div style={{ fontSize: 12, color: "var(--ink-4)", marginTop: 4, display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <span><i className={"bi " + (row.kind === "asset" ? "bi-box-seam" : "bi-truck-front")} /> {row.kind === "asset" ? "Tài sản" : "Xe"} <b className="tnum" style={{ color: "var(--ink-2)" }}>{row.targetName || row.plate}</b></span>
+              <span><i className={"bi " + kindOf(row.kind).icon} /> {kindOf(row.kind).label} <b className="tnum" style={{ color: "var(--ink-2)" }}>{row.targetName || row.plate}</b></span>
               {row.requester && <span><i className="bi bi-person" /> {row.requester}</span>}
               {row.payer && <span title="Người chi"><i className="bi bi-wallet2" /> {row.payer}</span>}
               {row.material && <span style={{ color: "#7c5b16", fontWeight: 600 }} title="Chi phí vật tư"><i className="bi bi-box-seam" /> Vật tư</span>}
@@ -179,7 +183,7 @@ export function CostManagementApp() {
           <div style={{ display: "flex", gap: 7, marginTop: 11, flexWrap: "wrap", paddingTop: 10, borderTop: "1px solid var(--line-2)" }}>
             {!row.approved && btn("Duyệt", "bi-check2-circle", () => doApprove(row), "primary")}
             {!row.paid && btn(row.approved ? "Thanh toán" : "Duyệt & chi", "bi-cash-coin", () => setPay(row), "good")}
-            {btn("Sửa", "bi-pencil", () => setEdit({ d: { ...row, kind: row.kindCost }, isAsset: row.kind === "asset" }))}
+            {btn("Sửa", "bi-pencil", () => setEdit({ d: { ...row, kind: row.kindCost }, target: row.kind }))}
             {row.canCancel && btn("Hủy", "bi-x-circle", () => doCancel(row), "danger")}
           </div>
         )}
@@ -218,7 +222,7 @@ export function CostManagementApp() {
         <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap", padding: "0 0 12px" }}>
           {TABS.map(([k, l]) => tabBtn(k, l))}
           <span style={{ width: 1, height: 20, background: "var(--line)", margin: "0 4px" }} />
-          {[["all", "Tất cả"], ["vehicle", "Xe"], ["asset", "Tài sản"]].map(([k, l]) => (
+          {[["all", "Tất cả"], ["vehicle", "Xe"], ["asset", "Tài sản"], ["office", "Văn phòng"]].map(([k, l]) => (
             <button key={k} type="button" onClick={() => { setKind(k); setPage(1); }}
               style={{ padding: "6px 11px", fontSize: 12.5, fontWeight: 600, borderRadius: 8, cursor: "pointer",
                 border: "1px solid " + (kind === k ? "var(--accent)" : "var(--line)"), background: kind === k ? "var(--accent-weak-2)" : "#fff", color: kind === k ? "var(--accent)" : "var(--ink-3)" }}>{l}</button>
@@ -287,7 +291,7 @@ export function CostManagementApp() {
       </div>
 
       {pay && <PayModal row={pay} payMethods={payMethods} onConfirm={confirmPay} onClose={() => setPay(null)} />}
-      {edit && <CostModal data={edit.d} isNew={false} costTypes={edit.isAsset ? assetCostTypes : costTypes} payMethods={payMethods} payers={B.payers || []}
+      {edit && <CostModal data={edit.d} isNew={false} target={edit.target || "vehicle"} costTypes={kindOf(edit.target).types} payMethods={payMethods} payers={B.payers || []}
         onUploadPhotos={uploadPhotos(edit.d.vehicleHashid)}
         onChange={(d) => setEdit((e) => ({ ...e, d }))} onSave={saveEdit} onClose={() => setEdit(null)} />}
     </div>

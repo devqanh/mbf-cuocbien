@@ -266,6 +266,29 @@ trait HandlesVehicleDetail
         return \App\Models\TruckingAssetCostType::orderBy('sort')->orderBy('name')->pluck('name')->all();
     }
 
+    public function officeCostTypesOut(): array
+    {
+        return \App\Models\TruckingOfficeCostType::orderBy('sort')->orderBy('name')->pluck('name')->all();
+    }
+
+    /**
+     * Trung tâm chi phí VĂN PHÒNG (kind='office') — chi phí quản lý doanh nghiệp không gắn xe/tài sản nào
+     * (thuê VP, điện nước, VPP, lương khối văn phòng…). Dùng chung máy phiếu chi (duyệt → thanh toán, ảnh hóa
+     * đơn, định kỳ, phân bổ) nên đặt cùng bảng như tài sản. 1 dòng mặc định, tự tạo khi mở tab lần đầu;
+     * sau này cần tách theo bộ phận thì thêm dòng kind='office' khác.
+     */
+    public function officeEntity(): TruckingVehicle
+    {
+        return TruckingVehicle::firstOrCreate(['kind' => 'office'], ['plate' => 'VAN-PHONG', 'type' => 'office', 'info' => ['name' => 'Văn phòng']]);
+    }
+
+    /** Dữ liệu tab Chi phí văn phòng: base (tài liệu) + toàn bộ phiếu chi + danh mục loại chi phí văn phòng. */
+    public function officeData(): array
+    {
+        $v = $this->officeEntity();
+        return $this->vehicleBase($v) + ['costs' => $this->costsOut($v), 'costTypes' => $this->officeCostTypesOut()];
+    }
+
     /** Danh mục hình thức thanh toán (phiếu chi) — cấu hình ở Cài đặt; fallback 3 mặc định nếu trống. */
     public function payMethodsOut(): array
     {
@@ -276,7 +299,11 @@ trait HandlesVehicleDetail
     /** Danh mục loại chi phí ĐÚNG NGUỒN: tài sản → "Loại chi phí tài sản"; xe → "Loại chi phí xe". */
     public function costTypesForVehicle(TruckingVehicle $v): array
     {
-        return ($v->kind === 'asset') ? $this->assetCostTypesOut() : $this->vehicleCostTypesOut();
+        return match ($v->kind) {
+            'asset'  => $this->assetCostTypesOut(),
+            'office' => $this->officeCostTypesOut(),
+            default  => $this->vehicleCostTypesOut(),
+        };
     }
 
     /** Chi tiết đầy đủ (base + 3 nhóm) — khi cần tất cả. */
@@ -338,9 +365,11 @@ trait HandlesVehicleDetail
                 $nextN = $usedN ? max($usedN) : 0;
 
                 // Tham chiếu loại chi phí theo ĐÚNG NGUỒN: tài sản → catalog tài sản; xe → catalog xe.
-                $typeId = ($v->kind === 'asset')
-                    ? \App\Models\TruckingAssetCostType::pluck('id', 'name')
-                    : TruckingVehicleCostType::pluck('id', 'name');
+                $typeId = match ($v->kind) {
+                    'asset'  => \App\Models\TruckingAssetCostType::pluck('id', 'name'),
+                    'office' => \App\Models\TruckingOfficeCostType::pluck('id', 'name'),
+                    default  => TruckingVehicleCostType::pluck('id', 'name'),
+                };
 
                 // KHÔNG xóa-tạo-lại: bảng phiếu chi còn được Yêu cầu chi (lái xe) và Quản lý chi phí ghi vào.
                 // Xóa hết theo payload của tab là mất phiếu lái xe vừa gửi trong lúc kế toán đang mở tab.

@@ -178,8 +178,8 @@ trait HandlesFleetAssets
         $per    = min(100, max(5, (int) ($f['perPage'] ?? 20)));
 
         $base = TruckingVehicleCost::query()->with(['vehicle:id,plate,kind,info', 'creator:id,name']);
-        if ($kind === 'vehicle')     $base->whereHas('vehicle', fn ($w) => $w->where('kind', '!=', 'asset'));
-        elseif ($kind === 'asset')   $base->whereHas('vehicle', fn ($w) => $w->where('kind', 'asset'));
+        // 3 đối tượng dùng chung bảng phiếu chi: xe · tài sản · văn phòng (kind của trucking_vehicles)
+        if (in_array($kind, ['vehicle', 'asset', 'office'], true)) $base->whereHas('vehicle', fn ($w) => $w->where('kind', $kind));
         if ($payer !== '') $base->where('payer', $payer);   // lọc theo NGƯỜI CHI (để duyệt theo người)
         if ($q !== '') {
             $like = '%' . $q . '%';
@@ -241,14 +241,15 @@ trait HandlesFleetAssets
     private function costMgmtRow(TruckingVehicleCost $c): array
     {
         $v = $c->vehicle;
-        $isAsset = ($v?->kind ?? 'vehicle') === 'asset';
+        $kind = in_array($v?->kind, ['asset', 'office'], true) ? $v->kind : 'vehicle';
         $vinfo = is_array($v?->info) ? $v->info : [];
         $st = $this->vehicleCostStatus($c);
         return [
             'id' => $c->id, 'hashid' => \App\Support\Hashid::encode($c->id),
             'vehicleId' => $c->vehicle_id, 'vehicleHashid' => $v ? \App\Support\Hashid::encode($v->id) : null,
-            'plate' => $v?->plate ?? '', 'kind' => $isAsset ? 'asset' : 'vehicle',
-            'targetName' => $isAsset ? (($vinfo['name'] ?? '') ?: ($v?->plate ?? '')) : ($v?->plate ?? ''),
+            'plate' => $v?->plate ?? '', 'kind' => $kind,
+            // Xe hiện biển số; tài sản / văn phòng hiện TÊN (info.name), fallback mã.
+            'targetName' => $kind !== 'vehicle' ? (($vinfo['name'] ?? '') ?: ($v?->plate ?? '')) : ($v?->plate ?? ''),
             'name' => $c->name ?? '', 'invoiceNo' => $c->invoice_no ?? '',
             'kindCost' => ($c->kind === 'fixed' ? 'fixed' : 'recurring'),
             'spendDate' => $this->outDate($c->spend_date), 'dueDate' => $this->outDate($c->due_date),
@@ -291,10 +292,12 @@ trait HandlesFleetAssets
         if ($amount <= 0) return ['ok' => false, 'message' => 'Số tiền thực tế phải lớn hơn 0.'];
         $name = $this->str($in['name'] ?? null) ?? $c->name;
         // Tham chiếu loại chi phí theo ĐÚNG NGUỒN của phiếu (xe vs tài sản).
-        $isAsset = (($c->vehicle?->kind) ?? 'vehicle') === 'asset';
         $typeId = $name !== null
-            ? ($isAsset ? \App\Models\TruckingAssetCostType::where('name', $name)->value('id')
-                        : \App\Models\TruckingVehicleCostType::where('name', $name)->value('id'))
+            ? match ($c->vehicle?->kind) {
+                'asset'  => \App\Models\TruckingAssetCostType::where('name', $name)->value('id'),
+                'office' => \App\Models\TruckingOfficeCostType::where('name', $name)->value('id'),
+                default  => \App\Models\TruckingVehicleCostType::where('name', $name)->value('id'),
+            }
             : null;
         $c->forceFill([
             'name' => $name, 'cost_type_id' => $typeId,

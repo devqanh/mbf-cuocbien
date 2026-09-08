@@ -126,6 +126,10 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
   const pendingCost = useRef(null);   // costId cần cuộn tới sau khi tab Chi phí load (deep-link thông báo)
   const [hlCost, setHlCost] = useState(null);
   const selHash = useRef(null);   // hashid tài sản đang mở → dựng URL
+  // Id phiếu chi tab đang hiển thị, chụp từ SERVER mỗi lần nạp → gửi kèm (costsLoadedIds) để server chỉ được xóa
+  // trong tập này; phiếu người khác gửi qua Yêu cầu chi sau lúc nạp không bị xóa theo (cùng cơ chế FleetApp).
+  const costIds = useRef([]);
+  const serverCosts = (rows) => { rows = rows || []; costIds.current = rows.map((c) => c.id).filter(Number.isInteger); return rows; };
 
   const ensureSection = (tabKey, hash) => {
     const sec = ASSET_SECTION_OF[tabKey]; hash = hash || selHash.current;
@@ -133,14 +137,14 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
     loadedSecs.current.add(sec);
     setSecLoading(true);
     api("GET", ROUTES.fleet + hash + "/section/" + sec).then((r) => {
-      if (r && r.ok) setDetail((d) => ({ ...d, [sec]: r[sec] || [], ...(r.costTypes ? { costTypes: r.costTypes } : {}) }));
+      if (r && r.ok) setDetail((d) => ({ ...d, [sec]: sec === "costs" ? serverCosts(r[sec]) : (r[sec] || []), ...(r.costTypes ? { costTypes: r.costTypes } : {}) }));
       else loadedSecs.current.delete(sec);
       setSecLoading(false);
     }).catch(() => { loadedSecs.current.delete(sec); setSecLoading(false); });
   };
   const open = (a, tabKey) => {
     const t = ASSET_TAB_KEYS.includes(tabKey) ? tabKey : "info";
-    loadedSecs.current = new Set();
+    loadedSecs.current = new Set(); costIds.current = [];
     selHash.current = a.hashid || a.id;
     setSelId(a.id); setDetail(null); setDirty(false); setTab(t); setLoading(true);
     api("GET", ROUTES.fleet + (a.hashid || a.id) + "/data").then((r) => {
@@ -170,16 +174,17 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
     setSaving(true);
     const data = { info: detail.info || {} };
     ["costs", "depreciations"].forEach((s) => { if (Array.isArray(detail[s])) data[s] = detail[s]; });
+    if (Array.isArray(detail.costs)) data.costsLoadedIds = costIds.current;
     api("PUT", ROUTES.fleet + selHash.current, { data })
-      .then((r) => { setSaving(false); if (r && r.ok) { setDetail((d) => ({ ...d, ...r.vehicle })); setDirty(false); window.trkToast && window.trkToast("Đã lưu"); } else window.trkToast && window.trkToast("Lưu thất bại", "error"); })
+      .then((r) => { setSaving(false); if (r && r.ok) { if (r.vehicle && Array.isArray(r.vehicle.costs)) serverCosts(r.vehicle.costs); setDetail((d) => ({ ...d, ...r.vehicle })); setDirty(false); window.trkToast && window.trkToast("Đã lưu"); } else window.trkToast && window.trkToast("Lưu thất bại", "error"); })
       .catch(() => { setSaving(false); window.trkToast && window.trkToast("Lỗi kết nối khi lưu", "error"); });
   };
   const saveCosts = (rows) => {
     setDetail((d) => ({ ...d, costs: rows }));
     if (!selId) return;
     setCostSaving(true);
-    api("PUT", ROUTES.fleet + selHash.current, { data: { costs: rows } })
-      .then((r) => { setCostSaving(false); if (r && r.ok) { setDetail((d) => ({ ...d, costs: (r.vehicle && r.vehicle.costs) || rows })); window.trkToast && window.trkToast("Đã lưu phiếu chi"); } else window.trkToast && window.trkToast("Lưu thất bại", "error"); })
+    api("PUT", ROUTES.fleet + selHash.current, { data: { costs: rows, costsLoadedIds: costIds.current } })
+      .then((r) => { setCostSaving(false); if (r && r.ok) { setDetail((d) => ({ ...d, costs: (r.vehicle && r.vehicle.costs) ? serverCosts(r.vehicle.costs) : rows })); window.trkToast && window.trkToast("Đã lưu phiếu chi"); } else window.trkToast && window.trkToast("Lưu thất bại", "error"); })
       .catch(() => { setCostSaving(false); window.trkToast && window.trkToast("Lỗi kết nối khi lưu", "error"); });
   };
   const uploadCostPhotos = async (files) => {
@@ -192,7 +197,7 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
   const cancelCost = async (id) => {
     const ok = await window.confirmAction({ title: "Hủy phiếu chi?", text: "Phiếu sẽ chuyển <b>Đã hủy</b> và bị loại khỏi tổng chi phí/báo cáo.", confirmText: '<i class="bi bi-x-circle me-1"></i> Hủy phiếu', danger: true });
     if (!ok) return;
-    try { const r = await api("PUT", ROUTES.cancelCost + id + "/cancel"); if (r && r.ok) { window.trkToast && window.trkToast("Đã hủy phiếu"); const s = await api("GET", ROUTES.fleet + selHash.current + "/section/costs"); if (s && s.ok) setDetail((d) => ({ ...d, costs: s.costs || [] })); } else window.trkToast && window.trkToast((r && r.message) || "Không hủy được", "error"); } catch (e) {}
+    try { const r = await api("PUT", ROUTES.cancelCost + id + "/cancel"); if (r && r.ok) { window.trkToast && window.trkToast("Đã hủy phiếu"); const s = await api("GET", ROUTES.fleet + selHash.current + "/section/costs"); if (s && s.ok) setDetail((d) => ({ ...d, costs: serverCosts(s.costs) })); } else window.trkToast && window.trkToast((r && r.message) || "Không hủy được", "error"); } catch (e) {}
   };
   const uploadDocs = async (e) => {
     const files = Array.from(e.target.files || []); e.target.value = "";
@@ -407,7 +412,7 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
             : tab === "info" ? <AssetInfoTab info={detail.info} onChange={(info) => upd({ info })} categories={categories} addCategory={addCategory} />
             : tab === "deprec" ? <DeprecTab rows={detail.depreciations || []} onChange={(rows) => upd({ depreciations: rows })} />
             : tab === "deprecMonthly" ? <DeprecMonthlyTab rows={detail.depreciations || []} />
-            : tab === "cost" ? <CostTab rows={detail.costs || []} onChange={saveCosts} saving={costSaving} costTypes={detail.costTypes || []} payMethods={B.payMethods || []} payers={B.payers || []} onUploadPhotos={uploadCostPhotos} onCancel={cancelCost} highlightId={hlCost} />
+            : tab === "cost" ? <CostTab target="asset" rows={detail.costs || []} onChange={saveCosts} saving={costSaving} costTypes={detail.costTypes || []} payMethods={B.payMethods || []} payers={B.payers || []} onUploadPhotos={uploadCostPhotos} onCancel={cancelCost} highlightId={hlCost} />
             : <div style={card}><DocsBlock docs={detail.docs || []} busy={docBusy} docType={docType} setDocType={setDocType} onPick={uploadDocs} onDelete={deleteDoc} canEdit={canEdit} docTypes={ASSET_DOC_TYPES} hint="Tài liệu tài sản (hóa đơn mua, hợp đồng, bảo hành, ảnh… — ảnh / PDF / Word / Excel)" /></div>}
         </div>
       </div>

@@ -100,10 +100,12 @@ trait HandlesAssetReport
             ->where('gio_xe_ra', '>=', $pStart)->where('gio_xe_ra', '<', $pEndEx)
             ->selectRaw('vehicle_id, COUNT(*) c')->groupBy('vehicle_id')->pluck('c', 'vehicle_id');
 
+        // Chỉ XE + TÀI SẢN: "Văn phòng" (kind='office') cũng dùng bảng này nhưng là chi phí quản lý, không có khấu hao,
+        // không phải tài sản → không thuộc báo cáo này (nó hiện ở Báo cáo chi phí, nhóm "Chi phí văn phòng").
         $vehicles = TruckingVehicle::with([
             'vehicleCosts' => fn ($q) => $q->whereNull('cancelled_at'),
             'vehicleDepreciations',
-        ])->orderBy('kind')->orderBy('plate')->get();
+        ])->whereIn('kind', ['vehicle', 'asset'])->orderBy('kind')->orderBy('plate')->get();
 
         $rows = [];
         $byItem = [];       // key tên thường → {label, amount, count, material}

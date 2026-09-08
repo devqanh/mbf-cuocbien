@@ -293,6 +293,7 @@ Route::middleware('auth')->group(function () {
         Route::middleware('permission:fleet.view')->group(function () {
             Route::get('/quan-ly-xe',                 [FleetController::class, 'index'])->name('fleet');
             Route::get('/quan-ly-tai-san-list',       [FleetController::class, 'assetList'])->name('asset.list');   // lazy-load tab Tài sản
+            Route::get('/quan-ly-chi-phi-van-phong',  [FleetController::class, 'officeData'])->name('office.data');  // lazy-load tab Chi phí văn phòng
             Route::get('/quan-ly-xe/{vehicle}/data',  [FleetController::class, 'vehicleData'])->name('fleet.data');
             Route::get('/quan-ly-xe/{vehicle}/section/{section}', [FleetController::class, 'vehicleSection'])->name('fleet.section');
             Route::get('/quan-ly-xe/{vehicle}/fuel', [FleetController::class, 'fuelData'])->name('fleet.fuel');

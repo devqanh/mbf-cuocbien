@@ -7,7 +7,7 @@ const { useState } = React;
 /* TAB TỔNG QUAN — P&L tháng cho sếp: lãi/lỗ bao nhiêu & so tháng trước · tiền đi vào 4 nhóm nào ·
    xe nào lãi/lỗ · khách nào mang doanh thu · dữ liệu có thiếu gì (lô chưa khớp bảng giá). */
 
-export const GROUP_COLORS = { driver: "#2a6fdb", vehicle: "#e08600", asset: "#c9a227", shipment: "#9333ea" };
+export const GROUP_COLORS = { driver: "#2a6fdb", vehicle: "#e08600", asset: "#c9a227", office: "#0f766e", shipment: "#9333ea" };
 const money = (n) => fmtVND(n || 0);
 const per = (a, n) => (n ? fmtShort(Math.round((a || 0) / n)) : "—");
 
