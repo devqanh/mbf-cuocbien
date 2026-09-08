@@ -250,9 +250,17 @@ function ShipmentsApp() {
   // Manual save: patch chỉ cập nhật local state + đánh dấu dirty; thực sự PUT khi user bấm nút Lưu trong popup.
   const dirtyIds = useRef(new Set());
   const dirtyFields = useRef({});   // id -> Set(field) : chỉ ghi field đã sửa (lưu từng phần, tránh đè người khác)
+  // id -> [id dòng chi phí lô ĐÃ THẤY lúc bắt đầu sửa chi phí]. Gửi kèm khi lưu (cost.loadedIds) để server chỉ
+  // được xóa trong tập này — dòng do import CSHT / cước xe ngoài / tờ khai thêm sau lúc mở popup không bị xóa theo.
+  const costBase = useRef({});
   const patch = (id, np) => {
     dirtyIds.current.add(id);
     const set = dirtyFields.current[id] || (dirtyFields.current[id] = new Set());
+    if (np && Object.prototype.hasOwnProperty.call(np, "cost") && !costBase.current[id]) {
+      // Chụp TRƯỚC khi áp bản vá: lúc này cost.items vẫn là bản server (chưa dirty về cost).
+      const cur = (draft && draft.id === id) ? draft : data.find((s) => s.id === id);
+      costBase.current[id] = (((cur && cur.cost && cur.cost.items) || []).map((it) => it.id)).filter(Number.isInteger);
+    }
     Object.keys(np || {}).forEach((k) => set.add(k));
     if (draft && draft.id === id) { setDraft((d) => ({ ...d, ...np })); return; }
     setData((s) => s.map((sh) => (sh.id === id ? { ...sh, ...np } : sh)));
@@ -273,15 +281,16 @@ function ShipmentsApp() {
       if (hasExt && !((ship.extVendor || "").toString().trim())) { ok = false; extMissing = true; continue; }
       if (ship._new) {
         const res = await api("POST", ROUTES.shipmentStore, { sheet, ship });
-        if (res && res.ok) { dirtyIds.current.delete(id); delete dirtyFields.current[id]; if (draft && draft.id === id) setDraft(null); createdNew = true; }
+        if (res && res.ok) { dirtyIds.current.delete(id); delete dirtyFields.current[id]; delete costBase.current[id]; if (draft && draft.id === id) setDraft(null); createdNew = true; }
         else ok = false;
       } else {
         // Chỉ gửi field đã sửa + danh sách "fields" → server ghi đúng field đó, giữ nguyên field khác
         const fields = [...(dirtyFields.current[id] || [])];
         const partial = { id: ship.id };
         fields.forEach((k) => { partial[k] = ship[k]; });
+        if (fields.includes("cost")) partial.cost = { ...(ship.cost || {}), loadedIds: costBase.current[id] || [] };
         const res = await api("PUT", ROUTES.shipment + (ship.hashid || id), { sheet, ship: partial, fields });
-        if (res && res.ok) { dirtyIds.current.delete(id); delete dirtyFields.current[id]; }
+        if (res && res.ok) { dirtyIds.current.delete(id); delete dirtyFields.current[id]; delete costBase.current[id]; }
         else ok = false;
       }
     }
@@ -331,7 +340,7 @@ function ShipmentsApp() {
   };
   // Đóng popup thông tin: nếu là lô nháp chưa lưu → bỏ draft
   const closeInfo = () => {
-    if (draft && modal && modal.id === draft.id) { dirtyIds.current.delete(draft.id); delete dirtyFields.current[draft.id]; setDraft(null); }
+    if (draft && modal && modal.id === draft.id) { dirtyIds.current.delete(draft.id); delete dirtyFields.current[draft.id]; delete costBase.current[draft.id]; setDraft(null); }
     setModal(null);
   };
 

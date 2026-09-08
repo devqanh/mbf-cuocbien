@@ -43,6 +43,10 @@ function FleetApp({ modeSwitch }) {
   const loadedSecs = useRef(new Set());   // nhóm đã lazy-load (usages/costs/depreciations)
   const pendingCost = useRef(null);       // costId cần cuộn tới sau khi tab Chi phí load (deep-link từ thông báo)
   const [hlCost, setHlCost] = useState(null);   // id phiếu chi đang được highlight
+  // Id các phiếu chi tab đang hiển thị, chụp từ SERVER mỗi lần nạp. Gửi kèm khi lưu (costsLoadedIds) để server
+  // chỉ được xóa trong tập này — phiếu lái xe gửi qua Yêu cầu chi sau lúc nạp không bị xóa theo.
+  const costIds = useRef([]);
+  const serverCosts = (rows) => { rows = rows || []; costIds.current = rows.map((c) => c.id).filter(Number.isInteger); return rows; };
 
   const setHash = (id, t) => { try { window.history.replaceState(null, "", "#" + id + "/" + t); } catch (e) {} };
   // Lazy-load nhóm con khi mở tab (truyền id để tránh stale selId lúc vừa mở xe)
@@ -53,14 +57,14 @@ function FleetApp({ modeSwitch }) {
     setSecLoading(true);
     api("GET", ROUTES.fleet + hash + "/section/" + sec).then((r) => {
       // nhóm "costs" trả kèm costTypes (danh mục Loại chi phí xe cho Combo phiếu chi) — phải giữ lại
-      if (r && r.ok) setDetail((d) => ({ ...d, [sec]: r[sec] || [], ...(r.costTypes ? { costTypes: r.costTypes } : {}) }));
+      if (r && r.ok) setDetail((d) => ({ ...d, [sec]: sec === "costs" ? serverCosts(r[sec]) : (r[sec] || []), ...(r.costTypes ? { costTypes: r.costTypes } : {}) }));
       else loadedSecs.current.delete(sec);
       setSecLoading(false);
     }).catch(() => { loadedSecs.current.delete(sec); setSecLoading(false); });
   };
   const open = (v, tabKey) => {
     const t = TAB_KEYS.includes(tabKey) ? tabKey : "info";
-    loadedSecs.current = new Set();
+    loadedSecs.current = new Set(); costIds.current = [];
     selHash.current = v.hashid || v.id;
     setSelId(v.id); setDetail(null); setDirty(false); setTab(t); setLoading(true);
     setHash(v.hashid || v.id, t);
@@ -85,7 +89,7 @@ function FleetApp({ modeSwitch }) {
       if (r && r.ok) {
         window.trkToast && window.trkToast("Đã hủy phiếu");
         const s = await api("GET", ROUTES.fleet + selHash.current + "/section/costs");
-        if (s && s.ok) setDetail((d) => ({ ...d, costs: s.costs || [] }));
+        if (s && s.ok) setDetail((d) => ({ ...d, costs: serverCosts(s.costs) }));
       } else window.trkToast && window.trkToast((r && r.message) || "Không hủy được", "error");
     } catch (e) {}
   };
@@ -95,10 +99,10 @@ function FleetApp({ modeSwitch }) {
     setDetail((d) => ({ ...d, costs: rows }));   // hiển thị ngay (optimistic)
     if (!selId) return;
     setCostSaving(true);
-    api("PUT", ROUTES.fleet + selHash.current, { data: { costs: rows } })
+    api("PUT", ROUTES.fleet + selHash.current, { data: { costs: rows, costsLoadedIds: costIds.current } })
       .then((r) => {
         setCostSaving(false);
-        if (r && r.ok) { setDetail((d) => ({ ...d, costs: (r.vehicle && r.vehicle.costs) || rows })); window.trkToast && window.trkToast("Đã lưu phiếu chi"); }
+        if (r && r.ok) { setDetail((d) => ({ ...d, costs: (r.vehicle && r.vehicle.costs) ? serverCosts(r.vehicle.costs) : rows })); window.trkToast && window.trkToast("Đã lưu phiếu chi"); }
         else window.trkToast && window.trkToast("Lưu thất bại", "error");
       })
       .catch(() => { setCostSaving(false); window.trkToast && window.trkToast("Lỗi kết nối khi lưu", "error"); });
@@ -120,8 +124,9 @@ function FleetApp({ modeSwitch }) {
     setSaving(true);
     const data = { info: detail.info || {}, allowances: detail.allowances || [] };
     ["usages", "costs", "depreciations"].forEach((s) => { if (Array.isArray(detail[s])) data[s] = detail[s]; });
+    if (Array.isArray(detail.costs)) data.costsLoadedIds = costIds.current;   // server chỉ được xóa phiếu trong tập đã thấy
     api("PUT", ROUTES.fleet + selHash.current, { data })
-      .then((r) => { setSaving(false); if (r && r.ok) { setDetail((d) => ({ ...d, ...r.vehicle })); setDirty(false); window.trkToast && window.trkToast("Đã lưu"); } else window.trkToast && window.trkToast("Lưu thất bại", "error"); })
+      .then((r) => { setSaving(false); if (r && r.ok) { if (r.vehicle && Array.isArray(r.vehicle.costs)) serverCosts(r.vehicle.costs); setDetail((d) => ({ ...d, ...r.vehicle })); setDirty(false); window.trkToast && window.trkToast("Đã lưu"); } else window.trkToast && window.trkToast("Lưu thất bại", "error"); })
       .catch(() => { setSaving(false); window.trkToast && window.trkToast("Lỗi kết nối khi lưu", "error"); });
   };
   // Tài liệu xe — upload/xóa lưu NGAY (không nằm trong nút Lưu thông tin)

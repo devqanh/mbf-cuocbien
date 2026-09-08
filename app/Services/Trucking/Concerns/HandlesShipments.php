@@ -1103,18 +1103,29 @@ trait HandlesShipments
 
             // Dòng con chỉ đồng bộ khi nhóm tương ứng được sửa (cost / rev)
             if ($apply('cost')) {
-            $s->costLines()->delete();
+            // KHÔNG xóa-tạo-lại: dòng chi phí lô còn được import CSHT, cước xe ngoài (extTruck) và tờ khai ghi vào.
+            // Popup mở sẵn rồi lưu chi phí theo danh sách đã cũ là mất/đè các dòng import vừa thêm.
+            //  - Dòng có id thuộc lô này → cập nhật tại chỗ (giữ cost_item_id; recompute sẽ chốt lại).
+            //  - Dòng không có id (id tạm phía client) → tạo mới.
+            //  - Xóa CHỈ dòng client đã thấy lúc mở popup (cost.loadedIds) mà giờ không gửi lại = người dùng bấm xóa.
+            //    Không có loadedIds (client cũ / gọi nội bộ) → không xóa gì.
+            $existing  = $s->costLines()->get()->keyBy('id');
+            $loadedIds = array_key_exists('loadedIds', (array) ($data['cost'] ?? []))
+                ? array_map('intval', array_filter((array) $data['cost']['loadedIds'], 'is_numeric')) : null;
+            $sentIds = [];
             foreach (($data['cost']['items'] ?? []) as $i => $c) {
+                $id  = $c['id'] ?? null;
+                $row = (is_numeric($id) && (string) (int) $id === (string) $id && isset($existing[(int) $id])) ? $existing[(int) $id] : null;
                 // "Bỏ trống không lưu": khoản auto/khoản trống (không tiền + không số HĐ + không người chi/ghi chú/nguồn)
-                // thì KHÔNG tạo dòng → tránh rác 0đ khi auto-hiện sẵn ở popup.
+                // thì KHÔNG tạo dòng → tránh rác 0đ khi auto-hiện sẵn ở popup. Dòng cũ bị xóa trắng nội dung → xóa dòng.
                 $amt = (int) round((float) $this->inMoney($c['amount'] ?? null));
                 $hasContent = $amt !== 0
                     || trim((string) ($c['invoiceNo'] ?? '')) !== ''
                     || trim((string) ($c['note'] ?? '')) !== ''
                     || trim((string) ($c['payer'] ?? '')) !== ''
                     || trim((string) ($c['src'] ?? '')) !== '';
-                if (! $hasContent) continue;
-                $s->costLines()->create([
+                if (! $hasContent) { if ($row) $row->delete(); continue; }
+                $attrs = [
                     'item'     => $this->str($c['item'] ?? null),
                     'amount'   => $this->inMoney($c['amount'] ?? null),
                     'vat'      => $this->inNum($c['vat'] ?? null) ?? 0,
@@ -1126,7 +1137,13 @@ trait HandlesShipments
                     'src'      => $this->str($c['src'] ?? null),
                     'note'     => $this->str($c['note'] ?? null),
                     'sort'     => $i,
-                ]);
+                ];
+                if ($row) { $row->fill($attrs)->save(); $sentIds[] = $row->id; }
+                else       { $sentIds[] = $s->costLines()->create($attrs)->id; }
+            }
+            if ($loadedIds !== null) {
+                $gone = array_values(array_diff(array_intersect($loadedIds, $existing->keys()->all()), $sentIds));
+                if ($gone) $s->costLines()->whereIn('id', $gone)->delete();
             }
             }   // end if apply('cost')
 

@@ -329,32 +329,37 @@ trait HandlesVehicleDetail
             }
             if (array_key_exists('costs', $data)) {
                 $costRows = array_values($data['costs'] ?? []);
-                // # hóa đơn TỰ SINH (PC-XXXX): giữ số đã có, cấp số mới cho phiếu chưa có.
+                // # hóa đơn TỰ SINH (PC-XXXX): giữ số đã có, cấp số mới cho phiếu chưa có. Quét CẢ phiếu của xe
+                // này (kể cả phiếu client chưa thấy) vì giờ không xóa-tạo-lại nữa → tránh cấp trùng số.
                 $usedN = [];
                 $scan = function ($no) use (&$usedN) { if (preg_match('/^PC-(\d+)$/', trim((string) $no), $m)) $usedN[] = (int) $m[1]; };
                 foreach ($costRows as $c) $scan($c['invoiceNo'] ?? '');
-                foreach (TruckingVehicleCost::where('vehicle_id', '!=', $v->id)->where('invoice_no', 'like', 'PC-%')->pluck('invoice_no') as $no) $scan($no);
+                foreach (TruckingVehicleCost::where('invoice_no', 'like', 'PC-%')->pluck('invoice_no') as $no) $scan($no);
                 $nextN = $usedN ? max($usedN) : 0;
 
                 // Tham chiếu loại chi phí theo ĐÚNG NGUỒN: tài sản → catalog tài sản; xe → catalog xe.
                 $typeId = ($v->kind === 'asset')
                     ? \App\Models\TruckingAssetCostType::pluck('id', 'name')
                     : TruckingVehicleCostType::pluck('id', 'name');
-                // GIỮ LẠI người yêu cầu + trạng thái hủy qua delete+recreate (khớp theo id dòng cũ)
-                $preserve = $v->vehicleCosts()->get(['id', 'created_by', 'cancelled_at', 'cancelled_by', 'created_at', 'est_amount'])->keyBy('id');
-                $v->vehicleCosts()->delete();
+
+                // KHÔNG xóa-tạo-lại: bảng phiếu chi còn được Yêu cầu chi (lái xe) và Quản lý chi phí ghi vào.
+                // Xóa hết theo payload của tab là mất phiếu lái xe vừa gửi trong lúc kế toán đang mở tab.
+                //  - Dòng có id thuộc xe này → cập nhật tại chỗ (created_by / est_amount / trạng thái hủy tự giữ).
+                //  - Dòng không có id (id tạm phía client) → tạo mới.
+                //  - Xóa CHỈ phiếu client đã thấy lúc nạp (costsLoadedIds) mà giờ không gửi lại = người dùng bấm xóa.
+                //    Không có costsLoadedIds → không xóa gì.
+                $existing = $v->vehicleCosts()->get()->keyBy('id');
+                $loaded   = array_map('intval', array_filter((array) ($data['costsLoadedIds'] ?? []), 'is_numeric'));
+                $sentIds  = [];
                 foreach ($costRows as $i => $c) {
                     $inv = trim((string) ($c['invoiceNo'] ?? ''));
                     if ($inv === '') { $nextN++; $inv = 'PC-' . str_pad((string) $nextN, 4, '0', STR_PAD_LEFT); }
                     $cn = $this->str($c['name'] ?? null);
-                    $old = (isset($c['id']) && $preserve->has($c['id'])) ? $preserve[$c['id']] : null;
-                    $v->vehicleCosts()->create([
+                    $id = $c['id'] ?? null;
+                    $row = (is_numeric($id) && (string) (int) $id === (string) $id && isset($existing[(int) $id])) ? $existing[(int) $id] : null;
+                    $attrs = [
                         'name' => $cn,
                         'cost_type_id' => $cn !== null ? ($typeId[$cn] ?? null) : null,
-                        'created_by'   => $old?->created_by,
-                        'cancelled_at' => $old?->cancelled_at,
-                        'cancelled_by' => $old?->cancelled_by,
-                        'est_amount'   => $old?->est_amount,   // dự kiến do lái xe gửi — kế toán không sửa, giữ nguyên
                         'invoice_no' => $inv,
                         'kind' => (($c['kind'] ?? '') === 'recurring') ? 'recurring' : 'fixed',
                         'spend_date' => $this->inDate($c['spendDate'] ?? null),
@@ -375,8 +380,12 @@ trait HandlesVehicleDetail
                         'approved' => ! empty($c['approved']),
                         'photos' => $this->cleanCostPhotos($c['photos'] ?? []),
                         'sort' => $i,
-                    ]);
+                    ];
+                    if ($row) { $row->fill($attrs)->save(); $sentIds[] = $row->id; }
+                    else       { $sentIds[] = $v->vehicleCosts()->create($attrs)->id; }
                 }
+                $gone = array_values(array_diff(array_intersect($loaded, $existing->keys()->all()), $sentIds));
+                if ($gone) $v->vehicleCosts()->whereIn('id', $gone)->delete();
                 $this->pruneOrphanCostPhotos($v->id);   // dọn ảnh không còn phiếu nào dùng
             }
             if (array_key_exists('depreciations', $data)) {
