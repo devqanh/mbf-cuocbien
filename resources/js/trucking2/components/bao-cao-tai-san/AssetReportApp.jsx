@@ -4,6 +4,7 @@ import { ymNow, ymLabel, MonthYear } from "./parts.jsx";
 import { OverviewTab } from "./OverviewTab.jsx";
 import { DetailTab } from "./DetailTab.jsx";
 import { RegisterTab } from "./RegisterTab.jsx";
+import { OfficeTab } from "@trk/components/bao-cao/OfficeTab.jsx";   // dùng chung với /bao-cao — số liệu theo đúng khoảng kỳ đang chọn
 
 const { useState, useEffect, useRef } = React;
 
@@ -14,7 +15,7 @@ const T = window.__TRK || {};
 const ROUTES = T.routes || {};
 const B = T.boot || {};
 const TAB_KEY = "trk:bctaisan:tab";
-const TABS = [["overview", "Tổng quan", "bi-speedometer2"], ["detail", "Chi tiết theo xe", "bi-table"], ["register", "Sổ tài sản", "bi-journal-bookmark"]];
+const TABS = [["overview", "Tổng quan", "bi-speedometer2"], ["detail", "Chi tiết theo xe", "bi-table"], ["office", "Văn phòng", "bi-building"], ["register", "Sổ tài sản", "bi-journal-bookmark"]];
 
 export function AssetReportApp() {
   const isMobile = useIsMobile();
@@ -89,6 +90,9 @@ export function AssetReportApp() {
           {tab === "overview" && <OverviewTab rep={rep} isMobile={isMobile} routes={ROUTES} onOpenVehicle={openVehicle} onGoRegister={() => setTab("register")} />}
           {tab === "detail" && <DetailTab rep={rep} isMobile={isMobile} routes={ROUTES} focusId={focusId} onFocused={() => setFocusId(null)} />}
           {tab === "register" && <RegisterTab rep={rep} isMobile={isMobile} routes={ROUTES} />}
+          {tab === "office" && <OfficeTab rep={rep} isMobile={isMobile} routes={ROUTES}
+            totalCost={((rep.split && rep.split.vehicle) || 0) + ((rep.split && rep.split.asset) || 0) + ((rep.office && rep.office.spent) || 0)}
+            totalLabel="chi phí xe + tài sản + văn phòng" />}
         </div>
       </div>
     </div>

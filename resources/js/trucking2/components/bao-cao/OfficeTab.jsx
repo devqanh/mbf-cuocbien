@@ -3,23 +3,26 @@ import { fmtVND, fmtNum, fmtShort } from "@trk/lib.jsx";
 import { card, pctOf, CardTitle, Delta, KPI, Empty, TopList } from "@trk/components/report-ui.jsx";
 import { Donut, PALETTE } from "@trk/components/charts.jsx";
 
-/* TAB VĂN PHÒNG — chi phí quản lý doanh nghiệp (thuê VP, điện nước, VPP, lương khối VP…) cho sếp/kế toán:
-   tháng này chi bao nhiêu & so tháng trước · chiếm bao nhiêu % tổng chi phí / doanh thu (tỷ lệ overhead) ·
-   tiền đi vào loại nào · khoản trả trước đang phân bổ · định kỳ sắp đến hạn · danh sách phiếu. */
+/* TAB VĂN PHÒNG — chi phí quản lý doanh nghiệp (thuê VP, điện nước, VPP, lương khối VP…) cho sếp/kế toán.
+   Dùng chung cho /bao-cao (1 tháng) và /bao-cao-tai-san (khoảng tháng): mọi số lấy từ rep.office (đã tính
+   theo đúng kỳ, kèm kỳ trước cùng độ dài). Trả lời: kỳ này chi bao nhiêu & so kỳ trước · chiếm bao nhiêu %
+   (tỷ lệ overhead) · tiền đi vào loại nào · khoản trả trước đang phân bổ · định kỳ sắp đến hạn · danh sách phiếu. */
 
 const money = (n) => fmtVND(n || 0);
 const th = (label, al, w) => <th key={label} style={{ textAlign: al || "left", padding: "9px 12px", fontSize: 10.5, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: ".03em", borderBottom: "1px solid var(--line)", whiteSpace: "nowrap", background: "#fafbfc", width: w }}>{label}</th>;
 const td = { padding: "9px 12px", borderBottom: "1px solid var(--line-2)", verticalAlign: "top" };
 const tdR = { ...td, textAlign: "right", whiteSpace: "nowrap" };
 const STATUS = { pending: ["Chờ duyệt", "var(--warn)", "#fff4e0"], pay: ["Chờ thanh toán", "var(--accent)", "var(--accent-weak)"], paid: ["Đã thanh toán", "var(--good)", "#e6f6ec"], cancelled: ["Đã hủy", "var(--ink-4)", "var(--line-2)"] };
+const dmy = (iso) => (iso || "").slice(0, 10).split("-").reverse().join("/");
+const ymLbl = (ym) => (ym || "").split("-").reverse().join("/");
 
-/* Cột 12 tháng: chi tiêu (đậm) + ghi nhận sau phân bổ (đường mảnh) — thấy ngay tháng bất thường. */
-function TrendBars({ rows, curYm }) {
+/* Cột 12 tháng: chi tiêu (đậm) + ghi nhận sau phân bổ (gạch đứt) — thấy ngay tháng bất thường. */
+function TrendBars({ rows }) {
   const max = Math.max(1, ...rows.map((r) => Math.max(r.spent, r.accrual)));
   return (
     <div style={{ display: "grid", gridTemplateColumns: `repeat(${rows.length}, 1fr)`, gap: 6, alignItems: "end", height: 150, paddingTop: 8 }}>
       {rows.map((r) => {
-        const on = r.ym === curYm;
+        const on = !!r.inPeriod;
         return (
           <div key={r.ym} title={`${r.label}: chi tiêu ${money(r.spent)} · ghi nhận ${money(r.accrual)} · ${r.count} phiếu`} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, height: "100%", justifyContent: "flex-end" }}>
             <span className="tnum" style={{ fontSize: 10, color: on ? "var(--ink)" : "var(--ink-4)", fontWeight: on ? 800 : 500 }}>{r.spent ? fmtShort(r.spent) : ""}</span>
@@ -34,16 +37,23 @@ function TrendBars({ rows, curYm }) {
   );
 }
 
-export function OfficeTab({ rep, prev, prevLabel, isMobile, routes }) {
+/**
+ * rep.office bắt buộc. Tùy chọn: totalCost/revenue (tính tỷ lệ overhead — /bao-cao lấy từ rep, /bao-cao-tai-san truyền vào),
+ * totalLabel (mẫu số là gì), routes.office (link sang tab Chi phí văn phòng).
+ */
+export function OfficeTab({ rep, isMobile, routes, totalCost, revenue, totalLabel }) {
   const o = rep.office || {};
-  const total = rep.totalCost || 0, revenue = rep.revenue || 0;
-  const prevO = (prev && prev.office) || null;
+  const multi = (o.months || 1) > 1;
+  const kyLbl = multi ? `${ymLbl(o.from)} → ${ymLbl(o.to)} (${o.months} tháng)` : `tháng ${ymLbl(o.to)}`;
+  const prevLbl = o.prev ? (multi ? `${ymLbl(o.prev.from)} → ${ymLbl(o.prev.to)}` : `tháng ${ymLbl(o.prev.to)}`) : "";
+  const total = totalCost != null ? totalCost : (rep.totalCost || 0);
+  const rev = revenue != null ? revenue : (rep.revenue || 0);
   const byType = o.byType || [];
   const donut = byType.slice(0, 8).map((t, i) => ({ label: t.label, value: t.amount, color: PALETTE[i % PALETTE.length] }));
-  const curYm = `${rep.year}-${String(rep.month).padStart(2, "0")}`;
-  const overCost = pctOf(o.spent, total), overRev = pctOf(o.spent, revenue);
+  const overCost = pctOf(o.spent, total), overRev = pctOf(o.spent, rev);
   const officeUrl = routes && routes.office ? routes.office : null;
-  const vsAvg = o.avg6 ? Math.round((o.spent - o.avg6) * 100 / o.avg6) : null;
+  const perMonth = o.months ? Math.round((o.spent || 0) / o.months) : o.spent;
+  const vsAvg = o.avg6 ? Math.round((perMonth - o.avg6) * 100 / o.avg6) : null;
 
   if (!o.hasEntity && !(o.spent || (o.slips || []).length)) {
     return (
@@ -60,23 +70,23 @@ export function OfficeTab({ rep, prev, prevLabel, isMobile, routes }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* ---- KPI ---- */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <KPI label="Chi tiêu văn phòng tháng này" value={money(o.spent)} color="#0f766e" cur={o.spent} prev={prevO ? prevO.spent : null} goodWhen="down"
-          sub={`${o.count || 0} phiếu theo ngày chi — khớp nhóm “Chi phí văn phòng” ở Tổng quan${vsAvg != null ? ` · ${vsAvg >= 0 ? "+" : ""}${vsAvg}% so TB 6 tháng` : ""}`} />
+        <KPI label={`Chi tiêu văn phòng ${multi ? "trong kỳ" : "tháng này"}`} value={money(o.spent)} color="#0f766e" cur={o.spent} prev={o.prev ? o.prev.spent : null} goodWhen="down" deltaLabel={prevLbl ? `so ${prevLbl}` : undefined}
+          sub={`${o.count || 0} phiếu theo ngày chi${multi ? ` · TB ${money(perMonth)}/tháng` : " — khớp nhóm “Chi phí văn phòng” ở Tổng quan"}${vsAvg != null ? ` · ${vsAvg >= 0 ? "+" : ""}${vsAvg}% so TB 6 tháng trước kỳ` : ""}`} />
         <KPI label="Tỷ lệ overhead" value={total ? `${overCost}%` : "—"} color={overCost > 15 ? "var(--warn)" : "var(--ink)"}
-          sub={total ? `của tổng chi phí ${fmtShort(total)} · ${revenue ? overRev + "% doanh thu" : "chưa có doanh thu"}` : "chưa có chi phí trong tháng"}
+          sub={total ? `của ${totalLabel || "tổng chi phí"} ${fmtShort(total)}${rev ? ` · ${overRev}% doanh thu` : ""}` : "chưa có chi phí trong kỳ"}
           hint="Chi phí quản lý / tổng chi phí. Vận tải nhỏ thường 8–15%; cao hơn kéo dài là dấu hiệu cần xem lại." />
-        <KPI label="Ghi nhận sau phân bổ" value={money(o.accrual)} cur={o.accrual} prev={prevO ? prevO.accrual : null} goodWhen="down"
-          sub="phiếu thường + phần trả trước rải đều theo tháng — đúng chi phí của tháng" />
+        <KPI label="Ghi nhận sau phân bổ" value={money(o.accrual)} cur={o.accrual} prev={o.prev ? o.prev.accrual : null} goodWhen="down"
+          sub="phiếu thường + phần trả trước rải đều theo tháng — đúng chi phí của kỳ" />
         <KPI label="Đang treo" value={`${(o.pending && o.pending.count) || 0} chờ duyệt · ${(o.toPay && o.toPay.count) || 0} chờ TT`}
           color={(o.pending && o.pending.count) ? "var(--warn)" : "var(--ink)"}
-          sub={`${money((o.pending && o.pending.amount) || 0)} chưa duyệt · ${money((o.toPay && o.toPay.amount) || 0)} chưa chi`} />
+          sub={`${money((o.pending && o.pending.amount) || 0)} chưa duyệt · ${money((o.toPay && o.toPay.amount) || 0)} chưa chi · toàn bộ, không theo kỳ`} />
       </div>
 
       {/* ---- Cơ cấu theo loại + nhà cung cấp ---- */}
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <div style={{ ...card, flex: 1.4, minWidth: 320 }}>
-          <CardTitle icon="bi-pie-chart" sub="theo danh mục Loại chi phí văn phòng · tháng này">Tiền đi vào loại nào</CardTitle>
-          {byType.length === 0 ? <Empty>Không có phiếu chi văn phòng trong tháng.</Empty> : (
+          <CardTitle icon="bi-pie-chart" sub={`theo danh mục Loại chi phí văn phòng · ${kyLbl}`}>Tiền đi vào loại nào</CardTitle>
+          {byType.length === 0 ? <Empty>Không có phiếu chi văn phòng trong kỳ.</Empty> : (
             <div style={{ display: "flex", gap: 18, alignItems: "center", flexWrap: isMobile ? "wrap" : "nowrap" }}>
               <Donut data={donut} size={170} thick={26} />
               <div style={{ flex: 1, minWidth: 220, display: "flex", flexDirection: "column", gap: 6 }}>
@@ -92,26 +102,26 @@ export function OfficeTab({ rep, prev, prevLabel, isMobile, routes }) {
             </div>
           )}
         </div>
-        <TopList title="Nhà cung cấp lớn nhất" icon="bi-shop" sub="tháng này" data={(o.bySupplier || []).map((s) => ({ label: s.label, count: s.amount }))} fmt={(n) => money(n)} max={8} />
+        <TopList title="Nhà cung cấp lớn nhất" icon="bi-shop" sub={kyLbl} data={(o.bySupplier || []).map((s) => ({ label: s.label, count: s.amount }))} fmt={(n) => money(n)} max={8} />
       </div>
 
       {/* ---- Xu hướng 12 tháng ---- */}
       <div style={card}>
-        <CardTitle icon="bi-bar-chart-line" sub="cột = chi tiêu theo ngày chi · gạch đứt = ghi nhận sau phân bổ trả trước">Xu hướng 12 tháng</CardTitle>
-        <TrendBars rows={o.trend || []} curYm={curYm} />
+        <CardTitle icon="bi-bar-chart-line" sub="cột = chi tiêu theo ngày chi · gạch đứt = ghi nhận sau phân bổ trả trước · tháng đậm = trong kỳ">Xu hướng 12 tháng đến {ymLbl(o.to)}</CardTitle>
+        <TrendBars rows={o.trend || []} />
       </div>
 
       {/* ---- Trả trước đang phân bổ + Định kỳ sắp đến hạn ---- */}
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <div style={{ ...card, flex: 1, minWidth: 320 }}>
-          <CardTitle icon="bi-pie-chart-fill" sub="bảo hiểm, thuê trả trước… chia đều theo tháng">Khoản trả trước đang phân bổ</CardTitle>
-          {(o.alloc || []).length === 0 ? <Empty>Không có khoản nào đang phân bổ trong tháng.</Empty> : (
+          <CardTitle icon="bi-pie-chart-fill" sub="bảo hiểm, thuê trả trước… chia đều theo tháng · tiến độ tính đến cuối kỳ">Khoản trả trước đang phân bổ</CardTitle>
+          {(o.alloc || []).length === 0 ? <Empty>Không có khoản nào đang phân bổ trong kỳ.</Empty> : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {(o.alloc || []).map((a) => (
                 <div key={a.id} style={{ fontSize: 12.5 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                     <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}{a.detail && a.detail !== a.name ? <span style={{ color: "var(--ink-4)", fontWeight: 400 }}> · {a.detail}</span> : ""}</span>
-                    <span className="tnum" style={{ fontWeight: 700, whiteSpace: "nowrap" }}>{money(a.perMonth)}<span style={{ color: "var(--ink-4)", fontWeight: 400 }}>/tháng</span></span>
+                    <span className="tnum" style={{ fontWeight: 700, whiteSpace: "nowrap" }}>{money(a.perMonth)}<span style={{ color: "var(--ink-4)", fontWeight: 400 }}>/tháng</span>{multi && a.inPeriod ? <span style={{ color: "var(--ink-4)", fontWeight: 400 }}> · kỳ này {money(a.inPeriod)}</span> : ""}</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
                     <div style={{ flex: 1, height: 8, background: "var(--line-2)", borderRadius: 999, overflow: "hidden" }}><div style={{ width: (a.doneMonths / a.months * 100) + "%", height: "100%", background: "#0f766e" }} /></div>
@@ -123,7 +133,7 @@ export function OfficeTab({ rep, prev, prevLabel, isMobile, routes }) {
           )}
         </div>
         <div style={{ ...card, flex: 1, minWidth: 320 }}>
-          <CardTitle icon="bi-alarm" sub="khoản định kỳ có hạn trong 45 ngày tới (hoặc đã quá hạn)">Sắp đến hạn gia hạn</CardTitle>
+          <CardTitle icon="bi-alarm" sub="khoản định kỳ có hạn trong 45 ngày tới (hoặc đã quá hạn) · tính từ hôm nay, không theo kỳ">Sắp đến hạn gia hạn</CardTitle>
           {(o.due || []).length === 0 ? <Empty>Không có khoản định kỳ nào sắp đến hạn.</Empty> : (
             <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
               {(o.due || []).map((d) => {
@@ -133,7 +143,7 @@ export function OfficeTab({ rep, prev, prevLabel, isMobile, routes }) {
                     <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><b>{d.name}</b>{d.supplier ? <span style={{ color: "var(--ink-4)" }}> · {d.supplier}</span> : ""}</span>
                     <span className="tnum" style={{ fontWeight: 700, whiteSpace: "nowrap" }}>{money(d.amount)}</span>
                     <span className="tnum" style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, whiteSpace: "nowrap", color: late ? "var(--danger)" : soon ? "var(--warn)" : "var(--ink-3)", background: late ? "#fce8e8" : soon ? "#fff4e0" : "var(--line-2)" }}>
-                      {late ? `quá hạn ${-d.daysLeft} ngày` : d.daysLeft === 0 ? "hôm nay" : `còn ${d.daysLeft} ngày`} · {d.dueDate.split("-").reverse().join("/")}
+                      {late ? `quá hạn ${-d.daysLeft} ngày` : d.daysLeft === 0 ? "hôm nay" : `còn ${d.daysLeft} ngày`} · {dmy(d.dueDate)}
                     </span>
                   </div>
                 );
@@ -143,28 +153,28 @@ export function OfficeTab({ rep, prev, prevLabel, isMobile, routes }) {
         </div>
       </div>
 
-      {/* ---- Danh sách phiếu trong tháng ---- */}
+      {/* ---- Danh sách phiếu trong kỳ ---- */}
       <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px 0" }}>
-          <CardTitle icon="bi-receipt" sub={`${(o.slips || []).length} phiếu · theo ngày chi trong tháng`}>Phiếu chi văn phòng tháng này</CardTitle>
+          <CardTitle icon="bi-receipt" sub={`${(o.slips || []).length} phiếu · theo ngày chi · ${kyLbl}`}>Phiếu chi văn phòng {multi ? "trong kỳ" : "tháng này"}</CardTitle>
           {officeUrl && <a href={officeUrl} style={{ fontSize: 12.5, fontWeight: 700, color: "var(--accent)", whiteSpace: "nowrap" }}>Mở Chi phí văn phòng →</a>}
         </div>
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 820 }}>
             <thead><tr>{th("Ngày chi", "left", 96)}{th("# HĐ", "left", 84)}{th("Loại · Diễn giải")}{th("Nhà cung cấp")}{th("Số tiền", "right", 120)}{th("Trạng thái", "left", 130)}</tr></thead>
             <tbody>
-              {(o.slips || []).length === 0 && <tr><td colSpan={6} style={{ padding: 34, textAlign: "center", color: "var(--ink-4)" }}>Không có phiếu chi văn phòng trong tháng.</td></tr>}
+              {(o.slips || []).length === 0 && <tr><td colSpan={6} style={{ padding: 34, textAlign: "center", color: "var(--ink-4)" }}>Không có phiếu chi văn phòng trong kỳ.</td></tr>}
               {(o.slips || []).map((s) => {
                 const st = STATUS[s.status] || STATUS.pending;
                 return (
                   <tr key={s.id}>
-                    <td className="tnum" style={{ ...td, whiteSpace: "nowrap" }}>{s.spendDate.split("-").reverse().join("/")}</td>
+                    <td className="tnum" style={{ ...td, whiteSpace: "nowrap" }}>{dmy(s.spendDate)}</td>
                     <td className="tnum" style={{ ...td, color: "var(--accent)", fontWeight: 600, whiteSpace: "nowrap" }}>{s.invoiceNo || "—"}</td>
                     <td style={td}>
                       <div style={{ fontWeight: 600 }}>{s.type}</div>
                       <div style={{ fontSize: 11.5, color: "var(--ink-4)", display: "flex", gap: 6, flexWrap: "wrap" }}>
                         {s.name && s.name !== s.type && <span>{s.name}</span>}
-                        {s.recurring && <span style={{ color: "var(--accent)" }}><i className="bi bi-arrow-repeat" /> định kỳ{s.dueDate ? ` đến ${s.dueDate.split("-").reverse().join("/")}` : ""}</span>}
+                        {s.recurring && <span style={{ color: "var(--accent)" }}><i className="bi bi-arrow-repeat" /> định kỳ{s.dueDate ? ` đến ${dmy(s.dueDate)}` : ""}</span>}
                         {s.alloc && <span style={{ color: "#0f766e" }}><i className="bi bi-pie-chart" /> phân bổ {s.allocMonths} th</span>}
                         {s.note && <span title={s.note}>· {s.note}</span>}
                       </div>
@@ -178,7 +188,7 @@ export function OfficeTab({ rep, prev, prevLabel, isMobile, routes }) {
             </tbody>
             {(o.slips || []).length > 0 && (
               <tfoot><tr style={{ background: "#fafbfc" }}>
-                <td colSpan={4} style={{ padding: "11px 12px", fontWeight: 800, borderTop: "2px solid var(--line)" }}>TỔNG · {(o.slips || []).length} phiếu{prevO ? <span style={{ marginLeft: 10, fontWeight: 400 }}><Delta cur={o.spent} prev={prevO.spent} goodWhen="down" label={prevLabel ? `so ${prevLabel}` : undefined} /></span> : null}</td>
+                <td colSpan={4} style={{ padding: "11px 12px", fontWeight: 800, borderTop: "2px solid var(--line)" }}>TỔNG · {(o.slips || []).length} phiếu{o.prev ? <span style={{ marginLeft: 10, fontWeight: 400 }}><Delta cur={o.spent} prev={o.prev.spent} goodWhen="down" label={prevLbl ? `so ${prevLbl}` : undefined} /></span> : null}</td>
                 <td className="tnum" style={{ ...tdR, borderTop: "2px solid var(--line)", fontWeight: 800, color: "#0f766e" }}>{fmtNum(o.spent)}</td>
                 <td style={{ ...td, borderTop: "2px solid var(--line)" }} />
               </tr></tfoot>

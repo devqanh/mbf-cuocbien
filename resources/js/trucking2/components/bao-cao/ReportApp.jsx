@@ -126,7 +126,7 @@ export function ReportApp() {
           {tab === "overview" && <OverviewTab rep={rep} prev={prev} prevLabel={prevLabel} isMobile={isMobile} routes={ROUTES} onGoTab={setTab} />}
           {tab === "fleet" && <FleetTab rep={rep} prev={prev} isMobile={isMobile} routes={ROUTES} />}
           {tab === "customers" && <CustomersTab rep={rep} prev={prev} isMobile={isMobile} />}
-          {tab === "office" && <OfficeTab rep={rep} prev={prev} prevLabel={prevLabel} isMobile={isMobile} routes={ROUTES} />}
+          {tab === "office" && <OfficeTab rep={rep} isMobile={isMobile} routes={ROUTES} />}
           {tab === "trend" && <TrendTab rows={trend} loading={trendLoading} monthLabel={monthLabel} isMobile={isMobile} />}
         </div>
       </div>

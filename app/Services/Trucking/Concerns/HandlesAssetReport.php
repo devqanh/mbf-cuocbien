@@ -345,6 +345,9 @@ trait HandlesAssetReport
                 'pending' => $pending,
             ],
             'warnDays' => $warnDays,
+            // Tab "Văn phòng": chi phí quản lý (kind='office') theo đúng khoảng kỳ — không nằm trong rows/split ở trên
+            // vì không phải tài sản, không khấu hao; để riêng để tổng xe/tài sản không bị lẫn overhead.
+            'office'   => $this->officeReportRange($fromIdx, $toIdx),
         ];
     }
 }
