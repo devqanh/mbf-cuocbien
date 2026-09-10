@@ -90,6 +90,7 @@ function ShipmentsApp() {
   const [expFrom, setExpFrom] = useState("");
   const [expTo, setExpTo] = useState("");
   const [expNotOut, setExpNotOut] = useState(false);   // chỉ xuất cont CHƯA RA
+  const [expTl, setExpTl] = useState("all");           // thanh lý tờ khai: all | done | pending
   const [showImport, setShowImport] = useState(false);
   const [impWb, setImpWb] = useState(null);   // {names, wb}
   const [impSheet, setImpSheet] = useState("");
@@ -387,7 +388,8 @@ function ShipmentsApp() {
     let allShips = [];
     try {
       // filter=notout → server trả CHỈ cont chưa ra (cùng quy tắc tab "Chưa ra")
-      const r = await window.trkApi("GET", ROUTES.shipmentsPage + "?all=1" + (expNotOut ? "&filter=notout" : ""));
+      // filter=notout → CHỈ cont chưa ra · tl=done|pending → đã / chưa thanh lý tờ khai (cùng quy tắc trang Lô hàng)
+      const r = await window.trkApi("GET", ROUTES.shipmentsPage + "?all=1" + (expNotOut ? "&filter=notout" : "") + (expTl !== "all" ? "&tl=" + expTl : ""));
       if (r && r.ok) allShips = r.data || [];
     } catch (e) { window.trkToast && window.trkToast("Lỗi tải dữ liệu xuất Excel", "error"); return; }
     const list = allShips.filter((s) => {
@@ -409,7 +411,7 @@ function ShipmentsApp() {
     };
     // SỐ CONT đứng cạnh LOẠI (cùng mô tả container) · BIỂN SỐ XE ngay sau NGÀY/GIỜ (xe nào đến lúc đó).
     // Biển số lấy BKS VÀO — xe nhận việc; không lô nào có BKS ra mà thiếu BKS vào nên không cần fallback.
-    const cols = ["NHÀ MÁY", "SỐ BOOKING/BILL", "NHẬP/XUẤT", "SỐ LƯỢNG", "LOẠI", "SỐ CONT", "CẮT MÁNG", "NƠI LẤY", "NƠI HẠ", "NGÀY", "GIỜ", "BIỂN SỐ XE", "KHO", "ĐỊA CHỈ ĐÓNG HÀNG", "INVOICE", "MÃ SỐ THUẾ / ĐỊA CHỈ / EMAIL"];
+    const cols = ["NHÀ MÁY", "SỐ BOOKING/BILL", "NHẬP/XUẤT", "SỐ LƯỢNG", "LOẠI", "SỐ CONT", "THANH LÝ", "CẮT MÁNG", "NƠI LẤY", "NƠI HẠ", "NGÀY", "GIỜ", "BIỂN SỐ XE", "KHO", "ĐỊA CHỈ ĐÓNG HÀNG", "INVOICE", "MÃ SỐ THUẾ / ĐỊA CHỈ / EMAIL"];
     const data = list.map((s) => {
       const ci = info[s.customer] || {};
       const dt = s.gioDenDuKien || "";
@@ -417,7 +419,11 @@ function ShipmentsApp() {
       const gio = dt.length >= 16 ? dt.slice(11, 16) : "";
       // Thông tin công ty gộp 1 ô (MST · địa chỉ · email) — khỏi tách nhiều cột thưa dữ liệu.
       const congTy = [ci.taxCode, ci.address, ci.email].map((v) => String(v || "").trim()).filter(Boolean).join(" · ");
-      return { "NHÀ MÁY": s.customer || "", "SỐ BOOKING/BILL": s.booking || "", "NHẬP/XUẤT": s.io || "", "SỐ LƯỢNG": s.qty == null ? "" : s.qty, "LOẠI": s.contType || "", "SỐ CONT": s.contNo || "", "CẮT MÁNG": fmtCM(s.cutOff), "NƠI LẤY": s.from || "", "NƠI HẠ": s.to || "", "NGÀY": ngay, "GIỜ": gio, "BIỂN SỐ XE": s.bksVao || "", "KHO": s.kho || "", "ĐỊA CHỈ ĐÓNG HÀNG": khoNote(s.kho), "INVOICE": s.inv || "", "MÃ SỐ THUẾ / ĐỊA CHỈ / EMAIL": congTy };
+      return { "NHÀ MÁY": s.customer || "", "SỐ BOOKING/BILL": s.booking || "", "NHẬP/XUẤT": s.io || "", "SỐ LƯỢNG": s.qty == null ? "" : s.qty, "LOẠI": s.contType || "", "SỐ CONT": s.contNo || "",
+        // Đã thanh lý tờ khai → hiện NGÀY thanh lý (dd/mm/yyyy); chưa thanh lý để TRỐNG
+        // → trong Excel lọc "ô trống / khác trống" là ra ngay nhóm cần làm.
+        "THANH LÝ": s.thanhLy ? String(s.thanhLy).slice(0, 10).split("-").reverse().join("/") : "",
+        "CẮT MÁNG": fmtCM(s.cutOff), "NƠI LẤY": s.from || "", "NƠI HẠ": s.to || "", "NGÀY": ngay, "GIỜ": gio, "BIỂN SỐ XE": s.bksVao || "", "KHO": s.kho || "", "ĐỊA CHỈ ĐÓNG HÀNG": khoNote(s.kho), "INVOICE": s.inv || "", "MÃ SỐ THUẾ / ĐỊA CHỈ / EMAIL": congTy };
     });
     const ws = XLSX.utils.json_to_sheet(data, { header: cols });
     // Cột ghi chú kho thường dài (địa chỉ) → cho rộng hơn để không phải kéo tay.
@@ -904,6 +910,21 @@ function ShipmentsApp() {
                     <input type="checkbox" checked={expNotOut} onChange={(e) => setExpNotOut(e.target.checked)} style={{ width: 16, height: 16, accentColor: "var(--accent)", cursor: "pointer" }} />
                     Chỉ xuất cont <b style={{ color: "var(--warn)" }}>chưa ra</b>
                   </label>
+                  <div style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>Thanh lý tờ khai</div>
+                  <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 9, padding: 3, gap: 1, marginBottom: 11, width: "100%" }}>
+                    {[["all", "Tất cả", null], ["done", "Đã TL", tlCounts.done], ["pending", "Chưa TL", tlCounts.pending]].map(([k, lb, n]) => {
+                      const on = expTl === k;
+                      return (
+                        <button key={k} type="button" onClick={() => setExpTl(k)}
+                          title={k === "done" ? "Chỉ lô đã có Ngày thanh lý" : k === "pending" ? "Chỉ lô chưa thanh lý tờ khai" : "Không lọc theo thanh lý"}
+                          style={{ flex: 1, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, padding: "5px 4px", borderRadius: 7, whiteSpace: "nowrap",
+                            background: on ? "#fff" : "transparent", color: on ? (k === "pending" ? "var(--warn)" : k === "done" ? "var(--good)" : "var(--accent)") : "var(--ink-3)",
+                            boxShadow: on ? "0 1px 2px rgba(16,19,23,.14)" : "none" }}>
+                          {lb}{n != null ? <span className="tnum" style={{ marginLeft: 4, fontSize: 10.5, fontWeight: 700, color: "var(--ink-4)" }}>{n}</span> : null}
+                        </button>
+                      );
+                    })}
+                  </div>
                   <button type="button" onClick={exportExcel} disabled={exporting}
                     style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "9px 0", fontSize: 13.5, fontWeight: 600, cursor: exporting ? "default" : "pointer", color: "#fff", background: "var(--good)", border: "none", borderRadius: 9, opacity: exporting ? 0.6 : 1 }}>
                     {exporting ? <><span style={{ width: 13, height: 13, border: "2px solid #fff", borderTopColor: "transparent", borderRadius: "50%", display: "inline-block", animation: "trk-spin .7s linear infinite" }} /> Đang xuất…</> : <><i className="bi bi-download" /> Tải file Excel</>}
