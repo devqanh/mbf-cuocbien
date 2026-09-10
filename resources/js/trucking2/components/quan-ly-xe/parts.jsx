@@ -10,6 +10,14 @@ const normKind = (k) => (k === "fixed" ? "fixed" : "recurring");   // gộp mont
 const TAB_KEYS = ["info", "allowance", "deprec", "deprecMonthly", "usage", "cost", "fuel"];
 const SECTION_OF = { deprec: "depreciations", deprecMonthly: "depreciations", usage: "usages", cost: "costs" };   // tab → nhóm lazy-load (allowance + info nằm trong base; fuel lazy riêng)
 
+// Bảng dài: cuộn trong khung (cao tối đa gần hết màn hình) + hàng tiêu đề dính lại khi cuộn.
+// Dùng chung cho các bảng của Quản lý xe / Tài sản / Chi phí văn phòng.
+const TABLE_MAX_H = "max(320px, calc(100vh - 300px))";
+const tableBox = { overflow: "auto", maxHeight: TABLE_MAX_H, WebkitOverflowScrolling: "touch" };
+// Ô tiêu đề dính: cần nền riêng (nền của <tr> không đi theo ô sticky) và viền dưới vẽ bằng inset shadow
+// vì border-collapse làm mất border khi ô rời khỏi dòng.
+const stickyTh = (bg = "#fafbfc") => ({ position: "sticky", top: 0, zIndex: 2, background: bg, boxShadow: "inset 0 -1px 0 var(--line)" });
+
 // Ngưỡng cảnh báo "sắp hết hạn" (số ngày) — cấu hình ở Cài đặt → Cấu hình chung
 const WARN_DAYS = (() => { try { const n = parseInt((window.__TRK || {}).boot?.dueWarnDays, 10); return n > 0 ? n : 30; } catch (e) { return 30; } })();
 // Trạng thái hạn (đăng kiểm / bảo hiểm / bảo hành / kiểm định): chưa có < còn hạn < sắp hết < hết hạn
@@ -501,7 +509,7 @@ function CostTab({ rows, onChange, costTypes, payMethods, payers = [], saving, o
   // Duyệt thanh toán — mở modal điền thông tin kế toán rồi mới duyệt
   const confirmPay = (info) => { if (payIdx == null) return; setRow(payIdx, { paid: true, ...info }); setPayIdx(null); };
 
-  const th = (t, w, align) => <th style={{ textAlign: align || "left", padding: "10px 12px", fontSize: 10.5, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.03em", borderBottom: "1px solid var(--line)", whiteSpace: "nowrap", width: w }}>{t}</th>;
+  const th = (t, w, align) => <th style={{ textAlign: align || "left", padding: "10px 12px", fontSize: 10.5, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.03em", borderBottom: "1px solid var(--line)", whiteSpace: "nowrap", width: w, ...stickyTh() }}>{t}</th>;
   const cell = { padding: "11px 12px", verticalAlign: "middle" };
   const iconBtn = (onClick, icon, title, accent) => (
     <button type="button" onClick={(e) => { e.stopPropagation(); onClick(); }} title={title}
@@ -537,7 +545,7 @@ function CostTab({ rows, onChange, costTypes, payMethods, payers = [], saving, o
       {all.length > 0 && shown === 0 && <div style={{ padding: "20px 4px", textAlign: "center", fontSize: 13, color: "var(--ink-4)" }}>Không có phiếu chi khớp bộ lọc.</div>}
 
       {all.length > 0 && shown > 0 && (
-        <div style={{ border: "1px solid var(--line)", borderRadius: 12, overflow: "auto", WebkitOverflowScrolling: "touch" }}>
+        <div style={{ border: "1px solid var(--line)", borderRadius: 12, ...tableBox }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: isMobile ? 720 : undefined }}>
             <thead><tr style={{ background: "#fafbfc" }}>
               {th("# Hóa đơn", 104)}{th(tg.km ? "Khoản chi · KM" : "Khoản chi")}{th("Ngày chi", 104)}{th("Số tiền", 124, "right")}{th("Hạn & trạng thái", 200)}{th("Duyệt · TT", 132, "center")}{th("", 74, "center")}
@@ -771,4 +779,4 @@ function PendingCostsModal({ items, onClose, onOpen }) {
 }
 
 
-export { num, daysUsed, COST_KINDS, normKind, TAB_KEYS, SECTION_OF, WARN_DAYS, DUE_NONE, dueStatus, vehRank, DueCell, StatChip, lbl, delBtn, addBtn, card, Pager, DeprecTab, DeprecMonthlyTab, UsageTab, today10, esc, blankCost, PAY_METHODS, PayModal, CostModal, CostTab, VEH_DOC_TYPES, DocsBlock, InfoTab, AllowanceTab, PendingCostsModal };
+export { tableBox, stickyTh, num, daysUsed, COST_KINDS, normKind, TAB_KEYS, SECTION_OF, WARN_DAYS, DUE_NONE, dueStatus, vehRank, DueCell, StatChip, lbl, delBtn, addBtn, card, Pager, DeprecTab, DeprecMonthlyTab, UsageTab, today10, esc, blankCost, PAY_METHODS, PayModal, CostModal, CostTab, VEH_DOC_TYPES, DocsBlock, InfoTab, AllowanceTab, PendingCostsModal };

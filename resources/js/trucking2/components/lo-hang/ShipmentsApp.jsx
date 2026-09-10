@@ -46,6 +46,9 @@ function ShipmentsApp() {
   const [pageInfo, setPageInfo] = useState({ page: P0.page, perPage: P0.perPage, total: P0.total, lastPage: P0.lastPage });
   const [totalCost, setTotalCost] = useState(P0.totalCost || 0);
   const [filterCounts, setFilterCounts] = useState(P0.filterCounts || { all: 0, out: 0, notout: 0 });
+  // Thanh lý tờ khai: "đã thanh lý" = lô CÓ Ngày thanh lý (thanhLy) — 1 mốc ngày vừa là cờ đã/chưa,
+  // vừa cho biết thanh lý hôm nào (cùng kiểu với "đã ra" = có Giờ xe ra).
+  const [tlCounts, setTlCounts] = useState(P0.tlCounts || { all: 0, done: 0, pending: 0 });
   const [followStats, setFollowStats] = useState(P0.followStats || { anyShips: 0, missShips: 0, byColor: [] });
   const [loading, setLoading] = useState(false);
   const [sibs, setSibs] = useState(B.sibs || []);   // danh sách rút gọn mọi lô cho picker "ra hộ"
@@ -63,8 +66,10 @@ function ShipmentsApp() {
   const [showBulk, setShowBulk] = useState(false);            // popup sửa hàng loạt
   const [bulkTo, setBulkTo] = useState("");                   // Nơi hạ (cảng) áp hàng loạt
   const [bulkBargeDrop, setBulkBargeDrop] = useState("");     // Nơi hạ sà lan áp hàng loạt
+  const [bulkTl, setBulkTl] = useState("");                   // "" giữ nguyên · "set" đánh dấu đã TL · "clear" bỏ đánh dấu
   const [bulkBusy, setBulkBusy] = useState(false);
   const [filter, setFilter] = useState(pf.filter || "all");
+  const [tlFilter, setTlFilter] = useState(pf.tlFilter || "all");   // all | done | pending (thanh lý tờ khai)
   // Bộ lọc theo "follow": 'all' | 'any' | 'missing' | '#hex' (lọc theo màu cụ thể)
   const [followFilter, setFollowFilter] = useState(pf.followFilter || "all");
   const [toLocSel, setToLocSel] = useState(pf.toLocSel || []);   // lọc theo NƠI HẠ theo KÝ HIỆU — CHỌN NHIỀU (OR)
@@ -130,6 +135,7 @@ function ShipmentsApp() {
     if (perPage && perPage !== 20) p.set("perPage", perPage);
     if (qDeb.trim()) p.set("q", qDeb.trim());
     if (filter !== "all") p.set("filter", filter);
+    if (tlFilter !== "all") p.set("tl", tlFilter);
     if (followFilter !== "all") p.set("follow", followFilter);
     (toLocSel || []).forEach((v) => p.append("toLoc[]", v));   // chọn nhiều ký hiệu nơi hạ → OR
     if (toLocSel && toLocSel.length) p.set("toMode", toMode);
@@ -153,6 +159,7 @@ function ShipmentsApp() {
         setPageInfo({ page: r.page, perPage: r.perPage, total: r.total, lastPage: r.lastPage });
         setTotalCost(r.totalCost || 0);
         setFilterCounts(r.filterCounts || { all: 0, out: 0, notout: 0 });
+        setTlCounts(r.tlCounts || { all: 0, done: 0, pending: 0 });
         setFollowStats(r.followStats || { anyShips: 0, missShips: 0, byColor: [] });
         if (r.toLocs) setToLocs(r.toLocs);
         if (r.fromLocs) setFromLocs(r.fromLocs);
@@ -175,7 +182,7 @@ function ShipmentsApp() {
   useEffect(() => { const t = setTimeout(() => { setQDeb(q); setPage(1); }, 350); return () => clearTimeout(t); }, [q]);
   // Lưu bộ lọc xuống localStorage mỗi khi đổi (để load lại trang giữ nguyên cấu hình).
   useEffect(() => {
-    try { localStorage.setItem(FILTER_KEY, JSON.stringify({ filter, followFilter, toLocSel, toMode, fromLocSel, fromMode, custSel, denDate, tagSel, perPage, sort, showFilters })); } catch (e) {}
+    try { localStorage.setItem(FILTER_KEY, JSON.stringify({ filter, tlFilter, followFilter, toLocSel, toMode, fromLocSel, fromMode, custSel, denDate, tagSel, perPage, sort, showFilters })); } catch (e) {}
   }, [filter, followFilter, toLocSel, toMode, fromLocSel, fromMode, custSel, denDate, tagSel, perPage, sort, showFilters]);
 
   // Nạp lại khi tham số đổi. Bỏ lần mount đầu NẾU không có bộ lọc lưu (đã có boot mặc định);
@@ -184,7 +191,7 @@ function ShipmentsApp() {
   useEffect(() => {
     if (skipFirst.current) { skipFirst.current = false; return; }
     load();
-  }, [page, perPage, qDeb, filter, followFilter, toLocSel, toMode, fromLocSel, fromMode, custSel, denDate, tagSel, sort]);
+  }, [page, perPage, qDeb, filter, tlFilter, followFilter, toLocSel, toMode, fromLocSel, fromMode, custSel, denDate, tagSel, sort]);
   // Mở từ Lộ trình/Bảng kê (?q/?open): boot là danh sách CHƯA lọc → tải lại theo q ngay + tự mở popup.
   useEffect(() => { if (_initSp.get("q") || _initSp.get("open")) { skipFirst.current = false; load(); } }, []);
 
@@ -619,6 +626,35 @@ function ShipmentsApp() {
 
   const toggleSort = (key) => { setSort((s) => s.key === key ? { key, dir: -s.dir } : { key, dir: 1 }); setPage(1); };
   const setPerPageP = (n) => { setPerPage(n); setPage(1); };   // đổi số/trang → về trang 1
+  // ----- Thanh lý tờ khai: tích ngay trên danh sách (không cần mở popup) -----
+  // "Đã thanh lý" = lô CÓ Ngày thanh lý. Tích = ghi ngày HÔM NAY (vẫn sửa lại được ở popup),
+  // bỏ tích = xóa ngày. Lưu ngay qua endpoint hàng loạt với 1 id → không đụng field nào khác.
+  const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const isTl = (s) => !!String(s.thanhLy || "").trim();
+  const [tlBusy, setTlBusy] = useState(() => new Set());
+  const toggleTl = async (s) => {
+    if (String(s.id).startsWith("tmp") || tlBusy.has(s.id)) return;
+    const next = isTl(s) ? null : todayISO();
+    const prev = s.thanhLy || "";
+    setData((list) => list.map((x) => (x.id === s.id ? { ...x, thanhLy: next || "" } : x)));   // hiện ngay
+    setTlBusy((p) => new Set(p).add(s.id));
+    try {
+      const res = await api("POST", ROUTES.shipmentBulk, { ids: [s.id], ship: { thanhLy: next } });
+      if (!res || !res.ok) throw new Error("save failed");
+      setTlCounts((c) => ({ ...c, done: Math.max(0, c.done + (next ? 1 : -1)), pending: Math.max(0, c.pending + (next ? -1 : 1)) }));
+    } catch (e) {
+      setData((list) => list.map((x) => (x.id === s.id ? { ...x, thanhLy: prev } : x)));       // hỏng → trả lại
+      window.trkToast && window.trkToast("Không lưu được trạng thái thanh lý", "error");
+    } finally { setTlBusy((p) => { const n = new Set(p); n.delete(s.id); return n; }); }
+  };
+  // Ô tích dùng chung cho bảng (desktop) và card (mobile) — chặn nổi bọt để không mở popup lô.
+  const TlBox = ({ s, size = 15 }) => (
+    <input type="checkbox" checked={isTl(s)} disabled={tlBusy.has(s.id) || String(s.id).startsWith("tmp")}
+      onClick={(e) => e.stopPropagation()} onChange={() => toggleTl(s)}
+      title={isTl(s) ? `Đã thanh lý tờ khai ngày ${String(s.thanhLy).split("-").reverse().join("/")} — bỏ tích để hủy` : "Chưa thanh lý tờ khai — tích để đánh dấu đã thanh lý hôm nay"}
+      style={{ width: size, height: size, accentColor: "var(--good)", cursor: tlBusy.has(s.id) ? "wait" : "pointer" }} />
+  );
+
   // ----- Chọn nhiều lô + thao tác hàng loạt -----
   const isSel = (id) => selIds.has(id);
   const toggleSel = (id) => setSelIds((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -626,13 +662,14 @@ function ShipmentsApp() {
   const allPageSel = () => { const ids = pageIds(); return ids.length > 0 && ids.every((id) => selIds.has(id)); };
   const toggleSelAllPage = () => setSelIds((p) => { const ids = pageIds(); const n = new Set(p); ids.every((id) => n.has(id)) ? ids.forEach((id) => n.delete(id)) : ids.forEach((id) => n.add(id)); return n; });
   const clearSel = () => setSelIds(new Set());
-  const openBulk = () => { ensureCfg(); setBulkTo(""); setBulkBargeDrop(""); setShowBulk(true); };
+  const openBulk = () => { ensureCfg(); setBulkTo(""); setBulkBargeDrop(""); setBulkTl(""); setShowBulk(true); };
   const doBulk = async () => {
     const ids = [...selIds];
     const ship = {};
     if (bulkTo) ship.to = bulkTo;
     if (bulkBargeDrop) ship.bargeDrop = bulkBargeDrop;
-    if (!ids.length || (!ship.to && !ship.bargeDrop) || bulkBusy) return;
+    if (bulkTl) ship.thanhLy = bulkTl === "set" ? todayISO() : null;   // null = bỏ đánh dấu (khóa CÓ MẶT mới được áp)
+    if (!ids.length || (!ship.to && !ship.bargeDrop && !bulkTl) || bulkBusy) return;
     setBulkBusy(true);
     try {
       const res = await api("POST", ROUTES.shipmentBulk, { ids, ship });
@@ -745,13 +782,14 @@ function ShipmentsApp() {
   const locCodeList = () => [...new Set(Object.values(cfg.locationCode || {}).filter(Boolean))].sort();
   const setFilterP = (f) => { setFilter(f); setPage(1); };
   const setFollowP = (f) => { setFollowFilter(f); setPage(1); };
+  const setTlP = (f) => { setTlFilter(f); setPage(1); };           // lọc đã / chưa thanh lý tờ khai
   const setToLocP = (arr) => { setToLocSel(arr); setPage(1); };   // chọn nhiều ký hiệu nơi hạ (OR)
   const setCustP = (arr) => { setCustSel(arr); setPage(1); };      // lọc theo khách hàng (OR)
   const setDenDateP = (v) => { setDenDate(v); setPage(1); };      // lọc theo Giờ đến kế hoạch (1 ngày)
   const setTagP = (arr) => { setTagSel(arr); setPage(1); };       // lọc theo nhãn
   // Số bộ lọc chi tiết đang bật + xóa tất cả (để hiện badge / nút Xóa lọc)
-  const activeFilters = (toLocSel.length ? 1 : 0) + (fromLocSel.length ? 1 : 0) + (custSel.length ? 1 : 0) + (denDate ? 1 : 0) + (tagSel.length ? 1 : 0) + (followFilter !== "all" ? 1 : 0);
-  const clearFilters = () => { setToLocSel([]); setToMode("include"); setFromLocSel([]); setFromMode("exclude"); setCustSel([]); setDenDate(""); setTagSel([]); setFollowFilter("all"); setPage(1); };
+  const activeFilters = (toLocSel.length ? 1 : 0) + (fromLocSel.length ? 1 : 0) + (custSel.length ? 1 : 0) + (denDate ? 1 : 0) + (tagSel.length ? 1 : 0) + (followFilter !== "all" ? 1 : 0) + (tlFilter !== "all" ? 1 : 0);
+  const clearFilters = () => { setToLocSel([]); setToMode("include"); setFromLocSel([]); setFromMode("exclude"); setCustSel([]); setDenDate(""); setTagSel([]); setFollowFilter("all"); setTlFilter("all"); setPage(1); };
   // 1 ô lọc trong panel: nhãn nhỏ phía trên + control phía dưới (gọn, thẳng hàng)
   const FF = ({ label, icon, children }) => (
     <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -966,6 +1004,20 @@ function ShipmentsApp() {
               <div style={{ width: 150 }}><DateField value={denDate} onChange={setDenDateP} placeholder="Chọn ngày" /></div>
               {denDate && <button type="button" onClick={() => setDenDateP("")} title="Bỏ lọc ngày" style={{ border: "none", background: "transparent", color: "var(--ink-4)", cursor: "pointer", padding: 2 }}><i className="bi bi-x-circle" /></button>}
             </FF>
+            <FF label="Thanh lý tờ khai" icon="bi-file-earmark-check">
+              <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 9, padding: 3, gap: 1 }}>
+                {[["all", "Tất cả", null], ["done", "Đã thanh lý", tlCounts.done], ["pending", "Chưa thanh lý", tlCounts.pending]].map(([k, lb, n]) => {
+                  const on = tlFilter === k;
+                  return (
+                    <button key={k} type="button" onClick={() => setTlP(k)} title={k === "pending" ? "Cont chưa có Ngày thanh lý — nhóm cần theo dõi" : undefined}
+                      style={{ border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, padding: "5px 11px", borderRadius: 7, whiteSpace: "nowrap",
+                        background: on ? "#fff" : "transparent", color: on ? (k === "pending" ? "var(--warn)" : "var(--accent)") : "var(--ink-3)", boxShadow: on ? "0 1px 2px rgba(16,19,23,.14)" : "none" }}>
+                      {lb}{n != null ? <span className="tnum" style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: "var(--ink-4)" }}>{n}</span> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </FF>
             <FF label="Nhãn" icon="bi-tags">
               <div style={{ width: isMobile ? 180 : 220 }}><MultiCombo values={tagSel} onChange={setTagP} options={tagOptions} placeholder="Tất cả nhãn" strict max={50} /></div>
             </FF>
@@ -1049,7 +1101,12 @@ function ShipmentsApp() {
                           {s.isBarge ? <Badge tone="blue">Sà lan{s.bargeCont ? " " + s.bargeCont : ""}</Badge> : null}
                         </div>
                       </div>
-                      <span className="tnum" style={{ fontSize: 11.5, color: "var(--ink-4)", flexShrink: 0 }}>{String(s.id).startsWith("tmp") ? "mới" : ("#" + s.id)}</span>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
+                        <span className="tnum" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{String(s.id).startsWith("tmp") ? "mới" : ("#" + s.id)}</span>
+                        <label onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 700, color: isTl(s) ? "var(--good)" : "var(--ink-4)", cursor: "pointer" }}>
+                          <TlBox s={s} size={16} /> TL
+                        </label>
+                      </div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, marginTop: 8 }}>
                       <span style={{ color: "var(--ink-2)" }}>{s.from || "—"}</span>
@@ -1115,6 +1172,7 @@ function ShipmentsApp() {
                 <TH w={48} align="center">ID</TH>
                 <TH sticky><SortBtn k="customer" sort={sort} onSort={toggleSort}>Khách hàng</SortBtn></TH>
                 <TH>Cont</TH>
+                <TH w={78} align="center" title="Thanh lý tờ khai — tích để đánh dấu đã thanh lý">Thanh lý</TH>
                 <TH>Tuyến</TH>
                 <TH>Lịch trình</TH>
                 <TH align="right"><SortBtn k="cost" sort={sort} onSort={toggleSort} align="right">Chi phí</SortBtn></TH>
@@ -1170,6 +1228,12 @@ function ShipmentsApp() {
                           </>
                         )}
                       </EditCell>
+                    </TD>
+                    <TD align="center">
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                        <TlBox s={s} />
+                        {isTl(s) && <span className="tnum" style={{ fontSize: 10.5, color: "var(--good)", fontWeight: 700 }}>{String(s.thanhLy).slice(5).split("-").reverse().join("/")}</span>}
+                      </div>
                     </TD>
                     <TD>
                       <EditCell onClick={() => openModal({ id: s.id, type: "info" })}>
@@ -1387,6 +1451,16 @@ function ShipmentsApp() {
               <div style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-3)", marginBottom: 5 }}><i className="bi bi-water" /> Nơi hạ sà lan (điểm đến)</div>
               <Combo value={bulkBargeDrop} onChange={setBulkBargeDrop} options={["HPP", "LHP"].map((c) => ({ value: c, label: c }))} placeholder="— Giữ nguyên —" clearable strict />
               <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 5, lineHeight: 1.5 }}>Chọn nơi hạ sà lan = các lô tự đi sà lan; loại DRY/NOR suy từ Loại cont từng lô.</div>
+            </label>
+            <label style={{ display: "block" }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-3)", marginBottom: 5 }}><i className="bi bi-file-earmark-check" /> Thanh lý tờ khai</div>
+              <select value={bulkTl} onChange={(e) => setBulkTl(e.target.value)}
+                style={{ width: "100%", padding: "8px 11px", fontSize: 13.5, border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: bulkTl ? "var(--ink-2)" : "var(--ink-4)" }}>
+                <option value="">— Giữ nguyên —</option>
+                <option value="set">Đánh dấu ĐÃ thanh lý (ngày hôm nay)</option>
+                <option value="clear">Bỏ đánh dấu (về chưa thanh lý)</option>
+              </select>
+              <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 5, lineHeight: 1.5 }}>Đánh dấu = ghi Ngày thanh lý cho các lô đang chọn; sửa lại ngày cụ thể trong popup từng lô.</div>
             </label>
           </div>
         </Modal>

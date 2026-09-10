@@ -2,7 +2,7 @@ import React from "react";
 const { useState, useEffect, useRef } = React;
 import { I, Money, Num, Txt, Combo, DateField, Btn, Modal, fmtVND, fmtNum, fmtDate, toNum, useIsMobile } from "@trk/lib.jsx";
 import { ChkBox } from "@trk/pop.jsx";
-import { num, daysUsed, COST_KINDS, normKind, TAB_KEYS, SECTION_OF, WARN_DAYS, DUE_NONE, dueStatus, vehRank, DueCell, StatChip, lbl, delBtn, addBtn, card, Pager, DeprecTab, DeprecMonthlyTab, UsageTab, today10, esc, blankCost, PAY_METHODS, PayModal, CostModal, CostTab, VEH_DOC_TYPES, DocsBlock, InfoTab, AllowanceTab, PendingCostsModal } from "./parts.jsx";
+import { tableBox, stickyTh, num, daysUsed, COST_KINDS, normKind, TAB_KEYS, SECTION_OF, WARN_DAYS, DUE_NONE, dueStatus, vehRank, DueCell, StatChip, lbl, delBtn, addBtn, card, Pager, DeprecTab, DeprecMonthlyTab, UsageTab, today10, esc, blankCost, PAY_METHODS, PayModal, CostModal, CostTab, VEH_DOC_TYPES, DocsBlock, InfoTab, AllowanceTab, PendingCostsModal } from "./parts.jsx";
 
 const ASSET_TAB_KEYS = ["info", "deprec", "deprecMonthly", "cost", "docs"];
 const ASSET_SECTION_OF = { deprec: "depreciations", deprecMonthly: "depreciations", cost: "costs" };
@@ -284,7 +284,7 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
     const curPage = Math.min(aPage, lastPage);
     const pageList = list.slice((curPage - 1) * PER, curPage * PER);
     const FILTERS = [["all", "Tất cả", assets.length, "var(--ink-2)"], ["expired", "Hết hạn", expiredCount, "var(--danger)"], ["soon", "Sắp hết hạn", soonCount, "var(--warn)"], ["ok", "Còn hạn", okCount, "var(--good)"]];
-    const th = (t, align) => <th style={{ textAlign: align || "left", padding: "10px 12px", fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "1px solid var(--line)", whiteSpace: "nowrap" }}>{t}</th>;
+    const th = (t, align) => <th style={{ textAlign: align || "left", padding: "10px 12px", fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "1px solid var(--line)", whiteSpace: "nowrap", ...stickyTh() }}>{t}</th>;
 
     return (
       <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)", overflow: "auto" }}>
@@ -327,7 +327,7 @@ function AssetApp({ modeSwitch, assets, setAssets, categories, setCategories, lo
             ? <div style={{ padding: "44px", textAlign: "center", color: "var(--ink-4)", fontSize: 13.5, background: "#fff", border: "1px solid var(--line)", borderRadius: 12 }}>Chưa có tài sản nào. Bấm <b>Thêm tài sản</b> để bắt đầu.</div>
             : (
               <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
-                <div style={{ overflowX: "auto" }}>
+                <div style={tableBox}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
                     <thead><tr style={{ background: "#fafbfc" }}>
                       {th("Tài sản")}{th("Loại")}{th("Vị trí · Tình trạng")}{th("Bảo hành · Kiểm định")}{th("Hồ sơ", "center")}{th("Khấu hao/tháng", "right")}{th("Khấu hao · Chi phí", "center")}{th("", "right")}

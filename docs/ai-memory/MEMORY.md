@@ -45,6 +45,7 @@
 - [Bảng giá theo khoảng ngày](price-books-by-date.md) — mỗi khách nhiều price book [from,to]; bảng kê định giá per-lô theo NGÀY cont ra; không khớp ngày → "chưa khớp bảng giá"
 - [Bảng kê xe ngoài + Thu phí lô](ext-truck-payable.md) — danh mục Đơn vị xe ngoài (bắt buộc khi Thuê xe ngoài) + module Bảng kê xe ngoài (payable/công nợ theo nhà xe, lọc Giờ xe đến); bảng kê khách thêm VAT% + 3 cột/lô; lô hàng có cột Thu phí (cước+dầu) dùng chung priceShipment
 - [Khoản chi phí auto + VAT](cost-item-auto-vat.md) — cờ "auto" (tự hiện popup + nhắc chưa-điền-số-HĐ mọi lô) và VAT% (chi phí net = số tiền ÷ (1+vat)) cho danh mục Khoản chi phí
+- [Thanh lý tờ khai](thanh-ly-to-khai.md) — "đã thanh lý" suy từ thanh_ly_date; tích ngay trên danh sách /lo-hang + lọc Đã/Chưa + thao tác hàng loạt (bulk xét array_key_exists để bỏ đánh dấu được)
 - [Import CSHT](csht-import.md) — nút /lo-hang import phí CSHT + Số tiền thanh lý vào chi phí lô theo số cont (khoản CSHT/Thanh lí); ghi đè khi import lại, đối chiếu Nhập/Xuất; thêm cột Ghi chú vào chi phí lô hàng
 - [Lệch ngày ô Excel](excel-date-cell-skew.md) — ô ngày/giờ kiểu Date của Excel đọc bằng SheetJS lệch ~30s ở múi VN (lùi 1 ngày / hụt 1 phút); parser client phải snapToMinute
 - [Báo cáo tài sản 3 tab](asset-report.md) — /bao-cao-tai-san: Tổng quan (KPI so kỳ trước, xu hướng tháng, cơ cấu theo TÊN khoản vì cost_type_id không ai điền, top xe, cảnh báo) · Chi tiết theo xe · Sổ tài sản khấu hao đến hôm nay; Donut chung ở components/charts.jsx

@@ -1,7 +1,7 @@
 import React from "react";
 const { useState, useEffect } = React;
 import { I, Money, Num, Txt, DateField, Btn, fmtVND, fmtNum, fmtDate, toNum } from "@trk/lib.jsx";
-import { lbl, card } from "./parts.jsx";
+import { lbl, card, tableBox, stickyTh } from "./parts.jsx";
 
 /**
  * Tab "Dầu" — Theo dõi lượng dầu xe:
@@ -102,7 +102,7 @@ function FuelTab({ vehicleId, hashid, routes }) {
         {refills.length === 0 ? (
           <div style={{ padding: "14px 0", fontSize: 13, color: "var(--ink-4)" }}>Chưa có phiếu đổ dầu nào — bấm <b>Thêm phiếu đổ</b> để ghi nhận.</div>
         ) : (
-          <div style={{ overflowX: "auto" }}>
+          <div style={tableBox}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead><tr style={{ color: "var(--ink-4)", fontSize: 11, textTransform: "uppercase" }}>
                 <th style={th}>Ngày đổ</th><th style={thR}>Số lít</th><th style={thR}>Đơn giá</th><th style={thR}>Thành tiền</th>
@@ -172,7 +172,7 @@ function FuelTab({ vehicleId, hashid, routes }) {
   );
 }
 
-const th = { textAlign: "left", padding: "6px 8px", fontWeight: 700, borderBottom: "1px solid var(--line)" };
+const th = { textAlign: "left", padding: "6px 8px", fontWeight: 700, borderBottom: "1px solid var(--line)", ...stickyTh("#fff") };
 const thR = { ...th, textAlign: "right" };
 const td = { padding: "7px 8px", borderBottom: "1px solid var(--line-2)", verticalAlign: "middle" };
 const tdR = { ...td, textAlign: "right" };

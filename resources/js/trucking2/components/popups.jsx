@@ -285,6 +285,8 @@ function RevenuePopupICD({ ship, patch, onSave, isDirty, onClose, cfg = {}, addC
 
 /* ===================== INFO EDIT POPUP (khách / cont / tuyến / lịch) ===================== */
 
+const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+
 function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], onClose, onDelete, canDelete, isHph, cfg = {}, addCfg, tagOptions = [] }) {
   const isMobile = useIsMobile();
   const set = (np) => patch(np);
@@ -446,8 +448,19 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
                 </div>
               </div>
             </Field>
-            <div style={{ marginTop: 12, maxWidth: 240 }}>
-              <Field label="Ngày thanh lý"><DateField value={ship.thanhLy} onChange={(x) => set({ thanhLy: x })} /></Field>
+            {/* Thanh lý tờ khai: tích cho nhanh (ghi ngày hôm nay), vẫn sửa được ngày cụ thể bên cạnh.
+                "Đã thanh lý" ở danh sách + bộ lọc đều suy từ ô ngày này. */}
+            <div style={{ marginTop: 12, display: "flex", alignItems: "flex-end", gap: 14, flexWrap: "wrap" }}>
+              <div style={{ maxWidth: 240, flex: "0 0 auto" }}>
+                <Field label="Ngày thanh lý"><DateField value={ship.thanhLy} onChange={(x) => set({ thanhLy: x })} /></Field>
+              </div>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: "8px 0",
+                color: String(ship.thanhLy || "").trim() ? "var(--good)" : "var(--ink-3)" }}>
+                <input type="checkbox" checked={!!String(ship.thanhLy || "").trim()}
+                  onChange={(e) => set({ thanhLy: e.target.checked ? todayISO() : "" })}
+                  style={{ width: 16, height: 16, accentColor: "var(--good)", cursor: "pointer" }} />
+                Đã thanh lý tờ khai
+              </label>
             </div>
             <div style={{ marginTop: 12 }}>
               <Field label="Ghi chú tờ khai">

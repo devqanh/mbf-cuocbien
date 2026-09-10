@@ -354,7 +354,7 @@ trait HandlesPricingAndImport
                         : ($cls::where('name', $name)->whereRaw("COALESCE(code,'') = ''")->first() ?? null);
                 }
                 if ($row) {
-                    $row->update($attrs);
+                    if (! $this->isAddOnly($cfg)) $row->update($attrs);   // thêm nhanh: không sửa dòng đã có (payload có thể cũ)
                 } else {
                     $row = $cls::create($attrs);
                 }
@@ -375,7 +375,8 @@ trait HandlesPricingAndImport
             if ($colored && array_key_exists('costColors', $cfg)) $attrs['color'] = $cfg['costColors'][$name] ?? null;
             if ($colored && array_key_exists('costAuto', $cfg))   $attrs['auto']  = ! empty($cfg['costAuto'][$name]);
             if ($colored && array_key_exists('costVat', $cfg))    $attrs['vat']   = isset($cfg['costVat'][$name]) && $cfg['costVat'][$name] !== '' ? (float) $cfg['costVat'][$name] : null;
-            $cls::updateOrCreate(['name' => $name], $attrs);
+            // Thêm nhanh: chỉ tạo mục còn thiếu, KHÔNG ghi đè đơn giá/màu/VAT của mục đã có (payload có thể cũ).
+            $this->isAddOnly($cfg) ? $cls::firstOrCreate(['name' => $name], $attrs) : $cls::updateOrCreate(['name' => $name], $attrs);
         }
     }
 
@@ -403,7 +404,10 @@ trait HandlesPricingAndImport
         foreach (($cfg['customerInfo'] ?? []) as $k => $v) $info[$collapse($k)] = $v;
         foreach ($names as $name) {
             $d = $info[$name] ?? [];
-            $cust = TruckingCustomer::updateOrCreate(['name' => $name], [
+            // Thêm nhanh (gõ tên khách mới ở popup lô): chỉ tạo khách còn thiếu, KHÔNG ghi đè MST/địa
+            // chỉ/email/hạn TT của khách đã có — payload gửi kèm là bản trong trình duyệt, có thể đã cũ.
+            $upsert = $this->isAddOnly($cfg) ? 'firstOrCreate' : 'updateOrCreate';
+            $cust = TruckingCustomer::$upsert(['name' => $name], [
                 'short_name' => $d['shortName'] ?? null,
                 'tax_code'   => $d['taxCode'] ?? null,
                 'phone'      => $d['phone'] ?? null,
@@ -520,10 +524,15 @@ trait HandlesPricingAndImport
                 $did = $type === 'MBF' ? $first($cfg['vehicleDriverId'] ?? []) : null;
                 $attrs['driver_id'] = ($did !== null && isset($driverIds[(int) $did])) ? (int) $did : null;
             }
-            // plate là UNIQUE toàn bảng: nếu biển này đang là mã của một TÀI SẢN thì bỏ qua, tuyệt đối
-            // không updateOrCreate theo plate — sẽ biến bản ghi tài sản thành xe (mất tab Tài sản của nó).
+            // plate là UNIQUE toàn bảng: nếu biển này đang là mã của TÀI SẢN / VĂN PHÒNG thì bỏ qua, tuyệt
+            // đối không updateOrCreate theo plate — sẽ biến bản ghi đó thành xe (mất tab Tài sản của nó).
             $row = TruckingVehicle::where('plate', $plate)->first();
-            if ($row && ($row->kind ?? 'vehicle') === 'asset') continue;
+            if ($row && ($row->kind ?? 'vehicle') !== 'vehicle') continue;
+            // THÊM NHANH chỉ được TẠO xe mới, KHÔNG sửa xe đã có. Biển gõ ở ô BKS lô hàng mặc định
+            // "Xe ngoài"; mà biển gõ thiếu gạch/thừa chấm (29C18195, 29C-181.95) chuẩn hóa ra TRÙNG một
+            // xe MBF sẵn có → trước đây update xuống 'Ngoài', xe biến mất khỏi trang Quản lý xe (lọc
+            // type='MBF') và lần lưu Cài đặt kế tiếp xóa luôn gps_ref → trông như mất sạch dữ liệu.
+            if ($row && $addOnly) continue;
             $row ? $row->update($attrs) : TruckingVehicle::create($attrs + ['plate' => $plate, 'kind' => 'vehicle']);
         }
     }

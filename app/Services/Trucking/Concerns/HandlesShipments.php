@@ -124,6 +124,8 @@ trait HandlesShipments
         $q       = trim((string) ($p['q'] ?? ''));
         $filter  = (string) ($p['filter'] ?? 'all');
         $filter  = in_array($filter, ['all', 'out', 'notout'], true) ? $filter : 'all';
+        $tl      = (string) ($p['tl'] ?? 'all');                                        // lọc thanh lý tờ khai
+        $tl      = in_array($tl, ['all', 'done', 'pending'], true) ? $tl : 'all';
         $follow  = (string) ($p['follow'] ?? 'all');
         $sortKey = (string) ($p['sort'] ?? 'default');
         $sortKey = in_array($sortKey, ['default', 'customer', 'cost'], true) ? $sortKey : 'default';
@@ -252,6 +254,13 @@ trait HandlesShipments
         $outCount = $applyOut($searched())->count();
         $filterCounts = ['all' => $allCount, 'out' => $outCount, 'notout' => $allCount - $outCount];
 
+        // "Đã thanh lý (tờ khai)" = lô CÓ Ngày thanh lý (thanh_ly_date) — cùng kiểu suy diễn với
+        // "đã ra" = có Giờ xe ra: 1 mốc ngày vừa là cờ đã/chưa, vừa cho biết thanh lý hôm nào.
+        $applyTl    = fn ($q) => $q->whereNotNull('thanh_ly_date');
+        $applyNotTl = fn ($q) => $q->whereNull('thanh_ly_date');
+        $tlDone = $applyTl($searched())->count();
+        $tlCounts = ['all' => $allCount, 'done' => $tlDone, 'pending' => $allCount - $tlDone];
+
         $followStats = $this->followStats($searched(), $autoHexes);
 
         // --- Danh sách hiển thị: q + lọc + follow + sort + phân trang ---
@@ -261,6 +270,8 @@ trait HandlesShipments
         } elseif ($filter === 'notout') {
             $applyNotOut($list);
         }
+        if ($tl === 'done')         $applyTl($list);
+        elseif ($tl === 'pending')  $applyNotTl($list);
         if ($followIds) {
             // "đã điền" = có dòng khoản đó CÓ số hóa đơn. Khoản AUTO expected cho mọi lô (thiếu dòng = chưa điền).
             $filledOf = fn ($ids) => fn ($c) => $c->whereIn('cost_item_id', $ids ?: [0])->whereNotNull('invoice_no')->where('invoice_no', '!=', '');
@@ -328,6 +339,7 @@ trait HandlesShipments
             'lastPage'     => $lastPage,
             'totalCost'    => $totalCost,
             'filterCounts' => $filterCounts,
+            'tlCounts'     => $tlCounts,
             'followStats'  => $followStats,
             'sibs'         => $this->siblingsList($sheet),
             // Danh sách KÝ HIỆU nơi hạ / nơi lấy thực có để đổ vào bộ lọc — gom theo ký hiệu, ổn định.
@@ -1305,6 +1317,8 @@ trait HandlesShipments
         $only = [];
         if (isset($data['to']) && trim((string) $data['to']) !== '')               $only[] = 'to';
         if (isset($data['bargeDrop']) && trim((string) $data['bargeDrop']) !== '')  $only[] = 'bargeDrop';
+        // Thanh lý tờ khai xét theo CÓ MẶT khóa (không theo "khác rỗng") vì bỏ đánh dấu = gửi null.
+        if (array_key_exists('thanhLy', $data))                                    $only[] = 'thanhLy';
         if (empty($only)) return 0;
 
         $n = 0;
@@ -1337,6 +1351,23 @@ trait HandlesShipments
             if ($k !== '') $map[$k] = (int) $d->id;
         }
         return $this->driverIdMapCache = $map;
+    }
+
+    /**
+     * Biển số → vehicle_id. Khớp CHUỖI CHÍNH XÁC trước; không thấy thì so theo DẠNG CHUẨN HÓA
+     * (bỏ gạch/chấm/cách) — ô BKS ở lô giữ nguyên chuỗi người dùng gõ ("15H05578"), trong khi danh
+     * mục xe lưu dạng chuẩn ("15H-05578"), nếu chỉ so chính xác thì lô mất liên kết xe (vehicle_id
+     * NULL) và biến mất khỏi mọi báo cáo/lộ trình tính theo xe.
+     */
+    private function vehicleIdByPlate(?string $plate): ?int
+    {
+        $p = trim((string) $plate);
+        if ($p === '') return null;
+        if ($id = TruckingVehicle::where('plate', $p)->value('id')) return (int) $id;
+        $n = preg_replace('/[^A-Z0-9]/', '', mb_strtoupper($p)) ?? '';
+        if ($n === '') return null;
+        $id = TruckingVehicle::whereRaw("UPPER(REPLACE(REPLACE(REPLACE(plate,'-',''),'.',''),' ','')) = ?", [$n])->value('id');
+        return $id ? (int) $id : null;
     }
 
     /** Bản đồ plate → vehicle_id (lowercase+trim+collapse). Memoize / request. */
@@ -1444,7 +1475,7 @@ trait HandlesShipments
             ];
         }
         if ($needVehicle) {
-            $updates['vehicle_id'] = $s->bks_vao ? TruckingVehicle::where('plate', $s->bks_vao)->value('id') : null;
+            $updates['vehicle_id'] = $this->vehicleIdByPlate($s->bks_vao);
         }
         if ($needDriver) {
             $dname = preg_replace('/\s+/u', ' ', trim((string) ($s->driver ?? ''))) ?? '';
