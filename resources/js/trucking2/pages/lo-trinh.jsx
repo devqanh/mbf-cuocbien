@@ -188,15 +188,15 @@ function actionNode(l) {
   return <>Lấy cont <span className="tnum">{l.cont || "—"}</span> ra</>;
 }
 
-// Chuỗi điểm hành trình (Nơi lấy → Kho → Nơi hạ) với mũi tên
-function PointChain({ points }) {
+// Chuỗi điểm hành trình (Nơi lấy → Kho → Nơi hạ) với mũi tên. dimDrop: chuyến chưa ra → làm mờ điểm hạ (xe chưa tới).
+function PointChain({ points, dimDrop = false }) {
   if (!points || !points.length) return <span style={{ color: "var(--ink-4)" }}>—</span>;
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
-      {points.map((p, i) => { const c = PT[p.kind] || PT.kho; return (
+      {points.map((p, i) => { const c = PT[p.kind] || PT.kho; const dim = dimDrop && p.kind === "drop"; return (
         <React.Fragment key={i}>
-          {i > 0 && <i className="bi bi-arrow-right" style={{ color: "var(--ink-4)", fontSize: 11 }} />}
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 600, color: c.color, background: "var(--bg)", border: "1px solid var(--line-2)", borderRadius: 999, padding: "2px 9px" }}>
+          {i > 0 && <i className="bi bi-arrow-right" style={{ color: "var(--ink-4)", fontSize: 11, opacity: dim ? 0.4 : 1 }} />}
+          <span title={dim ? "Điểm hạ dự kiến — xe chưa ra" : undefined} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 600, color: c.color, background: "var(--bg)", border: "1px solid var(--line-2)", borderRadius: 999, padding: "2px 9px", opacity: dim ? 0.4 : 1 }}>
             <i className={"bi " + c.icon} style={{ fontSize: 11 }} />{p.label}
           </span>
         </React.Fragment>
@@ -232,7 +232,7 @@ function TripNode({ l, isFirst, isLast, bks, href, fuel }) {
           <span style={{ fontSize: 13.5, fontWeight: 600, color: planned ? "var(--ink-2)" : undefined }}>{actionNode(l)}</span>
           {planned && <span style={{ fontSize: 10.5, fontWeight: 700, color: "#b45309", background: "#fef3c7", padding: "1px 8px", borderRadius: 999 }}>Chưa hoàn thành</span>}
         </div>
-        <div style={{ marginTop: 6 }}><PointChain points={pts} /></div>
+        <div style={{ marginTop: 6 }}><PointChain points={pts} dimDrop={planned} /></div>
         {/* CHI TIẾT: xe đưa cont VÀO + xe đưa cont (số nào) RA */}
         <div style={{ marginTop: 7, display: "flex", flexDirection: "column", gap: 3, fontSize: 11.5, lineHeight: 1.5 }}>
           <div style={{ color: "var(--ink-3)" }}>
