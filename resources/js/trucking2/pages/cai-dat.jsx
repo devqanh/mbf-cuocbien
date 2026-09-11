@@ -139,7 +139,11 @@ function SettingsApp() {
         window.trkToast && window.trkToast("Đã lưu");
         fetchTab(cur);   // nạp lại bản TƯƠI từ server (gộp thay đổi người khác, xác nhận đã lưu)
       } else { window.trkToast && window.trkToast("Lưu thất bại", "error"); }
-    }).catch(() => { setSaving(false); window.trkToast && window.trkToast("Lỗi kết nối khi lưu", "error"); });
+    }).catch((e) => {
+      setSaving(false);
+      // Máy chủ từ chối (vd trùng ký hiệu kho) → trkApi đã hiện đúng lý do; chỉ báo mất kết nối khi không có phản hồi.
+      if (!(e && e.status)) window.trkToast && window.trkToast("Lỗi kết nối khi lưu", "error");
+    });
   };
 
   const anyDirty = Object.values(dirty).some(Boolean);

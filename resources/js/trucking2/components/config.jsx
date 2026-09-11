@@ -64,6 +64,34 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
   const hasDupCode = !!(g && g.coded) && !allowDup && Object.values(codeCounts).some((n) => n > 1);
   // Ký hiệu BẮT BUỘC: coded mà có dòng bỏ trống ký hiệu → chặn lưu (kể cả allowDupCode).
   const hasEmptyCode = !!(g && g.coded) && list.some((_, i) => !String(codeArr[i] || "").trim());
+  // Giao diện gom nhóm (allowDup): gom dòng theo KÝ HIỆU (chuẩn hóa), nhóm chưa có ký hiệu xuống cuối;
+  // saved = nhóm có dòng mang id thật (đã lưu).
+  const codeGroups = (() => {
+    if (!(g && g.coded && allowDup)) return [];
+    const gm = new Map();
+    list.forEach((nm, i) => { const raw = codeArr[i] || ""; const key = normCode(raw); if (!gm.has(key)) gm.set(key, { key, code: raw, idxs: [] }); gm.get(key).idxs.push(i); });
+    const all = [...gm.values()].map((x) => ({ ...x, saved: x.key !== "" && x.idxs.some((i) => { const id = idArr[i]; return id != null && id !== "" && !isNaN(+id); }) }));
+    return all.filter((x) => x.key !== "").concat(all.filter((x) => x.key === ""));
+  })();
+  // Kho (codeEditable): ký hiệu là ĐỊNH DANH nhóm kho (lô lưu kho theo ký hiệu) → nhóm ĐÃ LƯU đổi ký hiệu
+  // không được trùng nhóm khác; so khớp như backend (bỏ dấu + khoảng trắng, không phân biệt hoa/thường).
+  // Gõ trùng / để trống → giữ ở NHÁP, chưa ghi vào codeArr (ghi vào là 2 nhóm bị gộp ngay khi đang gõ) + chặn lưu.
+  const codeIdent = (c) => String(c || "").normalize("NFD").replace(/\p{M}/gu, "").replace(/[đĐ]/g, "D").replace(/\s+/g, "").toUpperCase();
+  const [codeDrafts, setCodeDrafts] = useState({});   // { chỉ số dòng đầu nhóm: ký hiệu đang gõ chưa hợp lệ }
+  useEffect(() => { setCodeDrafts({}); }, [sel, list.length]);   // thêm/xóa dòng làm lệch chỉ số → bỏ nháp
+  const codeClash = (grp, v) => { const k = codeIdent(v); return k ? codeGroups.find((o) => o.key !== "" && o.idxs[0] !== grp.idxs[0] && codeIdent(o.code) === k) : null; };
+  const editGroupCode = (grp, v) => {
+    const at = grp.idxs[0];
+    const bad = grp.saved && (!v.trim() || !!codeClash(grp, v));
+    setCodeDrafts((d) => { if (bad) return { ...d, [at]: v }; if (!(at in d)) return d; const n = { ...d }; delete n[at]; return n; });
+    if (!bad) setGroupCode(grp.idxs, v);
+  };
+  // Nháp hết trùng (vd nhóm kia vừa đổi sang ký hiệu khác) → tự áp dụng.
+  useEffect(() => {
+    const grp = codeGroups.find((x) => { const d = codeDrafts[x.idxs[0]]; return d != null && d.trim() && !codeClash(x, d); });
+    if (grp) editGroupCode(grp, codeDrafts[grp.idxs[0]]);
+  });
+  const hasCodeDraft = Object.keys(codeDrafts).length > 0;
   // Phí tuyến đường: phát hiện trùng TUYẾN — THEO CHIỀU (Kho1→Kho2 ≠ Kho2→Kho1, giữ thứ tự kho)
   const routeKey = (s) => (s || "").split(/\s*-\s*/).map((x) => x.trim().toUpperCase()).filter(Boolean).join(" | ");
   const rfRows = cfg.routeFees || [];
@@ -79,7 +107,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
   // Lái xe mặc định: 1 người có thể phụ trách nhiều xe (không chặn) — chỉ ghi chú "đang lái xe X" trong dropdown.
   const driverUsedBy = {};   // driverId => [plate...]
   if (g && g.fleet) Object.keys(vehDriver).forEach((plate) => { const d = vehDriver[plate]; if (d && (vehType[plate] || "MBF") === "MBF") (driverUsedBy[d] = driverUsedBy[d] || []).push(plate); });
-  const blockSave = hasDupCode || hasEmptyCode || hasDupRoute || hasDupGps;   // chặn lưu khi còn trùng / thiếu ký hiệu
+  const blockSave = hasDupCode || hasEmptyCode || hasDupRoute || hasDupGps || hasCodeDraft;   // chặn lưu khi còn trùng / thiếu ký hiệu
   const costColors = cfg.costColors || {};
   const setColor = (name, val) => { const nc = { ...costColors }; if (val) nc[name] = val; else delete nc[name]; setCfg("costColors", nc); };
   const costAuto = cfg.costAuto || {};
@@ -180,7 +208,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                 ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "var(--warn)" }}><span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--warn)" }} /> Chưa lưu</span>
                 : <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600, color: "var(--good)" }}><I.check /> Đã lưu</span>}
               <button type="button" onClick={onSave} disabled={!dirty || saving || blockSave}
-                title={blockSave ? (hasEmptyCode ? "Có dòng chưa nhập ký hiệu — bắt buộc điền trước khi lưu" : hasDupCode ? "Có ký hiệu bị trùng — sửa trước khi lưu" : "Có tuyến bị trùng — sửa trước khi lưu") : ""}
+                title={blockSave ? (hasCodeDraft ? "Ký hiệu kho bị trùng nhóm khác hoặc để trống — sửa ô viền đỏ trước khi lưu" : hasEmptyCode ? "Có dòng chưa nhập ký hiệu — bắt buộc điền trước khi lưu" : hasDupCode ? "Có ký hiệu bị trùng — sửa trước khi lưu" : "Có tuyến bị trùng — sửa trước khi lưu") : ""}
                 style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 14px", fontSize: 13, fontWeight: 600, borderRadius: 9, border: "none",
                   cursor: dirty && !saving && !blockSave ? "pointer" : "default", color: dirty && !saving && !blockSave ? "#fff" : "var(--ink-4)", background: dirty && !saving && !blockSave ? "var(--accent)" : "var(--line-2)",
                   boxShadow: dirty && !saving && !blockSave ? "0 1px 2px rgba(42,111,219,.4)" : "none" }}>
@@ -195,10 +223,13 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
           </div>}
           {g.coded && <div style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12, color: "var(--ink-2)", background: "#eef4ff", border: "1px solid #d6e3fb", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>
             <i className="bi bi-info-circle-fill" style={{ color: "var(--accent)", marginTop: 1 }} />
-            <span>Sửa được cả <b>tên</b> lẫn <b>ký hiệu</b>. Đổi ký hiệu vẫn giữ liên kết (bảng giá/lô) vì khớp theo dòng. {allowDup ? <>Cho phép <b>nhiều tên</b> dùng chung 1 <b>ký hiệu</b>.</> : <>Lưu ý: mỗi <b>ký hiệu</b> phải <b>duy nhất</b>.</>}</span>
+            <span>Sửa được cả <b>tên</b> lẫn <b>ký hiệu</b>. {g.codeEditable
+              ? <>Ký hiệu là <b>định danh kho</b> (lô hàng lưu kho theo ký hiệu) nên <b>không được trùng</b> với nhóm khác; nhiều <b>tên</b> vẫn dùng chung 1 ký hiệu được.</>
+              : <>Đổi ký hiệu vẫn giữ liên kết (bảng giá/lô) vì khớp theo dòng. {allowDup ? <>Cho phép <b>nhiều tên</b> dùng chung 1 <b>ký hiệu</b>.</> : <>Lưu ý: mỗi <b>ký hiệu</b> phải <b>duy nhất</b>.</>}</>}</span>
           </div>}
           {hasEmptyCode && <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: "var(--danger)", background: "#fce8e8", border: "1px solid #f3c9c9", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>⚠ Có dòng <b>chưa nhập ký hiệu</b> — ký hiệu là bắt buộc (dùng để tham chiếu). Điền các ô viền đỏ trước khi lưu.</div>}
           {hasDupCode && <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: "var(--danger)", background: "#fce8e8", border: "1px solid #f3c9c9", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>⚠ Có ký hiệu bị trùng — mỗi ký hiệu phải là duy nhất. Sửa các ô viền đỏ trước khi lưu.</div>}
+          {hasCodeDraft && <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: "var(--danger)", background: "#fce8e8", border: "1px solid #f3c9c9", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>⚠ Ký hiệu kho bị trùng nhóm khác hoặc để trống — ký hiệu là định danh kho nên mỗi nhóm một ký hiệu riêng. Sửa ô viền đỏ trước khi lưu.</div>}
           {hasDupRoute && <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: "var(--danger)", background: "#fce8e8", border: "1px solid #f3c9c9", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>⚠ Có tuyến bị trùng — mỗi tuyến (đúng thứ tự kho) phải là duy nhất. Sửa các tuyến viền đỏ trước khi lưu. (Kho1→Kho2 khác Kho2→Kho1.)</div>}
           {hasDupGps && <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: "var(--danger)", background: "#fce8e8", border: "1px solid #f3c9c9", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>⚠ Có xe GPS bị gán cho nhiều xe — mỗi xe GPS chỉ gán cho 1 xe. Sửa các ô viền đỏ trước khi lưu.</div>}
           {loading ? (
@@ -312,29 +343,29 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                 </div>
                 ); })()}
               {(() => {
-                // Gom theo KÝ HIỆU (chuẩn hóa); nhóm chưa có ký hiệu xuống cuối.
-                const gm = new Map();
-                list.forEach((nm, i) => { const raw = codeArr[i] || ""; const key = normCode(raw); if (!gm.has(key)) gm.set(key, { key, code: raw, idxs: [] }); gm.get(key).idxs.push(i); });
-                let groups = [...gm.values()];
-                groups = groups.filter((x) => x.key !== "").concat(groups.filter((x) => x.key === ""));
+                const groups = codeGroups;   // gom theo ký hiệu — tính sẵn ở trên (dùng chung cho kiểm tra trùng)
                 if (!groups.length) return <div style={{ padding: "20px 4px", fontSize: 13, color: "var(--ink-4)" }}>Chưa có {noun} nào — thêm ở trên.</div>;
                 return (
                   <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: 430, overflowY: "auto", paddingRight: 2 }}>
                     {groups.map((grp) => {
                       const noCode = grp.key === "";
-                      // Ký hiệu đã LƯU (nhóm có dòng mang id thật) → khóa, không cho sửa (giữ khớp import/bảng giá).
-                      // Nhóm mới thêm (chưa có id) thì còn sửa được ký hiệu trước khi lưu.
-                      const codeSaved = !noCode && grp.idxs.some((i) => { const id = idArr[i]; return id != null && id !== "" && !isNaN(+id); });
+                      // Ký hiệu đã LƯU (nhóm có dòng mang id thật): Địa điểm → khóa (giữ khớp import/bảng giá);
+                      // Kho (codeEditable) → vẫn sửa được nhưng không trùng nhóm khác. Nhóm mới thêm thì sửa tự do trước khi lưu.
+                      const codeLock = grp.saved && !g.codeEditable;
+                      const draft = codeDrafts[grp.idxs[0]];
+                      const clash = draft != null ? codeClash(grp, draft) : null;
+                      const codeErr = draft == null ? "" : !draft.trim() ? "Chưa nhập ký hiệu" : clash ? `Trùng ký hiệu nhóm “${clash.code}”` : "";
                       return (
                       <div key={grp.idxs[0]} style={{ flexShrink: 0, border: "1px solid var(--line)", borderRadius: 11, overflow: "hidden", background: "#fff" }}>
-                        {/* Header nhóm: ký hiệu — sửa ở đây áp cho CẢ nhóm (đã lưu thì khóa) */}
+                        {/* Header nhóm: ký hiệu — sửa ở đây áp cho CẢ nhóm (Địa điểm đã lưu thì khóa) */}
                         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: noCode ? "var(--line-2)" : "var(--accent-weak)", borderBottom: "1px solid var(--line)" }}>
-                          <i className={"bi " + (codeSaved ? "bi-lock-fill" : "bi-tag-fill")} style={{ color: noCode ? "var(--ink-4)" : "var(--accent)", fontSize: 13 }} title={codeSaved ? "Ký hiệu đã lưu — không sửa được" : ""} />
-                          <input value={grp.code} readOnly={codeSaved} onChange={(e) => { if (!codeSaved) setGroupCode(grp.idxs, e.target.value); }} placeholder="Ký hiệu…"
-                            title={codeSaved ? "Ký hiệu đã lưu — không sửa để giữ khớp import/bảng giá" : ""}
-                            style={{ width: 130, padding: "5px 9px", fontSize: 13, fontWeight: 700, textTransform: "uppercase", border: "1px solid var(--line)", borderRadius: 7, outline: "none", background: codeSaved ? "var(--line-2)" : "#fff", color: codeSaved ? "var(--ink-3)" : "var(--ink)", cursor: codeSaved ? "not-allowed" : "text" }}
-                            onFocus={(e) => { if (!codeSaved) e.target.style.borderColor = "var(--accent)"; }} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
+                          <i className={"bi " + (codeLock ? "bi-lock-fill" : "bi-tag-fill")} style={{ color: noCode ? "var(--ink-4)" : "var(--accent)", fontSize: 13 }} title={codeLock ? "Ký hiệu đã lưu — không sửa được" : ""} />
+                          <input value={draft != null ? draft : grp.code} readOnly={codeLock} onChange={(e) => { if (!codeLock) editGroupCode(grp, e.target.value); }} placeholder="Ký hiệu…"
+                            title={codeLock ? "Ký hiệu đã lưu — không sửa để giữ khớp import/bảng giá" : grp.saved ? "Ký hiệu là định danh kho — không được trùng với nhóm khác" : ""}
+                            style={{ width: 130, padding: "5px 9px", fontSize: 13, fontWeight: 700, textTransform: "uppercase", border: "1px solid " + (codeErr ? "var(--danger)" : "var(--line)"), borderRadius: 7, outline: "none", background: codeLock ? "var(--line-2)" : "#fff", color: codeLock ? "var(--ink-3)" : "var(--ink)", cursor: codeLock ? "not-allowed" : "text" }}
+                            onFocus={(e) => { if (!codeLock && !codeErr) e.target.style.borderColor = "var(--accent)"; }} onBlur={(e) => (e.target.style.borderColor = codeErr ? "var(--danger)" : "var(--line)")} />
                           <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--ink-4)" }}>{grp.idxs.length} {noun}</span>
+                          {codeErr && <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--danger)" }}>⚠ {codeErr}</span>}
                           <button type="button" onClick={() => addRow(grp.code, "", grp.idxs[0])} title={"Thêm 1 " + noun + " vào nhóm này"}
                             style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer", borderRadius: 7, border: "1px solid var(--accent)", background: "#fff", color: "var(--accent)" }}>
                             <I.plus /> Thêm tên

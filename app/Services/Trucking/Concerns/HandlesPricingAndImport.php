@@ -319,6 +319,33 @@ trait HandlesPricingAndImport
         return ! empty($cfg['addOnly']);
     }
 
+    /**
+     * Kho: ký hiệu là ĐỊNH DANH nhóm kho (lô/bảng giá/phí tuyến lưu kho theo ký hiệu) → chặn đổi ký hiệu
+     * làm 2 nhóm kho ĐÃ CÓ dùng chung 1 ký hiệu. So khớp như normalizedCodeMap (bỏ dấu + khoảng trắng,
+     * không phân biệt hoa/thường). Kho mới (chưa có id) hoặc kho cũ chưa có ký hiệu thì được nhận ký hiệu
+     * đang có — đó là thêm tên vào nhóm, không phải đổi định danh.
+     */
+    private function assertWarehouseCodesDistinct(string $cls, array $names, array $codeArr, array $idArr): void
+    {
+        $ident = fn ($v) => mb_strtoupper(preg_replace('/\s+/u', '', trim(\Illuminate\Support\Str::ascii((string) $v))) ?? '');
+        $orig = $cls::whereIn('id', array_values(array_filter($idArr, 'is_numeric')))->pluck('code', 'id');
+        $owner = [];   // ký hiệu sau khi lưu → ký hiệu CŨ của nhóm đang giữ nó
+        foreach ($names as $i => $name) {
+            $id = $idArr[$i] ?? null;
+            $code = trim((string) ($codeArr[$i] ?? ''));
+            if (trim((string) $name) === '' || $code === '' || ! is_numeric($id) || ! $orig->has($id)) continue;
+            $from = $ident($orig[$id]);
+            if ($from === '') continue;
+            $to = $ident($code);
+            if (isset($owner[$to]) && $owner[$to] !== $from) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'cfg' => "Ký hiệu kho “{$code}” bị trùng với nhóm kho khác — ký hiệu là định danh kho nên không được trùng.",
+                ]);
+            }
+            $owner[$to] = $from;
+        }
+    }
+
     // --- reconcile từng bảng (dùng chung cho saveConfig & endpoint riêng) ---
     private function reconcileLookup(string $cls, bool $priced, $coded, bool $colored, array $cfg, string $key): void
     {
@@ -332,6 +359,10 @@ trait HandlesPricingAndImport
             $addrArr  = $key === 'warehouses' ? ($cfg['warehouseAddrArr'] ?? null) : null;   // Kho có thêm Địa chỉ
             $geoArr   = $key === 'warehouses' ? ($cfg['warehouseGeoArr'] ?? null) : null;    // Kho có thêm Tọa độ "lat,lng"
             $noteArr  = $key === 'warehouses' ? ($cfg['warehouseNoteArr'] ?? null) : null;   // Kho có thêm Ghi chú (địa chỉ đóng hàng)
+            // Trang Cài đặt đã chặn trùng; đây là chốt chặn cuối (tab mở lâu, payload cũ). Thêm nhanh không sửa dòng cũ nên bỏ qua.
+            if ($key === 'warehouses' && is_array($codeArr) && is_array($idArr) && ! $this->isAddOnly($cfg)) {
+                $this->assertWarehouseCodesDistinct($cls, $rawNames, $codeArr, $idArr);
+            }
             $keepIds = [];
             $sort = 0;
             foreach ($rawNames as $i => $rawName) {
