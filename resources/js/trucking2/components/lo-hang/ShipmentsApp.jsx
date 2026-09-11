@@ -24,6 +24,7 @@ const tagChip = { display: "inline-flex", alignItems: "center", fontSize: 10.5, 
 // Toàn bộ luồng (popup, kiểm tra, endpoint) vẫn còn nguyên — đổi cờ này thành true là hiện lại.
 const SHOW_UPDATE_IMPORT = true;
 // Màu badge Nhập/Xuất/Khác cho dễ phân biệt: Nhập=xanh dương · Xuất=xanh lá · Khác=hổ phách
+const escHtml = (t) => String(t == null ? "" : t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const ioTone = (io) => { const v = (io || "").toLowerCase(); return v.includes("nh") ? "blue" : v.includes("xu") ? "good" : "amber"; };
 
 function ShipmentsApp() {
@@ -356,10 +357,9 @@ function ShipmentsApp() {
   const delShip = async (id) => {
     const s = ships.find((x) => x.id === id);
     const label = (s && (s.contNo || s.booking)) || ("#" + id);
-    const esc = (t) => String(t == null ? "" : t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     const ok = await window.confirmAction({
       title: "Xóa lô hàng?",
-      text: `Lô <b>${esc(label)}</b> sẽ bị xóa cùng toàn bộ chi phí, doanh thu, thanh toán. Không thể hoàn tác.`,
+      text: `Lô <b>${escHtml(label)}</b> sẽ bị xóa cùng toàn bộ chi phí, doanh thu, thanh toán. Không thể hoàn tác.`,
       confirmText: '<i class="bi bi-trash me-1"></i> Xóa lô hàng',
       danger: true,
     });
@@ -694,7 +694,21 @@ function ShipmentsApp() {
     if (plateEdit === s.id) return (
       <div onClick={(e) => e.stopPropagation()} style={{ width: 152, margin: "3px 0" }}>
         <Combo small autoOpen clearable value={plate} options={cfg.vehicles || []} placeholder="Chọn xe…"
-          onChange={(v) => assignPlate(s, v)} onCreate={(v) => addCfg("vehicles", v, { external: true })} />
+          onChange={async (v) => {
+            // Dấu X = bỏ gán: hỏi lại vì nó nằm ngay cạnh danh sách, rất dễ bấm nhầm khi đang định đổi xe.
+            if (!String(v || "").trim() && plate) {
+              const ok = await window.confirmAction({
+                title: "Bỏ gán xe?",
+                text: `Lô ${s.contNo ? "<b>" + escHtml(s.contNo) + "</b>" : "này"} sẽ không còn xe <b>${escHtml(plate)}</b>. Chỉ xóa biển số vào, không đụng giờ xe hay chi phí.`,
+                confirmText: '<i class="bi bi-x-circle me-1"></i> Bỏ gán',
+                danger: true,
+              });
+              setPlateEdit(null);
+              if (!ok) return;
+            }
+            assignPlate(s, v);
+          }}
+          onCreate={(v) => addCfg("vehicles", v, { external: true })} />
       </div>
     );
     return (
