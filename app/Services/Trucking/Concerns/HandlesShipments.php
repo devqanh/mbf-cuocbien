@@ -383,7 +383,8 @@ trait HandlesShipments
      * Mỗi lô = 1 hoạt động dưới bks_vao, xếp theo GIỜ XE RA:
      *  - self  : "Lấy cont [X] ra" tại gio_xe_ra.
      *  - none  : "Ra xe (không kéo cont)" tại gio_xe_ra_xe.
-     *  - other : "Kéo cont khác ([Y]) ra" tại gio_xe_ra của lô ra_other_id (cont X chờ).
+     *  - other : "Kéo cont khác ([Y]) ra" tại gio_xe_ra của lô ra_other_id (cont X chờ);
+     *            tuyến = Nơi lấy + Kho của X (cont kéo vào) → Nơi hạ của Y (cont kéo ra).
      * Chỉ tính hoạt động có giờ ra TRONG khung [08:00, 08:00 hôm sau).
      */
     public function routeTripByDate(string $date): array
@@ -410,9 +411,10 @@ trait HandlesShipments
         $targetIds = $others->pluck('ra_other_id')->filter()->unique()->values()->all();
 
         $legs = [];
-        // $rs = lô có TUYẾN mà xe THỰC SỰ chạy (self/none = chính nó; other = lô bị kéo ra hộ).
-        $mk = function (TruckingShipment $s, Carbon $t, string $mode, ?TruckingShipment $rs = null, array $extra = []) {
-            $rs = $rs ?: $s;
+        // Tuyến xe THỰC SỰ chạy: Nơi lấy + Kho theo cont KÉO VÀO ($s); Nơi hạ theo cont KÉO RA ($out —
+        // self/none = chính nó; other = lô bị kéo ra hộ: xe đưa cont vào kho, cắt móc rồi kéo cont kia ra).
+        $mk = function (TruckingShipment $s, Carbon $t, string $mode, ?TruckingShipment $out = null, array $extra = []) {
+            $out = $out ?: $s;
             // Chuỗi điểm hành trình: Nơi lấy → các Kho → Nơi hạ (bỏ điểm trùng liền kề).
             $pts = [];
             $add = function ($label, $kind) use (&$pts) {
@@ -421,9 +423,9 @@ trait HandlesShipments
                 $pts[] = ['label' => $label, 'kind' => $kind];
             };
             // Lộ trình = kế toán theo dõi → Nơi lấy / Kho / Nơi hạ đều hiện KÝ HIỆU (gọn, dễ hiểu) thay vì tên hiển thị.
-            $add($this->locCode($rs->from_loc), 'pickup');
-            foreach ($this->khoCodePoints($rs->kho) as $kp) $add($kp, 'kho');
-            $add($this->locCode($rs->to_loc), 'drop');
+            $add($this->locCode($s->from_loc), 'pickup');
+            foreach ($this->khoCodePoints($s->kho) as $kp) $add($kp, 'kho');
+            $add($this->locCode($out->to_loc), 'drop');
 
             return array_merge([
                 'bks'        => trim((string) $s->bks_vao),
@@ -437,9 +439,9 @@ trait HandlesShipments
                 'cont'     => $s->cont_no ?? '',
                 'bksRa'    => $s->bks_ra ?? '',
                 'points'   => $pts,                               // hành trình điểm
-                'route'    => $this->khoRouteDisplay($rs->kho) ?: ($rs->kho ?? ''),
-                'kho'      => $rs->kho ?? '', 'cru' => (bool) $rs->cru,   // cho tính "chi theo ngày" (khớp phí tuyến + lương CRU)
-                'from'     => $rs->from_loc ?? '', 'to' => $rs->to_loc ?? '',
+                'route'    => $this->khoRouteDisplay($s->kho) ?: ($s->kho ?? ''),
+                'kho'      => $s->kho ?? '', 'cru' => (bool) $out->cru,   // cho tính "chi theo ngày" (khớp phí tuyến + lương CRU)
+                'from'     => $s->from_loc ?? '', 'to' => $out->to_loc ?? '',
                 'customer' => $s->customer?->name ?? '',
                 'booking'  => $s->booking ?? '',
                 'hashid'   => \App\Support\Hashid::encode($s->id),

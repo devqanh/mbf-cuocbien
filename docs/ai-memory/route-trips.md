@@ -22,6 +22,7 @@ Trang **Lộ trình** `/trucking-v2/lo-trinh` (`trucking2.loTrinh`, nav "Lộ tr
 Chỉ tính hoạt động có giờ ra trong **[08:00 D, 08:00 D+1)** (`gte start && lt end`, biên 08:00 đầu ngày TÍNH, 08:00 hôm sau LOẠI; `$start=$date 08:00`, `$end=addDay()`). Trả `{date,start,end(ms),startLabel,endLabel,trucks:[{bks,matched,type,legs:[{time,timeLabel,gioDen,gioDenLabel,mode,cont,refCont,bksRa,points,route,from,to,customer,booking,hashid}]}],totalLegs}`.
 
 **Hành trình điểm** (user: "nghiên cứu thành hành trình 1 lái xe"): mỗi leg có `points:[{label,kind:pickup|kho|drop}]` = Nơi lấy (`from_loc`) → các Kho (tách qua `khoPoints($kho)` PUBLIC trong HandlesTripAndDrivers) → Nơi hạ (`to_loc`), bỏ điểm trùng liền kề. Frontend render bằng `PointChain` (chip + mũi tên). Hiện thêm "vào kho {gioDenLabel} → ra {timeLabel}".
+- **other (cắt móc, kéo cont khác ra)** — khách phản hồi 2026-09-11: **Nơi lấy + Kho = của cont KÉO VÀO** (lô hiện tại), **Nơi hạ = của cont KÉO RA** (lô `ra_other_id`). Trước đó cả chuỗi lấy theo cont kéo ra → sai. Leg `from/kho/route` theo cont vào, `to` theo cont ra (`cru` vẫn theo cont ra như cũ) → `legPayGroup` khớp phí tuyến theo ĐÚNG tuyến mới (ngày đã chốt giữ số frozen).
 
 **TZ-safe**: `app.timezone=UTC` nhưng giờ lưu naive-local → `new Date(ms)` bị trình duyệt lệch ngày/giờ. ⇒ backend format SẴN `startLabel/endLabel` (d/m) + `timeLabel/gioDenLabel` (H:i); frontend dùng label, KHÔNG dùng fmtHm/fmtDM trên ms nữa.
 
