@@ -210,6 +210,9 @@ function TripNode({ l, isFirst, isLast, bks, href, fuel }) {
   const m = MODE[l.mode] || MODE.self;
   // Xe không kéo cont → chỉ hiện NƠI LẤY (chỗ xe vào), không vẽ tới nơi hạ vì chưa giao cont nào.
   const pts = l.mode === "none" ? (l.points || []).filter((p) => p.kind === "pickup") : l.points;
+  // Chuyến CHƯA HOÀN THÀNH (đã gán xe, chưa ra): chấm rỗng + rail nét đứt; giờ = giờ vào kho / giờ đến dự kiến.
+  const planned = !!l.planned;
+  const dot = planned ? "#9aa3b2" : m.color;
   return (
     <a href={href} title="Xem lô hàng (mở tab mới)" target="_blank" rel="noreferrer"
       style={{ display: "flex", alignItems: "stretch", gap: 12, textDecoration: "none", color: "inherit" }}
@@ -217,29 +220,36 @@ function TripNode({ l, isFirst, isLast, bks, href, fuel }) {
       onMouseLeave={(e) => (e.currentTarget.querySelector(".trk-trip-body").style.background = "transparent")}>
       {/* RAIL: đường dọc + chấm mốc */}
       <div style={{ position: "relative", width: 30, flexShrink: 0 }}>
-        <div style={{ position: "absolute", left: 14, width: 2, background: "var(--line-2)", top: isFirst ? 22 : 0, bottom: isLast ? "calc(100% - 22px)" : 0 }} />
-        <div style={{ position: "absolute", left: 7, top: 15, width: 16, height: 16, borderRadius: "50%", background: m.color, border: "3px solid #fff", boxShadow: "0 0 0 1.5px " + m.color, display: "grid", placeItems: "center" }}>
-          <i className={"bi " + m.icon} style={{ fontSize: 8, color: "#fff" }} />
+        <div style={{ position: "absolute", left: 14, width: 2, background: planned ? "repeating-linear-gradient(to bottom, var(--line) 0 4px, transparent 4px 8px)" : "var(--line-2)", top: isFirst ? 22 : 0, bottom: isLast ? "calc(100% - 22px)" : 0 }} />
+        <div style={{ position: "absolute", left: 7, top: 15, width: 16, height: 16, borderRadius: "50%", background: planned ? "#fff" : m.color, border: planned ? "1.5px dashed " + dot : "3px solid #fff", boxShadow: planned ? "none" : "0 0 0 1.5px " + m.color, display: "grid", placeItems: "center" }}>
+          <i className={"bi " + m.icon} style={{ fontSize: 8, color: planned ? dot : "#fff" }} />
         </div>
       </div>
       {/* NỘI DUNG */}
       <div className="trk-trip-body" style={{ flex: 1, minWidth: 0, padding: "10px 12px", borderRadius: 10, marginBottom: 2, transition: "background .12s" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-          <span className="tnum" style={{ fontWeight: 700, fontSize: 14, color: m.color }}>{l.timeLabel}</span>
-          <span style={{ fontSize: 13.5, fontWeight: 600 }}>{actionNode(l)}</span>
+          <span className="tnum" style={{ fontWeight: 700, fontSize: 14, color: planned ? "var(--ink-3)" : m.color }}>{planned ? (l.gioDen ? "Vào " : "Dự kiến ") + l.timeLabel : l.timeLabel}</span>
+          <span style={{ fontSize: 13.5, fontWeight: 600, color: planned ? "var(--ink-2)" : undefined }}>{actionNode(l)}</span>
+          {planned && <span style={{ fontSize: 10.5, fontWeight: 700, color: "#b45309", background: "#fef3c7", padding: "1px 8px", borderRadius: 999 }}>Chưa hoàn thành</span>}
         </div>
         <div style={{ marginTop: 6 }}><PointChain points={pts} /></div>
         {/* CHI TIẾT: xe đưa cont VÀO + xe đưa cont (số nào) RA */}
         <div style={{ marginTop: 7, display: "flex", flexDirection: "column", gap: 3, fontSize: 11.5, lineHeight: 1.5 }}>
           <div style={{ color: "var(--ink-3)" }}>
             <i className="bi bi-box-arrow-in-down" style={{ color: "#2a6fdb" }} /> <span style={{ color: "var(--ink-4)" }}>Xe vào:</span>{" "}
-            {l.mode === "none"
+            {planned && !l.gioDen
+              ? <><b className="tnum">{l.bks}</b> nhận chuyến cont <b className="tnum">{l.cont || "—"}</b> <span style={{ color: "var(--ink-4)" }}>· chưa vào — dự kiến đến {l.timeLabel}</span></>
+              : l.mode === "none"
               ? <><b className="tnum">{l.bks}</b> đã vào nơi lấy <b className="tnum">{l.from || "—"}</b>{l.gioDenLabel ? <> lúc <b className="tnum">{l.gioDenLabel}</b></> : <span style={{ color: "var(--ink-4)" }}> (chưa có giờ xe đến)</span>}</>
               : <><b className="tnum">{l.bks}</b> đưa cont <b className="tnum">{l.cont || "—"}</b> vào{l.gioDenLabel && <span style={{ color: "var(--ink-4)" }}> · vào kho {l.gioDenLabel}</span>}</>}
           </div>
           <div style={{ color: "var(--ink-3)" }}>
-            <i className="bi bi-box-arrow-up" style={{ color: m.color }} /> <span style={{ color: "var(--ink-4)" }}>Xe ra:</span>{" "}
-            {l.mode === "none"
+            <i className="bi bi-box-arrow-up" style={{ color: dot }} /> <span style={{ color: "var(--ink-4)" }}>Xe ra:</span>{" "}
+            {planned
+              ? (l.mode === "other" && l.refCont
+                ? <><b className="tnum">{l.bks}</b> sẽ kéo cont khác <b className="tnum">{l.refCont}</b> ra <span style={{ color: "var(--ink-4)" }}>— chưa ra{l.refBksVao ? ` (cont ${l.refCont} do xe ${l.refBksVao} đưa vào)` : ""}</span></>
+                : <span style={{ color: "var(--ink-4)" }}>chưa ra — nhập Giờ xe ra ở lô khi xong chuyến</span>)
+              : l.mode === "none"
               ? <><b className="tnum">{l.bks}</b> ra <span style={{ color: "var(--ink-4)" }}>không kéo cont — cont {l.cont || "—"} vẫn chưa ra</span> · <b className="tnum">{l.timeLabel}</b></>
               : l.mode === "other"
                 ? <><b className="tnum">{l.bks}</b> kéo cont khác <b className="tnum">{l.refCont || "—"}</b> ra · <b className="tnum">{l.timeLabel}</b>{l.refBksVao && <span style={{ color: "var(--ink-4)" }}> (cont {l.refCont} do xe {l.refBksVao} đưa vào)</span>}</>
@@ -288,15 +298,18 @@ function LoTrinhApp() {
   const extCount = allTrucks.length - allTrucks.filter(isMbf).length;
   const trucks = showExt ? allTrucks : allTrucks.filter(isMbf);   // mặc định chỉ MBF
   const visLegs = trucks.reduce((a, t) => a + t.legs.length, 0);
-  const allFrozen = allTrucks.length > 0 && allTrucks.every((t) => t.frozen);
+  const visPlanned = trucks.reduce((a, t) => a + (t.planned || []).length, 0);   // chuyến đã gán xe, chưa ra
+  // Chốt ngày chỉ xét xe CÓ chuyến hoàn thành — xe chỉ có chuyến chưa xong thì chưa có số tiền để chốt.
+  const payTrucks = allTrucks.filter((t) => t.legs.length > 0);
+  const allFrozen = payTrucks.length > 0 && payTrucks.every((t) => t.frozen);
 
   // Chốt / bỏ chốt cả ngày: đóng băng số tiền chi cho lái (không đổi khi sửa Phí tuyến).
   const doFreeze = async (frozen) => {
-    if (freezing || !allTrucks.length) return;
+    if (freezing || !payTrucks.length) return;
     const ok = await window.confirmAction({
       title: frozen ? "Chốt (đóng băng) ngày này?" : "Bỏ chốt ngày này?",
       text: frozen
-        ? `Số tiền chi cho lái của <b>${allTrucks.length} xe</b> ngày <b>${date}</b> sẽ được <b>đóng băng</b> — không đổi dù sau này sửa Phí tuyến.`
+        ? `Số tiền chi cho lái của <b>${payTrucks.length} xe</b> ngày <b>${date}</b> sẽ được <b>đóng băng</b> — không đổi dù sau này sửa Phí tuyến.`
         : `Bỏ đóng băng ngày <b>${date}</b> — số tiền sẽ tính lại theo Phí tuyến hiện tại.`,
       confirmText: frozen ? '<i class="bi bi-lock me-1"></i> Chốt ngày' : '<i class="bi bi-unlock me-1"></i> Bỏ chốt',
     });
@@ -318,7 +331,7 @@ function LoTrinhApp() {
           <div>
             <div style={{ fontSize: 15.5, fontWeight: 700 }}>Lộ trình lái xe trong ngày</div>
             <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-              {data ? <>Ngày vận hành <b>{data.startLabel} 08:00</b> → <b>{data.endLabel} 08:00</b> · {trucks.length} xe{showExt ? "" : " MBF"} · {visLegs} hoạt động</> : "Đang tải…"}
+              {data ? <>Ngày vận hành <b>{data.startLabel} 08:00</b> → <b>{data.endLabel} 08:00</b> · {trucks.length} xe{showExt ? "" : " MBF"} · {visLegs} hoạt động{visPlanned > 0 && <> · <b>{visPlanned}</b> chưa hoàn thành</>}</> : "Đang tải…"}
             </div>
           </div>
           <div style={{ flex: 1 }} />
@@ -330,7 +343,7 @@ function LoTrinhApp() {
                 <i className={"bi " + (showExt ? "bi-eye-fill" : "bi-eye")} /> {showExt ? "Đang hiện xe ngoài" : `Xem xe ngoài (${extCount})`}
               </button>
             )}
-            {T.canEdit && allTrucks.length > 0 && (
+            {T.canEdit && payTrucks.length > 0 && (
               <button type="button" onClick={() => doFreeze(!allFrozen)} disabled={freezing} title={allFrozen ? "Bỏ đóng băng (tính lại theo phí tuyến)" : "Đóng băng số tiền chi cho lái ngày này"}
                 style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 32, padding: "0 12px", fontSize: 12.5, fontWeight: 700, borderRadius: 9, cursor: "pointer",
                   border: "1px solid " + (allFrozen ? "var(--good)" : "var(--accent)"), background: allFrozen ? "var(--good-weak)" : "var(--accent-weak)", color: allFrozen ? "var(--good)" : "var(--accent)" }}>
@@ -353,7 +366,7 @@ function LoTrinhApp() {
             <div style={{ padding: "44px", textAlign: "center", color: "var(--ink-4)", fontSize: 13.5, background: "#fff", border: "1px solid var(--line)", borderRadius: 12 }}>
               {!showExt && extCount > 0
                 ? <>Không có <b>xe MBF</b> chạy trong ngày này — nhưng có <b>{extCount} xe ngoài</b>. Bấm <b>“Xem xe ngoài ({extCount})”</b> ở trên để xem.</>
-                : <>Không có xe nào hoạt động trong ngày này (theo giờ xe ra). Chọn ngày khác hoặc kiểm tra giờ xe ra của lô.</>}
+                : <>Không có xe nào hoạt động trong ngày này (chuyến xong tính theo giờ xe ra; chuyến chưa xong theo giờ xe đến / giờ đến dự kiến). Chọn ngày khác hoặc kiểm tra giờ của lô.</>}
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -368,7 +381,7 @@ function LoTrinhApp() {
                     {(tr.axle === "1" || tr.axle === "2" || tr.axle === "tai") && <span title="Số cầu xe" style={{ fontSize: 10.5, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak)", padding: "1px 7px", borderRadius: 999 }}>{axleLabel(tr.axle)}</span>}
                     {tr.frozen && <span title="Đã chốt (số tiền đóng băng)" style={{ fontSize: 10.5, fontWeight: 700, color: "#2563eb", background: "#e7efff", padding: "1px 7px", borderRadius: 999 }}><i className="bi bi-lock-fill" /> Đã chốt</span>}
                     <span style={{ flex: 1 }} />
-                    <span style={{ fontSize: 12, color: "var(--ink-3)", fontWeight: 600, marginRight: 4 }}>{tr.legs.length} hoạt động</span>
+                    <span style={{ fontSize: 12, color: "var(--ink-3)", fontWeight: 600, marginRight: 4 }}>{tr.legs.length} hoạt động{(tr.planned || []).length > 0 && <span style={{ color: "#b45309" }}> · {tr.planned.length} chưa xong</span>}</span>
                     {/* Dầu = chi phí công ty (không chi cho lái) */}
                     {tr.fuelTotal > 0 && (
                       <span title={"Dầu công ty: " + fmtNum(tr.fuelLiters) + " lít"} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", fontSize: 12, fontWeight: 700, borderRadius: 999, border: "1px solid #cfe0ff", background: "#eef4ff", color: "#2563eb", whiteSpace: "nowrap" }}>
@@ -376,7 +389,7 @@ function LoTrinhApp() {
                       </span>
                     )}
                     {/* Chi cho lái: tổng các khoản "chi theo ngày" + lái nhận */}
-                    <button type="button" onClick={() => setPayTruck(tr)} title="Chi cho lái xe (theo phí tuyến)"
+                    {tr.legs.length > 0 && <button type="button" onClick={() => setPayTruck(tr)} title="Chi cho lái xe (theo phí tuyến)"
                       style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 11px", fontSize: 12.5, fontWeight: 700, borderRadius: 999, cursor: "pointer", whiteSpace: "nowrap",
                         border: "1px solid " + (tr.paid ? "var(--good)" : (tr.payTotal > 0 ? "var(--accent)" : "var(--line)")),
                         background: tr.paid ? "var(--good-weak)" : (tr.payTotal > 0 ? "var(--accent-weak)" : "#fff"),
@@ -385,13 +398,19 @@ function LoTrinhApp() {
                       {tr.payDriver ? <span style={{ fontWeight: 500 }}>· {tr.payDriver}</span> : null}
                       {tr.paid ? <span title="Đã chi">✓</span> : null}
                       {tr.payWarn > 0 ? <i className="bi bi-exclamation-triangle-fill" title={tr.payWarn + " chuyến chưa ra tiền (kiểm tra phí tuyến)"} style={{ color: "#c9820f" }} /> : null}
-                    </button>
+                    </button>}
                   </div>
-                  {/* LỘ TRÌNH 1 NGÀY: timeline dọc nối liền các hoạt động */}
+                  {/* LỘ TRÌNH 1 NGÀY: timeline dọc nối liền — chuyến xong (dầu theo payGroups cùng chỉ số) + chuyến chưa xong, xếp theo giờ */}
                   <div style={{ padding: "8px 12px 10px" }}>
-                    {tr.legs.map((l, i) => (
-                      <TripNode key={i} l={l} isFirst={i === 0} isLast={i === tr.legs.length - 1} bks={tr.bks} fuel={(tr.payGroups || [])[i] && (tr.payGroups || [])[i].fuel} href={ROUTES.shipment + (l.cont ? "?q=" + encodeURIComponent(l.cont) + "&open=1" : "")} />
-                    ))}
+                    {(() => {
+                      const items = [...tr.legs.map((l, i) => ({ l, fuel: (tr.payGroups || [])[i] && tr.payGroups[i].fuel })), ...(tr.planned || []).map((l) => ({ l }))]
+                        .sort((a, b) => a.l.sortTs - b.l.sortTs);
+                      // Chuyến mới gán xe có thể chưa có số cont → mở danh sách lọc theo booking.
+                      const hrefOf = (l) => ROUTES.shipment + (l.cont ? "?q=" + encodeURIComponent(l.cont) + "&open=1" : (l.booking ? "?q=" + encodeURIComponent(l.booking) : ""));
+                      return items.map(({ l, fuel }, i) => (
+                        <TripNode key={i} l={l} isFirst={i === 0} isLast={i === items.length - 1} bks={tr.bks} fuel={fuel} href={hrefOf(l)} />
+                      ));
+                    })()}
                   </div>
                 </div>
               ))}

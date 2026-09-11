@@ -24,7 +24,8 @@ class LoTrinhController extends BaseTruckingController
     public function data(Request $request): JsonResponse
     {
         $date = (string) $request->query('date', now()->format('Y-m-d'));
-        return response()->json(['ok' => true] + $this->svc->routeTripByDate($date));
+        // Trang Lộ trình hiện thêm chuyến đã gán xe nhưng chưa ra (chưa hoàn thành) — chỉ để xem, không tính tiền.
+        return response()->json(['ok' => true] + $this->svc->routeTripByDate($date, true));
     }
 
     /** Lưu chi cho lái xe theo ngày + xe (lái nhận + đã chi). */

@@ -386,8 +386,9 @@ trait HandlesShipments
      *  - other : "Kéo cont khác ([Y]) ra" tại gio_xe_ra của lô ra_other_id (cont X chờ);
      *            tuyến = Nơi lấy + Kho của X (cont kéo vào) → Nơi hạ của Y (cont kéo ra).
      * Chỉ tính hoạt động có giờ ra TRONG khung [08:00, 08:00 hôm sau).
+     * $withPlanned (chỉ trang Lộ trình): thêm `planned` = chuyến đã gán xe nhưng CHƯA ra, để xem — không vào legs/payGroups.
      */
-    public function routeTripByDate(string $date): array
+    public function routeTripByDate(string $date, bool $withPlanned = false): array
     {
         try { $start = Carbon::parse($date . ' 08:00:00'); }
         catch (\Throwable) { $start = Carbon::today()->setTime(8, 0); }
@@ -473,12 +474,46 @@ trait HandlesShipments
             }
         }
 
+        // CHUYẾN CHƯA HOÀN THÀNH (chỉ trang Lộ trình): xe đã gán (bks_vao) nhưng chưa ra → hiện ngay khi gán xe,
+        // xếp theo Giờ xe đến (chưa đến → Giờ đến dự kiến). Ra rồi thì thành hoạt động hoàn thành ở trên (ngày theo giờ ra).
+        // Để RIÊNG khỏi $legs → không vào chi cho lái / kỳ lương / báo cáo / chốt ngày.
+        $planned = [];
+        if ($withPlanned) {
+            $pend = TruckingShipment::with(['customer', 'raOther'])
+                ->whereNotNull('bks_vao')->where('bks_vao', '!=', '')
+                ->where(fn ($q) => $q->whereBetween('gio_xe_den', [$start, $end])
+                    ->orWhere(fn ($w) => $w->whereNull('gio_xe_den')->whereBetween('gio_den_du_kien', [$start, $end])))
+                ->get();
+            // Cont được lô khác kéo ra hộ: chuyến ra của nó thuộc XE KÉO (leg other của lô kia) → không tính ở đây.
+            $pullTargets = $pend->isNotEmpty()
+                ? array_flip(TruckingShipment::whereIn('ra_other_id', $pend->pluck('id'))->pluck('ra_other_id')->all())
+                : [];
+            foreach ($pend as $s) {
+                $at = $s->gio_xe_den ?: $s->gio_den_du_kien;
+                if (isset($pullTargets[$s->id]) || ! $inWin($at)) continue;
+                $mode = in_array($s->ra_mode, ['none', 'other'], true) ? $s->ra_mode : 'self';
+                $t = $mode === 'other' ? $s->raOther : null;
+                $out = match ($mode) {
+                    'none'  => $s->gio_xe_ra_xe,
+                    'other' => $t?->gio_xe_ra,
+                    default => $s->gio_xe_ra,
+                };
+                if ($out) continue;   // đã ra → là hoạt động hoàn thành (theo giờ ra), không còn là chuyến chờ
+                $planned[] = $mk($s, $at, $mode, $t, array_filter([
+                    'planned'   => true,
+                    'refCont'   => $t?->cont_no,
+                    'refBksVao' => $t ? trim((string) $t->bks_vao) : null,
+                ], fn ($v) => $v !== null));
+            }
+        }
+
         // Gom theo bks_vao + map xe hệ thống QUA vehicle_id (Tier-2 ref đã chốt khi lưu) —
         // bền hơn so với match plate string (khử rủi ro typo/whitespace). Fallback theo plate
         // cho lô legacy chưa có vehicle_id.
-        $vehIds = array_values(array_unique(array_filter(array_map(fn ($l) => $l['vehicleId'] ?? null, $legs))));
+        $allLegs = array_merge($legs, $planned);   // xe chỉ có chuyến chưa xong vẫn cần loại xe / số cầu
+        $vehIds = array_values(array_unique(array_filter(array_map(fn ($l) => $l['vehicleId'] ?? null, $allLegs))));
         $vehById = $vehIds ? TruckingVehicle::whereIn('id', $vehIds)->get(['id', 'plate', 'type', 'axle'])->keyBy('id') : collect();
-        $legacyPlates = array_values(array_unique(array_map(fn ($l) => $l['bks'], array_filter($legs, fn ($l) => empty($l['vehicleId'])))));
+        $legacyPlates = array_values(array_unique(array_map(fn ($l) => $l['bks'], array_filter($allLegs, fn ($l) => empty($l['vehicleId'])))));
         $vehByPlate = $legacyPlates ? TruckingVehicle::whereIn('plate', $legacyPlates)->get(['plate', 'type', 'axle'])->keyBy('plate') : collect();
         // Phí tuyến (khớp theo TẬP node Cảng+Kho — không thứ tự) + giá dầu + chi đã lưu cho ngày này.
         $dateStr = $start->format('Y-m-d');
@@ -489,10 +524,14 @@ trait HandlesShipments
 
         $byBks = [];
         foreach ($legs as $l) { $byBks[$l['bks']][] = $l; }
+        $plannedByBks = [];
+        foreach ($planned as $l) { $plannedByBks[$l['bks']][] = $l; $byBks[$l['bks']] ??= []; }   // kể cả xe chỉ có chuyến chưa xong
         $trucks = [];
         foreach ($byBks as $bks => $ls) {
             usort($ls, fn ($a, $b) => $a['sortTs'] <=> $b['sortTs']);
-            $vid = $ls[0]['vehicleId'] ?? null;
+            $pl = $plannedByBks[$bks] ?? [];
+            usort($pl, fn ($a, $b) => $a['sortTs'] <=> $b['sortTs']);
+            $vid = ($ls[0] ?? $pl[0])['vehicleId'] ?? null;
             if ($vid && $vehById->has($vid)) {
                 $type = $vehById[$vid]->type ?? null;
                 $axle = $vehById[$vid]->axle ?? null;
@@ -542,13 +581,13 @@ trait HandlesShipments
             // Dầu = chi phí CÔNG TY (tách khỏi tiền lái) — tổng lít + tiền theo các chuyến trong ngày.
             $fuelTotal = 0; $fuelLiters = 0.0;
             foreach ($payGroups as $g) { if (! empty($g['fuel'])) { $fuelTotal += (int) ($g['fuel']['amount'] ?? 0); $fuelLiters += (float) ($g['fuel']['liters'] ?? 0); } }
-            $trucks[] = ['bks' => $bks, 'vehicleId' => $vid, 'matched' => $matched, 'type' => $type, 'axle' => $axle, 'legs' => $ls,
+            $trucks[] = ['bks' => $bks, 'vehicleId' => $vid, 'matched' => $matched, 'type' => $type, 'axle' => $axle, 'legs' => $ls, 'planned' => $pl,
                 'payGroups' => $payGroups, 'payTotal' => $payTotal, 'payrollTotal' => $payrollTotal, 'payWarn' => $payWarn,
                 'fuelTotal' => $fuelTotal, 'fuelLiters' => round($fuelLiters, 1),
                 'frozen' => $frozen,
                 'payDriver' => $pay?->driver ?? '', 'paid' => (bool) ($pay?->paid ?? false), 'paidDate' => $pay ? $this->outDate($pay->paid_date) : ''];
         }
-        usort($trucks, fn ($a, $b) => count($b['legs']) <=> count($a['legs']) ?: strcmp($a['bks'], $b['bks']));
+        usort($trucks, fn ($a, $b) => count($b['legs']) + count($b['planned']) <=> count($a['legs']) + count($a['planned']) ?: strcmp($a['bks'], $b['bks']));
         $frozenCount = count(array_filter($trucks, fn ($t) => $t['frozen']));
 
         return [
@@ -559,6 +598,7 @@ trait HandlesShipments
             'endLabel'   => $end->format('d/m'),
             'trucks' => $trucks,
             'totalLegs' => count($legs),
+            'totalPlanned' => count($planned),   // chuyến chưa hoàn thành (chỉ khi $withPlanned)
         ];
     }
 
