@@ -202,7 +202,8 @@ function BangGiaPage({ cfg, setBooks, api, routes }) {
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: isMobile ? "column" : "row", overflow: "hidden" }}>
       {/* customer list */}
-      <div style={{ width: isMobile ? "100%" : 240, flexShrink: 0, borderRight: isMobile ? "none" : "1px solid var(--line)", borderBottom: isMobile ? "1px solid var(--line)" : "none", background: "#fff", overflowY: isMobile ? "visible" : "auto", overflowX: isMobile ? "auto" : "visible", padding: isMobile ? "10px 12px" : "14px 12px" }}>
+      {/* Desktop: rộng 300px + tên khách XUỐNG DÒNG (không cắt "…", không sinh thanh cuộn ngang); mobile: dải pill cuộn ngang. */}
+      <div style={{ width: isMobile ? "100%" : 300, flexShrink: 0, borderRight: isMobile ? "none" : "1px solid var(--line)", borderBottom: isMobile ? "1px solid var(--line)" : "none", background: "#fff", overflowY: isMobile ? "visible" : "auto", overflowX: isMobile ? "auto" : "hidden", padding: isMobile ? "10px 12px" : "14px 12px" }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em", padding: "2px 8px 8px" }}>Khách hàng</div>
         <div style={{ display: "flex", flexDirection: isMobile ? "row" : "column", gap: isMobile ? 7 : 1, flexWrap: isMobile ? "nowrap" : "wrap" }}>
           {customers.map((name) => {
@@ -212,12 +213,12 @@ function BangGiaPage({ cfg, setBooks, api, routes }) {
             const nb = (ci.priceBooks || []).length;
             return (
               <button key={name} type="button" onClick={() => setSel(name)}
-                style={{ textAlign: "left", border: isMobile ? "1px solid var(--line)" : "none", cursor: "pointer", borderRadius: isMobile ? 999 : 8, padding: "9px 11px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexShrink: 0, whiteSpace: "nowrap",
+                style={{ textAlign: "left", border: isMobile ? "1px solid var(--line)" : "none", cursor: "pointer", borderRadius: isMobile ? 999 : 8, padding: "9px 11px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexShrink: 0, whiteSpace: isMobile ? "nowrap" : "normal", width: isMobile ? "auto" : "100%",
                   background: active ? "var(--accent-weak)" : (isMobile ? "#fff" : "transparent"), color: active ? "var(--accent)" : "var(--ink)", fontWeight: active ? 600 : 400, fontSize: 13.5 }}
                 onMouseEnter={(e) => { if (!active && !isMobile) e.currentTarget.style.background = "var(--line-2)"; }}
                 onMouseLeave={(e) => { if (!active && !isMobile) e.currentTarget.style.background = "transparent"; }}>
-                <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
-                {nb > 0 && <span className="tnum" style={{ fontSize: 11, fontWeight: 600, color: active ? "var(--accent)" : "var(--ink-4)", background: active ? "#fff" : "var(--line-2)", padding: "1px 7px", borderRadius: 999 }} title={`${nb} bảng giá · ${n} dòng`}>{nb}</span>}
+                <span style={isMobile ? { whiteSpace: "nowrap" } : { flex: 1, minWidth: 0, overflowWrap: "anywhere", lineHeight: 1.3 }}>{name}</span>
+                {nb > 0 && <span className="tnum" style={{ fontSize: 11, fontWeight: 600, color: active ? "var(--accent)" : "var(--ink-4)", background: active ? "#fff" : "var(--line-2)", padding: "1px 7px", borderRadius: 999, flexShrink: 0 }} title={`${nb} bảng giá · ${n} dòng`}>{nb}</span>}
               </button>
             );
           })}
