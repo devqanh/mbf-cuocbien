@@ -826,7 +826,7 @@ function ShipmentsApp() {
       })}
     </div>
   );
-  const minW = 1010;
+  const minW = 1114;
   // Dãy số trang có dấu "…" — kiểu phân trang gọn (luôn hiện trang đầu/cuối + lân cận trang hiện tại)
   const pageList = (cur, last) => {
     if (last <= 7) return Array.from({ length: last }, (_, i) => i + 1);
@@ -1149,6 +1149,7 @@ function ShipmentsApp() {
                         ? <span className="tnum" style={{ fontSize: 14.5, fontWeight: 700, color: "var(--ink)" }}>{s.contNo}</span>
                         : <FillContBtn ship={s} />}
                       <span className="tnum" style={{ fontSize: 12, color: "var(--ink-4)" }}>{s.contType}{s.kho ? " · " + s.kho : ""}</span>
+                      {String(s.bksVao || "").trim() && <span className="tnum" style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-2)" }}><i className="bi bi-truck" style={{ marginRight: 4, color: "var(--ink-4)" }} />{s.bksVao}</span>}
                       <InvChip value={s.inv} />
                     </div>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 7 }}>
@@ -1193,6 +1194,7 @@ function ShipmentsApp() {
                 <TH w={48} align="center">ID</TH>
                 <TH sticky><SortBtn k="customer" sort={sort} onSort={toggleSort}>Khách hàng</SortBtn></TH>
                 <TH>Cont</TH>
+                <TH w={104}>BKS vào</TH>
                 <TH w={78} align="center" title="Thanh lý tờ khai — tích để đánh dấu đã thanh lý">Thanh lý</TH>
                 <TH>Tuyến</TH>
                 <TH>Lịch trình</TH>
@@ -1248,6 +1250,13 @@ function ShipmentsApp() {
                             </div>); })()}
                           </>
                         )}
+                      </EditCell>
+                    </TD>
+                    <TD>
+                      <EditCell onClick={() => openModal({ id: s.id, type: "info" })}>
+                        {String(s.bksVao || "").trim()
+                          ? <span className="tnum" style={{ fontWeight: 600, fontSize: 13 }}>{s.bksVao}</span>
+                          : <span style={{ fontSize: 12, color: "var(--ink-4)" }}>chưa gán</span>}
                       </EditCell>
                     </TD>
                     <TD align="center">
