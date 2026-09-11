@@ -826,7 +826,7 @@ function ShipmentsApp() {
       })}
     </div>
   );
-  const minW = 1114;
+  const minW = 1010;
   // Dãy số trang có dấu "…" — kiểu phân trang gọn (luôn hiện trang đầu/cuối + lân cận trang hiện tại)
   const pageList = (cur, last) => {
     if (last <= 7) return Array.from({ length: last }, (_, i) => i + 1);
@@ -1194,9 +1194,8 @@ function ShipmentsApp() {
                 <TH w={48} align="center">ID</TH>
                 <TH sticky><SortBtn k="customer" sort={sort} onSort={toggleSort}>Khách hàng</SortBtn></TH>
                 <TH>Cont</TH>
-                <TH w={104}>BKS vào</TH>
                 <TH w={78} align="center" title="Thanh lý tờ khai — tích để đánh dấu đã thanh lý">Thanh lý</TH>
-                <TH>Tuyến</TH>
+                <TH>Tuyến<div style={{ fontWeight: 400, fontSize: 10, color: "var(--ink-4)" }}>bks vào</div></TH>
                 <TH>Lịch trình</TH>
                 <TH align="right"><SortBtn k="cost" sort={sort} onSort={toggleSort} align="right">Chi phí</SortBtn></TH>
                 <TH align="right" w={130}>Thu phí<div style={{ fontWeight: 400, fontSize: 10, color: "var(--ink-4)" }}>cước + dầu</div></TH>
@@ -1252,13 +1251,6 @@ function ShipmentsApp() {
                         )}
                       </EditCell>
                     </TD>
-                    <TD>
-                      <EditCell onClick={() => openModal({ id: s.id, type: "info" })}>
-                        {String(s.bksVao || "").trim()
-                          ? <span className="tnum" style={{ fontWeight: 600, fontSize: 13 }}>{s.bksVao}</span>
-                          : <span style={{ fontSize: 12, color: "var(--ink-4)" }}>chưa gán</span>}
-                      </EditCell>
-                    </TD>
                     <TD align="center">
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
                         <TlBox s={s} />
@@ -1282,6 +1274,10 @@ function ShipmentsApp() {
                             ))}
                           </div>
                         )}
+                        <div className="tnum" title="BKS vào — xe kéo cont" style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 3, fontSize: 12, fontWeight: 600, color: "var(--ink-2)" }}>
+                          <i className="bi bi-truck" style={{ fontSize: 11, color: "var(--ink-4)" }} />
+                          {String(s.bksVao || "").trim() || <span style={{ fontWeight: 400, color: "var(--ink-4)" }}>chưa gán xe</span>}
+                        </div>
                       </EditCell>
                     </TD>
                     <TD>
