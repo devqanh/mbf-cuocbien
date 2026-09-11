@@ -15,7 +15,7 @@
 - [Vite port conflict / trắng trang](vite-port-conflict.md) — tunnel trắng trang do Vite chặn host (allowedHosts) HOẶC dự án khác chiếm 5173 trên [::1]; chẩn đoán bằng so HTTP IPv4 vs IPv6
 - [Office cost center](office-cost-center.md) — Chi phí văn phòng = kind='office' trên trucking_vehicles (singleton, tự tạo), danh mục officeCostTypes riêng, P&L thêm nhóm office, báo cáo tài sản loại trừ; mọi chỗ phân loại theo kind phải xét đủ 3 giá trị
 - [Data safety reconcile](data-safety-reconcile.md) — CHỐNG XÓA NHẦM: reconcile lọc kind; thêm nhanh gắn addOnly (không delete); thuộc tính phụ chỉ ghi khi có key; dòng con lưu theo id + loadedIds thay vì xóa-tạo-lại; db:backup kiểm tra exit mysqldump
-- [Asset management](asset-management.md) — Quản lý tài sản dùng chung trang/bảng Quản lý xe (cột kind=vehicle|asset, type='asset' không đụng phí xe); tái dùng tab chi phí/khấu hao/tài liệu
+- [Asset management](asset-management.md) — Quản lý tài sản dùng chung trang/bảng Quản lý xe (cột kind=vehicle|asset, type='asset' không đụng phí xe); tái dùng tab chi phí/khấu hao/tài liệu; lọc xe MBF dùng scope mbfFleet() (kind+type), không where('type','MBF') trơn
 - [Plan link](plan-link.md) — link kế hoạch công khai (token) cho lái xe mobile cập nhật giờ xe đến/ra + ảnh; lọc theo Giờ đến dự kiến; nút ở toolbar Lô hàng
 - [Dev no build](dev-no-build.md) — kiểm tra public/hot trước: có = dev đang chạy (khỏi build), không có = phải npm run build
 - [Memory in repo](memory-in-repo.md) — memory junction sang repo docs/ai-memory để git/xem lại

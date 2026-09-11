@@ -67,7 +67,7 @@ trait HandlesSpendRequests
     public function publicRequestData(): array
     {
         return [
-            'vehicles'  => TruckingVehicle::where('type', 'MBF')->orderBy('plate')->get(['id', 'plate'])
+            'vehicles'  => TruckingVehicle::mbfFleet()->orderBy('plate')->get(['id', 'plate'])
                 ->map(fn ($v) => ['id' => $v->id, 'plate' => $v->plate])->all(),
             'assets'    => TruckingVehicle::where('kind', 'asset')->orderBy('plate')->get(['id', 'plate', 'info'])
                 ->map(fn ($v) => ['id' => $v->id, 'code' => $v->plate, 'name' => (is_array($v->info) ? ($v->info['name'] ?? '') : '') ?: $v->plate])->all(),

@@ -25,4 +25,6 @@ Trang `/trucking-v2/quan-ly-xe` có toggle **Xe | Tài sản** (component `Root`
 
 **Combo dropdown (lib.jsx)** đã đổi sang **portal + position fixed** (tự lật lên khi thiếu chỗ) để KHÔNG bị cắt trong modal có overflow (vd modal Thêm tài sản).
 
-Liên quan [[trucking-report-schema]] [[file-attachments]] [[phi-xe-batch-model]]. Sửa .jsx phải `npm run build`. Deploy: `git pull && php artisan migrate --force && npm run build`.
+**Lọc xe MBF phải kèm kind (2026-09-11):** `type` KHÔNG đủ phân biệt xe — tài sản mooc 29RM-03229 từng bị ghi `type='MBF'` (bug lưu danh mục Biển số xe trước a87afca: mã "29RM-032.29" chuẩn hóa mất dấu chấm → tra loại hụt → mặc định MBF) nên hiện ở tab Xe, Yêu cầu chi, cảnh báo hạn xe; khách tưởng xe ngoài bị đưa vào tài sản MBF. Đã sửa: scope `TruckingVehicle::mbfFleet()` (= kind vehicle + type MBF) dùng ở mbfVehicles/expiringVehicleCosts/pendingVehicleCosts/publicRequestData; migration `2026_09_11_000003` trả type='asset' cho mọi kind='asset'. Code mới lọc xe MBF → dùng `mbfFleet()`, đừng `where('type','MBF')` trơn.
+
+Liên quan [[trucking-report-schema]] [[file-attachments]] [[phi-xe-batch-model]] [[office-cost-center]]. Sửa .jsx phải `npm run build`. Deploy: `git pull && php artisan migrate --force && npm run build`.

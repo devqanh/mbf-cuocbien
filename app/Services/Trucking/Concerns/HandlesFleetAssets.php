@@ -50,7 +50,7 @@ trait HandlesFleetAssets
     public function mbfVehicles(): array
     {
         $nowIdx = (int) now()->format('Y') * 12 + ((int) now()->format('n') - 1);
-        $rows = TruckingVehicle::where('type', 'MBF')
+        $rows = TruckingVehicle::mbfFleet()
             ->withCount(['vehicleUsages', 'vehicleCosts', 'vehicleDepreciations'])
             ->with(['vehicleDepreciations:id,vehicle_id,orig_price,start_date,months'])
             ->orderBy('plate')->get();
@@ -110,7 +110,7 @@ trait HandlesFleetAssets
      */
     public function expiringVehicleCosts(): array
     {
-        $plates = TruckingVehicle::where('type', 'MBF')->pluck('plate', 'id');   // id => biển số
+        $plates = TruckingVehicle::mbfFleet()->pluck('plate', 'id');   // id => biển số
         if ($plates->isEmpty()) return [];
 
         $latest = [];   // "vehId|tên" => phiếu có due_date mới nhất
@@ -143,7 +143,7 @@ trait HandlesFleetAssets
     /** Phiếu chi cần xử lý: chưa duyệt, hoặc đã duyệt nhưng chưa thanh toán (toàn đội xe MBF). */
     public function pendingVehicleCosts(): array
     {
-        $plates = TruckingVehicle::where('type', 'MBF')->pluck('plate', 'id');
+        $plates = TruckingVehicle::mbfFleet()->pluck('plate', 'id');
         if ($plates->isEmpty()) return [];
         $out = [];
         foreach (TruckingVehicleCost::whereIn('vehicle_id', $plates->keys())

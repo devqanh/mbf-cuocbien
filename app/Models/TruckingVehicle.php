@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Concerns\HasHashid;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -13,6 +14,15 @@ class TruckingVehicle extends Model
     use HasHashid;
 
     protected $fillable = ['plate', 'type', 'kind', 'axle', 'gps_ref', 'driver_id', 'info', 'documents', 'allowances'];
+
+    /**
+     * Xe MBF nội bộ. Bảng dùng chung cho xe, tài sản và văn phòng, nên chỉ lọc type='MBF' là chưa đủ:
+     * một tài sản mang type lệch sẽ hiện ra như xe ở Quản lý xe / Yêu cầu chi. Luôn lọc kèm kind.
+     */
+    public function scopeMbfFleet(Builder $q): Builder
+    {
+        return $q->where('kind', 'vehicle')->where('type', 'MBF');
+    }
 
     /** Lái xe mặc định (Cài đặt → Biển số xe) — theo id vì tên lái xe có thể trùng. */
     public function driver(): BelongsTo
