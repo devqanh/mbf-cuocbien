@@ -1,9 +1,11 @@
 import React from "react";
-const { useState, useRef, useMemo, useEffect } = React;
-import { I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, fmtVND, fmtNum, fmtShort, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum } from "@trk/lib.jsx";
-import { DTField, Field, DriverSpendRows, VatLine, ItemRows, ChiHoRows, DoanhThuRows, ChkBox, TRACK_COLORS, SWATCHES, colorHex, FlagPicker, CostLineRows, PaymentRows, Seg } from "./shared.jsx";
+const { useState } = React;
+import { I, Combo } from "@trk/lib.jsx";
+import { contKey, isGenericKey, sizeOfKey, orderContKeys, rowContKeys, GENERIC_KEYS } from "./price-excel.js";
 
-/* ===================== BẢNG GIÁ — editor (trang Bảng giá) ===================== */
+/* ===================== BẢNG GIÁ — editor (trang Bảng giá) =====================
+   Giá theo LOẠI CONT: mỗi dòng có `prices` {khóa loại cont => giá TỔNG cước+dầu}. Cột giá ĐỘNG = hợp khóa
+   trên các dòng + cột người dùng thêm (từ danh mục Loại cont hoặc cột chung 20FT/40FT/45FT). */
 const fmtBD = (s) => { if (!s) return ""; const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s); return m ? `${m[3]}/${m[2]}/${m[1]}` : s; };
 
 function PriceList({ rows = [], onChange, onImported, cfg = {}, customer, bookId = null }) {
@@ -14,9 +16,30 @@ function PriceList({ rows = [], onChange, onImported, cfg = {}, customer, bookId
   const [msg, setMsg] = useState("");
   const [copySrc, setCopySrc] = useState("");       // khách NGUỒN để copy bảng giá
   const [copySrcBook, setCopySrcBook] = useState(""); // bảng giá (book) nguồn
+  const [addedCols, setAddedCols] = useState([]);   // cột loại cont người dùng thêm (chưa có dòng nào điền)
   const otherCustomers = (cfg.customers || []).filter((c) => c && c !== customer);
   const srcBooks = ((cfg.customerInfo || {})[copySrc] || {}).priceBooks || [];
   const bookOpt = (b) => { const r = (b.from || b.to) ? `${b.from ? fmtBD(b.from) : "…"}–${b.to ? fmtBD(b.to) : "…"}` : "Mọi ngày"; return { value: String(b.id), label: (b.label ? b.label + " · " : "") + r + ` (${b.count || 0})` }; };
+
+  // ---- Cột giá theo loại cont: LUÔN hiện đủ mọi loại cont trong danh mục (user chốt) + cột đang có trên dòng
+  //      (cột chung 20FT/40FT của bảng giá cũ) + cột người dùng thêm. Ô chưa điền = trống (backend lưu null)
+  //      → nhìn là biết tuyến nào chưa có giá cho loại cont nào.
+  const catalog = cfg.contTypes || [];
+  const catalogKeys = [...new Set(catalog.map(contKey).filter(Boolean))];
+  const contCols = orderContKeys([...catalogKeys, ...rowContKeys(rows), ...addedCols], catalog);
+  const colOptions = GENERIC_KEYS.filter((k) => !contCols.includes(k));   // danh mục đã hiện sẵn → chỉ còn thêm cột chung
+  const addCol = (k) => { const n = contKey(k); if (!n || contCols.includes(n)) return; setAddedCols((s) => [...s, n]); };
+  // Chỉ bỏ được cột NGOÀI danh mục (cột chung/cột cũ); cột danh mục luôn hiện, muốn bỏ thì xóa loại cont ở Cài đặt.
+  const removeCol = async (k) => {
+    const filled = rows.filter((r) => String((r.prices || {})[k] ?? "").trim() !== "").length;
+    if (filled > 0) {
+      const ok = await window.confirmAction({ title: "Bỏ cột loại cont?", text: `Cột <b>${k}</b> đang có giá ở <b>${filled}</b> tuyến. Bỏ cột sẽ xóa các giá này (áp dụng khi bấm <b>Lưu</b>).`, confirmText: "Bỏ cột", danger: true });
+      if (!ok) return;
+    }
+    setAddedCols((s) => s.filter((x) => x !== k));
+    onChange(rows.map((r) => { if (!r.prices || !(k in r.prices)) return r; const p = { ...r.prices }; delete p[k]; return { ...r, prices: p }; }));
+  };
+  const setPrice = (id, k, v) => onChange(rows.map((e) => (e.id === id ? { ...e, prices: { ...(e.prices || {}), [k]: v } } : e)));
 
   // ---- Copy bảng giá từ 1 BOOK khác sang BOOK đang chọn ----
   const doCopy = async () => {
@@ -41,10 +64,10 @@ function PriceList({ rows = [], onChange, onImported, cfg = {}, customer, bookId
       else { setMsg("Copy lỗi: " + ((res && res.message) || "không rõ")); }
     } catch (err) { setBusy(false); setMsg("Copy lỗi kết nối."); }
   };
-  // Gộp danh mục địa điểm + mọi "Điểm Hạ" đang có trong bảng giá (kể cả ký hiệu mới import) để select luôn hiển thị
   // Địa điểm hạ dùng KÝ HIỆU (code) cho gọn: options = ký hiệu trong danh mục + ký hiệu đã có trên dòng.
   const locOpts = [...new Set([...Object.values(cfg.locationCode || {}), ...rows.map((r) => r.loc).filter(Boolean)])].sort();
-  const blank = { distance: "", transFee40: "", transFee20: "", fuelFee40: "", fuelFee20: "" };
+  // Dòng mới: có sẵn mọi cột đang hiển thị (ô trống) để cột không biến mất khi mới điền 1 ô.
+  const blank = () => ({ distance: "", prices: Object.fromEntries(contCols.map((k) => [k, ""])) });
   const set = (id, np) => onChange(rows.map((e) => (e.id === id ? { ...e, ...np } : e)));
   const del = (id) => onChange(rows.filter((e) => e.id !== id));
 
@@ -63,7 +86,7 @@ function PriceList({ rows = [], onChange, onImported, cfg = {}, customer, bookId
     try {
       const res = await fetch(ROUTES.priceImport, { method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json", "X-CSRF-TOKEN": T.csrf }, body: JSON.stringify({ customer, book: bookId, rows: [], replace: true }) }).then((r) => r.json());
       setBusy(false);
-      if (res && res.ok) { (onImported || onChange)(res.priceList || []); setMsg("Đã xóa toàn bộ bảng giá. Bấm Import Excel để nạp lại."); }
+      if (res && res.ok) { (onImported || onChange)(res.priceList || []); setMsg("Đã xóa toàn bộ bảng giá. Bấm Nhập báo giá để nạp lại."); }
       else setMsg("Xóa lỗi: " + ((res && res.message) || "không rõ"));
     } catch (err) { setBusy(false); setMsg("Xóa lỗi kết nối."); }
   };
@@ -77,17 +100,19 @@ function PriceList({ rows = [], onChange, onImported, cfg = {}, customer, bookId
   if (!locGroups.length) locGroups.push({ key: "¦Connect", loc: "", conn: "Connect" });
   const setLocField = (oldKey, np) => onChange(rows.map((r) => (locKey(r) === oldKey ? { ...r, ...np } : r)));
   const newGid = () => "n" + Date.now() + Math.round(Math.random() * 1e6);
-  const addLoc = () => onChange([...rows, { id: Date.now() + Math.random(), gid: newGid(), loc: "", conn: "Connect", kind: "Chưa phân nhóm", from: "", to1: "", to2: "", to3: "", to4: "", ...blank }]);
+  const addLoc = () => onChange([...rows, { id: Date.now() + Math.random(), gid: newGid(), loc: "", conn: "Connect", kind: "Chưa phân nhóm", from: "", to1: "", to2: "", to3: "", to4: "", ...blank() }]);
   // kinds within a loc-group
   const kindsIn = (g) => { const out = []; rows.filter((r) => locKey(r) === g.key).forEach((r) => { const k = r.kind || "Chưa phân nhóm"; if (!out.includes(k)) out.push(k); }); return out.length ? out : ["Chưa phân nhóm"]; };
   const renameKind = (gKey, oldK, newK) => onChange(rows.map((r) => (locKey(r) === gKey && (r.kind || "Chưa phân nhóm") === oldK ? { ...r, kind: newK || "Chưa phân nhóm" } : r)));
-  const addRowTo = (g, k) => onChange([...rows, { id: Date.now() + Math.random(), gid: g.gid, loc: g.loc, conn: g.conn, kind: k, from: "", to1: "", to2: "", to3: "", to4: "", ...blank }]);
-  const addKind = (g) => { const ks = kindsIn(g); const base = "Nhóm mới"; let n = base, i = 1; while (ks.includes(n)) n = base + " " + (++i); onChange([...rows, { id: Date.now() + Math.random(), gid: g.gid, loc: g.loc, conn: g.conn, kind: n, from: "", to1: "", to2: "", to3: "", to4: "", ...blank }]); };
+  const addRowTo = (g, k) => onChange([...rows, { id: Date.now() + Math.random(), gid: g.gid, loc: g.loc, conn: g.conn, kind: k, from: "", to1: "", to2: "", to3: "", to4: "", ...blank() }]);
+  const addKind = (g) => { const ks = kindsIn(g); const base = "Nhóm mới"; let n = base, i = 1; while (ks.includes(n)) n = base + " " + (++i); onChange([...rows, { id: Date.now() + Math.random(), gid: g.gid, loc: g.loc, conn: g.conn, kind: n, from: "", to1: "", to2: "", to3: "", to4: "", ...blank() }]); };
   // Tra cứu: lọc dòng theo điểm hạ / FROM / TO / KIND
   const ql = (query || "").trim().toLowerCase();
   const matchRow = (r) => !ql || [r.from, r.to1, r.to2, r.to3, r.to4, r.kind, r.loc, r.conn].filter(Boolean).join(" ").toLowerCase().includes(ql);
   const matchCount = ql ? rows.filter(matchRow).length : 0;
-  const cols = "46px 46px 46px 46px 46px 52px 1fr 1fr 1fr 1fr 24px";
+  const cols = `46px 46px 46px 46px 46px 52px ${contCols.map(() => "minmax(96px, 1fr)").join(" ")} 24px`;
+  // Nhiều loại cont → bảng rộng hơn khung: giữ độ rộng tối thiểu cho lưới, khung ngoài cuộn ngang.
+  const gridMinW = 5 * 46 + 52 + contCols.length * 96 + 24 + 6 * (6 + contCols.length);
   const cell = (val, onCh, ph, opt) => (
     <input value={val || ""} onChange={(e) => onCh(opt && opt.num ? e.target.value.replace(/[^\d]/g, "") : e.target.value)} placeholder={ph}
       className={opt && (opt.num || opt.money) ? "tnum" : ""}
@@ -107,29 +132,46 @@ function PriceList({ rows = [], onChange, onImported, cfg = {}, customer, bookId
   };
   const colHeader = (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: cols, gap: 6, padding: "0 0 4px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: cols, gap: 6, padding: "0 0 4px", minWidth: gridMinW }}>
         <div style={{ gridColumn: "1 / 6", textAlign: "center", fontSize: 10.5, fontWeight: 700, color: "var(--accent)", textTransform: "uppercase", letterSpacing: "0.04em", background: "var(--accent-weak)", borderRadius: 6, padding: "3px 0" }}>Routing</div>
-        <div /><div /><div /><div />
+        <div />
+        {contCols.length > 0 && (
+          <div style={{ gridColumn: `7 / ${7 + contCols.length}`, textAlign: "center", fontSize: 10.5, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em", background: "var(--line-2)", borderRadius: 6, padding: "3px 0" }}
+            title="Mỗi ô = giá TỔNG (cước + dầu) cho 1 cont của loại đó. Cột = danh mục Loại cont (Cài đặt) — thêm loại cont ở đó là có cột mới ở đây và trong file Excel.">
+            Giá tổng cước + dầu / cont · theo <a href="/trucking-v2/cai-dat#contTypes" target="_blank" rel="noreferrer" style={{ color: "var(--accent)", textDecoration: "underline" }}>danh mục Loại cont</a>
+          </div>
+        )}
+        <div />
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: cols, gap: 6, padding: "0 0 5px" }}>
-        {["FROM", "TO", "TO", "TO", "TO", "KM", "Cước 40FT", "Cước 20FT", "Dầu 40FT", "Dầu 20FT", ""].map((h, i) => (
-          <div key={i} style={{ fontSize: 10, fontWeight: 600, color: "var(--ink-4)", textTransform: "uppercase", letterSpacing: "0.02em", textAlign: i >= 6 && i <= 9 ? "right" : "center" }}>{h}</div>
+      <div style={{ display: "grid", gridTemplateColumns: cols, gap: 6, padding: "0 0 5px", alignItems: "center", minWidth: gridMinW }}>
+        {["FROM", "TO", "TO", "TO", "TO", "KM"].map((h, i) => (
+          <div key={i} style={{ fontSize: 10, fontWeight: 600, color: "var(--ink-4)", textTransform: "uppercase", letterSpacing: "0.02em", textAlign: "center" }}>{h}</div>
         ))}
+        {contCols.map((k) => (
+          <div key={k} style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 3, fontSize: 10.5, fontWeight: 700, letterSpacing: "0.02em", color: isGenericKey(k) ? "#9a6700" : "var(--ink-2)" }}
+            title={isGenericKey(k) ? `Cột CHUNG: áp cho mọi loại cont cỡ ${sizeOfKey(k)} chưa có cột riêng` : `Giá tổng (cước + dầu) cho loại cont ${k}`}>
+            <span>{k}</span>
+            {!catalogKeys.includes(k) && (
+              <button type="button" onClick={() => removeCol(k)} title={`Bỏ cột ${k} (cột ngoài danh mục Loại cont)`}
+                style={{ width: 16, height: 16, display: "grid", placeItems: "center", border: "none", borderRadius: 4, background: "transparent", color: "var(--ink-4)", cursor: "pointer", fontSize: 12, lineHeight: 1 }}
+                onMouseEnter={(ev) => { ev.currentTarget.style.background = "#fce8e8"; ev.currentTarget.style.color = "var(--danger)"; }}
+                onMouseLeave={(ev) => { ev.currentTarget.style.background = "transparent"; ev.currentTarget.style.color = "var(--ink-4)"; }}>×</button>
+            )}
+          </div>
+        ))}
+        <div />
       </div>
     </>
   );
   const rowEl = (e) => (
-    <div key={e.id} style={{ display: "grid", gridTemplateColumns: cols, gap: 6, alignItems: "center" }}>
+    <div key={e.id} style={{ display: "grid", gridTemplateColumns: cols, gap: 6, alignItems: "center", minWidth: gridMinW }}>
       {cell(e.from, (v) => set(e.id, { from: v }), "HPP")}
       {cell(e.to1, (v) => set(e.id, { to1: v }), "TL")}
       {cell(e.to2, (v) => set(e.id, { to2: v }), "–")}
       {cell(e.to3, (v) => set(e.id, { to3: v }), "–")}
       {cell(e.to4, (v) => set(e.id, { to4: v }), "HPP")}
       {cell(e.distance, (v) => set(e.id, { distance: v }), "0", { num: true })}
-      {moneyCell(e.transFee40, (v) => set(e.id, { transFee40: v }), "0")}
-      {moneyCell(e.transFee20, (v) => set(e.id, { transFee20: v }), "0")}
-      {moneyCell(e.fuelFee40, (v) => set(e.id, { fuelFee40: v }), "0")}
-      {moneyCell(e.fuelFee20, (v) => set(e.id, { fuelFee20: v }), "0")}
+      {contCols.map((k) => <React.Fragment key={k}>{moneyCell((e.prices || {})[k], (v) => setPrice(e.id, k, v), "—")}</React.Fragment>)}
       <button type="button" onClick={() => del(e.id)} title="Xóa"
         style={{ width: 26, height: 26, display: "grid", placeItems: "center", border: "none", borderRadius: 6, background: "transparent", color: "var(--ink-4)", cursor: "pointer" }}
         onMouseEnter={(ev) => { ev.currentTarget.style.background = "#fce8e8"; ev.currentTarget.style.color = "var(--danger)"; }}
@@ -138,17 +180,27 @@ function PriceList({ rows = [], onChange, onImported, cfg = {}, customer, bookId
   );
   return (
     <div>
-      <div style={{ position: "relative", marginBottom: 10 }}>
-        <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)" }}><I.search /></span>
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Tra cứu tuyến: điểm hạ, FROM, TO, KIND…"
-          style={{ width: "100%", padding: "9px 32px 9px 34px", fontSize: 13.5, border: "1px solid var(--line)", borderRadius: 10, outline: "none", background: "#fafbfc" }}
-          onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.background = "#fff"; }}
-          onBlur={(e) => { e.target.style.borderColor = "var(--line)"; e.target.style.background = "#fafbfc"; }} />
-        {query && <button type="button" onClick={() => setQuery("")} title="Xóa tìm" style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", width: 22, height: 22, display: "grid", placeItems: "center", border: "none", borderRadius: 6, background: "var(--line-2)", color: "var(--ink-3)", cursor: "pointer" }}><I.x /></button>}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+        <div style={{ position: "relative", flex: 1, minWidth: 240 }}>
+          <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)" }}><I.search /></span>
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Tra cứu tuyến: điểm hạ, FROM, TO, KIND…"
+            style={{ width: "100%", padding: "9px 32px 9px 34px", fontSize: 13.5, border: "1px solid var(--line)", borderRadius: 10, outline: "none", background: "#fafbfc" }}
+            onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.background = "#fff"; }}
+            onBlur={(e) => { e.target.style.borderColor = "var(--line)"; e.target.style.background = "#fafbfc"; }} />
+          {query && <button type="button" onClick={() => setQuery("")} title="Xóa tìm" style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", width: 22, height: 22, display: "grid", placeItems: "center", border: "none", borderRadius: 6, background: "var(--line-2)", color: "var(--ink-3)", cursor: "pointer" }}><I.x /></button>}
+        </div>
+        {/* Cột danh mục luôn hiện sẵn; chỉ còn thêm cột CHUNG theo cỡ (20FT/40FT/45FT) khi cần */}
+        {colOptions.length > 0 && (
+          <span style={{ width: 200 }} title="Thêm cột chung theo cỡ (áp mọi loại cont cùng cỡ chưa có cột riêng). Loại cont mới: thêm ở Cài đặt → Loại cont.">
+            <Combo value="" onChange={addCol} options={colOptions} placeholder="+ Thêm cột chung…" small />
+          </span>
+        )}
       </div>
       {ql && <div style={{ fontSize: 12, color: matchCount ? "var(--ink-4)" : "var(--danger)", marginBottom: 8 }}>{matchCount} dòng khớp “{query.trim()}”{matchCount === 0 ? " — không tìm thấy tuyến nào." : ""}</div>}
+      {!contCols.length && <div style={{ fontSize: 12, color: "#9a6700", background: "#fff7e6", border: "1px solid #ffe1a8", borderRadius: 9, padding: "8px 12px", marginBottom: 8 }}><i className="bi bi-exclamation-triangle-fill" /> Chưa có loại cont nào — thêm ở <a href="/trucking-v2/cai-dat#contTypes" target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontWeight: 600 }}>Cài đặt → Loại cont</a> (mỗi loại = 1 cột giá).</div>}
+      <div style={{ overflowX: "auto" }}>
       {colHeader}
-      <div style={{ maxHeight: "62vh", overflowY: "auto", display: "flex", flexDirection: "column", gap: 18 }}>
+      <div style={{ maxHeight: "62vh", overflowY: "auto", display: "flex", flexDirection: "column", gap: 18, minWidth: gridMinW + 50 }}>
         {locGroups.map((g) => {
           if (ql && !rows.some((r) => locKey(r) === g.key && matchRow(r))) return null;
           return (
@@ -233,7 +285,8 @@ function PriceList({ rows = [], onChange, onImported, cfg = {}, customer, bookId
             )}
           </div>
         ); })}
-        {!rows.length && <div style={{ padding: "10px 2px", fontSize: 12.5, color: "var(--ink-4)" }}>Chưa có dòng báo giá — bấm <b>Nhập báo giá gốc</b> ở trên để nạp từ file, hoặc thêm nhóm địa điểm hạ thủ công.</div>}
+        {!rows.length && <div style={{ padding: "10px 2px", fontSize: 12.5, color: "var(--ink-4)" }}>Chưa có dòng báo giá — bấm <b>Tải mẫu</b> để kế toán điền rồi <b>Nhập báo giá</b>, hoặc thêm nhóm địa điểm hạ thủ công.</div>}
+      </div>
       </div>
 
       <div style={{ display: "flex", gap: 8, marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--line-2)", alignItems: "center", flexWrap: "wrap" }}>

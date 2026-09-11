@@ -48,7 +48,8 @@ try {
     // createPriceBook trả books SẮP theo period_from → phải lấy theo LABEL, không phải [0].
     $bA = collect($svc->createPriceBook($cA->name, 'A', '2026-06-01', '2026-06-15')['books'])->firstWhere('label', 'A')['id'];
     $bB = collect($svc->createPriceBook($cA->name, 'B', '2026-06-16', '2026-06-30')['books'])->firstWhere('label', 'B')['id'];
-    $mk = fn ($bid, $fee) => TruckingPriceRow::create(['customer_id' => $cA->id, 'price_book_id' => $bid, 'loc' => 'HPP', 'conn' => 'Non', 'kind' => '', 'from' => 'ICDTEST', 'to1' => 'QV', 'trans_fee_40' => $fee, 'trans_fee_20' => $fee, 'fuel_fee_40' => 0, 'fuel_fee_20' => 0, 'sort' => 0]);
+    // Giá theo LOẠI CONT: cột chung 40FT/20FT (= tổng cước+dầu) áp mọi cont cùng cỡ.
+    $mk = fn ($bid, $fee) => TruckingPriceRow::create(['customer_id' => $cA->id, 'price_book_id' => $bid, 'loc' => 'HPP', 'conn' => 'Non', 'kind' => '', 'from' => 'ICDTEST', 'to1' => 'QV', 'prices' => ['40FT' => $fee, '20FT' => $fee], 'sort' => 0]);
     $mk($bA, 1000000); $mk($bB, 2000000);
     $mkShip = function ($d) use ($cA) { $s = new TruckingShipment(); $s->customer_id = $cA->id; $s->setRelation('customer', $cA); $s->sheet = 'ICD'; $s->cont_type = '40'; $s->io = 'nhap'; $s->from_loc = 'ICDTEST'; $s->to_loc = 'HPP'; $s->kho = 'QV'; $s->ra_mode = 'self'; return $s; };
     $ok((int) $price($mkShip('2026-06-05'), '2026-06-05')['cuoc'] === 1000000, 'A1 ngày 5/6 → book A (1.000.000)');
@@ -77,7 +78,8 @@ try {
     $ok($cnt($r07, 'ICD TP', 'Connect', 'External CRU transportation') === 9, 'B3 External CRU = 9');
     $ok(collect($r07)->filter(fn ($x) => trim($x['kind']) === '' || $x['kind'] === '-' || strpos($x['kind'], "\n") !== false)->isEmpty(), 'B4 không KIND rỗng/-/xuống dòng');
     $nonDry = collect($r06)->firstWhere(fn ($x) => $x['conn'] === 'Non' && $x['kind'] === 'DRY CONTAINER' && $x['loc'] === 'HPP');
-    $ok($nonDry && (int) $nonDry['transFee40'] === 3315432, 'B5 barging DRY ICDTP→HPP = 3.315.432');
+    // Báo giá gốc (cước/dầu × 40/20) quy về cột chung: 40FT = cước 3.315.432 + dầu 492.217.
+    $ok($nonDry && (int) ($nonDry['prices']['40FT'] ?? 0) === 3315432 + 492217, 'B5 barging DRY ICDTP→HPP 40FT = cước 3.315.432 + dầu 492.217');
     $ok(count($svc->parseQuotationRows($DEV . '2. MBF-202606-01.xlsx')) === 0, 'B6 file không có sheet import → []');
     // importQuotationToBook
     $bImp = $svc->createPriceBook($cA->name, 'T6', '2026-06-01', '2026-06-30')['books'];
@@ -109,14 +111,75 @@ try {
     $section('D. Sà lan (barge)');
     $mkB = function ($ct) use ($cA) { $s = new TruckingShipment(); $s->customer_id = $cA->id; $s->setRelation('customer', $cA); $s->sheet = 'ICD'; $s->cont_type = $ct; $s->io = 'nhap'; $s->to_loc = 'ICDTP'; $s->barge_drop = 'HPP'; $s->ra_mode = 'self'; return $s; };
     // tạo book mở có dòng Non DRY/NOR cho cA (route ICDTP→HPP)
-    TruckingPriceRow::create(['customer_id' => $cA->id, 'price_book_id' => $bOpenId, 'loc' => 'HPP', 'conn' => 'Non', 'kind' => 'DRY CONTAINER', 'from' => 'ICDTP', 'trans_fee_40' => 3000000, 'trans_fee_20' => 0, 'fuel_fee_40' => 500000, 'fuel_fee_20' => 0, 'sort' => 1]);
-    TruckingPriceRow::create(['customer_id' => $cA->id, 'price_book_id' => $bOpenId, 'loc' => 'HPP', 'conn' => 'Non', 'kind' => 'NOR CONTAINER', 'from' => 'ICDTP', 'trans_fee_40' => 4000000, 'trans_fee_20' => 0, 'fuel_fee_40' => 600000, 'fuel_fee_20' => 0, 'sort' => 2]);
+    TruckingPriceRow::create(['customer_id' => $cA->id, 'price_book_id' => $bOpenId, 'loc' => 'HPP', 'conn' => 'Non', 'kind' => 'DRY CONTAINER', 'from' => 'ICDTP', 'prices' => ['40FT' => 3500000], 'sort' => 1]);
+    TruckingPriceRow::create(['customer_id' => $cA->id, 'price_book_id' => $bOpenId, 'loc' => 'HPP', 'conn' => 'Non', 'kind' => 'NOR CONTAINER', 'from' => 'ICDTP', 'prices' => ['40FT' => 4600000], 'sort' => 2]);
     $prDry = $price($mkB('40HC'), '2026-08-20');
-    $ok($prDry['isBarge'] && $prDry['bargeCont'] === 'DRY' && (int) $prDry['bargeCuoc'] === 3000000 && (int) $prDry['bargeDau'] === 500000, 'D1 40HC → DRY, cước+dầu sà lan 3tr/500k');
+    $ok($prDry['isBarge'] && $prDry['bargeCont'] === 'DRY' && (int) $prDry['bargeCuoc'] === 3500000 && (int) $prDry['bargeDau'] === 0 && $prDry['bargeContKey'] === '40FT', 'D1 40HC → DRY, phí sà lan 1 số tổng 3,5tr (cột chung 40FT), dau = 0');
     $prNor = $price($mkB('40RF'), '2026-08-20');
-    $ok($prNor['bargeCont'] === 'NOR' && (int) $prNor['bargeCuoc'] === 4000000, 'D2 40RF → NOR 4tr');
+    $ok($prNor['bargeCont'] === 'NOR' && (int) $prNor['bargeCuoc'] === 4600000, 'D2 40RF → NOR 4,6tr');
     $noB = $mkB('40HC'); $noB->barge_drop = null;
     $ok((int) $price($noB, '2026-08-20')['bargeCuoc'] === 0, 'D3 không Nơi hạ sà lan → không phí sà lan');
+
+    // ---------- I. Giá theo LOẠI CONT (1 số tổng cước+dầu) + mẫu báo giá phẳng ----------
+    $section('I. Giá theo loại cont + mẫu báo giá phẳng');
+    $mkI = function ($ct) use ($cA) { $s = new TruckingShipment(); $s->customer_id = $cA->id; $s->setRelation('customer', $cA); $s->sheet = 'ICD'; $s->cont_type = $ct; $s->io = 'nhap'; $s->from_loc = 'ICDTEST'; $s->to_loc = 'HPP'; $s->kho = 'QV'; $s->ra_mode = 'self'; return $s; };
+    $pI = fn ($ct) => $price($mkI($ct), '2026-06-20');   // book B (16–30/6)
+    // Cột RIÊNG theo loại cont
+    TruckingPriceRow::where('price_book_id', $bB)->delete();
+    TruckingPriceRow::create(['customer_id' => $cA->id, 'price_book_id' => $bB, 'loc' => 'HPP', 'conn' => 'Non', 'kind' => '', 'from' => 'ICDTEST', 'to1' => 'QV', 'prices' => ['40HC' => 5000000, '40RHC' => 6000000, '20DC' => 3000000], 'sort' => 0]);
+    $p40 = $pI('40HC');
+    $ok((int) $p40['cuoc'] === 5000000 && (int) $p40['dau'] === 0 && $p40['contKey'] === '40HC' && (int) $p40['phaiThu'] === 5000000, 'I1 40HC → cột 40HC = 5tr, dau = 0, phải thu = 5tr');
+    $ok((int) $pI('40RHC')['cuoc'] === 6000000 && (int) $pI('20DC')['cuoc'] === 3000000, 'I2 40RHC → 6tr · 20DC → 3tr');
+    $ok((int) $pI("40'hc")['cuoc'] === 5000000 && (int) $pI('40 HC')['cuoc'] === 5000000, "I3 \"40'hc\" / \"40 HC\" chuẩn hóa → cột 40HC");
+    $p45 = $pI('45HC');
+    $ok($p45['matched'] === false && $p45['routeMatched'] === true && (int) $p45['cuoc'] === 0 && $p45['diag']['contType'] === '45HC' && in_array('40HC', $p45['diag']['contKeys'], true), 'I5 45HC không có cột riêng/chung → chưa khớp, diag nêu loại cont + cột đang có');
+    // Cột CHUNG (dữ liệu backfill): 20FT/40FT áp mọi cont cùng cỡ; cont không phải 20 → 40FT (giữ hành vi cũ)
+    TruckingPriceRow::where('price_book_id', $bB)->delete();
+    TruckingPriceRow::create(['customer_id' => $cA->id, 'price_book_id' => $bB, 'loc' => 'HPP', 'conn' => 'Non', 'kind' => '', 'from' => 'ICDTEST', 'to1' => 'QV', 'prices' => ['20FT' => 2000000, '40FT' => 4000000], 'sort' => 0]);
+    $ok((int) $pI('40HC')['cuoc'] === 4000000 && $pI('40HC')['contKey'] === '40FT', 'I6 40HC không có cột riêng → cột chung 40FT');
+    $ok((int) $pI('20RF')['cuoc'] === 2000000 && (int) $pI('45HC')['cuoc'] === 4000000 && (int) $pI('LCL')['cuoc'] === 4000000 && (int) $pI('')['cuoc'] === 4000000, 'I7 20RF → 20FT · 45HC / LCL / trống → 40FT (tương thích cũ)');
+    // Backfill dữ liệu thật: mọi dòng có prices, 40FT = cước40 + dầu40
+    $rawRow = DB::table('trucking_price_rows')->whereNotNull('trans_fee_40')->where('trans_fee_40', '>', 0)->whereNotNull('prices')->first();
+    if ($rawRow) { $pp = json_decode($rawRow->prices, true); $ok((int) ($pp['40FT'] ?? 0) === (int) round((float) $rawRow->trans_fee_40 + (float) $rawRow->fuel_fee_40), 'I8 backfill: 40FT = cước40 + dầu40 (dòng #' . $rawRow->id . ')'); }
+    // Lưu từ UI / import: khóa chuẩn hóa, bỏ ô trống, cột ngoài danh mục bị chặn (ký hiệu địa điểm phải khai trước)
+    \App\Models\TruckingLocation::firstOrCreate(['code' => 'ICDTEST'], ['name' => '__ICD TEST']);
+    \App\Models\TruckingLocation::firstOrCreate(['code' => 'ICDTP'], ['name' => '__ICD TP TEST']);
+    $svcI = new TruckingV2Service();   // instance mới → nạp lại danh mục địa điểm vừa khai
+    $rowUi = ['loc' => 'HPP', 'conn' => 'Connect', 'kind' => 'Chưa phân nhóm', 'from' => 'ICDTEST', 'to1' => 'QV', 'distance' => '10', 'prices' => ['40hc' => '5.000.000', 'cont45' => '7000000', '20DC' => '']];
+    $resBad = $svcI->savePriceBookRows($bA, [['prices' => $rowUi['prices'] + ['XYZ99' => '1']] + $rowUi]);
+    $ok(($resBad['ok'] ?? true) === false && in_array('XYZ99', $resBad['unknownCont'] ?? [], true) && TruckingPriceRow::where('price_book_id', $bA)->count() === 0, 'I9 cột loại cont ngoài danh mục → chặn lưu, không ghi');
+    $resOk = $svcI->savePriceBookRows($bA, [$rowUi]);
+    $saved = $resOk['priceList'][0] ?? null;
+    $ok($saved && ($saved['prices'] ?? []) === ['40HC' => '5000000', '45' => '7000000'] && $saved['kind'] === '', 'I10 lưu: khóa chuẩn (40hc→40HC, cont45→45 cột chung), bỏ ô trống, "Chưa phân nhóm" → KIND rỗng');
+    $resCp = $svcI->copyPriceRows($bA, $bImpId, true);
+    $ok(($resCp['copied'] ?? 0) === 1 && (($resCp['priceList'][0]['prices'] ?? [])['40HC'] ?? '') === '5000000', 'I11 copy bảng giá → bảng giá giữ nguyên prices');
+    // Mẫu phẳng: tạo file → parse (ô trống = giống dòng trên, bỏ GHI CHÚ, bỏ dòng không giá) → lỗi TRẠNG THÁI → import round-trip
+    $tmpBase = tempnam(sys_get_temp_dir(), 'pq'); $tmp = $tmpBase . '.xlsx';
+    $ssI = new \PhpOffice\PhpSpreadsheet\Spreadsheet(); $wsI = $ssI->getActiveSheet(); $wsI->setTitle('Bảng giá');
+    $wsI->fromArray([
+        ['ĐIỂM HẠ', 'TRẠNG THÁI', 'KIND', 'FROM', 'TO', 'TO 2', 'TO 3', 'TO 4', 'KM', '20DC', '40HC', '40RHC', 'GHI CHÚ'],
+        ['HPP', 'Connect', 'Transportation 1 way of Import/Export', 'ICDTEST', 'QV', '', '', 'HPP', 287, 4480000, 5130000, 5600000, 'ví dụ'],
+        ['', '', '', 'ICDTEST', 'TS', '', '', 'HPP', 266, 4000000, 4700000, '', ''],
+        ['', 'Disconnect', '', 'ICDTEST', 'QV', '', '', 'HPP', 287, '', 4900000, '', ''],
+        ['HPP', 'Non', 'DRY CONTAINER', 'ICDTP', '', '', '', '', '', 3000000, 3500000, '', ''],
+        ['HPP', 'Connect', 'X', 'ICDTEST', 'TL', '', '', 'HPP', 1, '', '', '', ''],
+    ], null, 'A1');
+    (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($ssI))->save($tmp);
+    $flat = $svcI->parseQuotation($tmp);
+    $ok($flat['format'] === 'flat' && $flat['contCols'] === ['20DC', '40HC', '40RHC'] && count($flat['rows']) === 4 && ! $flat['errors'], 'I12 mẫu phẳng: nhận dạng sheet, 3 cột loại cont (bỏ GHI CHÚ), 4 dòng');
+    $ok($flat['rows'][1]['loc'] === 'HPP' && $flat['rows'][1]['conn'] === 'Connect' && $flat['rows'][1]['kind'] === 'Transportation 1 way of Import/Export' && $flat['rows'][1]['prices'] === ['20DC' => 4000000, '40HC' => 4700000], 'I13 ô trống = giống dòng trên; bỏ ô giá trống');
+    $ok($flat['rows'][2]['conn'] === 'Disconnect' && $flat['rows'][3]['conn'] === 'Non' && count($flat['warnings']) === 1, 'I14 đổi trạng thái theo dòng; dòng không có giá → cảnh báo bỏ qua');
+    $wsI->setCellValue('B3', 'Bậy'); (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($ssI))->save($tmp);
+    $bad = $svcI->parseQuotation($tmp);
+    $ok(count($bad['errors']) === 1 && str_contains($bad['errors'][0], 'TRẠNG THÁI') && ($svcI->importQuotationToBook($bImpId, $tmp, true)['ok'] ?? true) === false, 'I15 TRẠNG THÁI sai → báo lỗi dòng + chặn import');
+    $wsI->setCellValue('B3', ''); (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($ssI))->save($tmp);
+    $resFlat = $svcI->importQuotationToBook($bImpId, $tmp, true);
+    $ok(($resFlat['ok'] ?? false) && $resFlat['imported'] === 4 && $resFlat['format'] === 'flat', 'I16 import mẫu phẳng (ghi đè) = 4 dòng');
+    $got = collect($svcI->priceBookRows($bImpId));
+    $ok($got->count() === 4 && $got->firstWhere('from', 'ICDTP')['prices'] === ['20DC' => '3000000', '40HC' => '3500000'] && ($got->firstWhere('to1', 'TS')['prices']['40HC'] ?? '') === '4700000', 'I17 round-trip: dòng giá đọc lại đúng cột/giá');
+    $vq = $svcI->validateQuotation($tmp);
+    $ok($vq['ok'] === true && $vq['format'] === 'flat' && $vq['contCols'] === ['20DC', '40HC', '40RHC'], 'I18 validateQuotation mẫu phẳng OK + trả cột loại cont');
+    @unlink($tmp); @unlink($tmpBase);
 
     // ---------- E. Lô hàng list ----------
     $section('E. Lô hàng (pagedShipments / bulk)');

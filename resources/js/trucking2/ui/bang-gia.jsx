@@ -1,7 +1,7 @@
 import React from "react";
 import { useIsMobile, I, Btn, Modal, DateField } from "@trk/lib.jsx";
 import { PriceList } from "@trk/pop.jsx";
-import { buildPriceBookWb } from "../components/price-excel.js";
+import { buildPriceBookWb, buildPriceTemplateWb, orderContKeys, rowContKeys } from "../components/price-excel.js";
 
 // "Canon Thăng Long" → "canon-thang-long" (tên file không dấu, không khoảng trắng)
 const slug = (s) => String(s || "")
@@ -106,7 +106,8 @@ function BangGiaPage({ cfg, setBooks, api, routes }) {
       const rd = new FileReader();
       rd.onload = () => {
         try { const wb = window.XLSX.read(rd.result, { type: "array", bookSheets: true }); sheets = wb.SheetNames || []; } catch (er) { sheets = []; }
-        const def = sheets.find((s) => s.toLowerCase().trim() === "import") || sheets[0] || "";
+        // Mặc định: sheet "Bảng giá" (file mẫu) → "import" (báo giá gốc) → sheet đầu.
+        const def = sheets.find((s) => ["bảng giá", "bang gia"].includes(s.toLowerCase().trim())) || sheets.find((s) => s.toLowerCase().trim() === "import") || sheets[0] || "";
         setQm({ fileName: f.name, file: f, sheets, sheet: def, report: null, checking: false, importing: false, err: "" });
       };
       rd.readAsArrayBuffer(f);
@@ -136,19 +137,27 @@ function BangGiaPage({ cfg, setBooks, api, routes }) {
     } catch (er) { setQm((q) => ({ ...q, importing: false, err: "Lỗi kết nối khi nhập" })); }
   };
 
-  // ----- Xuất Excel bảng giá đang xem (dùng chính dòng đang hiển thị, kể cả sửa chưa lưu) -----
+  // ----- Xuất Excel bảng giá đang xem (dùng chính dòng đang hiển thị, kể cả sửa chưa lưu) — cùng định dạng mẫu, nhập lại được -----
+  const bookMeta = () => ({
+    customer: cur,
+    label: curBook.label || "",
+    range: bookRange(curBook),
+    exportedAt: new Date().toLocaleString("vi-VN"),
+    contTypes: cfg.contTypes || [],
+  });
+  const fileTag = () => (curBook.label ? slug(curBook.label) : (curBook.from || curBook.to ? slug(bookRange(curBook)) : "moi-ngay"));
   const exportBook = () => {
     if (!curBook || !loaded) return;
-    const range = bookRange(curBook);
-    const wb = buildPriceBookWb(rows, {
-      customer: cur,
-      label: curBook.label || "",
-      range,
-      sheetName: curBook.label || "Bảng giá",
-      exportedAt: new Date().toLocaleString("vi-VN"),
-    });
-    const tag = curBook.label ? slug(curBook.label) : (curBook.from || curBook.to ? slug(range) : "moi-ngay");
-    window.XLSX.writeFile(wb, `bang-gia-${slug(cur)}-${tag}.xlsx`);
+    // Cột giá = đủ mọi loại cont trong danh mục + cột đang có (ô trống = chưa có giá) — giống màn hình.
+    const wb = buildPriceBookWb(rows, { ...bookMeta(), contCols: orderContKeys([...(cfg.contTypes || []), ...rowContKeys(rows)], cfg.contTypes || []) });
+    window.XLSX.writeFile(wb, `bang-gia-${slug(cur)}-${fileTag()}.xlsx`);
+  };
+  // ----- Tải MẪU báo giá (kế toán điền → Nhập báo giá): cột giá = mọi loại cont trong danh mục + 3 dòng ví dụ -----
+  const downloadTemplate = () => {
+    if (!curBook) return;
+    const codes = Object.values(cfg.locationCode || {});
+    const wb = buildPriceTemplateWb({ ...bookMeta(), sampleLoc: codes.includes("HPP") ? "HPP" : (codes[0] || "HPP"), sampleFrom: codes.includes("HPP") ? "HPP" : (codes[0] || "HPP") });
+    window.XLSX.writeFile(wb, `mau-bao-gia-${slug(cur)}-${fileTag()}.xlsx`);
   };
 
   // ----- CRUD book -----
@@ -212,7 +221,8 @@ function BangGiaPage({ cfg, setBooks, api, routes }) {
       {/* price book + price list */}
       <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: isMobile ? "16px 14px 40px" : "24px 28px 40px" }}>
         {cur ? (
-          <div style={{ maxWidth: 880, margin: "0 auto" }}>
+          <div style={{ width: "100%" }}>
+            {/* Không giới hạn chiều rộng: bảng giá có nhiều cột loại cont cần trọn màn hình (user chốt), lề 2 bên chỉ là padding. */}
             <div style={{ marginBottom: 14 }}>
               <h1 style={{ margin: 0, fontSize: 21, fontWeight: 700, letterSpacing: "-0.02em" }}>Bảng giá</h1>
               <div style={{ fontSize: 13.5, color: "var(--ink-3)", marginTop: 3 }}>{cur}{data.taxCode ? ` · MST ${data.taxCode}` : ""}</div>
@@ -257,8 +267,14 @@ function BangGiaPage({ cfg, setBooks, api, routes }) {
                   <div style={{ flex: 1 }} />
                   {msg && <span style={{ fontSize: 12, fontWeight: 600, color: /lỗi|không/i.test(msg) ? "var(--danger)" : "var(--good)" }}>{msg}</span>}
                   {dirtyBook === curBook.id && <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "var(--warn)" }}><span style={{ width: 7, height: 7, borderRadius: 999, background: "var(--warn)" }} /> Chưa lưu</span>}
+                  <button type="button" onClick={downloadTemplate}
+                    title="Tải MẪU báo giá (.xlsx) cho kế toán điền: mỗi loại cont 1 cột giá tổng cước+dầu, kèm hướng dẫn — điền xong bấm Nhập báo giá"
+                    style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", fontSize: 12.5, fontWeight: 600, borderRadius: 9, cursor: "pointer",
+                      border: "1px solid var(--line)", background: "#fff", color: "var(--ink-2)" }}>
+                    <i className="bi bi-file-earmark-spreadsheet" /> Tải mẫu
+                  </button>
                   <button type="button" onClick={exportBook} disabled={!loaded || !rows.length}
-                    title="Tải bảng giá đang xem về file .xlsx để xem/đối chiếu (gồm cả sửa chưa lưu)"
+                    title="Tải bảng giá đang xem về file .xlsx (cùng định dạng mẫu — sửa xong nhập lại được; gồm cả sửa chưa lưu)"
                     style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", fontSize: 12.5, fontWeight: 600, borderRadius: 9,
                       cursor: loaded && rows.length ? "pointer" : "default", opacity: loaded && rows.length ? 1 : 0.55,
                       border: "1px solid var(--line)", background: "#fff", color: "var(--ink-2)" }}>
@@ -266,9 +282,9 @@ function BangGiaPage({ cfg, setBooks, api, routes }) {
                   </button>
                   <input ref={quoteRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={onQuoteFile} />
                   <button type="button" onClick={() => quoteRef.current && quoteRef.current.click()}
-                    title="Nhập từ file báo giá gốc (.xlsx) — chọn sheet, kiểm tra rồi mới import vào bảng giá này"
+                    title="Nhập file báo giá (.xlsx): mẫu đã điền (sheet Bảng giá) hoặc báo giá gốc (sheet import) — chọn sheet, kiểm tra rồi mới import vào bảng giá này"
                     style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", fontSize: 12.5, fontWeight: 600, borderRadius: 9, cursor: "pointer", border: "1px solid var(--accent-weak)", background: "var(--accent-weak-2)", color: "var(--accent)" }}>
-                    <i className="bi bi-filetype-xlsx" /> Nhập báo giá gốc
+                    <i className="bi bi-filetype-xlsx" /> Nhập báo giá
                   </button>
                   <button type="button" onClick={saveBook} disabled={saving || dirtyBook !== curBook.id}
                     style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 15px", fontSize: 13, fontWeight: 600, borderRadius: 9, border: "none",
@@ -321,7 +337,7 @@ function BangGiaPage({ cfg, setBooks, api, routes }) {
 
       {/* Popup Nhập báo giá gốc: chọn sheet → KIỂM TRA (báo cáo) → Import */}
       {qm && (
-        <Modal title="Nhập báo giá gốc" subtitle={qm.fileName ? ("File: " + qm.fileName) : "Chọn sheet, kiểm tra rồi mới import"} width={560} icon={<I.truck />}
+        <Modal title="Nhập báo giá" subtitle={qm.fileName ? ("File: " + qm.fileName) : "Chọn sheet, kiểm tra rồi mới import"} width={560} icon={<I.truck />}
           onClose={() => setQm(null)}
           footer={
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
@@ -341,19 +357,20 @@ function BangGiaPage({ cfg, setBooks, api, routes }) {
                 {(qm.sheets || []).map((s) => <option key={s} value={s}>{s}</option>)}
                 {!(qm.sheets || []).length && <option value="">(không đọc được sheet — vẫn bấm Kiểm tra)</option>}
               </select>
-              <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 5 }}>Báo giá gốc thường ở sheet <b>import</b>. Bấm <b>Kiểm tra</b> để xem trước số dòng theo loại trước khi import.</div>
+              <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 5 }}>File mẫu đã điền: sheet <b>Bảng giá</b> · báo giá gốc: sheet <b>import</b> (tự nhận dạng). Bấm <b>Kiểm tra</b> để xem trước số dòng, cột loại cont và lỗi trước khi import.</div>
             </label>
 
             {qm.report && (
               <div style={{ border: "1px solid " + (qm.report.ok ? "var(--accent-weak)" : "#f3c9c9"), background: qm.report.ok ? "var(--accent-weak-2)" : "#fce8e8", borderRadius: 10, padding: "12px 14px" }}>
                 {qm.report.ok ? (
                   <>
-                    <div style={{ fontSize: 13.5, fontWeight: 700, color: "var(--accent)", marginBottom: 8 }}><i className="bi bi-clipboard-check" /> Đọc được {qm.report.total} dòng giá từ sheet "{qm.report.sheet}"</div>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: "var(--accent)", marginBottom: 8 }}><i className="bi bi-clipboard-check" /> Đọc được {qm.report.total} dòng giá từ sheet "{qm.report.sheet}"{qm.report.format === "legacy" ? " (báo giá gốc → quy về cột chung 20FT/40FT)" : ""}</div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
                       {Object.entries(qm.report.by || {}).filter(([, v]) => v > 0).map(([k, v]) => (
                         <span key={k} className="tnum" style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-2)", background: "#fff", border: "1px solid var(--line)", padding: "3px 9px", borderRadius: 999 }}>{k === "Non" ? "Sà lan (Non)" : k}: {v}</span>
                       ))}
                     </div>
+                    <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>Cột loại cont (giá tổng cước+dầu): <b>{(qm.report.contCols || []).join(" · ") || "—"}</b></div>
                     <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>Điểm hạ: {(qm.report.locs || []).join(", ") || "—"}</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                       {(qm.report.kinds || []).map((k) => (
@@ -363,7 +380,21 @@ function BangGiaPage({ cfg, setBooks, api, routes }) {
                     {(qm.report.warnings || []).length > 0 && <div style={{ marginTop: 8, fontSize: 11.5, color: "#9a6700" }}>{qm.report.warnings.map((w, i) => <div key={i}><i className="bi bi-exclamation-triangle-fill" /> {w}</div>)}</div>}
                   </>
                 ) : (
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--danger)" }}><i className="bi bi-x-octagon-fill" /> {qm.report.msg || (qm.report.warnings || [])[0] || "Sheet không có dòng giá hợp lệ — chọn sheet khác."}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--danger)" }}><i className="bi bi-x-octagon-fill" /> {qm.report.msg || (qm.report.errors || [])[0] || (qm.report.warnings || [])[0] || "Sheet không có dòng giá hợp lệ — chọn sheet khác."}</div>
+                )}
+                {/* Lỗi dòng trong file mẫu (thiếu FROM/ĐIỂM HẠ, TRẠNG THÁI sai, cột loại cont ngoài danh mục) → chặn import. */}
+                {(qm.report.errors || []).length > 0 && (
+                  <div style={{ marginTop: 10, borderTop: "1px solid #f3c9c9", paddingTop: 9 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--danger)", marginBottom: 6 }}>Lỗi phải sửa trong file ({qm.report.errors.length}):</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 150, overflowY: "auto", fontSize: 12, color: "var(--ink-2)" }}>
+                      {qm.report.errors.map((e, i) => <div key={i}>• {e}</div>)}
+                    </div>
+                    {(qm.report.unknownCont || []).length > 0 && (
+                      <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 7 }}>
+                        Cột loại cont chưa có trong danh mục: <b>{qm.report.unknownCont.join(", ")}</b> — thêm ở <a href="/trucking-v2/cai-dat#contTypes" target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontWeight: 600 }}>Cài đặt → Loại cont</a> (đúng tên) hoặc sửa tiêu đề cột trong file, rồi bấm Kiểm tra lại.
+                      </div>
+                    )}
+                  </div>
                 )}
                 {/* Tên chưa có ký hiệu trong danh mục → không import được, phải khai ánh xạ trước. */}
                 {(qm.report.unmapped || []).length > 0 && (

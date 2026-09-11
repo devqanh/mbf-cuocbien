@@ -7,6 +7,13 @@ import { SortBtn, CellBtn, Badge, EditCell, TH, TD } from "./primitives.jsx";
 /* Nhãn ngắn cho 1 bảng giá (price book) đã dùng định giá lô — hiện kỳ giá ở bảng kê. */
 const _bd = (s) => { if (!s) return ""; const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s); return m ? `${m[3]}/${m[2]}/${m[1]}` : s; };
 const bookLabel = (b) => { if (!b) return ""; const r = (b.from || b.to) ? `${b.from ? _bd(b.from) : "…"}–${b.to ? _bd(b.to) : "…"}` : "mọi ngày"; return (b.label ? b.label + " · " : "") + r; };
+// Nhãn cột giá đã áp: "40HC" (cột riêng) · "40HC → 40FT" (rơi về cột chung) · snapshot cũ chỉ có is20 → 20FT/40FT.
+const contColLabel = (d) => {
+  if (!d) return "";
+  if (d.contKey) return d.contType && d.contType.toUpperCase() !== d.contKey ? `${d.contType} → ${d.contKey}` : d.contKey;
+  if (d.is20 != null) return d.is20 ? "20FT" : "40FT";
+  return d.contType || "—";
+};
 
 /* Thông tin công ty cho header bảng kê (màn hình + bản in). */
 const CO = (window.__TRK && window.__TRK.boot && window.__TRK.boot.company) || {};
@@ -225,8 +232,8 @@ function StatementForm({ cfg, onCancel, onSaved }) {
                     {x.from} → {x.to}<div style={{ fontSize: 11, color: "var(--ink-4)" }} className="tnum">{x.contLabel}</div>
                     <div className="ke-noprint" style={{ fontSize: 10.5, marginTop: 3 }}>
                       {x.pr.matched
-                        ? <span style={{ color: "var(--good)" }}>✓ Bảng giá · {x.cru ? (/xu/i.test(x.io || "") ? "CRU ngoại" : "CRU nội") : "1 chiều"} · {x.pr.conn || "—"} · {x.pr.is20 ? "20FT" : "40FT"}{x.pr.priceBook ? <span style={{ color: "var(--accent)" }}> · 📅 {bookLabel(x.pr.priceBook)}</span> : null} · <span className="tnum">{x.pr.route}</span>{x.pr.noDrop ? <span style={{ color: "var(--warn)" }}> (lô chưa có Nơi hạ — khớp theo FROM)</span> : null} — <span className="tnum">Cước {fmtNum(x.pr.cuoc)} + Dầu {fmtNum(x.pr.dau)}{(x.pr.bargeCuoc || x.pr.bargeDau) ? " + Sà lan " + fmtNum((x.pr.bargeCuoc || 0) + (x.pr.bargeDau || 0)) : ""}{x.pr.chiHo ? " + Chi hộ " + fmtNum(x.pr.chiHo) : ""} = {fmtNum(x.pr.phaiThu)} ₫</span>{x.pr.isBarge && !x.pr.bargeMatched ? <span style={{ color: "var(--warn)" }}> · ⚠ sà lan chưa khớp giá</span> : null}</span>
-                        : <span style={{ color: "var(--warn)" }}>⚠ Chưa khớp bảng giá{!x.pr.priceBook ? " (ngày cont ra ngoài mọi bảng giá)" : ""}{x.pr.chiHo ? " · mới có Chi hộ " + fmtShort(x.pr.chiHo) : " · phải thu 0"}</span>}
+                        ? <span style={{ color: "var(--good)" }}>✓ Bảng giá · {x.cru ? (/xu/i.test(x.io || "") ? "CRU ngoại" : "CRU nội") : "1 chiều"} · {x.pr.conn || "—"} · {contColLabel(x.pr)}{x.pr.priceBook ? <span style={{ color: "var(--accent)" }}> · 📅 {bookLabel(x.pr.priceBook)}</span> : null} · <span className="tnum">{x.pr.route}</span>{x.pr.noDrop ? <span style={{ color: "var(--warn)" }}> (lô chưa có Nơi hạ — khớp theo FROM)</span> : null} — <span className="tnum">{x.pr.dau > 0 ? `Cước ${fmtNum(x.pr.cuoc)} + Dầu ${fmtNum(x.pr.dau)}` : `Cước+dầu ${fmtNum(x.pr.cuoc)}`}{(x.pr.bargeCuoc || x.pr.bargeDau) ? " + Sà lan " + fmtNum((x.pr.bargeCuoc || 0) + (x.pr.bargeDau || 0)) : ""}{x.pr.chiHo ? " + Chi hộ " + fmtNum(x.pr.chiHo) : ""} = {fmtNum(x.pr.phaiThu)} ₫</span>{x.pr.isBarge && !x.pr.bargeMatched ? <span style={{ color: "var(--warn)" }}> · ⚠ sà lan chưa khớp giá</span> : null}</span>
+                        : <span style={{ color: "var(--warn)" }}>⚠ Chưa khớp bảng giá{!x.pr.priceBook ? " (ngày cont ra ngoài mọi bảng giá)" : (x.pr.routeMatched ? ` (tuyến có giá nhưng thiếu cột loại cont ${x.pr.contType || "?"})` : "")}{x.pr.chiHo ? " · mới có Chi hộ " + fmtShort(x.pr.chiHo) : " · phải thu 0"}</span>}
                     </div>
                   </td>
                   <td className="tnum" style={{ padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{fmtDate(x.date) || "—"}</td>
@@ -428,7 +435,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {} }) {
                         : <span style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-4)", background: "var(--line-2)", padding: "2px 9px", borderRadius: 999 }}>KẾT NỐI: chưa xác định (thiếu giờ xe ra)</span>}
                       {d.ftHours != null && <span style={{ fontSize: 11, color: "var(--ink-4)" }} className="tnum">Free time {fmtHours(d.ftHours)} · ngưỡng {d.ftThreshold}h{d.ftBasis ? " · từ " + d.ftBasis : ""}</span>}
                       <span style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-3)", background: "var(--line-2)", padding: "2px 9px", borderRadius: 999 }}>{/external cru/i.test(d.kind || "") ? "CRU ngoại" : /internal cru/i.test(d.kind || "") ? "CRU nội" : "1 chiều"}</span>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-3)", background: "var(--line-2)", padding: "2px 9px", borderRadius: 999 }}>{d.is20 ? "20FT" : "40FT"}</span>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-3)", background: "var(--line-2)", padding: "2px 9px", borderRadius: 999 }} title="Loại cont của lô → cột giá đã áp trong bảng giá">{contColLabel(d)}</span>
                       {d.route && <span className="tnum" style={{ fontSize: 11, color: "var(--ink-4)" }}>{d.route}</span>}
                       {d.priceBook && <span style={{ fontSize: 11, fontWeight: 600, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", padding: "2px 9px", borderRadius: 999 }} title="Bảng giá áp theo ngày cont ra"><i className="bi bi-calendar3" /> Giá: {bookLabel(d.priceBook)}</span>}
                       {!d.matched && <span style={{ fontSize: 11, color: "var(--warn)", fontWeight: 700 }}>⚠ chưa khớp bảng giá{!d.priceBook ? " (ngày cont ra ngoài mọi bảng giá)" : ""}</span>}
@@ -436,13 +443,15 @@ function StatementDetailBody({ st, onUpdate, detailById = {} }) {
                     {/* DÒ: vì sao chưa khớp — tiêu chí đã tìm trong bảng giá (cảng + nhà máy + loại) */}
                     {!d.matched && d.diag && (
                       <div style={{ fontSize: 11, color: "var(--ink-4)", marginBottom: 3, lineHeight: 1.6 }}>
-                        <i className="bi bi-search" /> Đã dò bảng giá: đi <b className="tnum" style={{ color: "var(--ink-3)" }}>{d.diag.di}</b> → nhà máy <b className="tnum" style={{ color: "var(--ink-3)" }}>{d.diag.nhaMay}</b> → hạ <b className="tnum" style={{ color: "var(--ink-3)" }}>{d.diag.ha}</b> · loại <b style={{ color: "var(--ink-3)" }}>{/external cru/i.test(d.diag.kind || "") ? "CRU ngoại" : /internal cru/i.test(d.diag.kind || "") ? "CRU nội" : "1 chiều"}</b>{d.diag.conn ? <> · <b style={{ color: "var(--ink-3)" }}>{d.diag.conn}</b></> : null}{!d.diag.hasPrice ? <span style={{ color: "var(--warn)" }}> — khách CHƯA có bảng giá</span> : <span> — không có dòng giá khớp (kiểm tra ký hiệu đi·nhà máy·hạ trong Bảng giá)</span>}
+                        <i className="bi bi-search" /> Đã dò bảng giá: đi <b className="tnum" style={{ color: "var(--ink-3)" }}>{d.diag.di}</b> → nhà máy <b className="tnum" style={{ color: "var(--ink-3)" }}>{d.diag.nhaMay}</b> → hạ <b className="tnum" style={{ color: "var(--ink-3)" }}>{d.diag.ha}</b> · loại <b style={{ color: "var(--ink-3)" }}>{/external cru/i.test(d.diag.kind || "") ? "CRU ngoại" : /internal cru/i.test(d.diag.kind || "") ? "CRU nội" : "1 chiều"}</b>{d.diag.conn ? <> · <b style={{ color: "var(--ink-3)" }}>{d.diag.conn}</b></> : null}{d.diag.contType ? <> · cont <b style={{ color: "var(--ink-3)" }}>{d.diag.contType}</b></> : null}{!d.diag.hasPrice ? <span style={{ color: "var(--warn)" }}> — khách CHƯA có bảng giá</span> : d.routeMatched ? <span style={{ color: "var(--warn)" }}> — tuyến CÓ giá nhưng thiếu cột loại cont {d.diag.contType || "(trống)"} (cột đang có: {(d.diag.contKeys || []).join(", ") || "—"})</span> : <span> — không có dòng giá khớp (kiểm tra ký hiệu đi·nhà máy·hạ trong Bảng giá)</span>}
                       </div>
                     )}
                     {/* Hàng 2: tách khoản tiền */}
                     <div style={{ fontSize: 11.5, color: "var(--ink-3)", display: "flex", flexWrap: "wrap", alignItems: "center", gap: "3px 12px", lineHeight: 1.7 }}>
-                      <span>Cước <b className="tnum" style={{ color: "var(--ink-2)" }}>{fmtNum(d.cuoc)}</b></span>
-                      <span>+ Dầu <b className="tnum" style={{ color: "var(--ink-2)" }}>{fmtNum(d.dau)}</b></span>
+                      {/* Bảng giá mới: 1 số tổng (dau = 0). Snapshot cũ còn tách cước/dầu → vẫn hiện đủ. */}
+                      {d.dau > 0
+                        ? <><span>Cước <b className="tnum" style={{ color: "var(--ink-2)" }}>{fmtNum(d.cuoc)}</b></span><span>+ Dầu <b className="tnum" style={{ color: "var(--ink-2)" }}>{fmtNum(d.dau)}</b></span></>
+                        : <span>Cước+dầu <b className="tnum" style={{ color: "var(--ink-2)" }}>{fmtNum(d.cuoc)}</b></span>}
                       {d.isBarge && (
                         <span style={{ color: "var(--accent)" }} title={d.bargeRoute ? "Sà lan: " + d.bargeRoute : "Sà lan"}>
                           <i className="bi bi-water" /> + Cước sà lan <b className="tnum">{fmtNum((d.bargeCuoc || 0) + (d.bargeDau || 0))}</b>

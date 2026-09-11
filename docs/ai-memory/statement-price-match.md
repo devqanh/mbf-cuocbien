@@ -9,7 +9,7 @@ metadata:
 
 So khớp giá bảng kê = backend `HandlesStatementPricing::priceShipment` (nguồn chân lý; frontend `makePricer/priceFor` trong ui.jsx ĐÃ legacy, không còn gọi). Dùng bởi statementCandidates / statementReprice / statementsDrift.
 
-**Cấu trúc bảng giá** (`trucking_price_rows`): `from`/`loc` = CẢNG/khu vực, `to1..to4` = **NHÀ MÁY**, `kind` (có khi rỗng), `conn` (Connect/Disconnect), fee 20/40 + dầu. (Dữ liệu thật ghi tên KHÔNG dấu, vd `loc="LACH HUYEN"`.)
+**Cấu trúc bảng giá** (`trucking_price_rows`): `from`/`loc` = CẢNG/khu vực, `to1..to4` = **NHÀ MÁY**, `kind` (có khi rỗng), `conn` (Connect/Disconnect), giá = `prices` JSON theo LOẠI CONT (1 số tổng cước+dầu — xem [[price-by-cont-type]]; trước 2026-09-11 là 4 cột cước/dầu × 40/20). (Dữ liệu thật ghi tên KHÔNG dấu, vd `loc="LACH HUYEN"`.)
 
 **Quy tắc khớp (user chốt 2026-06) — 3 VAI TRÒ + loại + kết nối.** Cột bảng giá: `from`=điểm ĐI · `loc`=điểm HẠ · `to1..to4`=NHÀ MÁY. Lô khớp khi:
 - ĐI: `from_loc` == `from` (dòng giá).

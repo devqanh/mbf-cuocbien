@@ -107,6 +107,8 @@ trait HandlesPricingAndImport
         return [
             'locations'    => $locations->pluck('name')->all(),
             'locationCode' => $locations->filter(fn ($l) => $l->code)->mapWithKeys(fn ($l) => [$l->name => $l->code])->all(),
+            // Danh mục Loại cont = các CỘT GIÁ hợp lệ của bảng giá (thứ tự cột theo thứ tự danh mục).
+            'contTypes'    => TruckingContType::orderBy('sort')->orderBy('name')->pluck('name')->all(),
             'customers'    => $customers->pluck('name')->all(),
             'customerInfo' => $customers->mapWithKeys(fn ($c) => [$c->name => [
                 'shortName' => $c->short_name ?? '',
@@ -194,6 +196,8 @@ trait HandlesPricingAndImport
     {
         $unmapped = $this->unmappedPriceValues($rows);
         if ($unmapped) return $this->unmappedPriceError($unmapped) + ['priceList' => $this->priceBookRows($bookId)];
+        $unknown = $this->unknownContKeys($rows);
+        if ($unknown) return $this->unknownContError($unknown) + ['priceList' => $this->priceBookRows($bookId)];
 
         return DB::transaction(function () use ($bookId, $rows) {
             $book = TruckingPriceBook::find($bookId);
@@ -237,6 +241,39 @@ trait HandlesPricingAndImport
         $bad = array_map(fn ($b) => ['col' => implode('/', array_keys($b['col'])), 'value' => $b['value'], 'count' => $b['count']], $bad);
         usort($bad, fn ($a, $b) => $b['count'] <=> $a['count']);
         return array_values($bad);
+    }
+
+    /**
+     * Cột loại cont trên dòng giá KHÔNG có trong danh mục Loại cont → CHẶN ghi (trừ cột chung 20FT/40FT/45FT).
+     * Lô hàng chọn loại cont từ danh mục, nên cột giá ngoài danh mục sẽ không bao giờ khớp lô.
+     *
+     * @return array<string,int> [khóa chuẩn => số dòng]
+     */
+    private function unknownContKeys(array $rows): array
+    {
+        $cat = [];
+        foreach (TruckingContType::toBase()->pluck('name')->all() as $n) { $k = $this->contKeyNorm($n); if ($k !== '') $cat[$k] = true; }
+        $bad = [];
+        foreach ($rows as $p) {
+            foreach (array_keys(is_array($p['prices'] ?? null) ? $p['prices'] : []) as $k) {
+                $nk = $this->contKeyNorm($k);
+                if ($nk === '' || isset($cat[$nk]) || $this->contKeyIsGeneric($nk)) continue;
+                $bad[$nk] = ($bad[$nk] ?? 0) + 1;
+            }
+        }
+        return $bad;
+    }
+
+    /** Kết quả CHẶN khi có cột loại cont ngoài danh mục. */
+    private function unknownContError(array $bad): array
+    {
+        $list = implode(', ', array_map(fn ($k, $n) => "\"$k\" ($n dòng)", array_keys($bad), $bad));
+        return [
+            'ok'          => false,
+            'unknownCont' => array_keys($bad),
+            'msg'         => 'Cột loại cont chưa có trong danh mục: ' . $list . '. Vào Cài đặt → Loại cont thêm đúng tên '
+                           . '(hoặc sửa tiêu đề cột trong file) rồi làm lại. Cột chung 20FT / 40FT / 45FT luôn được chấp nhận.',
+        ];
     }
 
     /** Kết quả CHẶN kèm thông báo chỉ rõ giá trị nào phải khai ánh xạ. */
@@ -917,31 +954,65 @@ trait HandlesPricingAndImport
             'to3'        => $p->to3 ?? '',
             'to4'        => $p->to4 ?? '',
             'distance'   => $p->distance ?? '',
-            'transFee40' => $this->outMoney($p->trans_fee_40),
-            'transFee20' => $this->outMoney($p->trans_fee_20),
-            'fuelFee40'  => $this->outMoney($p->fuel_fee_40),
-            'fuelFee20'  => $this->outMoney($p->fuel_fee_20),
+            // Giá theo LOẠI CONT: {khóa chuẩn => tổng cước+dầu} (chuỗi số cho FE, như outMoney).
+            'prices'     => $this->priceRowPricesOut($p),
         ];
+    }
+
+    /**
+     * Map giá của 1 dòng (model hoặc stdClass từ toBase()) → {KHÓA CHUẨN => "số"}.
+     * Dòng CHƯA backfill (prices null) → suy từ 4 cột cũ: 20FT = cước20+dầu20, 40FT = cước40+dầu40.
+     */
+    private function priceRowPricesOut($p): array
+    {
+        $raw = $p->prices ?? null;
+        if (is_string($raw)) $raw = json_decode($raw, true);
+        if (! is_array($raw)) {
+            $raw = [];
+            $t20 = (float) ($p->trans_fee_20 ?? 0) + (float) ($p->fuel_fee_20 ?? 0);
+            $t40 = (float) ($p->trans_fee_40 ?? 0) + (float) ($p->fuel_fee_40 ?? 0);
+            if ($t20 > 0) $raw['20FT'] = $t20;
+            if ($t40 > 0) $raw['40FT'] = $t40;
+        }
+        $out = [];
+        foreach ($raw as $k => $v) {
+            $nk = $this->contKeyNorm($k);
+            if ($nk !== '' && $v !== null && $v !== '') $out[$nk] = $this->outMoney($v);
+        }
+        return $out;
+    }
+
+    /** Map giá từ payload FE / import → {KHÓA CHUẨN => int}; bỏ ô trống. null khi không có giá nào. */
+    private function priceRowPricesIn($prices): ?array
+    {
+        if (! is_array($prices)) return null;
+        $out = [];
+        foreach ($prices as $k => $v) {
+            $nk = $this->contKeyNorm($k); $amt = $this->inMoney($v);
+            if ($nk !== '' && $amt !== null) $out[$nk] = $amt;
+        }
+        return $out ?: null;
     }
 
     /** Thuộc tính DB của 1 dòng bảng giá (dùng cho cả lưu tay & import). */
     private function priceRowAttrs(array $p, int $i): array
     {
+        // "Chưa phân nhóm" là nhãn UI/mẫu cho KIND trống → lưu null (= áp mọi loại khi khớp giá).
+        $kind = $this->str($p['kind'] ?? null);
+        if ($kind !== null && mb_strtolower($kind) === 'chưa phân nhóm') $kind = null;
+
         return [
             'location_id'  => $this->resolveLocationId($p['loc'] ?? null),
             'loc'          => $this->str($p['loc'] ?? null),
             'conn'         => $p['conn'] ?? 'Connect',
-            'kind'         => $this->str($p['kind'] ?? null),
+            'kind'         => $kind,
             'from'         => $this->str($p['from'] ?? null),
             'to1'          => $this->str($p['to1'] ?? null),
             'to2'          => $this->str($p['to2'] ?? null),
             'to3'          => $this->str($p['to3'] ?? null),
             'to4'          => $this->str($p['to4'] ?? null),
-            'distance'     => $this->str($p['distance'] ?? null),
-            'trans_fee_40' => $this->inMoney($p['transFee40'] ?? null),
-            'trans_fee_20' => $this->inMoney($p['transFee20'] ?? null),
-            'fuel_fee_40'  => $this->inMoney($p['fuelFee40'] ?? null),
-            'fuel_fee_20'  => $this->inMoney($p['fuelFee20'] ?? null),
+            'distance'     => $this->str(isset($p['distance']) ? (string) $p['distance'] : null),
+            'prices'       => $this->priceRowPricesIn($p['prices'] ?? null),
             'sort'         => $i,
         ];
     }
@@ -1015,6 +1086,8 @@ trait HandlesPricingAndImport
     {
         $unmapped = $this->unmappedPriceValues($rows);
         if ($unmapped) return $this->unmappedPriceError($unmapped) + ['created' => 0, 'updated' => 0, 'imported' => 0, 'priceList' => $bookId ? $this->priceBookRows($bookId) : []];
+        $unknown = $this->unknownContKeys($rows);
+        if ($unknown) return $this->unknownContError($unknown) + ['created' => 0, 'updated' => 0, 'imported' => 0, 'priceList' => $bookId ? $this->priceBookRows($bookId) : []];
 
         return DB::transaction(function () use ($customerName, $rows, $replace, $bookId) {
             $cust = TruckingCustomer::firstOrCreate(['name' => trim($customerName)]);
@@ -1034,12 +1107,9 @@ trait HandlesPricingAndImport
 
                 if ($existing) {
                     $existing->update([
-                        'location_id'  => $attrs['location_id'],
-                        'distance'     => $attrs['distance'],
-                        'trans_fee_40' => $attrs['trans_fee_40'],
-                        'trans_fee_20' => $attrs['trans_fee_20'],
-                        'fuel_fee_40'  => $attrs['fuel_fee_40'],
-                        'fuel_fee_20'  => $attrs['fuel_fee_20'],
+                        'location_id' => $attrs['location_id'],
+                        'distance'    => $attrs['distance'],
+                        'prices'      => $attrs['prices'],
                     ]);
                     $updated++;
                 } else {
@@ -1072,13 +1142,15 @@ trait HandlesPricingAndImport
         return DB::transaction(function () use ($fromBookId, $toBook, $replace) {
             if ($replace) TruckingPriceRow::where('price_book_id', $toBook->id)->delete();
 
-            $cols = ['location_id', 'loc', 'conn', 'kind', 'from', 'to1', 'to2', 'to3', 'to4',
-                     'distance', 'trans_fee_40', 'trans_fee_20', 'fuel_fee_40', 'fuel_fee_20', 'sort'];
+            $cols = ['location_id', 'loc', 'conn', 'kind', 'from', 'to1', 'to2', 'to3', 'to4', 'distance', 'sort'];
             $now  = now();
-            $rows = TruckingPriceRow::where('price_book_id', $fromBookId)->orderBy('sort')->orderBy('id')->get()
+            // Đọc toBase() → `prices` là JSON string sẵn cho insert() (bỏ qua cast của model).
+            $rows = TruckingPriceRow::where('price_book_id', $fromBookId)->orderBy('sort')->orderBy('id')->toBase()->get()
                 ->map(function ($r) use ($cols, $toBook, $now) {
                     $a = ['customer_id' => $toBook->customer_id, 'price_book_id' => $toBook->id, 'created_at' => $now, 'updated_at' => $now];
                     foreach ($cols as $c) $a[$c] = $r->$c;
+                    $p = $this->priceRowPricesOut($r);   // dòng cũ chưa backfill vẫn copy ra dạng mới
+                    $a['prices'] = $p ? json_encode(array_map('intval', $p)) : null;
                     return $a;
                 })->all();
             foreach (array_chunk($rows, 500) as $chunk) TruckingPriceRow::insert($chunk);
@@ -1087,29 +1159,122 @@ trait HandlesPricingAndImport
         });
     }
 
+    /** Dòng giá đọc từ file báo giá (mọi định dạng) — xem parseQuotation(). */
+    public function parseQuotationRows(string $path, ?string $sheet = null): array
+    {
+        return $this->parseQuotation($path, $sheet)['rows'];
+    }
+
     /**
-     * Đọc BÁO GIÁ GỐC (sheet "import" — layout báo giá nhiều mục) → mảng dòng giá phẳng.
+     * Đọc file báo giá → ['format' => 'flat'|'legacy'|null, 'rows', 'contCols', 'errors', 'warnings'].
+     * TỰ NHẬN DẠNG theo sheet:
+     *  - MẪU PHẲNG (file "Tải mẫu"/"Xuất Excel" của trang Bảng giá): có dòng tiêu đề chứa FROM + ĐIỂM HẠ,
+     *    cột sau KM = LOẠI CONT (20DC/40HC/…), ô = giá TỔNG cước+dầu → parseFlatPriceRows().
+     *  - BÁO GIÁ GỐC (layout nhiều mục, cước/dầu × 40/20) → parseLegacyQuotationRows(), quy về cột chung 20FT/40FT.
+     * Không chỉ sheet: ưu tiên sheet có tiêu đề mẫu phẳng → sheet 'import' → không có thì rỗng.
+     */
+    public function parseQuotation(string $path, ?string $sheet = null): array
+    {
+        $empty = ['format' => null, 'rows' => [], 'contCols' => [], 'errors' => [], 'warnings' => []];
+        $rd = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($path);
+        $rd->setReadDataOnly(true);
+        $ss = $rd->load($path);
+        if ($sheet !== null && $sheet !== '') {
+            $sh = $ss->getSheetByName($sheet);   // sheet do user chọn
+            if (! $sh) return $empty;
+            $rows = $sh->toArray(null, true, false, false);
+            $flat = $this->parseFlatPriceRows($rows);
+            if ($flat !== null) return $flat + ['format' => 'flat'];
+            return ['format' => 'legacy', 'rows' => $this->parseLegacyQuotationRows($rows), 'contCols' => ['20FT', '40FT'], 'errors' => [], 'warnings' => []];
+        }
+        foreach ($ss->getSheetNames() as $n) {
+            $flat = $this->parseFlatPriceRows($ss->getSheetByName($n)->toArray(null, true, false, false));
+            if ($flat !== null) return $flat + ['format' => 'flat'];
+        }
+        foreach ($ss->getSheetNames() as $n) {
+            if (mb_strtolower(trim($n)) !== 'import') continue;
+            $rows = $ss->getSheetByName($n)->toArray(null, true, false, false);
+            return ['format' => 'legacy', 'rows' => $this->parseLegacyQuotationRows($rows), 'contCols' => ['20FT', '40FT'], 'errors' => [], 'warnings' => []];
+        }
+        return $empty;
+    }
+
+    /**
+     * MẪU PHẲNG: 1 dòng = 1 tuyến. Tiêu đề (không phân biệt hoa/thường/dấu): ĐIỂM HẠ · TRẠNG THÁI · KIND · FROM ·
+     * TO · TO 2 · TO 3 · TO 4 · KM · [mỗi loại cont 1 cột]. ĐIỂM HẠ/TRẠNG THÁI/KIND để trống = giống dòng trên
+     * (ô gộp). Dòng không có giá ở cột loại cont nào → bỏ qua (cảnh báo). Lỗi (thiếu FROM/ĐIỂM HẠ, TRẠNG THÁI
+     * sai) → chặn import. Trả null khi sheet KHÔNG có dòng tiêu đề mẫu (để thử định dạng khác).
+     */
+    private function parseFlatPriceRows(array $rows): ?array
+    {
+        $hn = fn ($v) => mb_strtoupper(preg_replace('/\s+/u', ' ', trim(Str::ascii((string) $v))) ?? '');   // "ĐIỂM HẠ" → "DIEM HA"
+        $known = [
+            'DIEM HA' => 'loc', 'TRANG THAI' => 'conn', 'KIND' => 'kind', 'FROM' => 'from',
+            'TO' => 'to1', 'TO 1' => 'to1', 'TO1' => 'to1', 'TO 2' => 'to2', 'TO2' => 'to2',
+            'TO 3' => 'to3', 'TO3' => 'to3', 'TO 4' => 'to4', 'TO4' => 'to4',
+            'KM' => 'distance', 'DISTANCE' => 'distance', 'DISTANCE (KM)' => 'distance',
+            'GHI CHU' => null, 'NOTE' => null,   // cột tự do — bỏ qua
+        ];
+        $hdrIdx = null; $map = []; $contCols = [];
+        foreach (array_slice($rows, 0, 30, true) as $i => $r) {
+            $cells = array_map($hn, is_array($r) ? $r : []);
+            if (! in_array('FROM', $cells, true) || ! in_array('DIEM HA', $cells, true)) continue;
+            $hdrIdx = $i;
+            foreach ($cells as $c => $h) {
+                if ($h === '') continue;
+                if (array_key_exists($h, $known)) { if ($known[$h] !== null) $map[$known[$h]] = $c; continue; }
+                $k = $this->contKeyNorm($h);
+                if ($k !== '' && ! isset($contCols[$k])) $contCols[$k] = $c;
+            }
+            break;
+        }
+        if ($hdrIdx === null) return null;
+
+        $cl = fn ($v) => preg_replace('/\s+/u', ' ', trim((string) $v));
+        $out = []; $errors = []; $warnings = []; $prev = ['loc' => '', 'conn' => '', 'kind' => ''];
+        foreach ($rows as $i => $r) {
+            if ($i <= $hdrIdx || ! is_array($r)) continue;
+            $get = fn ($k) => isset($map[$k]) ? $cl($r[$map[$k]] ?? '') : '';
+            $prices = [];
+            foreach ($contCols as $k => $c) { $amt = $this->inMoney($r[$c] ?? null); if ($amt !== null) $prices[$k] = $amt; }
+            $from = $get('from'); $loc = $get('loc'); $conn = $get('conn'); $kind = $get('kind');
+            if ($from === '' && $loc === '' && $conn === '' && $kind === '' && ! $prices) continue;   // dòng trống
+            $line = $i + 1;
+            if ($from === '') { $errors[] = "Dòng $line: thiếu FROM."; continue; }
+            // Để trống = giống dòng trên (ô gộp trong Excel).
+            $loc  = $loc  !== '' ? $loc  : $prev['loc'];
+            $conn = $conn !== '' ? $conn : $prev['conn'];
+            $kind = $kind !== '' ? $kind : $prev['kind'];
+            $cn = mb_strtolower($conn);
+            $connN = $cn === 'connect' ? 'Connect' : ($cn === 'disconnect' ? 'Disconnect' : ($cn === 'non' ? 'Non' : null));
+            if ($connN === null) { $errors[] = "Dòng $line: TRẠNG THÁI phải là Connect / Disconnect / Non" . ($conn !== '' ? " (đang là \"$conn\")" : '') . '.'; continue; }
+            if ($loc === '') { $errors[] = "Dòng $line: thiếu ĐIỂM HẠ."; continue; }
+            if (! $prices) { $warnings[] = "Dòng $line ($from → $loc): không có giá ở cột loại cont nào — bỏ qua."; continue; }
+            $prev = ['loc' => $loc, 'conn' => $connN, 'kind' => $kind];
+            $out[] = [
+                'conn' => $connN, 'loc' => $loc, 'kind' => $kind, 'from' => $from,
+                'to1' => $get('to1'), 'to2' => $get('to2'), 'to3' => $get('to3'), 'to4' => $get('to4'),
+                'distance' => $this->inMoney($get('distance')) ?? '', 'prices' => $prices,
+            ];
+        }
+        if (! $contCols) $errors[] = 'Không có cột LOẠI CONT nào (thêm cột sau KM, tiêu đề = tên loại cont, vd 20DC · 40HC · 40RHC).';
+        return ['rows' => $out, 'contCols' => array_keys($contCols), 'errors' => $errors, 'warnings' => $warnings];
+    }
+
+    /**
+     * BÁO GIÁ GỐC (layout báo giá nhiều mục, cước/dầu × 40/20) → dòng giá phẳng; giá quy về CỘT CHUNG
+     * 20FT = cước20+dầu20 · 40FT = cước40+dầu40 (1 số tổng).
      *  - Mục "2. DRAYAGE BY TRIP": Loại = Connect/Disconnect (theo tiêu đề 2.x.1/2.x.2),
      *    Điểm Hạ = cảng (2.x: HAI PHONG/LACH HUYEN/ICD QV/ICD TP), KIND=C, FROM=D, TO1..4=E..H,
      *    Distance=I, Transport fee 40/20 = J/K, Fuel fee 40/20 = L/M.
      *  - Mục "3. BARGING BY TRIP" (3.1 DRY / 3.2 NOR): Loại=Non, KIND=DRY/NOR CONTAINER,
      *    FROM=D, Điểm Hạ = điểm đến (TO cuối, thường H = HPP/LHP).
-     * Trả [] nếu không có sheet "import".
      */
-    public function parseQuotationRows(string $path, ?string $sheet = null): array
+    private function parseLegacyQuotationRows(array $rows): array
     {
-        $rd = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($path);
-        $rd->setReadDataOnly(true);
-        $ss = $rd->load($path);
-        $sh = null;
-        if ($sheet !== null && $sheet !== '') {
-            $sh = $ss->getSheetByName($sheet);   // sheet do user chọn
-        } else {
-            foreach ($ss->getSheetNames() as $n) if (mb_strtolower(trim($n)) === 'import') { $sh = $ss->getSheetByName($n); break; }
-        }
-        if (! $sh) return [];
-        $rows = $sh->toArray(null, true, false, false);
         $num = fn ($v) => (int) preg_replace('/[^\d]/', '', (string) $v);
+        // Giá tổng theo cỡ: bỏ cỡ không có giá (0).
+        $prices = function (int $t40, int $t20) { $p = []; if ($t20 > 0) $p['20FT'] = $t20; if ($t40 > 0) $p['40FT'] = $t40; return $p; };
         // GỘP khoảng trắng + xuống dòng (ô KIND/FROM/TO trong file gốc hay có \n do wrap) → chuẩn để khớp giá.
         $cl = fn ($r, $i) => preg_replace('/\s+/u', ' ', trim((string) ($r[$i] ?? '')));
         $mode = null; $loc = null; $conn = null; $kind = null; $lastKind = ''; $out = [];
@@ -1138,10 +1303,10 @@ trait HandlesPricingAndImport
             if ($t40 <= 0 && $t20 <= 0) continue;
             if ($mode === 'drayage' && $loc && $conn) {
                 $k = $C !== '' ? $C : $lastKind; $lastKind = $k;   // KIND là ô GỘP → kéo xuống cho cả nhóm
-                $out[] = ['conn' => $conn, 'loc' => $loc, 'kind' => $k, 'from' => $from, 'to1' => $cl($r, 4), 'to2' => $cl($r, 5), 'to3' => $cl($r, 6), 'to4' => $cl($r, 7), 'distance' => $num($r[8] ?? ''), 'transFee40' => $t40, 'transFee20' => $t20, 'fuelFee40' => $num($r[11] ?? ''), 'fuelFee20' => $num($r[12] ?? '')];
+                $out[] = ['conn' => $conn, 'loc' => $loc, 'kind' => $k, 'from' => $from, 'to1' => $cl($r, 4), 'to2' => $cl($r, 5), 'to3' => $cl($r, 6), 'to4' => $cl($r, 7), 'distance' => $num($r[8] ?? ''), 'prices' => $prices($t40 + $num($r[11] ?? ''), $t20 + $num($r[12] ?? ''))];
             } elseif ($mode === 'barging' && $kind) {
                 $drop = $cl($r, 7) ?: ($cl($r, 6) ?: ($cl($r, 5) ?: $cl($r, 4)));
-                $out[] = ['conn' => 'Non', 'loc' => $drop, 'kind' => $kind, 'from' => $from, 'to1' => '', 'to2' => '', 'to3' => '', 'to4' => '', 'distance' => $num($r[8] ?? ''), 'transFee40' => $t40, 'transFee20' => $t20, 'fuelFee40' => $num($r[11] ?? ''), 'fuelFee20' => $num($r[12] ?? '')];
+                $out[] = ['conn' => 'Non', 'loc' => $drop, 'kind' => $kind, 'from' => $from, 'to1' => '', 'to2' => '', 'to3' => '', 'to4' => '', 'distance' => $num($r[8] ?? ''), 'prices' => $prices($t40 + $num($r[11] ?? ''), $t20 + $num($r[12] ?? ''))];
             }
         }
         return $out;
@@ -1158,20 +1323,24 @@ trait HandlesPricingAndImport
     }
 
     /**
-     * KIỂM TRA (dry-run) báo giá gốc: parse sheet đã chọn → BÁO CÁO (không ghi DB).
-     * Trả sheets (để FE chọn), rows (giữ lại để Import không phải parse/upload lại) + tổng hợp.
+     * KIỂM TRA (dry-run) file báo giá: parse sheet đã chọn → BÁO CÁO (không ghi DB).
+     * Trả sheets (để FE chọn), format (flat/legacy), contCols (cột loại cont đọc được), errors (chặn), warnings.
      */
     public function validateQuotation(string $path, ?string $sheet = null): array
     {
         $sheets = $this->quotationSheetNames($path);
         if (! $sheets) return ['ok' => false, 'sheets' => [], 'msg' => 'Không đọc được file Excel.'];
-        // sheet mặc định: ưu tiên 'import', không có thì sheet đầu.
+        // sheet mặc định: ưu tiên 'Bảng giá' (mẫu phẳng) → 'import' (báo giá gốc) → sheet đầu.
         $pick = $sheet;
         if ($pick === null || $pick === '') {
-            foreach ($sheets as $n) if (mb_strtolower(trim($n)) === 'import') { $pick = $n; break; }
+            foreach ($sheets as $n) if (in_array(mb_strtolower(trim($n)), ['bảng giá', 'bang gia'], true)) { $pick = $n; break; }
+            if ($pick === null) foreach ($sheets as $n) if (mb_strtolower(trim($n)) === 'import') { $pick = $n; break; }
             $pick ??= $sheets[0];
         }
-        $rows = in_array($pick, $sheets, true) ? $this->parseQuotationRows($path, $pick) : [];
+        $parsed = in_array($pick, $sheets, true)
+            ? $this->parseQuotation($path, $pick)
+            : ['format' => null, 'rows' => [], 'contCols' => [], 'errors' => [], 'warnings' => []];
+        $rows = $parsed['rows'];
         // Tổng hợp báo cáo
         $by = ['Connect' => 0, 'Disconnect' => 0, 'Non' => 0];
         $kinds = []; $locs = [];
@@ -1180,43 +1349,54 @@ trait HandlesPricingAndImport
             $k = $x['kind'] !== '' ? $x['kind'] : '(trống)'; $kinds[$k] = ($kinds[$k] ?? 0) + 1;
             if ($x['loc'] !== '') $locs[$x['loc']] = true;
         }
-        $warnings = [];
-        if (! $rows) $warnings[] = "Sheet '{$pick}' không có dòng giá hợp lệ — chọn đúng sheet báo giá (thường tên 'import').";
+        $warnings = $parsed['warnings']; $errors = $parsed['errors'];
+        if (! $rows && ! $errors) $warnings[] = "Sheet '{$pick}' không có dòng giá hợp lệ — chọn sheet 'Bảng giá' (file mẫu) hoặc 'import' (báo giá gốc).";
         foreach ($rows as $x) { if ($x['loc'] === '' || $x['from'] === '') { $warnings[] = 'Có dòng thiếu Điểm hạ/FROM.'; break; } }
         // Tên cảng/nhà máy chưa khai ánh xạ → CHẶN import (xem unmappedPriceValues).
         $unmapped = $this->unmappedPriceValues($rows);
         if ($unmapped) $warnings[] = $this->unmappedPriceError($unmapped)['msg'];
+        // Cột loại cont ngoài danh mục → CHẶN.
+        $unknown = $this->unknownContKeys($rows);
+        if ($unknown) $errors[] = $this->unknownContError($unknown)['msg'];
         return [
-            'ok'       => count($rows) > 0 && ! $unmapped,
-            'unmapped' => $unmapped,
-            'sheets'  => array_values($sheets),
-            'sheet'   => $pick,
-            'total'   => count($rows),
-            'by'      => $by,
-            'kinds'   => collect($kinds)->map(fn ($v, $k) => ['kind' => $k, 'count' => $v])->values()->all(),
-            'locs'    => array_keys($locs),
-            'warnings' => array_values(array_unique($warnings)),
-            'rows'    => $rows,   // FE giữ để Import (không parse lại)
+            'ok'          => count($rows) > 0 && ! $unmapped && ! $errors,
+            'unmapped'    => $unmapped,
+            'unknownCont' => array_keys($unknown),
+            'format'      => $parsed['format'],
+            'contCols'    => $parsed['contCols'],
+            'sheets'      => array_values($sheets),
+            'sheet'       => $pick,
+            'total'       => count($rows),
+            'by'          => $by,
+            'kinds'       => collect($kinds)->map(fn ($v, $k) => ['kind' => $k, 'count' => $v])->values()->all(),
+            'locs'        => array_keys($locs),
+            'errors'      => array_values(array_unique($errors)),
+            'warnings'    => array_values(array_unique($warnings)),
+            'rows'        => $rows,
         ];
     }
 
-    /** Nhập báo giá gốc vào 1 BOOK: parse → thay toàn bộ (replace) hoặc gộp (merge) dòng giá. */
+    /** Nhập file báo giá (mẫu phẳng hoặc báo giá gốc) vào 1 BOOK: parse → thay toàn bộ (replace) hoặc gộp (merge). */
     public function importQuotationToBook(int $bookId, string $path, bool $replace = true, ?string $sheet = null): array
     {
         $book = TruckingPriceBook::find($bookId);
         if (! $book) return ['ok' => false, 'msg' => 'Bảng giá không tồn tại.'];
-        $rows = $this->parseQuotationRows($path, $sheet);
-        if (! $rows) return ['ok' => false, 'msg' => "Không đọc được dòng giá nào — kiểm tra sheet đúng định dạng báo giá."];
-        // Chặn TRƯỚC khi ghi: tên trong báo giá phải khai được ánh xạ sang ký hiệu.
+        $parsed = $this->parseQuotation($path, $sheet);
+        $rows = $parsed['rows'];
+        if ($parsed['errors']) return ['ok' => false, 'errors' => $parsed['errors'], 'msg' => implode(' ', array_slice($parsed['errors'], 0, 5))];
+        if (! $rows) return ['ok' => false, 'msg' => "Không đọc được dòng giá nào — kiểm tra sheet đúng định dạng (mẫu 'Bảng giá' hoặc báo giá gốc)."];
+        // Chặn TRƯỚC khi ghi: tên trong báo giá phải khai được ánh xạ sang ký hiệu; cột loại cont phải có trong danh mục.
         $unmapped = $this->unmappedPriceValues($rows);
         if ($unmapped) return $this->unmappedPriceError($unmapped);
+        $unknown = $this->unknownContKeys($rows);
+        if ($unknown) return $this->unknownContError($unknown);
         $cust = TruckingCustomer::find($book->customer_id);
         $res = $replace
             ? $this->savePriceBookRows($bookId, $rows)
             : $this->importPriceRows($cust?->name ?? '', $rows, false, $bookId);
         $by = [];
         foreach ($rows as $x) $by[$x['conn']] = ($by[$x['conn']] ?? 0) + 1;
-        return ['ok' => true, 'imported' => count($rows), 'by' => $by, 'priceList' => $res['priceList'] ?? $this->priceBookRows($bookId)];
+        return ['ok' => true, 'imported' => count($rows), 'by' => $by, 'format' => $parsed['format'], 'contCols' => $parsed['contCols'], 'priceList' => $res['priceList'] ?? $this->priceBookRows($bookId)];
     }
 
 }

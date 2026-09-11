@@ -85,7 +85,6 @@ trait HandlesStatementPricing
         $norm = fn ($v) => mb_strtoupper(preg_replace('/\s+/u', '', trim(Str::ascii((string) $v))) ?? '');   // bỏ DẤU CÁCH giữa: "ICD QV" == "ICDQV"
         $rc   = fn ($v) => $codeMap[$norm($v)] ?? $norm($v);
 
-        $cont20   = str_contains((string) $s->cont_type, '20');
         $isExport = str_contains(mb_strtolower((string) $s->io), 'xu');
         // KIND theo CRU. (SÀ LAN không còn ép kind — giá cont giữ nguyên; phí sà lan là khoản RIÊNG tính bên dưới.)
         $kind = $s->cru
@@ -108,24 +107,30 @@ trait HandlesStatementPricing
         // Giá CONT: khớp theo đi + nhà máy + hạ + KIND + kết nối (giữ ràng buộc kho).
         $p = $this->matchPriceRow($priceList, $loFrom, $loDrop, $khoCodes, $nkKind, $conn, true, false);
 
-        $cuoc = $p ? (int) ($cont20 ? $p['transFee20'] : $p['transFee40']) : 0;
-        $dau  = $p ? (int) ($cont20 ? $p['fuelFee20'] : $p['fuelFee40']) : 0;
+        // GIÁ THEO LOẠI CONT: dòng giá khớp tuyến → tra cột đúng Loại cont của lô (fallback cột chung 20FT/40FT).
+        // 1 số TỔNG (cước + dầu, không còn tách): giữ khóa `cuoc` = tổng, `dau` = 0 để bảng kê/báo cáo/snapshot cũ
+        // (statementAmounts, lineAmounts cộng cuoc+dau) chạy nguyên. Tuyến khớp nhưng thiếu cột loại cont → CHƯA khớp.
+        $cp   = $p ? $this->contPriceFor($p['prices'] ?? null, (string) $s->cont_type) : null;
+        $cuoc = $cp ? (int) $cp['amount'] : 0;
+        $dau  = 0;
 
         // ===== PHÍ SÀ LAN (khoản RIÊNG) =====
         // CÓ Nơi hạ sà lan = ĐI SÀ LAN (không cần cờ riêng). Loại DRY/NOR SUY TỪ Loại cont:
         //   reefer (RF/RHC) → NOR, còn lại → DRY (vd 40HC→DRY, 40RF/40RHC→NOR).
         // Sà lan chở cont từ NƠI HẠ CỦA CONT (cảng) → NƠI HẠ SÀ LAN. Tra nhóm "Non · DRY/NOR CONTAINER":
         //   bảng giá from = nơi hạ cont (to_loc) · loc = nơi hạ sà lan (barge_drop). BỎ ràng buộc kho.
-        $bargeCuoc = 0; $bargeDau = 0; $bargeMatched = false; $bargeKind = null; $bp = null;
+        $bargeCuoc = 0; $bargeDau = 0; $bargeMatched = false; $bargeKind = null; $bp = null; $bcp = null;
         $bargeDropCode = $rc($s->barge_drop);
         $isBarge = ($bargeDropCode !== '');
         if ($isBarge) {
             $bargeKind = (preg_match('/R(F|HC|EEF)/i', (string) $s->cont_type) ? 'NOR' : 'DRY') . ' CONTAINER';
             $bp = $this->matchPriceRow($priceList, $loDrop, $bargeDropCode, [], $nk($bargeKind), $conn, false, true);
-            if ($bp) {
+            // Phí sà lan cũng theo LOẠI CONT (1 số tổng) — cùng quy tắc tra cột như giá cont.
+            $bcp = $bp ? $this->contPriceFor($bp['prices'] ?? null, (string) $s->cont_type) : null;
+            if ($bcp) {
                 $bargeMatched = true;
-                $bargeCuoc = (int) ($cont20 ? $bp['transFee20'] : $bp['transFee40']);
-                $bargeDau  = (int) ($cont20 ? $bp['fuelFee20'] : $bp['fuelFee40']);
+                $bargeCuoc = (int) $bcp['amount'];
+                $bargeDau  = 0;
             }
         }
 
@@ -148,11 +153,16 @@ trait HandlesStatementPricing
             'nhaMay'   => $khoCodes ? implode(' / ', $khoCodes) : '(lô chưa có kho/nhà máy)',
             'ha'       => $loDrop !== '' ? $loDrop : '(trống)',
             'kind'     => $kind, 'conn' => $conn,
+            // Loại cont của lô + các cột loại cont có trên dòng giá đã khớp tuyến → giải thích "tuyến khớp nhưng thiếu cột".
+            'contType' => trim((string) $s->cont_type),
+            'contKeys' => $p ? array_keys(is_array($p['prices'] ?? null) ? $p['prices'] : []) : [],
         ];
         $loTrinh = implode(' → ', array_filter([$loFrom, implode('+', $khoCodes), $loDrop], fn ($x) => $x !== ''));
 
         return [
-            'matched' => (bool) $p, 'conn' => $conn, 'kind' => $kind, 'is20' => $cont20,
+            // matched = khớp TUYẾN và có giá cho LOẠI CONT; routeMatched = chỉ khớp tuyến (để UI chỉ rõ thiếu cột loại cont).
+            'matched' => (bool) ($p && $cp), 'routeMatched' => (bool) $p, 'conn' => $conn, 'kind' => $kind,
+            'contType' => trim((string) $s->cont_type), 'contKey' => $cp['key'] ?? null, 'bargeContKey' => $bcp['key'] ?? null,
             'cuoc' => $cuoc, 'dau' => $dau, 'chiHo' => $chiHo, 'choHoItems' => $choHoItems, 'costItems' => $costItems,
             'route' => $route, 'loTrinh' => $loTrinh, 'kho' => trim((string) $s->kho), 'noDrop' => $noDrop, 'diag' => $diag,
             'ftHours' => $ft['hours'] ?? null, 'ftThreshold' => $ft['threshold'] ?? null, 'ftBasis' => $ft['basis'] ?? null,
@@ -165,6 +175,60 @@ trait HandlesStatementPricing
             'priceBook' => $ctx['priceBook'] ?? null,
             'phaiThu' => $cuoc + $dau + $chiHo + $bargeCuoc + $bargeDau,
         ];
+    }
+
+    // ===================================================================
+    // GIÁ THEO LOẠI CONT — khóa cột + tra giá (nguồn chân lý, dùng cho cả import/lưu bảng giá)
+    // ===================================================================
+
+    /**
+     * Khóa loại cont CHUẨN: in hoa, bỏ dấu, chỉ giữ A-Z0-9, bỏ tiền tố "CONT".
+     * "40'HC" = "40 hc" = "40HC" · "cont45" = "45" · "20FT" giữ nguyên.
+     */
+    private function contKeyNorm($v): string
+    {
+        $k = mb_strtoupper(preg_replace('/[^A-Za-z0-9]/', '', Str::ascii((string) $v)) ?? '');
+        return preg_replace('/^CONT(?=\d)/', '', $k) ?? $k;
+    }
+
+    /** Cột CHUNG theo cỡ ("20FT"/"40FT"/"45FT" hoặc "20"/"40"/"45") — áp mọi loại cont cùng cỡ chưa có cột riêng. */
+    private function contKeyIsGeneric(string $k): bool
+    {
+        return (bool) preg_match('/^\d{2}(FT)?$/', $k);
+    }
+
+    /** Cỡ cont = 2 chữ số đầu của khóa ("40HC" → "40"); rỗng nếu không có. */
+    private function contSize(string $k): string
+    {
+        return preg_match('/^(\d{2})/', $k, $m) ? $m[1] : '';
+    }
+
+    /**
+     * Tra giá TỔNG (cước + dầu) của 1 loại cont trong map prices của dòng giá.
+     * Thứ tự: cột đúng loại cont → cột chung cùng cỡ (20FT/40FT/45FT) → cont KHÔNG phải cỡ 20 dùng cột chung 40
+     * (giữ hành vi cũ "có chữ 20 → 20FT, còn lại → 40FT" cho bảng giá backfill). Không có → null (chưa khớp).
+     *
+     * @return array{key:string,amount:int}|null
+     */
+    private function contPriceFor(?array $prices, ?string $contType): ?array
+    {
+        if (! $prices) return null;
+        $map = [];
+        foreach ($prices as $k => $v) {
+            $nk = $this->contKeyNorm($k);
+            if ($nk !== '' && $v !== null && $v !== '') $map[$nk] = (int) round((float) $v);
+        }
+        if (! $map) return null;
+        $ct = $this->contKeyNorm($contType);
+        if ($ct !== '' && isset($map[$ct])) return ['key' => $ct, 'amount' => $map[$ct]];
+        $generic = function (string $sz) use ($map) {
+            foreach ([$sz . 'FT', $sz] as $g) if (isset($map[$g])) return ['key' => $g, 'amount' => $map[$g]];
+            return null;
+        };
+        $size = $this->contSize($ct);
+        if ($size !== '' && ($g = $generic($size))) return $g;
+        if ($size !== '20' && ($g = $generic('40'))) return $g;
+        return null;
     }
 
     /**
