@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Trucking;
 
 use App\Models\TruckingShipment;
+use App\Support\ShipmentColumns;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -16,7 +17,7 @@ class ShipmentController extends BaseTruckingController
             'page' => $this->svc->pagedShipments('icd', []),  // trang 1 (server-side paginate)
             'cfg'  => $this->svc->shipmentBoardConfig(),       // tối thiểu; danh mục dropdown lazy-load khi mở popup
             'sibs' => $this->svc->siblingsList('icd'),        // picker "ra hộ" (rút gọn)
-        ]));
+        ]) + ['cols' => ShipmentColumns::allowed()]);   // cột nào vai trò này được xem
     }
 
     /** Toàn bộ dữ liệu cho 1 lần khởi tạo app. */
@@ -73,6 +74,7 @@ class ShipmentController extends BaseTruckingController
             'ship.to'         => ['nullable', 'string'],
             'ship.bargeDrop'  => ['nullable', 'string'],
             'ship.thanhLy'    => ['nullable', 'string'],   // ngày thanh lý tờ khai; gửi null = bỏ đánh dấu
+            'ship.bksVao'     => ['nullable', 'string'],   // gán xe nhanh ngoài bảng; gửi '' = bỏ gán
         ]);
         $n = $this->svc->bulkUpdateShipments($data['ids'], $data['ship']);
         return response()->json(['ok' => true, 'updated' => $n]);

@@ -29,6 +29,7 @@ use App\Models\TruckingShipmentWarehouse;
 use App\Models\TruckingVehicleCostType;
 use App\Models\TruckingAssetCategory;
 use App\Support\Hashid;
+use App\Support\ShipmentColumns;
 use App\Models\TruckingStatement;
 use App\Models\TruckingVehicle;
 use App\Models\TruckingWarehouse;
@@ -238,8 +239,11 @@ trait HandlesShipments
 
         // --- Aggregate toàn cục trên tập đã tìm ---
         // Tổng chi phí (header) = số NET: SUM(ROUND(amount / (1 + vat/100))).
-        $totalCost = (int) round((float) TruckingCostLine::whereIn('shipment_id', $searched()->select('id'))
-            ->sum(DB::raw('ROUND(amount / (1 + COALESCE(vat,0)/100))')));
+        // Không có quyền xem cột Chi phí → không truy vấn, không gửi con số ra client.
+        $totalCost = ShipmentColumns::can('cost')
+            ? (int) round((float) TruckingCostLine::whereIn('shipment_id', $searched()->select('id'))
+                ->sum(DB::raw('ROUND(amount / (1 + COALESCE(vat,0)/100))')))
+            : 0;
 
         // "Đã ra" = CONT này có GIỜ XE RA (gio_xe_ra) của chính nó. CHỈ xét gio_xe_ra — không xét bks_ra
         // (BKS có thể chỉ là xe kéo, chưa chắc cont đã ra) cũng không xét việc xe kéo cont KHÁC ra.
@@ -315,8 +319,10 @@ trait HandlesShipments
         if (! $all) $list->forPage($page, $perPage);
         // "Thu phí (cước+dầu)" CHO LÔ ĐÃ RA — DÙNG CHUNG priceShipment với bảng kê (1 nguồn công thức,
         // sửa 1 chỗ áp cả 2). Chỉ tính cho trang đang xem (không tính khi $all=export) để nhẹ query.
-        $data = $list->get()->map(function ($s) use ($all) {
+        $canRevenue = ShipmentColumns::can('revenue');
+        $data = $list->get()->map(function ($s) use ($all, $canRevenue) {
             $arr = $this->shipmentToArray($s);
+            if (! $canRevenue) return $arr;   // không được xem cột Thu phí → khỏi định giá, khỏi gửi
             $out = ! empty($s->gio_xe_ra);   // "đã ra" = có Giờ xe ra
             if (! $all && $out) {
                 $sheet = strtoupper((string) $s->sheet);
@@ -853,7 +859,7 @@ trait HandlesShipments
         return TruckingShipment::whereIn('id', $ids)
             ->with(['customer', 'costLines', 'revenueLines', 'payments', 'raOther:id,cont_no,bks_ra,gio_xe_ra'])
             ->get()
-            ->map(fn ($s) => $this->shipmentToArray($s))
+            ->map(fn ($s) => $this->shipmentToArray($s, false))
             ->all();
     }
 
@@ -880,9 +886,13 @@ trait HandlesShipments
     // ===================================================================
     // SHIPMENT — serialize & persist
     // ===================================================================
-    public function shipmentToArray(TruckingShipment $s): array
+    /**
+     * $columnPerms = false: trả nguyên dữ liệu, không cắt theo quyền cột của bảng Lô hàng.
+     * Dùng cho module có quyền riêng và cần số liệu để tính (vd bảng kê cần số chi hộ).
+     */
+    public function shipmentToArray(TruckingShipment $s, bool $columnPerms = true): array
     {
-        return [
+        $arr = [
             'id'           => $s->id,
             'hashid'       => Hashid::encode($s->id),
             'customer'     => $s->customer?->name ?? '',
@@ -977,6 +987,8 @@ trait HandlesShipments
                 'ghiChu'   => $s->ghi_chu ?? '',
             ],
         ];
+
+        return $columnPerms ? ShipmentColumns::strip($arr) : $arr;
     }
 
     private function revLines(TruckingShipment $s, string $kind): array
@@ -1319,6 +1331,9 @@ trait HandlesShipments
         if (isset($data['bargeDrop']) && trim((string) $data['bargeDrop']) !== '')  $only[] = 'bargeDrop';
         // Thanh lý tờ khai xét theo CÓ MẶT khóa (không theo "khác rỗng") vì bỏ đánh dấu = gửi null.
         if (array_key_exists('thanhLy', $data))                                    $only[] = 'thanhLy';
+        // BKS vào: ô "gán xe nhanh" ngoài bảng Lô hàng. Cũng xét theo CÓ MẶT khóa vì bỏ gán = gửi ''.
+        // Popup "Gán hàng loạt" không gửi khóa này nên không có đường xóa nhầm biển số cả loạt lô.
+        if (array_key_exists('bksVao', $data))                                     $only[] = 'bksVao';
         if (empty($only)) return 0;
 
         $n = 0;

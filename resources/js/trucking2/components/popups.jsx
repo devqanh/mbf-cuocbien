@@ -1,6 +1,6 @@
 import React from "react";
 const { useState, useRef, useMemo, useEffect } = React;
-import { I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, fmtVND, fmtNum, fmtShort, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, useIsMobile } from "@trk/lib.jsx";
+import { canCol, I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, fmtVND, fmtNum, fmtShort, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, useIsMobile } from "@trk/lib.jsx";
 import { DTField, Field, DriverSpendRows, VatLine, ItemRows, ChiHoRows, DoanhThuRows, ChkBox, TRACK_COLORS, SWATCHES, colorHex, FlagPicker, CostLineRows, PaymentRows, Seg } from "./shared.jsx";
 
 // Giờ hiện tại dạng DTField ("YYYY-MM-DDTHH:MM", giờ địa phương) cho nút "Bây giờ".
@@ -485,7 +485,9 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", padding: "10px 0 6px" }}>
           {[
             { on: !!ship.cru, set: (v) => set({ cru: v }), icon: "bi-recycle", label: "Hàng CRU" },
-            { on: extHired, set: toggleExt, icon: "bi-truck", label: "Thuê xe ngoài" },
+            // Thuê xe ngoài tạo/sửa 1 DÒNG CHI PHÍ nên đi theo quyền cột Chi phí: không được xem
+            // chi phí thì cũng không thấy nút này (tránh bật nhầm khi dòng cũ bị ẩn khỏi payload).
+            ...(canCol("cost") ? [{ on: extHired, set: toggleExt, icon: "bi-truck", label: "Thuê xe ngoài" }] : []),
           ].map((o, i) => (
             <button key={i} type="button" onClick={() => o.set(!o.on)}
               style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "9px 14px", borderRadius: 10, cursor: "pointer", fontSize: 13.5, fontWeight: 600,
@@ -496,7 +498,7 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
           ))}
         </div>
         {/* THUÊ XE NGOÀI: hiện NGAY dưới nút — Nhà xe (bắt buộc) + cước + ghi chú. */}
-        {extHired && (
+        {canCol("cost") && extHired && (
           <div style={{ padding: "10px 12px", marginTop: 8, background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", borderRadius: 9 }}>
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 200px", gap: 12, alignItems: "end" }}>
               <Field label="Nhà xe ngoài" hint="bắt buộc" req>

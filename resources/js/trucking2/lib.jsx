@@ -168,8 +168,9 @@ function matchRank(label, ql) {
   return 3;
 }
 
-function Combo({ value, onChange, options = [], onCreate, placeholder = "Chọn…", small, clearable, strict }) {
-  const [open, setOpen] = useState(false);
+function Combo({ value, onChange, options = [], onCreate, placeholder = "Chọn…", small, clearable, strict, autoOpen }) {
+  // autoOpen: bung sẵn danh sách ngay khi mount — ô sửa nhanh trong bảng chỉ tốn 1 cú bấm.
+  const [open, setOpen] = useState(!!autoOpen);
   const [q, setQ] = useState("");
   const [pos, setPos] = useState(null);   // vị trí dropdown (fixed) — thoát khỏi overflow của modal
   const wrapRef = useRef(null);
@@ -540,6 +541,13 @@ function Btn({ children, onClick, variant = "ghost", disabled = false, busy = fa
   );
 }
 
+/* ============================ quyền xem cột ============================ */
+// Quyền xem từng cột bảng Lô hàng (shipments.view_*), server gửi qua window.__TRK.cols.
+// Thiếu cờ = được xem, để trang không vỡ khi payload chưa có cols.
+function canCol(k) {
+  try { return (((window.__TRK || {}).cols) || {})[k] !== false; } catch (e) { return true; }
+}
+
 /* ============================ compute ============================ */
 function calcCost(c) {
   const v = c || {};
@@ -631,4 +639,4 @@ const fmtHours = (h) => {
   return (neg ? "-" : "") + (mm ? `${hh}h${String(mm).padStart(2, "0")}` : `${hh}h`);
 };
 
-export { useState, useRef, useMemo, useEffect, useCallback, useIsMobile, onlyDigits, groupVND, toNum, fmtVND, fmtNum, fmtShort, fmtDate, PAYERS, VAT_RATE, STATEMENT_VAT_RATES, AXLE_OPTS, axleLabel, statementAmounts, lineAmounts, I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours };
+export { canCol, useState, useRef, useMemo, useEffect, useCallback, useIsMobile, onlyDigits, groupVND, toNum, fmtVND, fmtNum, fmtShort, fmtDate, PAYERS, VAT_RATE, STATEMENT_VAT_RATES, AXLE_OPTS, axleLabel, statementAmounts, lineAmounts, I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours };

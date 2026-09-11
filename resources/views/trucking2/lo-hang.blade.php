@@ -12,6 +12,7 @@ window.__TRK = {
   csrf: '{{ csrf_token() }}',
   canEdit: {{ $canEdit ? 'true' : 'false' }},
   canDelete: {{ $canDelete ? 'true' : 'false' }},
+  cols: @json($cols),   {{-- quyền xem từng cột bảng Lô hàng (shipments.view_*) --}}
   routes: {
     shipmentStore: '{{ route("trucking2.shipments.store") }}',
     shipmentCheck: '{{ route("trucking2.shipmentCheck") }}',

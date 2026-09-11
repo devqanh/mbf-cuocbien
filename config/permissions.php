@@ -117,6 +117,16 @@ return [
         'shipments.update' => ['label' => 'Sửa lô hàng',  'desc' => 'Cập nhật thông tin lô hàng đã có'],
         'shipments.delete' => ['label' => 'Xoá lô hàng',  'desc' => 'Xoá lô hàng khỏi hệ thống'],
 
+        // Xem từng CỘT của bảng Lô hàng. Bỏ quyền = ẩn cột đó với vai trò. Cột Khách hàng và Cont
+        // luôn hiện (ẩn thì bảng vô nghĩa). Hai cột tiền còn được cắt ở server, không gửi số ra máy người xem.
+        'shipments.view_id'       => ['label' => 'Cột ID',         'desc' => 'Cột ID lô trong bảng Lô hàng (số thứ tự trong CSDL)'],
+        'shipments.view_customs'  => ['label' => 'Cột Thanh lý',   'desc' => 'Cột Thanh lý tờ khai (ô tích + ngày thanh lý)'],
+        'shipments.view_route'    => ['label' => 'Cột Tuyến',      'desc' => 'Cột Tuyến: nơi lấy → nơi hạ và chuỗi ký hiệu tuyến'],
+        'shipments.view_plate'    => ['label' => 'Cột BKS vào',    'desc' => 'Biển số xe kéo cont, hiện trong cột Tuyến'],
+        'shipments.view_schedule' => ['label' => 'Cột Lịch trình', 'desc' => 'Cột Lịch trình: KH đến, cắt máng, ngày cont đến/ra, CONNECT/DISCONNECT'],
+        'shipments.view_cost'     => ['label' => 'Cột Chi phí',    'desc' => 'Cột Chi phí + popup chi phí lô + nút "Chi cho lô hàng" + ô Tổng chi phí. Bỏ quyền: server không gửi số tiền chi'],
+        'shipments.view_revenue'  => ['label' => 'Cột Thu phí',    'desc' => 'Cột Thu phí (cước + dầu) — giá bán cho khách. Bỏ quyền: server không định giá, không gửi số'],
+
         'prices.view'   => ['label' => 'Xem bảng giá',         'desc' => 'Xem bảng giá đã gửi theo từng khách'],
         'prices.update' => ['label' => 'Sửa & import bảng giá', 'desc' => 'Chỉnh sửa bảng giá và import bảng giá từ Excel'],
 

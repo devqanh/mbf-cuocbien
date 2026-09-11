@@ -50,3 +50,4 @@
 - [Lệch ngày ô Excel](excel-date-cell-skew.md) — ô ngày/giờ kiểu Date của Excel đọc bằng SheetJS lệch ~30s ở múi VN (lùi 1 ngày / hụt 1 phút); parser client phải snapToMinute
 - [Báo cáo tài sản 3 tab](asset-report.md) — /bao-cao-tai-san: Tổng quan (KPI so kỳ trước, xu hướng tháng, cơ cấu theo TÊN khoản vì cost_type_id không ai điền, top xe, cảnh báo) · Chi tiết theo xe · Sổ tài sản khấu hao đến hôm nay; Donut chung ở components/charts.jsx
 - [Deploy aaPanel build](deploy-aapanel-build.md) — prod mbf.dewa.vn deploy bằng script aaPanel (pull→migrate→npm run build); panel chmod 644 làm mất exec bit vite/esbuild → scripts/build.cjs tự +x và gọi vite.js bằng node; npm 12 tự ghi allowScripts vào package.json (đã commit) → git checkout -- package.json trước khi pull nếu server báo M
+- [Quyền xem cột Lô hàng](shipment-column-permissions.md) — shipments.view_* theo từng cột; 2 cột tiền cắt ở server, 5 cột kia chỉ ẩn UI

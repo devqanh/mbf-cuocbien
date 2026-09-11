@@ -1,6 +1,6 @@
 import React from "react";
 const { useState, useMemo, useEffect, useRef } = React;
-import { I, fmtVND, fmtShort, fmtDate, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, Combo, MultiCombo, useIsMobile, DateField } from "@trk/lib.jsx";
+import { canCol, I, fmtVND, fmtShort, fmtDate, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, Combo, MultiCombo, useIsMobile, DateField } from "@trk/lib.jsx";
 import { CostPopup, InfoPopup, colorHex } from "@trk/pop.jsx";
 import { SortBtn, CellBtn, Badge, EditCell, TH, TD } from "@trk/ui.jsx";
 import { loCountOf, parseImportRows, buildTemplateWb, parseCshtRows, buildCshtTemplateWb, cshtRowCount, parseUpdateRows, buildUpdateWb, parseDeclarationRows, buildDeclarationWb } from "./excel.js";
@@ -29,6 +29,7 @@ const ioTone = (io) => { const v = (io || "").toLowerCase(); return v.includes("
 function ShipmentsApp() {
   const isMobile = useIsMobile();
   const T = window.__TRK || {}; const ROUTES = T.routes || {}; const B = T.boot || {};
+  const col = canCol;   // quyền xem từng cột (shipments.view_*) — xem lib.jsx
   const DEFAULT_CFG = { locations: [], locationCode: {}, customers: [], customerInfo: {}, contTypes: [], warehouses: [], payers: [], costItems: [], choHoItems: [], revItems: [], vehicles: [], vehicleType: {}, drivers: [], prices: {}, costColors: {}, vatDefault: { hph: "8", icd: "0" }, freeTimeHours: "4" };
   const api = (method, url, body) => window.trkApi(method, url, body);
 
@@ -661,6 +662,57 @@ function ShipmentsApp() {
       style={{ width: size, height: size, accentColor: "var(--good)", cursor: tlBusy.has(s.id) ? "wait" : "pointer" }} />
   );
 
+  // ----- Gán xe nhanh ngay trên bảng: bấm ô BKS → hiện combo, chọn xong lưu luôn (như ô tích Thanh lý) -----
+  const [plateEdit, setPlateEdit] = useState(null);        // id lô đang mở combo chọn xe
+  const [plateBusy, setPlateBusy] = useState(new Set());
+  const assignPlate = async (s, v) => {
+    setPlateEdit(null);
+    const next = String(v || "").trim();
+    const prev = s.bksVao || "";
+    if (next === prev) return;
+    setData((list) => list.map((x) => (x.id === s.id ? { ...x, bksVao: next } : x)));   // hiện ngay
+    setPlateBusy((p) => new Set(p).add(s.id));
+    try {
+      const res = await api("POST", ROUTES.shipmentBulk, { ids: [s.id], ship: { bksVao: next } });
+      if (!res || !res.ok) throw new Error("save failed");
+      window.trkToast && window.trkToast(next ? "Đã gán xe " + next : "Đã bỏ gán xe");
+    } catch (e) {
+      setData((list) => list.map((x) => (x.id === s.id ? { ...x, bksVao: prev } : x)));   // hỏng → trả lại
+      window.trkToast && window.trkToast("Không lưu được biển số", "error");
+    } finally { setPlateBusy((p) => { const n = new Set(p); n.delete(s.id); return n; }); }
+  };
+  useEffect(() => {
+    if (plateEdit == null) return;
+    const onKey = (e) => { if (e.key === "Escape") setPlateEdit(null); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [plateEdit]);
+  // Hàm render (không phải component lồng) để combo giữ nguyên ô tìm khi bảng re-render.
+  const plateCell = (s) => {
+    const plate = String(s.bksVao || "").trim();
+    const editable = T.canEdit && !String(s.id).startsWith("tmp");
+    if (plateEdit === s.id) return (
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 152, margin: "3px 0" }}>
+        <Combo small autoOpen clearable value={plate} options={cfg.vehicles || []} placeholder="Chọn xe…"
+          onChange={(v) => assignPlate(s, v)} onCreate={(v) => addCfg("vehicles", v, { external: true })} />
+      </div>
+    );
+    return (
+      <div className="tnum" title={editable ? "Bấm để gán xe kéo cont" : "BKS vào — xe kéo cont"}
+        onClick={editable ? (e) => { e.stopPropagation(); ensureCfg(); setPlateEdit(s.id); } : undefined}
+        style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600,
+          color: plate ? "var(--ink-2)" : "var(--ink-4)", cursor: editable ? "pointer" : "default",
+          padding: editable ? "2px 7px" : 0, borderRadius: 7,
+          margin: (editable && !isMobile) ? "3px 0 0 -7px" : "3px 0 0 0",
+          border: "1px dashed " + (editable && !plate ? "var(--line)" : "transparent") }}
+        onMouseEnter={editable ? (e) => { e.currentTarget.style.background = "var(--accent-weak)"; } : undefined}
+        onMouseLeave={editable ? (e) => { e.currentTarget.style.background = "transparent"; } : undefined}>
+        <i className="bi bi-truck" style={{ fontSize: 11, color: "var(--ink-4)" }} />
+        {plateBusy.has(s.id) ? "Đang lưu…" : (plate || <span style={{ fontWeight: 400 }}>chưa gán xe</span>)}
+      </div>
+    );
+  };
+
   // ----- Chọn nhiều lô + thao tác hàng loạt -----
   const isSel = (id) => selIds.has(id);
   const toggleSel = (id) => setSelIds((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -942,7 +994,7 @@ function ShipmentsApp() {
 
       {/* summary strip */}
       <div style={{ display: "flex", gap: 0, background: "#fff", borderBottom: "1px solid var(--line)", padding: "0 22px", flexShrink: 0, flexWrap: "wrap" }}>
-        {[["Lô hàng", pageInfo.total, "ink"], ["Tổng chi phí", fmtVND(totalCost), "ink"]].map(([k, v, tone], i, arr) => (
+        {[["Lô hàng", pageInfo.total, "ink"], ...(col("cost") ? [["Tổng chi phí", fmtVND(totalCost), "ink"]] : [])].map(([k, v, tone], i, arr) => (
           <div key={k} style={{ padding: "13px 26px 13px 0", marginRight: 26, borderRight: i < arr.length - 1 ? "1px solid var(--line-2)" : "none" }}>
             <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 3 }}>{k}</div>
             <div className="tnum" style={{ fontSize: 16, fontWeight: 700, color: tone === "warn" ? "var(--warn)" : tone === "good" ? "var(--good)" : "var(--ink)" }}>{v}</div>
@@ -1123,18 +1175,18 @@ function ShipmentsApp() {
                         </div>
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
-                        <span className="tnum" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{String(s.id).startsWith("tmp") ? "mới" : ("#" + s.id)}</span>
-                        <label onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 700, color: isTl(s) ? "var(--good)" : "var(--ink-4)", cursor: "pointer" }}>
+                        {col("id") && <span className="tnum" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{String(s.id).startsWith("tmp") ? "mới" : ("#" + s.id)}</span>}
+                        {col("customs") && <label onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 700, color: isTl(s) ? "var(--good)" : "var(--ink-4)", cursor: "pointer" }}>
                           <TlBox s={s} size={16} /> TL
-                        </label>
+                        </label>}
                       </div>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, marginTop: 8 }}>
+                    {col("route") && <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, marginTop: 8 }}>
                       <span style={{ color: "var(--ink-2)" }}>{s.from || "—"}</span>
                       <span style={{ color: "var(--accent)", flexShrink: 0 }}><I.arrow /></span>
                       <span style={{ color: "var(--ink-2)" }}>{s.to || "—"}</span>
-                    </div>
-                    {(s.routeCodes || []).length > 0 && (
+                    </div>}
+                    {col("route") && (s.routeCodes || []).length > 0 && (
                       <div className="tnum" style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", fontSize: 11.5, color: "var(--ink-4)", marginTop: 2 }}>
                         {s.routeCodes.map((c, i) => (
                           <React.Fragment key={i}>
@@ -1149,19 +1201,19 @@ function ShipmentsApp() {
                         ? <span className="tnum" style={{ fontSize: 14.5, fontWeight: 700, color: "var(--ink)" }}>{s.contNo}</span>
                         : <FillContBtn ship={s} />}
                       <span className="tnum" style={{ fontSize: 12, color: "var(--ink-4)" }}>{s.contType}{s.kho ? " · " + s.kho : ""}</span>
-                      {String(s.bksVao || "").trim() && <span className="tnum" style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-2)" }}><i className="bi bi-truck" style={{ marginRight: 4, color: "var(--ink-4)" }} />{s.bksVao}</span>}
+                      {col("plate") && plateCell(s)}
                       <InvChip value={s.inv} />
                     </div>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 7 }}>
-                      {s.gioDenDuKien && <span className="tnum" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, color: "var(--accent)", background: "var(--accent-weak-2)" }}>
+                      {col("schedule") && s.gioDenDuKien && <span className="tnum" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, color: "var(--accent)", background: "var(--accent-weak-2)" }}>
                         <i className="bi bi-calendar-check" />KH đến · {fmtCM(s.gioDenDuKien)}</span>}
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, color: out ? "var(--good)" : "var(--warn)", background: out ? "var(--good-weak)" : "#fcf3e2" }}>
                         <span style={{ width: 6, height: 6, borderRadius: 999, background: "currentColor" }} />{out ? ("Đã ra" + (fmtRa(s.gioXeRa) ? " · " + fmtRa(s.gioXeRa) : "") + (s.bksRa && s.bksRa.trim() ? " · " + s.bksRa : "")) : "Chưa ra"}</span>
-                      {ft && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, color: ft.connect ? "var(--good)" : "var(--danger)", background: ft.connect ? "var(--good-weak)" : "#fce8e8" }}>
+                      {col("schedule") && ft && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, color: ft.connect ? "var(--good)" : "var(--danger)", background: ft.connect ? "var(--good-weak)" : "#fce8e8" }}>
                         <span style={{ width: 6, height: 6, borderRadius: 999, background: "currentColor" }} />{ft.connect ? "CONNECT" : "DISCONNECT"}</span>}
                     </div>
-                    <div style={{ display: "flex", gap: 8, marginTop: 11, paddingTop: 11, borderTop: "1px solid var(--line-2)" }}>
-                      <button type="button" onClick={(e) => { e.stopPropagation(); openModal({ id: s.id, type: "cost" }); }}
+                    {(col("cost") || col("revenue")) && <div style={{ display: "flex", gap: 8, marginTop: 11, paddingTop: 11, borderTop: "1px solid var(--line-2)" }}>
+                      {col("cost") && <button type="button" onClick={(e) => { e.stopPropagation(); openModal({ id: s.id, type: "cost" }); }}
                         style={{ flex: 1, textAlign: "left", border: "1px solid var(--line)", borderRadius: 9, background: "#fafbfc", padding: "8px 11px", cursor: "pointer" }}>
                         <div style={{ fontSize: 10.5, color: "var(--ink-4)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Chi phí</div>
                         <div className="tnum" style={{ fontSize: 14, fontWeight: 700, marginTop: 2 }}>{fmtVND(m.cost)}</div>
@@ -1174,12 +1226,12 @@ function ShipmentsApp() {
                           </div>
                         ) : null; })()}
                         {(s.tags || []).length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>{s.tags.map((t, i) => <span key={i} style={tagChip}>{t}</span>)}</div>}
-                      </button>
-                      <div style={{ flex: 1, border: "1px solid var(--line)", borderRadius: 9, background: "#fafbfc", padding: "8px 11px" }}>
+                      </button>}
+                      {col("revenue") && <div style={{ flex: 1, border: "1px solid var(--line)", borderRadius: 9, background: "#fafbfc", padding: "8px 11px" }}>
                         <div style={{ fontSize: 10.5, color: "var(--ink-4)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Thu phí (cước+dầu)</div>
                         <div className="tnum" style={{ fontSize: 14, fontWeight: 700, marginTop: 2, color: s.cuocDau == null ? "var(--ink-4)" : (s.cuocDau > 0 ? "var(--ink)" : "var(--warn)") }}>{s.cuocDau == null ? ((s.gioXeRa && s.gioXeRa.trim()) ? "—" : "chưa ra") : fmtVND(s.cuocDau)}</div>
-                      </div>
-                    </div>
+                      </div>}
+                    </div>}
                   </div>
                 );
               })}
@@ -1191,15 +1243,15 @@ function ShipmentsApp() {
             <thead>
               <tr>
                 <TH w={36} align="center"><input type="checkbox" checked={allPageSel()} onChange={toggleSelAllPage} title="Chọn tất cả lô trong trang" style={{ width: 15, height: 15, accentColor: "var(--accent)", cursor: "pointer" }} /></TH>
-                <TH w={48} align="center">ID</TH>
+                {col("id") && <TH w={48} align="center">ID</TH>}
                 <TH sticky><SortBtn k="customer" sort={sort} onSort={toggleSort}>Khách hàng</SortBtn></TH>
                 <TH>Cont</TH>
-                <TH w={78} align="center" title="Thanh lý tờ khai — tích để đánh dấu đã thanh lý">Thanh lý</TH>
-                <TH>Tuyến<div style={{ fontWeight: 400, fontSize: 10, color: "var(--ink-4)" }}>bks vào</div></TH>
-                <TH>Lịch trình</TH>
-                <TH align="right"><SortBtn k="cost" sort={sort} onSort={toggleSort} align="right">Chi phí</SortBtn></TH>
-                <TH align="right" w={130}>Thu phí<div style={{ fontWeight: 400, fontSize: 10, color: "var(--ink-4)" }}>cước + dầu</div></TH>
-                <TH w={172} align="center">Hành động</TH>
+                {col("customs") && <TH w={78} align="center" title="Thanh lý tờ khai — tích để đánh dấu đã thanh lý">Thanh lý</TH>}
+                {(col("route") || col("plate")) && <TH>{col("route") ? "Tuyến" : "BKS vào"}{col("route") && col("plate") && <div style={{ fontWeight: 400, fontSize: 10, color: "var(--ink-4)" }}>bks vào</div>}</TH>}
+                {col("schedule") && <TH>Lịch trình</TH>}
+                {col("cost") && <TH align="right"><SortBtn k="cost" sort={sort} onSort={toggleSort} align="right">Chi phí</SortBtn></TH>}
+                {col("revenue") && <TH align="right" w={130}>Thu phí<div style={{ fontWeight: 400, fontSize: 10, color: "var(--ink-4)" }}>cước + dầu</div></TH>}
+                {col("cost") && <TH w={172} align="center">Hành động</TH>}
               </tr>
             </thead>
             <tbody>
@@ -1213,7 +1265,7 @@ function ShipmentsApp() {
                     onMouseEnter={(e) => { if (!isSel(s.id)) e.currentTarget.style.background = "var(--accent-weak-2)"; }}
                     onMouseLeave={(e) => { if (!isSel(s.id)) e.currentTarget.style.background = "transparent"; }}>
                     <TD align="center">{String(s.id).startsWith("tmp") ? null : <input type="checkbox" checked={isSel(s.id)} onChange={() => toggleSel(s.id)} style={{ width: 15, height: 15, accentColor: "var(--accent)", cursor: "pointer" }} />}</TD>
-                    <TD align="center"><span className="tnum" style={{ color: "var(--ink-4)", fontSize: 12.5 }} title="ID trong CSDL">{String(s.id).startsWith("tmp") ? "mới" : s.id}</span></TD>
+                    {col("id") && <TD align="center"><span className="tnum" style={{ color: "var(--ink-4)", fontSize: 12.5 }} title="ID trong CSDL">{String(s.id).startsWith("tmp") ? "mới" : s.id}</span></TD>}
                     <TD sticky>
                       <EditCell onClick={() => openModal({ id: s.id, type: "info" })}>
                         <div style={{ fontWeight: 600, fontSize: 13.5 }}>{s.customer || <span style={{ color: "var(--ink-4)", fontWeight: 400 }}>(chưa đặt tên)</span>}</div>
@@ -1251,20 +1303,23 @@ function ShipmentsApp() {
                         )}
                       </EditCell>
                     </TD>
+                    {col("customs") && (
                     <TD align="center">
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
                         <TlBox s={s} />
                         {isTl(s) && <span className="tnum" style={{ fontSize: 10.5, color: "var(--good)", fontWeight: 700 }}>{String(s.thanhLy).slice(5).split("-").reverse().join("/")}</span>}
                       </div>
                     </TD>
+                    )}
+                    {(col("route") || col("plate")) && (
                     <TD>
                       <EditCell onClick={() => openModal({ id: s.id, type: "info" })}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5 }}>
+                        {col("route") && <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5 }}>
                           <span style={{ color: "var(--ink-2)" }}>{s.from || "—"}</span>
                           <span style={{ color: "var(--accent)", flexShrink: 0 }}><I.arrow /></span>
                           <span style={{ color: "var(--ink-2)" }}>{s.to || "—"}</span>
-                        </div>
-                        {(s.routeCodes || []).length > 0 && (
+                        </div>}
+                        {col("route") && (s.routeCodes || []).length > 0 && (
                           <div className="tnum" style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", fontSize: 11, color: "var(--ink-4)", marginTop: 2 }} title="Ký hiệu tuyến: nơi lấy → kho → nơi hạ">
                             {s.routeCodes.map((c, i) => (
                               <React.Fragment key={i}>
@@ -1274,12 +1329,11 @@ function ShipmentsApp() {
                             ))}
                           </div>
                         )}
-                        <div className="tnum" title="BKS vào — xe kéo cont" style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 3, fontSize: 12, fontWeight: 600, color: "var(--ink-2)" }}>
-                          <i className="bi bi-truck" style={{ fontSize: 11, color: "var(--ink-4)" }} />
-                          {String(s.bksVao || "").trim() || <span style={{ fontWeight: 400, color: "var(--ink-4)" }}>chưa gán xe</span>}
-                        </div>
+                        {col("plate") && plateCell(s)}
                       </EditCell>
                     </TD>
+                    )}
+                    {col("schedule") && (
                     <TD>
                       <EditCell onClick={() => openModal({ id: s.id, type: "info" })}>
                         {s.gioDenDuKien ? (
@@ -1305,6 +1359,8 @@ function ShipmentsApp() {
                         )}
                       </EditCell>
                     </TD>
+                    )}
+                    {col("cost") && (
                     <TD pad="6px 10px">
                       <CellBtn main={fmtVND(costMain)} sub={costSub} onClick={() => openModal({ id: s.id, type: "cost" })} />
                       {(() => {
@@ -1327,6 +1383,8 @@ function ShipmentsApp() {
                       })()}
                       {(s.tags || []).length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 5, paddingLeft: 9 }}>{s.tags.map((t, i) => <span key={i} style={tagChip}>{t}</span>)}</div>}
                     </TD>
+                    )}
+                    {col("revenue") && (
                     <TD align="right" pad="6px 10px">
                       {/* Thu phí (cước+dầu) lô ĐÃ RA — dùng chung công thức bảng kê (priceShipment). */}
                       {s.cuocDau == null
@@ -1336,6 +1394,8 @@ function ShipmentsApp() {
                             {s.cuocDau === 0 && s.priceMatched === false && <div style={{ fontSize: 10.5, color: "var(--warn)", marginTop: 2 }}>⚠ chưa khớp giá</div>}
                           </div>}
                     </TD>
+                    )}
+                    {col("cost") && (
                     <TD align="center">
                       <div style={{ display: "inline-flex", flexDirection: "column", gap: 5, alignItems: "stretch" }}>
                         <button type="button" onClick={() => openModal({ id: s.id, type: "cost" })} title="Chi phí lô hàng (chi hộ / công ty)"
@@ -1346,6 +1406,7 @@ function ShipmentsApp() {
                         </button>
                       </div>
                     </TD>
+                    )}
                   </tr>
                 );
               })}
@@ -1404,7 +1465,7 @@ function ShipmentsApp() {
         </div>
       </div>
 
-      {active && modal.type === "cost" && <CostPopup ship={active} patch={(np) => patch(active.id, np)} onSave={() => commitDirty()} isDirty={isDirty} onClose={() => setModal(null)} cfg={cfg} addCfg={addCfg} tagOptions={tagOptions} />}
+      {active && modal.type === "cost" && col("cost") && <CostPopup ship={active} patch={(np) => patch(active.id, np)} onSave={() => commitDirty()} isDirty={isDirty} onClose={() => setModal(null)} cfg={cfg} addCfg={addCfg} tagOptions={tagOptions} />}
       {active && modal.type === "info" && <InfoPopup ship={active} isHph={isHph} patch={(np) => patch(active.id, np)} patchOther={(id, np) => patch(id, np)} onSave={() => commitDirty()} isDirty={isDirty} siblings={sibs.filter((x) => x.id !== active.id)} onClose={closeInfo} onDelete={active._new ? null : () => delShip(active.id)} canDelete={T.canDelete} cfg={cfg} addCfg={addCfg} tagOptions={tagOptions} />}
 
       {/* Popup ĐIỀN SỐ CONT cho cả booking — mỗi lô 1 ô, dán cả cột Excel vào 1 ô là rải hết */}
