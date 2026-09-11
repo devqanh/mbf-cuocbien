@@ -36,7 +36,10 @@ function ShipmentsApp() {
 
   // Lưu BỘ LỌC ở localStorage → load lại trang không mất cấu hình. "Xóa lọc" reset về ban đầu.
   const FILTER_KEY = "trk:lohang:filters";
-  const pf = (() => { try { return JSON.parse(localStorage.getItem(FILTER_KEY) || "{}") || {}; } catch (e) { return {}; } })();
+  // Mở bằng link từ trang khác (?q=<cont> — Lộ trình, Bảng kê): KHÔNG áp bộ lọc đã lưu. Áp vào thì lô cần mở có thể
+  // bị lọc mất (vd tab lưu là "Đã ra" mà chuyến chưa ra) → danh sách rỗng, không mở được popup.
+  const fromLink = !!new URLSearchParams(window.location.search).get("q");
+  const pf = fromLink ? {} : (() => { try { return JSON.parse(localStorage.getItem(FILTER_KEY) || "{}") || {}; } catch (e) { return {}; } })();
   const hasPersistedFilters = Object.keys(pf).length > 0;
 
   // Dùng chung 1 mẫu (ICD) — không còn tách HPH/ICD
@@ -170,12 +173,15 @@ function ShipmentsApp() {
         if (r.tagOptions) setTagOptions(r.tagOptions);
         if (r.sibs) setSibs(r.sibs);
         if (r.page !== pg) setPage(r.page);
-        // Tự mở popup lô (mở từ Lộ trình/Bảng kê với ?open) — chỉ 1 lần, dòng khớp cont (hoặc dòng đầu).
-        if (pendingOpen.current && (r.data || []).length) {
+        // Tự mở popup lô (mở từ Lộ trình/Bảng kê với ?open) — chỉ 1 lần. open = hashid/id lô (đúng lô kể cả khi số cont
+        // được dùng lại ở nhiều lô) hoặc số cont; không khớp thì mở dòng đầu. Không có lô nào → báo thay vì im lặng.
+        if (pendingOpen.current) {
           const want = String(pendingOpen.current);
-          const m = (r.data).find((s) => String(s.id) === want) || (r.data).find((s) => (s.contNo || "").toString() === want) || r.data[0];
+          const rows = r.data || [];
+          const m = rows.find((s) => String(s.hashid) === want || String(s.id) === want) || rows.find((s) => (s.contNo || "").toString() === want) || rows[0];
           pendingOpen.current = null;
           if (m) setTimeout(() => openModal({ id: m.id, type: "info" }), 0);
+          else window.trkToast && window.trkToast("Không tìm thấy lô khớp “" + qDeb.trim() + "”", "error");
         }
       }
     } catch (e) { window.trkToast && window.trkToast("Lỗi tải danh sách", "error"); }
@@ -184,9 +190,12 @@ function ShipmentsApp() {
   // Debounce ô tìm kiếm → cập nhật qDeb + về trang 1 (cùng 1 batch để chỉ load 1 lần)
   useEffect(() => { const t = setTimeout(() => { setQDeb(q); setPage(1); }, 350); return () => clearTimeout(t); }, [q]);
   // Lưu bộ lọc xuống localStorage mỗi khi đổi (để load lại trang giữ nguyên cấu hình).
+  // Mở bằng link: bỏ lần ghi lúc mở trang để bộ lọc trống của lượt xem này không đè bộ lọc đã lưu.
+  const skipPersist = useRef(fromLink);
   useEffect(() => {
+    if (skipPersist.current) { skipPersist.current = false; return; }
     try { localStorage.setItem(FILTER_KEY, JSON.stringify({ filter, tlFilter, followFilter, toLocSel, toMode, fromLocSel, fromMode, custSel, denDate, tagSel, perPage, sort, showFilters })); } catch (e) {}
-  }, [filter, followFilter, toLocSel, toMode, fromLocSel, fromMode, custSel, denDate, tagSel, perPage, sort, showFilters]);
+  }, [filter, tlFilter, followFilter, toLocSel, toMode, fromLocSel, fromMode, custSel, denDate, tagSel, perPage, sort, showFilters]);
 
   // Nạp lại khi tham số đổi. Bỏ lần mount đầu NẾU không có bộ lọc lưu (đã có boot mặc định);
   // nếu CÓ bộ lọc lưu (khác mặc định) → nạp ngay lần đầu để áp đúng cấu hình đã khôi phục.

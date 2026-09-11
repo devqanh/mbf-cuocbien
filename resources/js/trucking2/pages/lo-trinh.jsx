@@ -405,8 +405,10 @@ function LoTrinhApp() {
                     {(() => {
                       const items = [...tr.legs.map((l, i) => ({ l, fuel: (tr.payGroups || [])[i] && tr.payGroups[i].fuel })), ...(tr.planned || []).map((l) => ({ l }))]
                         .sort((a, b) => a.l.sortTs - b.l.sortTs);
-                      // Chuyến mới gán xe có thể chưa có số cont → mở danh sách lọc theo booking.
-                      const hrefOf = (l) => ROUTES.shipment + (l.cont ? "?q=" + encodeURIComponent(l.cont) + "&open=1" : (l.booking ? "?q=" + encodeURIComponent(l.booking) : ""));
+                      // Lọc theo số cont (chuyến mới gán xe chưa có cont → theo booking) + open = hashid để popup mở ĐÚNG lô
+                      // (1 số cont có thể được dùng lại ở nhiều lô; 1 booking có nhiều lô).
+                      const openOf = (l) => (l.hashid ? "&open=" + encodeURIComponent(l.hashid) : "");
+                      const hrefOf = (l) => ROUTES.shipment + (l.cont ? "?q=" + encodeURIComponent(l.cont) + (openOf(l) || "&open=1") : (l.booking ? "?q=" + encodeURIComponent(l.booking) + openOf(l) : ""));
                       return items.map(({ l, fuel }, i) => (
                         <TripNode key={i} l={l} isFirst={i === 0} isLast={i === items.length - 1} bks={tr.bks} fuel={fuel} href={hrefOf(l)} />
                       ));
