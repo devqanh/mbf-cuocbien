@@ -28,9 +28,8 @@ class CatalogController extends BaseTruckingController
     {
         abort_unless(in_array($type, $this->svc->catalogKeys(), true), 404);
         $cfg = $request->validate(['cfg' => ['required', 'array']])['cfg'];
-        $this->svc->saveCatalog($type, $cfg);
-
-        return response()->json(['ok' => true]);
+        // Kho đổi ký hiệu cả nhóm → kèm `codeRenames` (số lô / dòng bảng giá / phí tuyến đã đổi theo) để báo người dùng.
+        return response()->json(['ok' => true] + $this->svc->saveCatalog($type, $cfg));
     }
 
     /** Lưu danh mục Khách hàng (+ thông tin; bảng giá chỉ đụng khi gửi priceList). */

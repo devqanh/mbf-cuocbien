@@ -224,7 +224,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
           {g.coded && <div style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12, color: "var(--ink-2)", background: "#eef4ff", border: "1px solid #d6e3fb", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>
             <i className="bi bi-info-circle-fill" style={{ color: "var(--accent)", marginTop: 1 }} />
             <span>Sửa được cả <b>tên</b> lẫn <b>ký hiệu</b>. {g.codeEditable
-              ? <>Ký hiệu là <b>định danh kho</b> (lô hàng lưu kho theo ký hiệu) nên <b>không được trùng</b> với nhóm khác; nhiều <b>tên</b> vẫn dùng chung 1 ký hiệu được.</>
+              ? <>Ký hiệu là <b>định danh kho</b> (lô hàng lưu kho theo ký hiệu) nên <b>không được trùng</b> với nhóm khác; nhiều <b>tên</b> vẫn dùng chung 1 ký hiệu được. Đổi ký hiệu của cả nhóm thì <b>lô hàng, bảng giá, phí tuyến</b> đang dùng ký hiệu cũ tự đổi theo (bảng kê đã lưu giữ nguyên).</>
               : <>Đổi ký hiệu vẫn giữ liên kết (bảng giá/lô) vì khớp theo dòng. {allowDup ? <>Cho phép <b>nhiều tên</b> dùng chung 1 <b>ký hiệu</b>.</> : <>Lưu ý: mỗi <b>ký hiệu</b> phải <b>duy nhất</b>.</>}</>}</span>
           </div>}
           {hasEmptyCode && <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: "var(--danger)", background: "#fce8e8", border: "1px solid #f3c9c9", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>⚠ Có dòng <b>chưa nhập ký hiệu</b> — ký hiệu là bắt buộc (dùng để tham chiếu). Điền các ô viền đỏ trước khi lưu.</div>}

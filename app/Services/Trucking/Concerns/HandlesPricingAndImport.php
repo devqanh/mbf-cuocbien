@@ -304,15 +304,15 @@ trait HandlesPricingAndImport
         });
     }
 
-    /** Lưu RIÊNG 1 danh mục lookup (mỗi tab Cài đặt = 1 bảng). */
-    public function saveCatalog(string $cfgKey, array $cfg): void
+    /** Lưu RIÊNG 1 danh mục lookup (mỗi tab Cài đặt = 1 bảng). Trả kèm `codeRenames` khi Kho đổi ký hiệu cả nhóm. */
+    public function saveCatalog(string $cfgKey, array $cfg): array
     {
         $lk = $this->lookups();
         if (! isset($lk[$cfgKey])) {
             throw new \InvalidArgumentException("Danh mục không hợp lệ: {$cfgKey}");
         }
         [$cls, $priced, $coded, $colored] = $lk[$cfgKey];
-        DB::transaction(fn () => $this->reconcileLookup($cls, $priced, $coded, $colored, $cfg, $cfgKey));
+        return DB::transaction(fn () => $this->reconcileLookup($cls, $priced, $coded, $colored, $cfg, $cfgKey));
     }
 
     public function saveCustomers(array $cfg): void { DB::transaction(fn () => $this->reconcileCustomers($cfg)); }
@@ -383,8 +383,127 @@ trait HandlesPricingAndImport
         }
     }
 
+    /** Chuẩn hóa ký hiệu để so khớp như normalizedCodeMap: bỏ dấu + khoảng trắng, không phân biệt hoa/thường. */
+    private function warehouseCodeIdent($v): string
+    {
+        return mb_strtoupper(preg_replace('/\s+/u', '', trim(\Illuminate\Support\Str::ascii((string) $v))) ?? '');
+    }
+
+    /**
+     * Kho: các ký hiệu bị ĐỔI CẢ NHÓM trong lần lưu này → [ký hiệu cũ => ký hiệu mới]. Chỉ tính khi mọi kho đã có
+     * của ký hiệu cũ cùng chuyển sang đúng 1 ký hiệu mới và sau khi lưu không còn dòng nào giữ ký hiệu cũ. Tách vài
+     * tên sang ký hiệu khác (ký hiệu cũ vẫn dùng) hay chỉ đổi hoa/thường thì không phải đổi định danh → không đụng.
+     */
+    private function warehouseCodeRenames(string $cls, array $names, array $codeArr, array $idArr): array
+    {
+        $orig = $cls::whereIn('id', array_values(array_filter($idArr, 'is_numeric')))->pluck('code', 'id');
+        $final = []; $moves = []; $oldCode = [];
+        foreach ($names as $i => $name) {
+            $code = trim((string) ($codeArr[$i] ?? ''));
+            if (trim((string) $name) === '' || $code === '') continue;
+            $final[$this->warehouseCodeIdent($code)] = true;
+            $id = $idArr[$i] ?? null;
+            if (! is_numeric($id) || ! $orig->has($id)) continue;
+            $old = trim((string) $orig[$id]);
+            if ($old === '') continue;
+            $from = $this->warehouseCodeIdent($old);
+            $moves[$from][$this->warehouseCodeIdent($code)] = $code;
+            $oldCode[$from] = $old;
+        }
+        $renames = [];
+        foreach ($moves as $from => $to) {
+            if (count($to) !== 1 || isset($to[$from]) || isset($final[$from])) continue;
+            $renames[$oldCode[$from]] = reset($to);
+        }
+        return $renames;
+    }
+
+    /**
+     * Đổi ký hiệu kho → đổi theo ở chỗ lưu ký hiệu dạng CHỮ: lô hàng (kho), bảng giá (nhà máy to1..to4), phí tuyến
+     * (route + route_key). Thay đúng TỪNG ĐOẠN khớp ký hiệu cũ trong 1 lượt (đổi dây chuyền A→B, B→C vẫn đúng).
+     * Phí tuyến = Cảng → Kho… → Cảng: đoạn ĐẦU/CUỐI trùng ký hiệu/tên cảng giữ nguyên. Bảng kê / phí xe / chốt ngày là snapshot
+     * → không đụng. Trả số dòng đã đổi theo từng cặp.
+     */
+    private function cascadeWarehouseCodeRenames(array $renames): array
+    {
+        $map = [];
+        foreach ($renames as $old => $new) $map[$this->warehouseCodeIdent($old)] = $new;
+        $locIdents = [];
+        foreach (\App\Models\TruckingLocation::toBase()->get(['name', 'code']) as $l) {
+            foreach ([$l->code, $l->name] as $v) if ($v) $locIdents[$this->warehouseCodeIdent($v)] = true;
+        }
+
+        $stat = [];   // ký hiệu cũ (chuẩn hóa) → số dòng đã đổi mỗi bảng
+        $bump = function (array $hits, string $table) use (&$stat) {
+            foreach (array_keys($hits) as $k) $stat[$k][$table] = ($stat[$k][$table] ?? 0) + 1;
+        };
+
+        // Lô hàng: cột kho chỉ chứa kho → thay mọi đoạn khớp.
+        DB::table('trucking_shipments')->whereNotNull('kho')->where('kho', '!=', '')->select(['id', 'kho'])->orderBy('id')
+            ->chunkById(1000, function ($rows) use ($map, $bump) {
+                foreach ($rows as $r) {
+                    $hits = [];
+                    $new = $this->rewriteCodeTokens($r->kho, $map, $hits);
+                    if ($new === $r->kho) continue;
+                    DB::table('trucking_shipments')->where('id', $r->id)->update(['kho' => $new]);
+                    $bump($hits, 'shipments');
+                }
+            });
+
+        // Bảng giá: to1..to4 = NHÀ MÁY (kho).
+        DB::table('trucking_price_rows')->select(['id', 'to1', 'to2', 'to3', 'to4'])->orderBy('id')
+            ->chunkById(1000, function ($rows) use ($map, $bump) {
+                foreach ($rows as $r) {
+                    $hits = []; $upd = [];
+                    foreach (['to1', 'to2', 'to3', 'to4'] as $c) {
+                        $new = $this->rewriteCodeTokens($r->$c, $map, $hits);
+                        if ($new !== $r->$c) $upd[$c] = $new;
+                    }
+                    if (! $upd) continue;
+                    DB::table('trucking_price_rows')->where('id', $r->id)->update($upd);
+                    $bump($hits, 'priceRows');
+                }
+            });
+
+        // Phí tuyến: chuỗi Cảng → Kho… → Cảng → đoạn đầu/cuối trùng cảng giữ nguyên; tính lại route_key theo text mới.
+        foreach (DB::table('trucking_route_fees')->get(['id', 'route']) as $rf) {
+            $hits = [];
+            $new = $this->rewriteCodeTokens($rf->route, $map, $hits, $locIdents);
+            if ($new === $rf->route) continue;
+            DB::table('trucking_route_fees')->where('id', $rf->id)->update(['route' => $new, 'route_key' => $this->routeKey((string) $new)]);
+            $bump($hits, 'routeFees');
+        }
+
+        $out = [];
+        foreach ($renames as $old => $new) {
+            $s = $stat[$this->warehouseCodeIdent($old)] ?? [];
+            $out[] = ['from' => $old, 'to' => $new, 'shipments' => $s['shipments'] ?? 0, 'priceRows' => $s['priceRows'] ?? 0, 'routeFees' => $s['routeFees'] ?? 0];
+        }
+        return $out;
+    }
+
+    /**
+     * Thay các đoạn (tách bằng , → -> – — " - ") khớp $map [ký hiệu chuẩn hóa => ký hiệu mới]; giữ nguyên dấu phân tách.
+     * $portIdents: đoạn ĐẦU/CUỐI trùng ký hiệu/tên cảng thì coi là cảng, giữ nguyên (phí tuyến = Cảng → Kho… → Cảng).
+     */
+    private function rewriteCodeTokens(?string $s, array $map, array &$hits = [], array $portIdents = []): ?string
+    {
+        if ($s === null || trim($s) === '' || ! $map) return $s;
+        $parts = preg_split('/(\s*(?:,|→|->|–|—|\s-\s)\s*)/u', $s, -1, PREG_SPLIT_DELIM_CAPTURE) ?: [$s];
+        $last = count($parts) - 1;   // luôn là chỉ số chẵn: token – dấu – token …
+        $changed = false;
+        foreach ($parts as $k => $p) {
+            if ($k % 2) continue;   // phần tử lẻ = dấu phân tách
+            $key = $this->warehouseCodeIdent($p);
+            if ($key === '' || ! isset($map[$key])) continue;
+            if (($k === 0 || $k === $last) && isset($portIdents[$key])) continue;
+            $parts[$k] = $map[$key]; $hits[$key] = true; $changed = true;
+        }
+        return $changed ? implode('', $parts) : $s;
+    }
+
     // --- reconcile từng bảng (dùng chung cho saveConfig & endpoint riêng) ---
-    private function reconcileLookup(string $cls, bool $priced, $coded, bool $colored, array $cfg, string $key): void
+    private function reconcileLookup(string $cls, bool $priced, $coded, bool $colored, array $cfg, string $key): array
     {
         // Danh mục CÓ MÃ (địa điểm/kho): định danh theo MÃ (ký hiệu) — TÊN được phép trùng.
         // Khớp & cập nhật theo mã để GIỮ id (không đứt link price_rows.location_id); mã rỗng → khớp theo tên.
@@ -397,8 +516,11 @@ trait HandlesPricingAndImport
             $geoArr   = $key === 'warehouses' ? ($cfg['warehouseGeoArr'] ?? null) : null;    // Kho có thêm Tọa độ "lat,lng"
             $noteArr  = $key === 'warehouses' ? ($cfg['warehouseNoteArr'] ?? null) : null;   // Kho có thêm Ghi chú (địa chỉ đóng hàng)
             // Trang Cài đặt đã chặn trùng; đây là chốt chặn cuối (tab mở lâu, payload cũ). Thêm nhanh không sửa dòng cũ nên bỏ qua.
+            // Đổi ký hiệu cả nhóm → ghi nhận TRƯỚC khi cập nhật dòng (cần ký hiệu cũ trong DB) để đổi theo sau khi lưu.
+            $renames = [];
             if ($key === 'warehouses' && is_array($codeArr) && is_array($idArr) && ! $this->isAddOnly($cfg)) {
                 $this->assertWarehouseCodesDistinct($cls, $rawNames, $codeArr, $idArr);
+                $renames = $this->warehouseCodeRenames($cls, $rawNames, $codeArr, $idArr);
             }
             $keepIds = [];
             $sort = 0;
@@ -430,7 +552,7 @@ trait HandlesPricingAndImport
                 $sort++;
             }
             if (! $this->isAddOnly($cfg)) $cls::whereNotIn('id', $keepIds ?: [0])->delete();
-            return;
+            return $renames ? ['codeRenames' => $this->cascadeWarehouseCodeRenames($renames)] : [];
         }
 
         // Danh mục KHÔNG mã: định danh theo TÊN (như cũ).
@@ -446,6 +568,7 @@ trait HandlesPricingAndImport
             // Thêm nhanh: chỉ tạo mục còn thiếu, KHÔNG ghi đè đơn giá/màu/VAT của mục đã có (payload có thể cũ).
             $this->isAddOnly($cfg) ? $cls::firstOrCreate(['name' => $name], $attrs) : $cls::updateOrCreate(['name' => $name], $attrs);
         }
+        return [];
     }
 
     /** Parse "lat,lng" (hoặc "lat lng") → [float,float] hoặc [null,null] nếu rỗng/sai/ngoài phạm vi. */

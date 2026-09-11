@@ -136,7 +136,9 @@ function SettingsApp() {
       setSaving(false);
       if (r && r.ok) {
         setDirty((d) => ({ ...d, [cur]: false }));
-        window.trkToast && window.trkToast("Đã lưu");
+        // Đổi ký hiệu kho → báo luôn các chỗ đã đổi theo (lô / bảng giá / phí tuyến).
+        const rn = (r.codeRenames || []).map((x) => `${x.from} → ${x.to}: ${x.shipments} lô, ${x.priceRows} dòng bảng giá, ${x.routeFees} phí tuyến`);
+        window.trkToast && window.trkToast(rn.length ? "Đã lưu · đổi ký hiệu " + rn.join(" · ") : "Đã lưu");
         fetchTab(cur);   // nạp lại bản TƯƠI từ server (gộp thay đổi người khác, xác nhận đã lưu)
       } else { window.trkToast && window.trkToast("Lưu thất bại", "error"); }
     }).catch((e) => {
