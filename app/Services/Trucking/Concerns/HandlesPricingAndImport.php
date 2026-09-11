@@ -111,6 +111,7 @@ trait HandlesPricingAndImport
             'contTypes'    => TruckingContType::orderBy('sort')->orderBy('name')->pluck('name')->all(),
             'customers'    => $customers->pluck('name')->all(),
             'customerInfo' => $customers->mapWithKeys(fn ($c) => [$c->name => [
+                'id'        => (int) $c->id,   // hash URL trang Bảng giá dùng id (#kh=<id>) thay tên có dấu
                 'shortName' => $c->short_name ?? '',
                 'taxCode'   => $c->tax_code ?? '',
                 'phone'     => $c->phone ?? '',

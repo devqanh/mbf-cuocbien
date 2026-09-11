@@ -13,15 +13,22 @@ const bookRange = (b) => (b && (b.from || b.to)) ? `${b.from ? fmtBD(b.from) : "
 // 2 khoảng [a.from,a.to] và [b.from,b.to] chồng nhau? (null = vô cực)
 const overlap = (a, b) => (a.from === null || b.to === null || a.from <= b.to) && (b.from === null || a.to === null || b.from <= a.to);
 
-// Khách + bảng giá đang xem lưu trong URL hash (#kh=<tên khách>&bg=<id book>) → reload / chia sẻ link vẫn đúng chỗ.
-const readHash = () => {
+// Khách + bảng giá đang xem lưu trong URL hash (#kh=<id khách>&bg=<id book>) → reload / chia sẻ link vẫn đúng chỗ.
+// kh là ID để URL không dính dấu tiếng Việt; link cũ #kh=<tên khách> vẫn đọc được (khớp theo tên).
+const readHash = (info) => {
   const p = new URLSearchParams((window.location.hash || "").replace(/^#/, ""));
   const bg = p.get("bg");
-  return { kh: p.get("kh") || null, bg: bg != null && bg !== "" ? +bg : null };
+  const raw = p.get("kh") || null;
+  let kh = null;
+  if (raw) {
+    const byId = /^\d+$/.test(raw) ? Object.keys(info || {}).find((n) => (info[n] || {}).id === +raw) : null;
+    kh = byId || (info && info[raw] ? raw : null);
+  }
+  return { kh, bg: bg != null && bg !== "" ? +bg : null };
 };
-const writeHash = (kh, bg) => {
+const writeHash = (kh, bg, info) => {
   const p = new URLSearchParams();
-  if (kh) p.set("kh", kh);
+  if (kh) p.set("kh", String(((info || {})[kh] || {}).id ?? kh));
   if (bg != null) p.set("bg", String(bg));
   const s = p.toString();
   const url = s ? "#" + s : window.location.pathname + window.location.search;
@@ -33,7 +40,7 @@ function BangGiaPage({ cfg, setBooks, api, routes }) {
   const isMobile = useIsMobile();
   const customers = cfg.customers || [];
   const info = cfg.customerInfo || {};
-  const hash0 = useRef(readHash()).current;   // hash lúc mở trang
+  const hash0 = useRef(readHash(info)).current;   // hash lúc mở trang (kh đã quy về TÊN khách)
   const [sel, setSel] = useState(() => (hash0.kh && customers.includes(hash0.kh) ? hash0.kh : (customers[0] || null)));
   const cur = sel != null && customers.includes(sel) ? sel : (customers[0] || null);
   const data = (cur && info[cur]) || {};
@@ -48,11 +55,11 @@ function BangGiaPage({ cfg, setBooks, api, routes }) {
   }, [cur]);
   useEffect(() => { if ((selBookId == null || !books.some((b) => b.id === selBookId)) && books.length) setSelBookId(books[0].id); }, [books.length]);
   // Ghi lại hash mỗi khi đổi khách / đổi bảng giá (kể cả sau khi tạo, xóa book).
-  useEffect(() => { writeHash(cur, selBookId); }, [cur, selBookId]);
+  useEffect(() => { writeHash(cur, selBookId, info); }, [cur, selBookId]);
   // Người dùng sửa URL / bấm back-forward → nhảy về đúng khách + bảng giá trong hash.
   useEffect(() => {
     const onHash = () => {
-      const h = readHash();
+      const h = readHash(info);
       if (h.kh && customers.includes(h.kh) && h.kh !== cur) { wantBook.current = h.bg; setSel(h.kh); }
       else if (h.bg != null && h.bg !== selBookId) setSelBookId(h.bg);
     };
