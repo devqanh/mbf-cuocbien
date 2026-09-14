@@ -85,12 +85,15 @@ trait HandlesStatementPricing
         $norm = fn ($v) => mb_strtoupper(preg_replace('/\s+/u', '', trim(Str::ascii((string) $v))) ?? '');   // bỏ DẤU CÁCH giữa: "ICD QV" == "ICDQV"
         $rc   = fn ($v) => $codeMap[$norm($v)] ?? $norm($v);
 
-        $isExport = str_contains(mb_strtolower((string) $s->io), 'xu');
-        // KIND theo CRU. (SÀ LAN không còn ép kind — giá cont giữ nguyên; phí sà lan là khoản RIÊNG tính bên dưới.)
-        $kind = $s->cru
-            ? ($isExport ? 'External CRU transportation' : 'Internal CRU transportation')
-            : 'Transportation 1 way of Import/Export';
-        $nkKind = $nk($kind);
+        // KIND: lô CRU khớp CẢ 2 loại CRU — TUYẾN quyết định. Bảng giá Canon: "External CRU" chỉ có xuất phát
+        // HN/BG/HY; "Internal CRU" gồm cả chặng nhập lẫn chặng xuất quanh QV/TL/TS. KHÔNG suy từ Nhập/Xuất —
+        // suy vậy gán CRU+Xuất = External nên tuyến QV(IM HPP) → QV → HPP (Internal) không bao giờ khớp.
+        // (SÀ LAN không ép kind — giá cont giữ nguyên; phí sà lan là khoản RIÊNG tính bên dưới.)
+        $cruKinds = ['Internal CRU transportation', 'External CRU transportation'];
+        $kinds    = $s->cru ? $cruKinds : ['Transportation 1 way of Import/Export'];
+        $nkKinds  = array_map($nk, $kinds);
+        $nkCru    = array_map($nk, $cruKinds);
+        $kind     = $kinds[0];   // nhãn khi chưa khớp; khớp rồi lấy kind của chính dòng giá
 
         $ft = $this->freeTimeOf($s, $threshold);
         $conn = $ft ? ($ft['connect'] ? 'Connect' : 'Disconnect') : null;
@@ -105,7 +108,20 @@ trait HandlesStatementPricing
         foreach (preg_split('/\s*(?:,|→|->|–|—|\s-\s)\s*/u', (string) $s->kho) ?: [] as $k) { $c = $rc($k); if ($c !== '') $khoCodes[] = $c; }
 
         // Giá CONT: khớp theo đi + nhà máy + hạ + KIND + kết nối (giữ ràng buộc kho).
-        $p = $this->matchPriceRow($priceList, $loFrom, $loDrop, $khoCodes, $nkKind, $conn, true, false);
+        $p = $this->matchPriceRow($priceList, $loFrom, $loDrop, $khoCodes, $nkKinds, $conn, true, false);
+        // CHẶNG NHẬP của chuỗi CRU: cont KHÔNG trả cảng mà hạ tại BÃI "(IM …)" để tái sử dụng. Bảng giá mã hóa
+        // chặng này bằng dòng CRU có from = cảng lấy, to1 = bãi hạ (cột loc không đổi giá). Lô ghi Nơi hạ = bãi,
+        // kho = nhà máy → khớp thường thất bại (hạ ≠ loc, kho ≠ to1). Chỉ thử khi khớp thường thất bại, chỉ xét
+        // dòng CRU, không phụ thuộc cờ CRU của lô (chặng nhập thường không tích).
+        // Chỉ xét dòng có ĐÚNG 1 điểm đến (to1 = bãi, không có cột cảng to4) — dòng chặng xuất (to1 = nhà máy,
+        // to4 = cảng) bị loại để lô hạ cảng nhưng sai kho không "lọt" sang giá CRU.
+        $yardLeg = false;
+        if (! $p && $loDrop !== '') {
+            $yardRows = array_values(array_filter($priceList, fn ($r) => count($r['rcKho']) === 1 && $r['rcKho'][0] === $loDrop));
+            $p = $yardRows ? $this->matchPriceRow($yardRows, $loFrom, '', [$loDrop], $nkCru, $conn, true, false) : null;
+            $yardLeg = (bool) $p;
+        }
+        if ($p && ! empty($p['kind'])) $kind = (string) $p['kind'];
 
         // GIÁ THEO LOẠI CONT: dòng giá khớp tuyến → tra cột đúng Loại cont của lô (fallback cột chung 20FT/40FT).
         // 1 số TỔNG (cước + dầu, không còn tách): giữ khóa `cuoc` = tổng, `dau` = 0 để bảng kê/báo cáo/snapshot cũ
@@ -152,7 +168,7 @@ trait HandlesStatementPricing
             'di'       => $loFrom !== '' ? $loFrom : '(trống)',
             'nhaMay'   => $khoCodes ? implode(' / ', $khoCodes) : '(lô chưa có kho/nhà máy)',
             'ha'       => $loDrop !== '' ? $loDrop : '(trống)',
-            'kind'     => $kind, 'conn' => $conn,
+            'kind'     => $kind, 'conn' => $conn, 'yardLeg' => $yardLeg,
             // Loại cont của lô + các cột loại cont có trên dòng giá đã khớp tuyến → giải thích "tuyến khớp nhưng thiếu cột".
             'contType' => trim((string) $s->cont_type),
             'contKeys' => $p ? array_keys(is_array($p['prices'] ?? null) ? $p['prices'] : []) : [],
@@ -237,9 +253,10 @@ trait HandlesStatementPricing
      *  - $preferNon: ưu tiên dòng "Non" (áp mọi trạng thái) — dùng cho sà lan; false giữ logic cũ
      *    (khớp đúng conn trước, rồi Non, rồi base).
      */
-    private function matchPriceRow(array $priceList, string $loFrom, string $loDrop, array $khoCodes, string $nkKind, ?string $conn, bool $requireKho = true, bool $preferNon = false): ?array
+    private function matchPriceRow(array $priceList, string $loFrom, string $loDrop, array $khoCodes, string|array $nkKind, ?string $conn, bool $requireKho = true, bool $preferNon = false): ?array
     {
         $p = null; $fallback = null; $nonMatch = null;
+        $nkKinds = (array) $nkKind;   // 1 hoặc nhiều KIND chấp nhận (lô CRU khớp cả Internal lẫn External)
         foreach ($priceList as $r) {
             if ($loFrom !== '' && $r['rcFrom'] !== '' && $r['rcFrom'] !== $loFrom) continue;
             if ($loDrop !== '' && $r['rcDrop'] !== '' && $r['rcDrop'] !== $loDrop) continue;
@@ -249,7 +266,7 @@ trait HandlesStatementPricing
                 foreach ($r['rcKho'] as $k) if (in_array($k, $khoCodes, true)) { $khoOk = true; break; }
                 if (! $khoOk) continue;
             }
-            if ($r['nkKind'] !== '' && $r['nkKind'] !== $nkKind) continue;
+            if ($r['nkKind'] !== '' && ! in_array($r['nkKind'], $nkKinds, true)) continue;
 
             if ($fallback === null) $fallback = $r['row'];   // base match, fallback nếu không có conn khớp
             // "Non" = áp cho MỌI trạng thái — ưu tiên SAU khớp đúng conn (giá cont), hoặc ưu tiên nhất (sà lan).

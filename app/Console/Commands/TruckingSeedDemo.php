@@ -60,8 +60,8 @@ class TruckingSeedDemo extends Command
             ['BK-2602', 'Cảng Hải Phòng', 'ICD Quế Võ',    '40HC', '2026-05-21T08:00', '2026-05-21T15:00', 0,      '2026-05-21', 'Nhập', false], // 1 way, Connect, 40FT
             ['BK-2603', 'Cảng Hải Phòng', 'KCN Tiên Sơn',  '20DC', '2026-05-22T08:00', '2026-05-22T10:30', 150000, '2026-05-22', 'Nhập', false], // 1 way, Disconnect, 20FT
             ['BK-2604', 'Cảng Hải Phòng', 'KCN Thăng Long', '20DC', '2026-05-23T08:00', '2026-05-23T09:30', 100000, '2026-05-23', 'Nhập', false], // chưa có giá → chưa khớp
-            ['BK-2605', 'Cảng Hải Phòng', 'ICD Quế Võ',    '20DC', '2026-05-24T08:00', '2026-05-24T10:00', 0,      '2026-05-24', 'Nhập', true],  // CRU + Nhập → Internal CRU, 20FT
-            ['BK-2606', 'Cảng Hải Phòng', 'ICD Quế Võ',    '40HC', '2026-05-25T08:00', '2026-05-25T10:00', 0,      '2026-05-25', 'Xuất', true],  // CRU + Xuất → External CRU, 40FT
+            ['BK-2605', 'Cảng Hải Phòng', 'ICD Quế Võ',    '20DC', '2026-05-24T08:00', '2026-05-24T10:00', 0,      '2026-05-24', 'Nhập', true],  // CRU → khớp dòng CRU đầu tiên theo tuyến (Internal), 20FT
+            ['BK-2606', 'Cảng Hải Phòng', 'ICD Quế Võ',    '40HC', '2026-05-25T08:00', '2026-05-25T10:00', 0,      '2026-05-25', 'Xuất', true],  // CRU → khớp theo tuyến, không suy từ Xuất (Internal), 40FT
         ];
         $i = 0;
         foreach ($lots as [$bk, $from, $to, $ct, $gdk, $gxr, $chiHo, $contRa, $io, $cru]) {
@@ -103,7 +103,7 @@ class TruckingSeedDemo extends Command
         $this->newLine();
         $this->line('Test: vào /trucking-v2/bang-ke/tao → chọn "Canon Vietnam", kỳ 2026-05-01 → 2026-05-31.');
         $this->line('Đối chiếu số phải thu từng lô + tổng với bảng trên (BK-2604 sẽ báo ⚠ chưa khớp, chỉ có Chi hộ).');
-        $this->line('BK-2605 (CRU+Nhập→Internal CRU) & BK-2606 (CRU+Xuất→External CRU) kiểm tra dò KIND theo cờ CRU.');
+        $this->line('BK-2605 & BK-2606 (CRU) kiểm tra dò KIND: lô CRU khớp cả Internal/External theo tuyến, không suy từ Nhập/Xuất.');
 
         return self::SUCCESS;
     }
