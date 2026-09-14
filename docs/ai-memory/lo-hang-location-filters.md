@@ -36,3 +36,5 @@ UI: InfoPopup khu **"Phân loại & tùy chọn"** còn 2 toggle CRU / Thuê xe 
 **Field lô mới (cùng đợt):** `cost_lines.invoice_no` (Số hóa đơn từng khoản ở popup Chi phí); `shipments.info_note` (textarea Ghi chú lô, tách khỏi `ghi_chu` kế toán). **"Theo dõi" (follow)** nay phát hiện "Chưa có số HĐ" = khoản gắn màu theo dõi mà `invoice_no` trống (TRƯỚC: xét tiền=0) — áp ở follow=missing + followStats + chấm "!" CostLineRows.
 
 Liên quan [[coded-catalog-edit]], [[ra-status-rule]], [[trucking-report-schema]].
+
+**Lọc "Khớp bảng giá" (2026-09-14):** param `price=unmatched|matched`, chỉ xét lô ĐÃ RA; backend định giá trong bộ nhớ tập đã lọc (`priceOut()` dùng chung với cột Thu phí) rồi `whereIn id` — ~250 ms/46 query cho 311 lô, chỉ chạy khi chọn; ẩn khi không có quyền cột Thu phí (`ShipmentColumns::can('revenue')`). Không có badge đếm để khỏi định giá mỗi lần tải.

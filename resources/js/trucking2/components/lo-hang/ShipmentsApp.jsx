@@ -75,6 +75,7 @@ function ShipmentsApp() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [filter, setFilter] = useState(pf.filter || "all");
   const [tlFilter, setTlFilter] = useState(pf.tlFilter || "all");   // all | done | pending (thanh lý tờ khai)
+  const [priceFilter, setPriceFilter] = useState(pf.priceFilter || "all");   // all | unmatched | matched (khớp bảng giá, chỉ lô đã ra)
   // Bộ lọc theo "follow": 'all' | 'any' | 'missing' | '#hex' (lọc theo màu cụ thể)
   const [followFilter, setFollowFilter] = useState(pf.followFilter || "all");
   const [toLocSel, setToLocSel] = useState(pf.toLocSel || []);   // lọc theo NƠI HẠ theo KÝ HIỆU — CHỌN NHIỀU (OR)
@@ -142,6 +143,7 @@ function ShipmentsApp() {
     if (qDeb.trim()) p.set("q", qDeb.trim());
     if (filter !== "all") p.set("filter", filter);
     if (tlFilter !== "all") p.set("tl", tlFilter);
+    if (priceFilter !== "all") p.set("price", priceFilter);
     if (followFilter !== "all") p.set("follow", followFilter);
     (toLocSel || []).forEach((v) => p.append("toLoc[]", v));   // chọn nhiều ký hiệu nơi hạ → OR
     if (toLocSel && toLocSel.length) p.set("toMode", toMode);
@@ -194,8 +196,8 @@ function ShipmentsApp() {
   const skipPersist = useRef(fromLink);
   useEffect(() => {
     if (skipPersist.current) { skipPersist.current = false; return; }
-    try { localStorage.setItem(FILTER_KEY, JSON.stringify({ filter, tlFilter, followFilter, toLocSel, toMode, fromLocSel, fromMode, custSel, denDate, tagSel, perPage, sort, showFilters })); } catch (e) {}
-  }, [filter, tlFilter, followFilter, toLocSel, toMode, fromLocSel, fromMode, custSel, denDate, tagSel, perPage, sort, showFilters]);
+    try { localStorage.setItem(FILTER_KEY, JSON.stringify({ filter, tlFilter, priceFilter, followFilter, toLocSel, toMode, fromLocSel, fromMode, custSel, denDate, tagSel, perPage, sort, showFilters })); } catch (e) {}
+  }, [filter, tlFilter, priceFilter, followFilter, toLocSel, toMode, fromLocSel, fromMode, custSel, denDate, tagSel, perPage, sort, showFilters]);
 
   // Nạp lại khi tham số đổi. Bỏ lần mount đầu NẾU không có bộ lọc lưu (đã có boot mặc định);
   // nếu CÓ bộ lọc lưu (khác mặc định) → nạp ngay lần đầu để áp đúng cấu hình đã khôi phục.
@@ -203,7 +205,7 @@ function ShipmentsApp() {
   useEffect(() => {
     if (skipFirst.current) { skipFirst.current = false; return; }
     load();
-  }, [page, perPage, qDeb, filter, tlFilter, followFilter, toLocSel, toMode, fromLocSel, fromMode, custSel, denDate, tagSel, sort]);
+  }, [page, perPage, qDeb, filter, tlFilter, priceFilter, followFilter, toLocSel, toMode, fromLocSel, fromMode, custSel, denDate, tagSel, sort]);
   // Mở từ Lộ trình/Bảng kê (?q/?open): boot là danh sách CHƯA lọc → tải lại theo q ngay + tự mở popup.
   useEffect(() => { if (_initSp.get("q") || _initSp.get("open")) { skipFirst.current = false; load(); } }, []);
 
@@ -864,13 +866,14 @@ function ShipmentsApp() {
   const setFilterP = (f) => { setFilter(f); setPage(1); };
   const setFollowP = (f) => { setFollowFilter(f); setPage(1); };
   const setTlP = (f) => { setTlFilter(f); setPage(1); };           // lọc đã / chưa thanh lý tờ khai
+  const setPriceP = (f) => { setPriceFilter(f); setPage(1); };     // lọc đã / chưa khớp bảng giá
   const setToLocP = (arr) => { setToLocSel(arr); setPage(1); };   // chọn nhiều ký hiệu nơi hạ (OR)
   const setCustP = (arr) => { setCustSel(arr); setPage(1); };      // lọc theo khách hàng (OR)
   const setDenDateP = (v) => { setDenDate(v); setPage(1); };      // lọc theo Giờ đến kế hoạch (1 ngày)
   const setTagP = (arr) => { setTagSel(arr); setPage(1); };       // lọc theo nhãn
   // Số bộ lọc chi tiết đang bật + xóa tất cả (để hiện badge / nút Xóa lọc)
-  const activeFilters = (toLocSel.length ? 1 : 0) + (fromLocSel.length ? 1 : 0) + (custSel.length ? 1 : 0) + (denDate ? 1 : 0) + (tagSel.length ? 1 : 0) + (followFilter !== "all" ? 1 : 0) + (tlFilter !== "all" ? 1 : 0);
-  const clearFilters = () => { setToLocSel([]); setToMode("include"); setFromLocSel([]); setFromMode("exclude"); setCustSel([]); setDenDate(""); setTagSel([]); setFollowFilter("all"); setTlFilter("all"); setPage(1); };
+  const activeFilters = (toLocSel.length ? 1 : 0) + (fromLocSel.length ? 1 : 0) + (custSel.length ? 1 : 0) + (denDate ? 1 : 0) + (tagSel.length ? 1 : 0) + (followFilter !== "all" ? 1 : 0) + (tlFilter !== "all" ? 1 : 0) + (priceFilter !== "all" ? 1 : 0);
+  const clearFilters = () => { setToLocSel([]); setToMode("include"); setFromLocSel([]); setFromMode("exclude"); setCustSel([]); setDenDate(""); setTagSel([]); setFollowFilter("all"); setTlFilter("all"); setPriceFilter("all"); setPage(1); };
   // 1 ô lọc trong panel: nhãn nhỏ phía trên + control phía dưới (gọn, thẳng hàng)
   const FF = ({ label, icon, children }) => (
     <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -1061,6 +1064,7 @@ function ShipmentsApp() {
               {custSel.length > 0 && <FChip onClear={() => setCustP([])}>Khách: {custSel.join(", ")}</FChip>}
               {denDate && <FChip onClear={() => setDenDateP("")}>Đóng hàng {fmtDate(denDate)}</FChip>}
               {tagSel.length > 0 && <FChip onClear={() => setTagP([])}>Nhãn: {tagSel.join(", ")}</FChip>}
+              {priceFilter !== "all" && <FChip onClear={() => setPriceP("all")}>{priceFilter === "unmatched" ? "Chưa khớp giá" : "Đã khớp giá"}</FChip>}
               {followFilter !== "all" && <FChip onClear={() => setFollowP("all")}>Theo dõi: {followFilter === "missing" ? "chưa số HĐ" : followFilter === "any" ? "có theo dõi" : "màu"}</FChip>}
             </div>
           )}
@@ -1114,6 +1118,22 @@ function ShipmentsApp() {
                 })}
               </div>
             </FF>
+            {col("revenue") && (
+              <FF label="Khớp bảng giá" icon="bi-currency-dollar">
+                <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 9, padding: 3, gap: 1 }}>
+                  {[["all", "Tất cả"], ["unmatched", "Chưa khớp giá"], ["matched", "Đã khớp giá"]].map(([k, lb]) => {
+                    const on = priceFilter === k;
+                    return (
+                      <button key={k} type="button" onClick={() => setPriceP(k)} title={k === "all" ? undefined : "Chỉ xét lô ĐÃ RA — lô chưa ra chưa có ngày cont ra để chọn bảng giá"}
+                        style={{ border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, padding: "5px 11px", borderRadius: 7, whiteSpace: "nowrap",
+                          background: on ? "#fff" : "transparent", color: on ? (k === "unmatched" ? "var(--warn)" : "var(--accent)") : "var(--ink-3)", boxShadow: on ? "0 1px 2px rgba(16,19,23,.14)" : "none" }}>
+                        {lb}
+                      </button>
+                    );
+                  })}
+                </div>
+              </FF>
+            )}
             <FF label="Nhãn" icon="bi-tags">
               <div style={{ width: isMobile ? 180 : 220 }}><MultiCombo values={tagSel} onChange={setTagP} options={tagOptions} placeholder="Tất cả nhãn" strict max={50} /></div>
             </FF>

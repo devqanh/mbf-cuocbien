@@ -127,6 +127,9 @@ trait HandlesShipments
         $filter  = in_array($filter, ['all', 'out', 'notout'], true) ? $filter : 'all';
         $tl      = (string) ($p['tl'] ?? 'all');                                        // lọc thanh lý tờ khai
         $tl      = in_array($tl, ['all', 'done', 'pending'], true) ? $tl : 'all';
+        $price   = (string) ($p['price'] ?? 'all');                                     // lọc khớp bảng giá (lô đã ra)
+        $price   = in_array($price, ['all', 'unmatched', 'matched'], true) ? $price : 'all';
+        $canRevenue = ShipmentColumns::can('revenue');   // không được xem cột Thu phí → không định giá, không lọc theo giá
         $follow  = (string) ($p['follow'] ?? 'all');
         $sortKey = (string) ($p['sort'] ?? 'default');
         $sortKey = in_array($sortKey, ['default', 'customer', 'cost'], true) ? $sortKey : 'default';
@@ -301,6 +304,18 @@ trait HandlesShipments
             }
         }
 
+        // Lọc KHỚP GIÁ: chỉ xét lô ĐÃ RA (chưa ra chưa có ngày cont ra để chọn bảng giá). Bảng giá không lọc được
+        // bằng SQL → định giá trong bộ nhớ tập đã lọc (context bảng giá memoize theo khách/bảng) rồi whereIn id.
+        // Chỉ chạy khi người dùng chọn — mặc định không tốn thêm gì.
+        if ($price !== 'all' && $canRevenue) {
+            $wantMatched = ($price === 'matched');
+            $ids = [];
+            foreach ($applyOut(clone $list)->with(['costLines', 'customer:id,name', 'raOther:id,gio_xe_ra'])->get() as $s) {
+                if ((bool) $this->priceOut($s)['matched'] === $wantMatched) $ids[] = $s->id;
+            }
+            $list->whereIn('id', $ids ?: [0]);
+        }
+
         $total    = $all ? $allCount : $list->count();
         $lastPage = max(1, (int) ceil(($total ?: 1) / $perPage));
         $page     = min($page, $lastPage);
@@ -319,15 +334,12 @@ trait HandlesShipments
         if (! $all) $list->forPage($page, $perPage);
         // "Thu phí (cước+dầu)" CHO LÔ ĐÃ RA — DÙNG CHUNG priceShipment với bảng kê (1 nguồn công thức,
         // sửa 1 chỗ áp cả 2). Chỉ tính cho trang đang xem (không tính khi $all=export) để nhẹ query.
-        $canRevenue = ShipmentColumns::can('revenue');
         $data = $list->get()->map(function ($s) use ($all, $canRevenue) {
             $arr = $this->shipmentToArray($s);
             if (! $canRevenue) return $arr;   // không được xem cột Thu phí → khỏi định giá, khỏi gửi
             $out = ! empty($s->gio_xe_ra);   // "đã ra" = có Giờ xe ra
             if (! $all && $out) {
-                $sheet = strtoupper((string) $s->sheet);
-                $date  = $this->outDate($s->gio_xe_ra) ?: ($sheet === 'HPH' ? $this->outDate($s->sail_date) : '');
-                $pr = $this->priceShipment($s, $this->pricingContextForDate($s->customer_id ? (int) $s->customer_id : null, $s->customer?->name, $date));
+                $pr = $this->priceOut($s);
                 // Nền cước+dầu (+ sà lan) — KHỚP cột "Phải thu (cước+dầu)" của bảng kê.
                 $arr['cuocDau']      = (int) $pr['cuoc'] + (int) $pr['dau'] + (int) ($pr['bargeCuoc'] ?? 0) + (int) ($pr['bargeDau'] ?? 0);
                 $arr['priceMatched'] = (bool) $pr['matched'];
@@ -354,6 +366,17 @@ trait HandlesShipments
             'custOptions'  => $custOptions,
             'tagOptions'   => $tagOptions,
         ];
+    }
+
+    /**
+     * Định giá lô ĐÃ RA theo bảng giá phủ NGÀY cont ra (HPH fallback ngày tàu) — 1 công thức dùng chung cho
+     * cột "Thu phí" và bộ lọc khớp giá (cùng priceShipment với bảng kê).
+     */
+    private function priceOut(TruckingShipment $s): array
+    {
+        $sheet = strtoupper((string) $s->sheet);
+        $date  = $this->outDate($s->gio_xe_ra) ?: ($sheet === 'HPH' ? $this->outDate($s->sail_date) : '');
+        return $this->priceShipment($s, $this->pricingContextForDate($s->customer_id ? (int) $s->customer_id : null, $s->customer?->name, $date));
     }
 
     /**
