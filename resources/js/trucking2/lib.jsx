@@ -279,7 +279,8 @@ function Combo({ value, onChange, options = [], onCreate, placeholder = "Chọn�
 // groups (tùy chọn): [{label, items:[...]}] → gợi ý gom nhóm + gắn nhãn loại (vd Cảng/Kho).
 // Giá trị lưu vẫn là chuỗi thuần (không kèm loại) để khớp tuyến theo TẬP không phụ thuộc loại.
 // allowDup: cho chọn LẶP 1 mục (vd tuyến quay lại cùng cảng ICDQV→QV→ICDQV) — khớp vẫn theo tập.
-function MultiCombo({ values = [], onChange, options = [], groups = null, onCreate, max = 3, placeholder = "Chọn…", strict, allowDup = false }) {
+// labelOf(value) → nhãn HIỂN THỊ (chip + gợi ý + tìm kiếm); giá trị lưu vẫn là value. Vd kho: lưu TÊN, hiện "Tên — Ký hiệu".
+function MultiCombo({ values = [], onChange, options = [], groups = null, onCreate, max = 3, placeholder = "Chọn…", strict, allowDup = false, labelOf = null }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const wrapRef = useRef(null);
@@ -295,6 +296,7 @@ function MultiCombo({ values = [], onChange, options = [], groups = null, onCrea
   selRef.current = sel;   // luôn giữ danh sách MỚI NHẤT để chống stale-closure khi re-render trễ
   const full = sel.length >= max;
   const ql = q.trim().toLowerCase();
+  const lab = (v) => (labelOf ? labelOf(v) : v);
   // Chống trùng KHÔNG phân biệt hoa/thường + dấu cách: "ICD QV" == "ICDQV" == "icdqv".
   const norm = (v) => (v || "").toString().replace(/\s+/g, "").toLowerCase();
   const has = (arr, v) => arr.some((x) => norm(x) === norm(v));
@@ -303,7 +305,7 @@ function MultiCombo({ values = [], onChange, options = [], groups = null, onCrea
   const groupOf = (v) => { if (!groups) return ""; const g = groups.find((g) => (g.items || []).some((x) => norm(x) === norm(v))); return g ? g.label : ""; };
   // Lọc + XẾP HẠNG kết quả tìm (khớp đúng/đầu chuỗi/đầu từ lên trước).
   const rankSort = (arr) => !ql ? arr : arr
-    .map((o, idx) => ({ o, r: matchRank(o, ql), idx }))
+    .map((o, idx) => ({ o, r: matchRank(lab(o), ql), idx }))   // tìm theo NHÃN → gõ ký hiệu ra mọi mục cùng ký hiệu
     .filter((x) => x.r >= 0)
     .sort((a, b) => a.r - b.r || String(a.o).length - String(b.o).length || a.idx - b.idx)
     .map((x) => x.o);
@@ -324,7 +326,7 @@ function MultiCombo({ values = [], onChange, options = [], groups = null, onCrea
         {sel.map((v, idx) => (
           <span key={idx} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "var(--accent-weak)", color: "var(--accent)", fontSize: 12.5, fontWeight: 600, padding: "3px 4px 3px 9px", borderRadius: 7 }}>
             {groups && groupOf(v) ? <span style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".03em", opacity: .7 }}>{groupOf(v)}</span> : null}
-            {v}
+            {lab(v)}
             <button type="button" onClick={(e) => { e.stopPropagation(); removeAt(idx); }} title="Bỏ"
               style={{ border: "none", background: "transparent", color: "var(--accent)", cursor: "pointer", display: "grid", placeItems: "center", padding: 0, width: 16, height: 16 }}><I.x /></button>
           </span>
@@ -345,7 +347,7 @@ function MultiCombo({ values = [], onChange, options = [], groups = null, onCrea
             {!groups && avail.map((o) => (
               <button key={o} type="button" onClick={() => addVal(o)}
                 style={{ width: "100%", textAlign: "left", padding: "8px 10px", fontSize: 13.5, border: "none", borderRadius: 7, cursor: "pointer", background: "transparent", color: "var(--ink-2)" }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>{o}</button>
+                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>{lab(o)}</button>
             ))}
             {groups && groups.map((g) => {
               const gi = rankSort((g.items || []).filter((o) => allowDup || !has(sel, o)));
@@ -356,7 +358,7 @@ function MultiCombo({ values = [], onChange, options = [], groups = null, onCrea
                   {gi.map((o) => (
                     <button key={o} type="button" onClick={() => addVal(o)}
                       style={{ width: "100%", textAlign: "left", padding: "8px 10px", fontSize: 13.5, border: "none", borderRadius: 7, cursor: "pointer", background: "transparent", color: "var(--ink-2)" }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>{o}</button>
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>{lab(o)}</button>
                   ))}
                 </div>
               );

@@ -27,8 +27,16 @@ const bargeDropOptions = (cfg, cur) => {
   if (cur && !opts.some((o) => o.value === cur)) opts.unshift({ value: cur, label: cur });
   return opts;
 };
-// Kho (nhà máy): danh sách MÃ kho DEDUPE (1 ký hiệu có thể nhiều tên → chỉ hiện 1 mã); MultiCombo lưu chuỗi = mã.
-const whCodes = (cfg) => [...new Set((cfg.warehouses || []).map((n) => (cfg.warehouseCode || {})[n] || n).filter(Boolean))];
+// Kho (nhà máy): hiện MỌI kho trong danh mục, lưu TÊN kho (duy nhất) — giống Nơi lấy/hạ. Nhiều kho con chung 1 ký hiệu
+// (vd 1, 2, 3, 4, F9, A, B… đều là QV): gom theo MÃ sẽ mất kho con, trong khi phí tuyến lái xe khớp theo đúng kho con.
+// Backend tự quy tên → ký hiệu khi định giá/báo cáo. Lô cũ lưu ký hiệu vẫn hiện & tính như trước.
+const whNames = (cfg) => [...new Set((cfg.warehouses || []).filter(Boolean))];
+const whKey = (v) => String(v || "").replace(/\s+/g, "").toLowerCase();
+const whLabel = (cfg) => {
+  const code = {};
+  (cfg.warehouses || []).forEach((n) => { code[whKey(n)] = (cfg.warehouseCode || {})[n] || ""; });
+  return (v) => { const c = code[whKey(v)]; return c && whKey(c) !== whKey(v) ? `${v} \u2014 ${c}` : v; };
+};
 
 function CostPopup({ ship, patch, onSave, isDirty, onClose, cfg = {}, addCfg, tagOptions = [] }) {
   const payerOpts = cfg.payers || [];
@@ -405,7 +413,7 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.2fr 1fr 1fr", gap: 12, padding: "10px 0 0" }}>
               <Field label="Số container"><Txt value={ship.contNo} onChange={(x) => set({ contNo: x })} placeholder="TGHU 123 4567" /></Field>
               <Field label="Loại cont" hint="danh mục"><Combo value={ship.contType} onChange={(x) => set({ contType: x })} options={cfg.contTypes || []} onCreate={(v) => add("contTypes", v)} placeholder="40HC…" /></Field>
-              <Field label="Kho (nhà máy)" hint="chọn trong Cài đặt"><MultiCombo values={(ship.kho || "").split(/\s*,\s*/).filter(Boolean)} onChange={(arr) => set({ kho: arr.join(", ") })} options={whCodes(cfg)} max={Infinity} strict placeholder="Chọn kho (nhà máy) theo thứ tự đi qua…" /></Field>
+              <Field label="Kho (nhà máy)" hint="chọn trong Cài đặt"><MultiCombo values={(ship.kho || "").split(/\s*,\s*/).filter(Boolean)} onChange={(arr) => set({ kho: arr.join(", ") })} options={whNames(cfg)} labelOf={whLabel(cfg)} max={Infinity} strict placeholder="Chọn kho (nhà máy) theo thứ tự đi qua…" /></Field>
             </div>
             {/* BKS vào / BKS ra nằm ở khối "Xe vào – xe ra" bên dưới, đứng cạnh đúng mốc giờ của nó. */}
           </>

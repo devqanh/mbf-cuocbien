@@ -27,7 +27,7 @@
 - [Date fields](date-fields.md) — input ngày/giờ React dùng DateField/DTField (Flatpickr locale VN, fallback native), KHÔNG dùng type=date native; trừ 2 trang public lái xe
 - [Ra status rule](ra-status-rule.md) — "đã ra" CHỈ dựa Giờ xe ra (gio_xe_ra), không xét bks_ra; áp ở badge/tab lọc/ô chọn cont khác ra; ra_mode self/other/none gọi theo cắt móc (none→gio_xe_ra_xe cột riêng)
 - [Coded catalog edit](coded-catalog-edit.md) — Địa điểm/Kho cho sửa ký hiệu; reconcileLookup khớp theo id (idArr) giữ id khi đổi code, không đứt link; vẫn chặn trùng mã
-- [Location value = name](location-value-is-name.md) — Combo Nơi lấy/hạ phải lưu TÊN (duy nhất) chứ KHÔNG lưu ký hiệu vì nhiều địa điểm chung 1 mã; backend tự quy tên→mã khi định giá/báo cáo
+- [Location value = name](location-value-is-name.md) — Combo Nơi lấy/hạ VÀ Kho (nhà máy) phải lưu TÊN (duy nhất) chứ KHÔNG gom/lưu theo ký hiệu vì nhiều địa điểm/kho con chung 1 mã; hiện "Tên — Mã" (MultiCombo labelOf); backend tự quy tên→mã khi định giá/báo cáo
 - [Duyệt chi theo lô (ĐÃ BỎ)](shipment-spend-duyet-chi.md) — đã gỡ "chi cho tài xế" khỏi Lô hàng + drop trucking_shipment_spends; chi lái nay ở Lộ trình
 - [Chi lái ở Lộ trình](route-pays-lo-trinh.md) — phí tuyến chọn Cảng+Kho, "chi theo ngày" tổng hợp theo xe/ngày, lương 4 mức (kéo×CRU), repeater chi khác; bảng trucking_route_pays (chỉ lưu lái nhận + đã chi)
 - [JSON schema evolution](json-schema-evolution.md) — cột JSON phải tiến hóa tương thích ngược: chỉ thêm trường tùy chọn + đọc kèm default; không đổi tên/kiểu trường cũ
