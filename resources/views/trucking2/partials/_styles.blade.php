@@ -60,8 +60,9 @@
   }
   .trk-fp:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-weak); }
   .trk-fp::placeholder { color: var(--ink-4); }
-  /* Lịch Flatpickr phải nổi trên modal lô hàng (z-index modal = 1100) */
-  .flatpickr-calendar { z-index: 1200 !important; }
+  /* Lịch Flatpickr phải nổi trên modal (1100) VÀ mọi popover trong trang (vd Xuất Excel ở Lô hàng = 1201);
+     lịch là lớp tạm luôn ở trên cùng → để cao hẳn (dropdown Combo 9999 không bao giờ mở cùng lúc). */
+  .flatpickr-calendar { z-index: 9000 !important; }
 /* tích hợp layout app */
 main.app-body{padding:0 !important;}
 #trk-root{overflow:hidden;background:var(--bg);}

@@ -120,7 +120,7 @@ return [
         // Xem từng CỘT của bảng Lô hàng. Bỏ quyền = ẩn cột đó với vai trò. Cột Khách hàng và Cont
         // luôn hiện (ẩn thì bảng vô nghĩa). Hai cột tiền còn được cắt ở server, không gửi số ra máy người xem.
         'shipments.view_id'       => ['label' => 'Cột ID',         'desc' => 'Cột ID lô trong bảng Lô hàng (số thứ tự trong CSDL)'],
-        'shipments.view_customs'  => ['label' => 'Cột Thanh lý',   'desc' => 'Cột Thanh lý tờ khai (ô tích + ngày thanh lý)'],
+        'shipments.view_customs'  => ['label' => 'Cột Thanh lý / Hạ cont', 'desc' => 'Cột Thanh lý tờ khai và cột Hạ cont (ô tích + ngày)'],
         'shipments.view_route'    => ['label' => 'Cột Tuyến',      'desc' => 'Cột Tuyến: nơi lấy → nơi hạ và chuỗi ký hiệu tuyến'],
         'shipments.view_plate'    => ['label' => 'Cột BKS vào',    'desc' => 'Biển số xe kéo cont, hiện trong cột Tuyến'],
         'shipments.view_schedule' => ['label' => 'Cột Lịch trình', 'desc' => 'Cột Lịch trình: KH đến, cắt máng, ngày cont đến/ra, CONNECT/DISCONNECT'],

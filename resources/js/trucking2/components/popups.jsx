@@ -563,6 +563,8 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
               <Field label="Cắt máng" hint="ngày giờ"><DTField value={ship.cutOff} onChange={(x) => set({ cutOff: x })} /></Field>
               <Field label="Ngày cont đến"><DateField value={ship.contDen} onChange={(x) => set({ contDen: x })} /></Field>
               {/* Bỏ "Ngày cont ra" — dùng "Giờ xe ra" (gioXeRa) ở mục Free time làm mốc cont rời đi. */}
+              {/* Hạ cont: CÓ ngày = đã hạ (tích nhanh ở bảng Lô hàng ghi ngày hôm nay; ở đây sửa ngày cụ thể). */}
+              <Field label="Ngày hạ cont" hint="có ngày = đã hạ"><DateField value={ship.haCont} onChange={(x) => set({ haCont: x })} /></Field>
             </>
           )}
         </div>

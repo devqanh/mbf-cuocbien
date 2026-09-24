@@ -127,6 +127,8 @@ trait HandlesShipments
         $filter  = in_array($filter, ['all', 'out', 'notout'], true) ? $filter : 'all';
         $tl      = (string) ($p['tl'] ?? 'all');                                        // lọc thanh lý tờ khai
         $tl      = in_array($tl, ['all', 'done', 'pending'], true) ? $tl : 'all';
+        $hc      = (string) ($p['hc'] ?? 'all');                                        // lọc hạ cont (đã / chưa hạ)
+        $hc      = in_array($hc, ['all', 'done', 'pending'], true) ? $hc : 'all';
         $price   = (string) ($p['price'] ?? 'all');                                     // lọc khớp bảng giá (lô đã ra)
         $price   = in_array($price, ['all', 'unmatched', 'matched'], true) ? $price : 'all';
         $canRevenue = ShipmentColumns::can('revenue');   // không được xem cột Thu phí → không định giá, không lọc theo giá
@@ -267,6 +269,11 @@ trait HandlesShipments
         $applyNotTl = fn ($q) => $q->whereNull('thanh_ly_date');
         $tlDone = $applyTl($searched())->count();
         $tlCounts = ['all' => $allCount, 'done' => $tlDone, 'pending' => $allCount - $tlDone];
+        // "Đã hạ cont" = lô CÓ Ngày hạ cont (ha_cont_date) — cùng cơ chế cờ-theo-ngày như thanh lý.
+        $applyHc    = fn ($q) => $q->whereNotNull('ha_cont_date');
+        $applyNotHc = fn ($q) => $q->whereNull('ha_cont_date');
+        $hcDone = $applyHc($searched())->count();
+        $hcCounts = ['all' => $allCount, 'done' => $hcDone, 'pending' => $allCount - $hcDone];
 
         $followStats = $this->followStats($searched(), $autoHexes);
 
@@ -279,6 +286,8 @@ trait HandlesShipments
         }
         if ($tl === 'done')         $applyTl($list);
         elseif ($tl === 'pending')  $applyNotTl($list);
+        if ($hc === 'done')         $applyHc($list);
+        elseif ($hc === 'pending')  $applyNotHc($list);
         if ($followIds) {
             // "đã điền" = có dòng khoản đó CÓ số hóa đơn. Khoản AUTO expected cho mọi lô (thiếu dòng = chưa điền).
             $filledOf = fn ($ids) => fn ($c) => $c->whereIn('cost_item_id', $ids ?: [0])->whereNotNull('invoice_no')->where('invoice_no', '!=', '');
@@ -358,6 +367,7 @@ trait HandlesShipments
             'totalCost'    => $totalCost,
             'filterCounts' => $filterCounts,
             'tlCounts'     => $tlCounts,
+            'hcCounts'     => $hcCounts,
             'followStats'  => $followStats,
             'sibs'         => $this->siblingsList($sheet),
             // Danh sách KÝ HIỆU nơi hạ / nơi lấy thực có để đổ vào bộ lọc — gom theo ký hiệu, ổn định.
@@ -979,6 +989,7 @@ trait HandlesShipments
             ], (array) ($s->declarations ?? [])),
             'declNote'     => $s->declaration_note ?? '',
             'thanhLy'      => $this->outDate($s->thanh_ly_date),
+            'haCont'       => $this->outDate($s->ha_cont_date),   // có ngày = đã hạ cont
             'cshtNote'     => $s->csht_note ?? '',
             'kho'          => $s->kho ?? '',
             'from'         => $s->from_loc ?? '',
@@ -1111,6 +1122,7 @@ trait HandlesShipments
                 'declNo'       => ['declaration_no', $this->str($data['declNo'] ?? null)],
                 'declNote'     => ['declaration_note', $this->str($data['declNote'] ?? null)],
                 'thanhLy'      => ['thanh_ly_date', $this->inDate($data['thanhLy'] ?? null)],
+                'haCont'       => ['ha_cont_date', $this->inDate($data['haCont'] ?? null)],
                 'cshtNote'     => ['csht_note', $this->str($data['cshtNote'] ?? null)],
                 'kho'          => ['kho', $this->str($data['kho'] ?? null)],
                 'from'         => ['from_loc', $this->str($data['from'] ?? null)],
@@ -1396,6 +1408,7 @@ trait HandlesShipments
         if (isset($data['bargeDrop']) && trim((string) $data['bargeDrop']) !== '')  $only[] = 'bargeDrop';
         // Thanh lý tờ khai xét theo CÓ MẶT khóa (không theo "khác rỗng") vì bỏ đánh dấu = gửi null.
         if (array_key_exists('thanhLy', $data))                                    $only[] = 'thanhLy';
+        if (array_key_exists('haCont', $data))                                     $only[] = 'haCont';   // hạ cont: cùng quy tắc
         // BKS vào: ô "gán xe nhanh" ngoài bảng Lô hàng. Cũng xét theo CÓ MẶT khóa vì bỏ gán = gửi ''.
         // Popup "Gán hàng loạt" không gửi khóa này nên không có đường xóa nhầm biển số cả loạt lô.
         if (array_key_exists('bksVao', $data))                                     $only[] = 'bksVao';

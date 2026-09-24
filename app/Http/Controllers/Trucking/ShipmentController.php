@@ -35,7 +35,7 @@ class ShipmentController extends BaseTruckingController
     /** Trang Lô hàng — 1 trang (20 lô) + aggregate toàn cục. JSON cho client fetch. */
     public function page(Request $request): JsonResponse
     {
-        $params = $request->only(['page', 'perPage', 'q', 'filter', 'tl', 'follow', 'sort', 'dir', 'all', 'toLoc', 'toMode', 'fromLoc', 'fromMode', 'denDate', 'tags', 'cust', 'price']);
+        $params = $request->only(['page', 'perPage', 'q', 'filter', 'tl', 'hc', 'follow', 'sort', 'dir', 'all', 'toLoc', 'toMode', 'fromLoc', 'fromMode', 'denDate', 'tags', 'cust', 'price']);
         return response()->json(['ok' => true] + $this->svc->pagedShipments('icd', $params));
     }
 
@@ -74,6 +74,7 @@ class ShipmentController extends BaseTruckingController
             'ship.to'         => ['nullable', 'string'],
             'ship.bargeDrop'  => ['nullable', 'string'],
             'ship.thanhLy'    => ['nullable', 'string'],   // ngày thanh lý tờ khai; gửi null = bỏ đánh dấu
+            'ship.haCont'     => ['nullable', 'string'],   // ngày hạ cont; gửi null = bỏ đánh dấu
             'ship.bksVao'     => ['nullable', 'string'],   // gán xe nhanh ngoài bảng; gửi '' = bỏ gán
         ]);
         $n = $this->svc->bulkUpdateShipments($data['ids'], $data['ship']);

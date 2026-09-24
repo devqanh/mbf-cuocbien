@@ -21,7 +21,7 @@ class TruckingShipment extends Model
     protected $fillable = [
         'sheet', 'customer_id',
         'booking', 'inv', 'io', 'cru',
-        'qty', 'cont_type', 'cont_no', 'declaration_no', 'declarations', 'declaration_note', 'thanh_ly_date', 'csht_note', 'kho',
+        'qty', 'cont_type', 'cont_no', 'declaration_no', 'declarations', 'declaration_note', 'thanh_ly_date', 'ha_cont_date', 'csht_note', 'kho',
         'from_loc', 'to_loc',
         'bks_vao', 'bks_ra', 'driver', 'ra_mode', 'ra_other_id',
         'sail_date', 'cut_off', 'cont_den', 'cont_ra',
@@ -40,6 +40,7 @@ class TruckingShipment extends Model
         'ra_other_id'     => 'integer',
         'sail_date'       => 'date',
         'thanh_ly_date'   => 'date',
+        'ha_cont_date'    => 'date',
         'cont_den'        => 'date',
         'cont_ra'         => 'date',
         'han_tt'          => 'date',

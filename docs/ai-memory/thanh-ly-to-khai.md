@@ -17,3 +17,5 @@ metadata:
 - Hàng loạt: modal "Thao tác hàng loạt" thêm select Đánh dấu / Bỏ đánh dấu. `bulkUpdateShipments` xét `thanhLy` bằng **`array_key_exists`** (không phải "khác rỗng") vì bỏ đánh dấu = gửi `null`; controller validate `ship.thanhLy` nullable.
 - Popup lô: checkbox "Đã thanh lý tờ khai" cạnh ô Ngày thanh lý trong khối Hải quan.
 - Đừng nhầm với **khoản chi phí** tên "Thanh lí" (tiền, từ [[csht-import]]) và `src=thanhLyFee` (phí tờ khai) — khác hẳn field ngày này.
+
+**Hạ cont (2026-09-24):** cột `ha_cont_date` + field `haCont`, CÙNG cơ chế cờ-theo-ngày với thanh lý: ô tích trên bảng /lo-hang (cột "Hạ cont", cùng quyền `shipments.view_customs`), lọc `hc=done|pending` + `hcCounts`, popup Xuất Excel có nhóm Tất cả/Đã hạ/Chưa hạ + cột "HẠ CONT", bulk `ship.haCont` (null = bỏ), popup lô có "Ngày hạ cont" ở mục Lịch trình. FE gom logic 2 cờ vào `FLAGS`/`FlagBox`/`SegDone` trong ShipmentsApp.jsx — thêm cờ ngày mới chỉ cần thêm entry.

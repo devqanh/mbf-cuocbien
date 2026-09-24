@@ -200,6 +200,13 @@ try {
     $n = $svc->bulkUpdateShipments($ids, ['to' => 'ICDTP', 'bargeDrop' => 'HPP']);
     $sb = TruckingShipment::find($ids[0]);
     $ok($n === 2 && $sb->to_loc === 'ICDTP' && $sb->barge_drop === 'HPP' && (bool) $sb->is_barge === true, 'E7 bulkUpdate áp to+bargeDrop + derive is_barge');
+    // Hạ cont: cờ theo NGÀY như thanh lý — bulk haCont (null = bỏ đánh dấu) + lọc hc=done/pending + hcCounts
+    $svc->bulkUpdateShipments([$sb->id], ['haCont' => '2026-09-24']);
+    $pHc = $svc->pagedShipments('icd', ['hc' => 'done']);
+    $rowHc = collect($pHc['data'])->first(fn ($x) => (int) $x['id'] === (int) $sb->id);
+    $ok($rowHc && $rowHc['haCont'] === '2026-09-24' && ($pHc['hcCounts']['done'] ?? 0) >= 1 && collect($pHc['data'])->every(fn ($x) => $x['haCont'] !== ''), 'E8 bulk haCont + lọc hc=done chỉ ra lô đã hạ, haCont = ngày, hcCounts.done ≥ 1');
+    $svc->bulkUpdateShipments([$sb->id], ['haCont' => null]);
+    $ok(TruckingShipment::find($sb->id)->ha_cont_date === null && collect($svc->pagedShipments('icd', ['hc' => 'pending'])['data'])->every(fn ($x) => $x['haCont'] === ''), 'E9 haCont null → bỏ đánh dấu; lọc hc=pending chỉ ra lô chưa hạ');
 
     // ---------- F. Bảng kê khách VAT ----------
     $section('F. Bảng kê khách: VAT% + cột');
@@ -211,6 +218,16 @@ try {
     // Σ per-line == tổng
     $sum = collect($lines)->reduce(fn ($c, $l) => $c + TruckingV2Service::statementAmounts([$l], 8)['total'], 0);
     $ok($sum === $a8['total'], 'F3 Σ per-line(8%) == tổng');
+    // GIÁ TÙY CHỈNH: detail.manualBase là nền (cuoc/dau chỉ để đối chiếu); VAT tính trên nền tùy chỉnh; chi hộ giữ.
+    $aM = TruckingV2Service::statementAmounts([['cuoc' => 800000, 'dau' => 200000, 'chiHo' => 300000, 'manualBase' => 1234000]], 8);
+    $ok($aM['base'] === 1234000 && $aM['vat'] === 98720 && $aM['choho'] === 300000, 'F4 manualBase 1.234tr thắng cuoc+dau 1tr; VAT 8% trên nền tùy chỉnh; chi hộ 300k');
+    $stM = $svc->saveStatement(['no' => '__TEST_BK_M', 'customer' => $cA->name, 'date' => '2026-09-23', 'vatRate' => 0, 'lines' => [
+        ['id' => null, 'booking' => 'M1', 'phaiThu' => 1234000, 'cuoc' => 1234000, 'detail' => ['cuoc' => 800000, 'dau' => 200000, 'chiHo' => 0, 'manualBase' => 1234000]],
+        ['id' => null, 'booking' => 'M2', 'phaiThu' => 1000000, 'cuoc' => 1000000, 'detail' => ['cuoc' => 800000, 'dau' => 200000, 'chiHo' => 50000]],
+    ]]);
+    $arrM = $svc->statementToArray($stM->fresh(['lines', 'payments', 'customer']));
+    $ok((int) $stM->base_amount === 2234000 && $arrM['baseAmount'] === 2234000 && $arrM['chohoAmount'] === 50000
+        && ($arrM['lines'][0]['detail']['manualBase'] ?? null) === 1234000 && ($arrM['lines'][0]['detail']['cuoc'] ?? null) === 800000, 'F5 lưu + đọc lại: nền = 1.234tr (tùy chỉnh) + 1tr; snapshot cuoc hệ thống 800k giữ nguyên');
 
     // ---------- G. Đơn vị xe ngoài + Bảng kê xe ngoài ----------
     $section('G. Đơn vị xe ngoài + Bảng kê xe ngoài (payable)');
