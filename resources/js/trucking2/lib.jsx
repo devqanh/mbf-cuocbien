@@ -48,7 +48,10 @@ const STATEMENT_VAT_RATES = [0, 8, 10];
  * - vat   = round(base × vatRate/100). Chi hộ KHÔNG chịu VAT.
  * - choho = chi hộ dòng.
  *
- * @param line     dòng có .detail (cuoc/dau/chiHo/bargeCuoc/bargeDau) hoặc .phaiThu (fallback)
+ * Thứ tự ưu tiên nền: baseOv (đang gõ ở form tạo) → detail.manualBase (GIÁ TÙY CHỈNH đã lưu; cuoc/dau/sà lan
+ * trong detail chỉ là số hệ thống tính để đối chiếu, "Tính lại" không ghi đè) → cuoc+dau+sà lan → phaiThu (dòng cũ).
+ *
+ * @param line     dòng có .detail (cuoc/dau/chiHo/bargeCuoc/bargeDau/manualBase) hoặc .phaiThu (fallback)
  * @param vatRate  % VAT (0/8/10)
  * @param baseOv   (tùy chọn) override nền dòng do người dùng sửa tay
  * @returns {base, vat, choho, total}
@@ -59,6 +62,9 @@ function lineAmounts(line, vatRate, baseOv) {
   if (baseOv != null) {
     base = +baseOv || 0;
     if (d) choho = +d.chiHo || 0;
+  } else if (d && d.manualBase != null && d.manualBase !== "") {
+    base = +d.manualBase || 0;
+    choho = +d.chiHo || 0;
   } else if (d && ("cuoc" in d || "dau" in d || "bargeCuoc" in d || "bargeDau" in d)) {
     base = (+d.cuoc || 0) + (+d.dau || 0) + (+d.bargeCuoc || 0) + (+d.bargeDau || 0);
     choho = +d.chiHo || 0;

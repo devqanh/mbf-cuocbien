@@ -561,7 +561,15 @@ trait HandlesStatementPricing
                     $sheet = strtoupper((string) $s->sheet);
                     $date  = $this->outDate($s->gio_xe_ra) ?: ($sheet === 'HPH' ? $this->outDate($s->sail_date) : '');
                     $pr = $this->priceShipment($s, $this->pricingContextForDate($custId, $custName, $date));
-                    if ((int) round((float) $pr['phaiThu']) !== (int) round((float) $l->phai_thu)) $changed++;
+                    // So NỀN + CHI HỘ hệ thống tính hiện tại với số ĐÃ LƯU theo đúng quy tắc statementAmounts
+                    // (giá tùy chỉnh = manualBase; dòng cũ không detail = phai_thu). Dòng GIÁ TÙY CHỈNH chỉ so chi hộ:
+                    // nền do người dùng quyết, không coi là "lệch" để khỏi báo "cần tính lại" mãi.
+                    $d = is_array($l->detail ?? null) ? $l->detail : [];
+                    if (! $d) $d = ['phaiThu' => (float) $l->phai_thu];
+                    $saved  = self::statementAmounts([$d], 0);
+                    $now    = self::statementAmounts([$pr], 0);
+                    $manual = isset($d['manualBase']) && $d['manualBase'] !== '';
+                    if ((! $manual && $now['base'] !== $saved['base']) || $now['choho'] !== $saved['choho']) $changed++;
                 }
                 if ($changed > 0) $out[(string) $st->id] = ['changed' => $changed];
             }

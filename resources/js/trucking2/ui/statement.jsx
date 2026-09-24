@@ -15,6 +15,33 @@ const contColLabel = (d) => {
   return d.contType || "—";
 };
 
+/* ===== GIÁ TÙY CHỈNH + GỢI Ý "TÍNH LẠI" (dùng chung trang xem + shell bang-ke-xem) =====
+   - Dòng tùy chỉnh: detail.manualBase = nền người dùng đặt; cuoc/dau/sà lan trong detail vẫn là số hệ thống tính.
+   - "Tính lại" chỉ trả GỢI Ý (suggestById[lineId] = {found, ...pr}); số đã lưu KHÔNG đổi cho tới khi bấm Áp dụng. */
+const isManualLine = (l) => !!(l && l.detail && typeof l.detail === "object" && l.detail.manualBase != null && l.detail.manualBase !== "");
+/* Nền hệ thống tính trong 1 snapshot (cuoc+dau+sà lan); null nếu snapshot không có giá. */
+const sysBaseOf = (d) => (d && ("cuoc" in d || "dau" in d || "bargeCuoc" in d || "bargeDau" in d))
+  ? Math.round((+d.cuoc || 0) + (+d.dau || 0) + (+d.bargeCuoc || 0) + (+d.bargeDau || 0)) : null;
+/* Gợi ý cho 1 dòng từ kết quả Tính lại: null = không khác gì số đang dùng. */
+const suggestionOf = (l, s, vatRate) => {
+  if (!l || !s || !s.found) return null;
+  const a = lineAmounts(l, vatRate);
+  const base = sysBaseOf(s) ?? 0, choho = Math.round(+s.chiHo || 0);
+  const od = (l.detail && typeof l.detail === "object") ? l.detail : {};
+  const info = ["route", "conn", "kind", "contKey"].some((k) => (s[k] ?? "") !== (od[k] ?? ""));
+  if (base === a.base && choho === a.choho && !info) return null;
+  return { pr: s, base, choho, baseDiff: base !== a.base, chohoDiff: choho !== a.choho, infoOnly: base === a.base && choho === a.choho };
+};
+/* Áp dụng gợi ý vào dòng: snapshot mới thay snapshot cũ (giữ VAT riêng dòng), bỏ giá tùy chỉnh, nền = số hệ thống tính. */
+const applySuggestion = (l, s) => {
+  if (!l || !s || !s.found) return l;
+  const d = { ...s }; delete d.found; delete d.manualBase;
+  const od = (l.detail && typeof l.detail === "object") ? l.detail : {};
+  if (od.vat != null && od.vat !== "") d.vat = od.vat; else delete d.vat;
+  const base = sysBaseOf(d) ?? 0;
+  return { ...l, phaiThu: base, cuoc: base, detail: d };
+};
+
 /* Thông tin công ty cho header bảng kê (màn hình + bản in). */
 const CO = (window.__TRK && window.__TRK.boot && window.__TRK.boot.company) || {};
 const ROUTES_TRK = (window.__TRK && window.__TRK.routes) || {};
@@ -104,8 +131,9 @@ function StatementForm({ cfg, onCancel, onSaved }) {
     const lines = sel.map((x) => {
       const a = lineAmt(x);   // {base,vat,choho,total}
       const ov = ovOf(x);
-      // Sửa tay NỀN: ép detail (gộp vào cước, bỏ dầu/sà lan) để BACKEND tính nền = nền đã sửa.
-      const detail = ov != null ? { ...x.pr, cuoc: a.base, dau: 0, bargeCuoc: 0, bargeDau: 0 } : { ...x.pr };
+      // Sửa tay NỀN → ghi detail.manualBase (GIÁ TÙY CHỈNH); giữ nguyên cuoc/dau/sà lan hệ thống tính để đối chiếu.
+      const detail = { ...x.pr };
+      if (ov != null) detail.manualBase = a.base; else delete detail.manualBase;
       const vov = vatOf(x);   // VAT riêng dòng → ghi detail.vat (backend per-line)
       if (vov != null && vov !== "") detail.vat = +vov; else delete detail.vat;
       return {
@@ -305,8 +333,10 @@ function StatementForm({ cfg, onCancel, onSaved }) {
 }
 
 /* Thân chi tiết bảng kê (in được) — dùng CHUNG cho modal & trang xem riêng.
-   detailById: { [shipmentId]: { found, matched, cuoc, dau, choHoItems[], costItems[], phaiThu } } để đối soát. */
-function StatementDetailBody({ st, onUpdate, detailById = {} }) {
+   detailById:  { [shipmentId]: { found, matched, cuoc, dau, choHoItems[], costItems[], phaiThu } } = SNAPSHOT đã lưu để đối soát.
+   suggestById: kết quả "Tính lại" (gợi ý, không đụng số đã lưu) → hiện chip "Hệ thống tính X · Áp dụng" ở dòng lệch.
+   onApplyLine(lineId): áp gợi ý vào 1 dòng. */
+function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null, onApplyLine }) {
   const { useState } = React;
   const [payments, setPayments] = useState(st.payments || []);
   const sync = (arr) => { setPayments(arr); onUpdate && onUpdate({ ...st, payments: arr }); };
@@ -317,12 +347,21 @@ function StatementDetailBody({ st, onUpdate, detailById = {} }) {
   const setVat = (v) => onUpdate && onUpdate({ ...st, vatRate: v });
   // NỀN dòng = cước+dầu+sà lan (từ detail) — NGUỒN CHÂN LÝ khớp backend. VAT áp nền; chi hộ không VAT.
   const lineAmt = (l) => lineAmounts(l, vatRate);   // {base,vat,choho,total} từ detail
-  // Sửa tay NỀN dòng → ghi vào detail (gộp cước, bỏ dầu/sà lan) + phaiThu = nền, để backend khớp.
+  // Sửa tay NỀN dòng → GIÁ TÙY CHỈNH: detail.manualBase + phaiThu = nền; snapshot cuoc/dau/sà lan giữ nguyên để đối chiếu.
   const setLineBase = (id, base) => onUpdate && onUpdate({ ...st, lines: (st.lines || []).map((l) => {
     if (l.id !== id) return l;
     const d = (l.detail && typeof l.detail === "object") ? l.detail : {};
-    return { ...l, phaiThu: base, cuoc: base, detail: { ...d, cuoc: base, dau: 0, bargeCuoc: 0, bargeDau: 0 } };
+    return { ...l, phaiThu: base, cuoc: base, detail: { ...d, manualBase: base } };
   }) });
+  // Bỏ giá tùy chỉnh → về nền hệ thống đã tính trong snapshot.
+  const clearManual = (id) => onUpdate && onUpdate({ ...st, lines: (st.lines || []).map((l) => {
+    if (l.id !== id) return l;
+    const d = { ...((l.detail && typeof l.detail === "object") ? l.detail : {}) };
+    delete d.manualBase;
+    const base = sysBaseOf(d) ?? (+l.phaiThu || 0);
+    return { ...l, phaiThu: base, cuoc: base, detail: d };
+  }) });
+  const chipBtn = { border: "none", borderRadius: 6, padding: "2px 8px", fontSize: 10.5, fontWeight: 700, cursor: "pointer" };
   // Sửa VAT RIÊNG 1 dòng (ghi detail.vat). "" = theo mặc định bảng kê (xóa override).
   const setLineVat = (id, v) => onUpdate && onUpdate({ ...st, lines: (st.lines || []).map((l) => {
     if (l.id !== id) return l;
@@ -381,7 +420,11 @@ function StatementDetailBody({ st, onUpdate, detailById = {} }) {
           <tbody>
             {st.lines.map((l, i) => {
               const d = detailById[l.id];
-              const diff = d && d.found && (d.phaiThu || 0) !== (l.phaiThu || 0);
+              const sg = suggestById ? suggestById[l.id] : null;   // gợi ý từ Tính lại (nếu có)
+              const gone = !!(sg && !sg.found);                      // lô không còn trong hệ thống
+              const sug = suggestionOf(l, sg, vatRate);
+              const manual = isManualLine(l);
+              const sysB = sysBaseOf(l.detail);
               return (
               <React.Fragment key={l.id}>
               <tr className={(i % 2 ? "ke-zebra " : "") + (d ? "" : "ke-lo-end")}>
@@ -395,10 +438,29 @@ function StatementDetailBody({ st, onUpdate, detailById = {} }) {
                 <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d ? "none" : "1px solid var(--line-2)", fontWeight: 600, verticalAlign: "top" }}>
                   <span className="ke-noprint"><span style={{ position: "relative", display: "inline-block", width: 130 }}>
                     <input inputMode="numeric" value={(a.base || 0).toLocaleString("vi-VN")} onChange={(e) => setLineBase(l.id, parseInt(e.target.value.replace(/[^\d]/g, ""), 10) || 0)} className="tnum"
-                      style={{ width: "100%", padding: "6px 22px 6px 8px", fontSize: 12.5, textAlign: "right", fontWeight: 600, border: "1px solid var(--line)", borderRadius: 7, outline: "none" }}
-                      onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
+                      title={manual ? "Giá tùy chỉnh (bạn đặt tay) — Tính lại không ghi đè" : "Nền cước+dầu(+sà lan). Gõ số khác = giá tùy chỉnh"}
+                      style={{ width: "100%", padding: "6px 22px 6px 8px", fontSize: 12.5, textAlign: "right", fontWeight: 600, border: "1px solid " + (manual ? "#e0b45a" : "var(--line)"), background: manual ? "#fffaf0" : "#fff", borderRadius: 7, outline: "none" }}
+                      onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = manual ? "#e0b45a" : "var(--line)")} />
                     <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)", fontSize: 12, pointerEvents: "none" }}>₫</span>
                   </span></span>
+                  {/* Giá tùy chỉnh: nhãn + nút về giá hệ thống (số trong snapshot) */}
+                  {manual && (
+                    <div className="ke-noprint" style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 6, marginTop: 3, fontSize: 10.5, fontWeight: 700, color: "#9a6700" }}>
+                      <span><i className="bi bi-pencil-fill" style={{ fontSize: 9 }} /> Giá tùy chỉnh</span>
+                      {sysB != null && sysB !== a.base && (
+                        <button type="button" onClick={() => clearManual(l.id)} title={`Bỏ giá tùy chỉnh, về giá hệ thống tính ${fmtNum(sysB)}`}
+                          style={{ ...chipBtn, background: "#fff", border: "1px solid #ffe1a8", color: "#9a6700" }}>↺ {fmtNum(sysB)}</button>
+                      )}
+                    </div>
+                  )}
+                  {/* Gợi ý từ Tính lại: KHÔNG tự điền, bấm Áp dụng mới đổi (giá tùy chỉnh cũng vậy) */}
+                  {sug && (
+                    <div className="ke-noprint" style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 6, marginTop: 4, fontSize: 10.5, fontWeight: 600, color: "var(--warn)", whiteSpace: "nowrap" }}
+                      title={manual ? "Dòng này đang dùng giá tùy chỉnh — chỉ đổi khi bạn bấm Áp dụng" : "Số hệ thống vừa tính lại theo lô hàng + bảng giá hiện tại"}>
+                      <span>{sug.infoOnly ? "Thông tin tuyến/kết nối đổi" : <>Hệ thống tính {sug.baseDiff ? <b className="tnum">{fmtNum(sug.base)}</b> : null}{sug.chohoDiff ? <> · chi hộ <b className="tnum">{fmtNum(sug.choho)}</b></> : null}</>}</span>
+                      {onApplyLine && <button type="button" onClick={() => onApplyLine(l.id)} style={{ ...chipBtn, background: "var(--warn)", color: "#fff" }}>Áp dụng</button>}
+                    </div>
+                  )}
                   <span style={{ display: "none" }} className="ke-printonly">{fmtVND(a.base)}</span>
                 </td>
                 <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d ? "none" : "1px solid var(--line-2)", verticalAlign: "top" }}>
@@ -460,14 +522,14 @@ function StatementDetailBody({ st, onUpdate, detailById = {} }) {
                       )}
                       {d.choHoItems.map((c, j) => <span key={"h" + j} style={{ color: "var(--good)" }}>+ Chi hộ · {c.item} <b className="tnum">{fmtNum(c.amount)}</b></span>)}
                       <span style={{ fontWeight: 700 }}>= <b className="tnum" style={{ color: "var(--accent)" }}>{fmtNum(d.phaiThu)} ₫</b></span>
-                      {diff && <span style={{ color: "var(--warn)", fontWeight: 600 }}>≠ đã lưu {fmtNum(l.phaiThu)} — bấm “Tính lại”</span>}
+                      {manual && <span style={{ color: "#9a6700", fontWeight: 600 }}>· đang thu theo giá tùy chỉnh <b className="tnum">{fmtNum(lineAmt(l).base)}</b></span>}
                       {d.costItems.filter((c) => !c.billable).length > 0 &&
                         <span style={{ color: "var(--ink-4)" }}>· Chi phí công ty (không thu khách): {d.costItems.filter((c) => !c.billable).map((c) => c.item + " " + fmtNum(c.amount)).join(" · ")}</span>}
                     </div>
                   </td>
                 </tr>
               )}
-              {d && !d.found && (
+              {gone && (
                 <tr className={(i % 2 ? "ke-zebra " : "") + "ke-lo-end"}><td style={{ borderBottom: "1px solid var(--line-2)" }}></td><td colSpan={7} style={{ padding: "0 8px 9px", borderBottom: "1px solid var(--line-2)", fontSize: 11.5, color: "var(--ink-4)" }}>Lô không còn trong hệ thống — giữ số đã lưu, không tính lại được.</td></tr>
               )}
               </React.Fragment>
@@ -593,9 +655,19 @@ function SavedStatementModal({ st, onClose, onDelete, onUpdate, onSave, isDirty 
   );
 }
 
-/* Trang xem bảng kê đã lưu (route riêng) — chi tiết đầy đủ như lúc tạo. */
-function SavedStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUrl, onExcel, onRecalc, detailById }) {
-  const recalcDiff = detailById && (st.lines || []).some((l) => { const d = detailById[l.id]; return d && d.found && (d.phaiThu || 0) !== (l.phaiThu || 0); });
+/* Trang xem bảng kê đã lưu (route riêng) — chi tiết đầy đủ như lúc tạo.
+   suggestById = kết quả "Tính lại" (gợi ý); onApplyLine/onApplyAll áp gợi ý vào dòng; onClearSuggest ẩn gợi ý. */
+function SavedStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUrl, onExcel, onRecalc, detailById, suggestById = null, onApplyLine, onApplyAll, onClearSuggest }) {
+  // Tổng kết gợi ý: dòng có giá/chi hộ mới, trong đó dòng giá tùy chỉnh được giữ (chỉ áp từng dòng), lô đã mất.
+  const vr = +st.vatRate || 0;
+  let nNew = 0, nManualKept = 0, nApplicable = 0, nGone = 0;
+  if (suggestById) (st.lines || []).forEach((l) => {
+    const s = suggestById[l.id];
+    if (s && !s.found) { nGone++; return; }
+    if (!suggestionOf(l, s, vr)) return;
+    nNew++; if (isManualLine(l)) nManualKept++; else nApplicable++;
+  });
+  const recalcDiff = nNew > 0;
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
       <div className="ke-noprint trk-head" style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 22px", background: "#fff", borderBottom: "1px solid var(--line)" }}>
@@ -609,9 +681,9 @@ function SavedStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUrl, 
             <div className="tnum" style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{st.no} · {st.customer}</div>
           </div>
         </div>
-        {onRecalc && <button type="button" onClick={onRecalc} title="Tính lại phải thu từ dữ liệu lô hàng hiện tại"
+        {onRecalc && <button type="button" onClick={onRecalc} title="Tính lại theo lô hàng + bảng giá hiện tại — chỉ GỢI Ý, không đổi số đã lưu; giá tùy chỉnh giữ nguyên"
           style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 15px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: recalcDiff ? "#fff" : "var(--ink-2)", background: recalcDiff ? "var(--warn)" : "#fff", border: recalcDiff ? "none" : "1px solid var(--line)", borderRadius: 9 }}>
-          <I.fx /> Tính lại{recalcDiff ? " (có chênh lệch)" : ""}
+          <I.fx /> Tính lại{recalcDiff ? ` (${nNew} dòng có giá mới)` : ""}
         </button>}
         {onExcel && <button type="button" onClick={onExcel}
           style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 15px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "#fff", background: "var(--good)", border: "none", borderRadius: 9 }}>
@@ -623,11 +695,25 @@ function SavedStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUrl, 
           <i className="bi bi-info-circle-fill" style={{ fontSize: 16, marginTop: 1, flexShrink: 0 }} />
           <div>
             Bảng kê này đã được <b>chốt số khi tạo</b> để lưu hồ sơ. Nếu sau này <b>lô hàng gốc bị sửa hoặc xóa</b>, bảng kê này <b>vẫn giữ nguyên</b> — không bị ảnh hưởng.
-            <br />Khi bạn thấy lô hàng có thay đổi và muốn cập nhật phải thu, bấm nút <b>Tính lại</b> ở trên — hệ thống sẽ đọc lại thông tin lô hàng hiện tại và tính lại bảng kê.
+            <br />Bấm <b>Tính lại</b> để hệ thống tính theo lô hàng + bảng giá hiện tại và <b>gợi ý</b> bên cạnh từng dòng; số đã lưu chỉ đổi khi bạn bấm <b>Áp dụng</b> rồi <b>Lưu</b>. Ô nào bạn gõ tay là <b>giá tùy chỉnh</b> (viền vàng), không bao giờ bị ghi đè tự động.
           </div>
         </div>
+        {/* Thanh tổng kết gợi ý sau Tính lại */}
+        {suggestById && (
+          <div className="ke-noprint" style={{ maxWidth: 940, margin: "0 auto 14px", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", background: nNew ? "#fff7e6" : "var(--good-weak)", border: "1px solid " + (nNew ? "#ffe1a8" : "var(--good)"), borderRadius: 12, padding: "10px 14px", fontSize: 13, color: nNew ? "#7a5200" : "var(--good)", lineHeight: 1.5 }}>
+            <i className="bi bi-calculator-fill" style={{ fontSize: 16, flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 240 }}>
+              {nNew
+                ? <>Hệ thống tính ra <b>{nNew}</b> dòng có giá / chi hộ khác số đang dùng{nManualKept ? <> — trong đó <b>{nManualKept}</b> dòng <b>giá tùy chỉnh được giữ nguyên</b> (muốn đổi thì bấm <b>Áp dụng</b> ở đúng dòng đó)</> : null}. Số đã lưu chưa thay đổi.</>
+                : <>Khớp dữ liệu hiện tại — không dòng nào chênh lệch.</>}
+              {nGone ? <> · {nGone} lô không còn trong hệ thống, giữ số đã lưu.</> : null}
+            </div>
+            {nApplicable > 0 && onApplyAll && <Btn variant="primary" onClick={onApplyAll} title="Chỉ áp cho dòng KHÔNG phải giá tùy chỉnh">Áp dụng {nApplicable} dòng</Btn>}
+            {onClearSuggest && <Btn onClick={onClearSuggest}>Ẩn gợi ý</Btn>}
+          </div>
+        )}
         <div style={{ maxWidth: 940, margin: "0 auto", background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "8px 22px 18px" }}>
-          <StatementDetailBody st={st} onUpdate={onUpdate} detailById={detailById || {}} />
+          <StatementDetailBody st={st} onUpdate={onUpdate} detailById={detailById || {}} suggestById={suggestById} onApplyLine={onApplyLine} />
           <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
             <StatementActions st={st} isDirty={isDirty} onSave={onSave} onDelete={(id) => { Promise.resolve(onDelete && onDelete(id)).then(() => { window.location.href = backUrl; }); }} />
           </div>
@@ -638,24 +724,26 @@ function SavedStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUrl, 
 }
 
 
-/* Chip cảnh báo bảng kê có lô lệch phải thu so với snapshot → cần mở vào bấm "Tính lại". */
+/* Chip: bảng kê có lô mà hệ thống tính ra giá/chi hộ khác số đã lưu (giá tùy chỉnh không tính) → mở, bấm Tính lại xem gợi ý. */
 function DriftChip({ n }) {
   return (
-    <span title={`${n} lô có phải thu khác với bảng kê đã lưu — mở bảng kê và bấm “Tính lại” để cập nhật.`}
-      style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 8, fontSize: 11, fontWeight: 700, color: "#fff", background: "var(--warn)", padding: "2px 8px", borderRadius: 999, whiteSpace: "nowrap", verticalAlign: "middle" }}>
-      <i className="bi bi-exclamation-triangle-fill" style={{ fontSize: 10 }} /> Cần tính lại
+    <span title={`${n} lô có giá / chi hộ hệ thống tính khác số đã lưu — mở bảng kê, bấm “Tính lại” để xem gợi ý và Áp dụng nếu đúng. Giá tùy chỉnh không bị ghi đè.`}
+      style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, color: "#7a5200", background: "#fff1cc", border: "1px solid #ffe1a8", padding: "1px 8px", borderRadius: 999, whiteSpace: "nowrap", verticalAlign: "middle" }}>
+      <i className="bi bi-calculator" style={{ fontSize: 10 }} /> Giá mới: {n} lô
     </span>
   );
 }
 
 function KePage({ ke, drift = {}, onNew, onOpen }) {
   const isMobile = useIsMobile();
-  const cols = "130px 1fr 110px 130px 120px 90px 110px 130px";
+  // Cột khách minmax(0,1fr) để tên dài/chip KHÔNG kéo lưới tràn khung (trước đây cột Tổng tiền bị cắt).
+  const cols = "130px minmax(0, 1fr) 96px 150px 128px 100px 110px 140px";
+  const money = { textAlign: "right", whiteSpace: "nowrap" };
   const driftOf = (st) => drift[String(st.id)];
   const num = (v, fb) => (v == null ? fb : v);   // số dẫn xuất từ backend; fallback nếu boot cũ
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", padding: isMobile ? "16px 14px 24px" : "20px 22px 24px", overflow: "auto" }}>
-      <div style={{ maxWidth: 1000, width: "100%", margin: "0 auto" }}>
+      <div style={{ maxWidth: 1120, width: "100%", margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 18, flexWrap: "wrap" }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em" }}>Bảng kê cần thu</h1>
@@ -680,7 +768,7 @@ function KePage({ ke, drift = {}, onNew, onOpen }) {
                     <span className="tnum" style={{ fontWeight: 700, color: "var(--accent)", fontSize: 14 }}>{st.no}</span>
                     <span className="tnum" style={{ color: "var(--ink-3)", fontSize: 12.5 }}>{fmtDate(st.date)}</span>
                   </div>
-                  <div style={{ fontWeight: 600, fontSize: 14.5, marginTop: 4 }}>{st.customer}{driftOf(st) ? <DriftChip n={driftOf(st).changed} /> : null}</div>
+                  <div style={{ fontWeight: 600, fontSize: 14.5, marginTop: 4, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>{st.customer}{driftOf(st) ? <DriftChip n={driftOf(st).changed} /> : null}</div>
                   <div className="tnum" style={{ color: "var(--ink-4)", fontSize: 12, marginTop: 2 }}>{(st.from || st.to) ? `Cont ra: ${fmtDate(st.from) || "…"} – ${fmtDate(st.to) || "…"}` : "—"}</div>
                   <div style={{ marginTop: 9, paddingTop: 9, borderTop: "1px solid var(--line-2)", fontSize: 12.5, color: "var(--ink-3)", display: "flex", flexWrap: "wrap", gap: "2px 12px" }}>
                     <span>Cước+dầu: <b className="tnum" style={{ color: "var(--ink-2)" }}>{fmtNum(num(st.baseAmount, st.tongThu))}</b></span>
@@ -708,14 +796,17 @@ function KePage({ ke, drift = {}, onNew, onOpen }) {
               style={{ width: "100%", textAlign: "left", display: "grid", gridTemplateColumns: cols, gap: 12, alignItems: "center", padding: "12px 16px", borderBottom: "1px solid var(--line-2)", background: "transparent", border: "none", borderBottomStyle: "solid", cursor: "pointer", fontSize: 13.5 }}
               onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent-weak-2)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
-              <span className="tnum" style={{ fontWeight: 600, color: "var(--accent)" }}>{st.no}</span>
-              <span style={{ fontWeight: 500 }}>{st.customer}{driftOf(st) ? <DriftChip n={driftOf(st).changed} /> : null}</span>
-              <span className="tnum" style={{ color: "var(--ink-2)" }}>{fmtDate(st.date)}</span>
-              <span className="tnum" style={{ color: "var(--ink-3)", fontSize: 12.5 }}>{(st.from || st.to) ? `${fmtDate(st.from) || "…"} – ${fmtDate(st.to) || "…"}` : "—"}</span>
-              <span className="tnum" style={{ textAlign: "right", color: "var(--ink-2)" }}>{fmtNum(num(st.baseAmount, st.tongThu))}</span>
-              <span className="tnum" style={{ textAlign: "right", color: (st.vatRate ? "var(--accent)" : "var(--ink-4)") }} title={`VAT ${num(st.vatRate, 0)}%`}>{fmtNum(num(st.vatAmount, 0))}</span>
-              <span className="tnum" style={{ textAlign: "right", color: "var(--ink-3)" }}>{fmtNum(num(st.chohoAmount, 0))}</span>
-              <span className="tnum" style={{ textAlign: "right", fontWeight: 700 }}>{fmtVND(st.tongThu)}</span>
+              <span className="tnum" style={{ fontWeight: 600, color: "var(--accent)", whiteSpace: "nowrap" }}>{st.no}</span>
+              <span style={{ fontWeight: 500, minWidth: 0 }}>
+                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={st.customer}>{st.customer}</div>
+                {driftOf(st) ? <div style={{ marginTop: 3 }}><DriftChip n={driftOf(st).changed} /></div> : null}
+              </span>
+              <span className="tnum" style={{ color: "var(--ink-2)", whiteSpace: "nowrap" }}>{fmtDate(st.date)}</span>
+              <span className="tnum" style={{ color: "var(--ink-3)", fontSize: 12.5, whiteSpace: "nowrap" }}>{(st.from || st.to) ? `${fmtDate(st.from) || "…"} – ${fmtDate(st.to) || "…"}` : "—"}</span>
+              <span className="tnum" style={{ ...money, color: "var(--ink-2)" }}>{fmtNum(num(st.baseAmount, st.tongThu))}</span>
+              <span className="tnum" style={{ ...money, color: (st.vatRate ? "var(--accent)" : "var(--ink-4)") }} title={`VAT ${num(st.vatRate, 0)}%`}>{fmtNum(num(st.vatAmount, 0))}</span>
+              <span className="tnum" style={{ ...money, color: "var(--ink-3)" }}>{fmtNum(num(st.chohoAmount, 0))}</span>
+              <span className="tnum" style={{ ...money, fontWeight: 700 }}>{fmtVND(st.tongThu)}</span>
             </button>
           ))}
         </div>
@@ -726,4 +817,4 @@ function KePage({ ke, drift = {}, onNew, onOpen }) {
 }
 
 
-export { StatementForm, StatementDetailBody, StatementActions, SavedStatementModal, SavedStatementPage, DriftChip, KePage };
+export { StatementForm, StatementDetailBody, StatementActions, SavedStatementModal, SavedStatementPage, DriftChip, KePage, isManualLine, suggestionOf, applySuggestion };

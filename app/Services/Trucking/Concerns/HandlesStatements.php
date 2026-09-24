@@ -50,8 +50,14 @@ trait HandlesStatements
      * NGUỒN CHÂN LÝ DUY NHẤT cho 4 con số bảng kê (backend).
      * VAT chỉ áp lên NỀN vận chuyển (cước+dầu+sà lan); chi hộ KHÔNG chịu VAT.
      *
+     * Thứ tự ưu tiên NỀN dòng (khớp lineAmounts ở frontend):
+     *  1. detail.manualBase — GIÁ TÙY CHỈNH người dùng đặt tay; cuoc/dau/sà lan trong detail chỉ là số hệ thống
+     *     tính để đối chiếu, "Tính lại" không ghi đè.
+     *  2. cuoc + dau + bargeCuoc + bargeDau (snapshot định giá).
+     *  3. phaiThu (dòng cũ không có detail).
+     *
      * @param iterable $details  Mỗi phần tử là detail snapshot 1 dòng (mảng) chứa
-     *                           cuoc/dau/chiHo/bargeCuoc/bargeDau. Khi thiếu detail
+     *                           cuoc/dau/chiHo/bargeCuoc/bargeDau/manualBase. Khi thiếu detail
      *                           (bảng kê cũ) → fallback phaiThu coi như cước (giữ total cũ).
      * @return array{base:int,choho:int,vat:int,total:int}
      */
@@ -61,7 +67,10 @@ trait HandlesStatements
         foreach ($details as $d) {
             $d = is_array($d) ? $d : (array) $d;
             $lineBase = 0.0; $lineChoho = 0.0;
-            if (array_key_exists('cuoc', $d) || array_key_exists('dau', $d)
+            if (isset($d['manualBase']) && $d['manualBase'] !== '') {
+                $lineBase  = (float) $d['manualBase'];
+                $lineChoho = (float) ($d['chiHo'] ?? 0);
+            } elseif (array_key_exists('cuoc', $d) || array_key_exists('dau', $d)
                 || array_key_exists('bargeCuoc', $d) || array_key_exists('bargeDau', $d)) {
                 $lineBase  = (float) ($d['cuoc'] ?? 0) + (float) ($d['dau'] ?? 0)
                            + (float) ($d['bargeCuoc'] ?? 0) + (float) ($d['bargeDau'] ?? 0);
