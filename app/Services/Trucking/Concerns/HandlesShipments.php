@@ -1406,6 +1406,7 @@ trait HandlesShipments
         $only = [];
         if (isset($data['to']) && trim((string) $data['to']) !== '')               $only[] = 'to';
         if (isset($data['bargeDrop']) && trim((string) $data['bargeDrop']) !== '')  $only[] = 'bargeDrop';
+        if (isset($data['cutOff']) && trim((string) $data['cutOff']) !== '')        $only[] = 'cutOff';
         // Thanh lý tờ khai xét theo CÓ MẶT khóa (không theo "khác rỗng") vì bỏ đánh dấu = gửi null.
         if (array_key_exists('thanhLy', $data))                                    $only[] = 'thanhLy';
         if (array_key_exists('haCont', $data))                                     $only[] = 'haCont';   // hạ cont: cùng quy tắc

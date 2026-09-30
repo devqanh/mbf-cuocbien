@@ -73,6 +73,7 @@ class ShipmentController extends BaseTruckingController
             'ship'            => ['required', 'array'],
             'ship.to'         => ['nullable', 'string'],
             'ship.bargeDrop'  => ['nullable', 'string'],
+            'ship.cutOff'     => ['nullable', 'string', 'max:40'],   // giờ cắt máng (DTField "YYYY-MM-DDTHH:MM")
             'ship.thanhLy'    => ['nullable', 'string'],   // ngày thanh lý tờ khai; gửi null = bỏ đánh dấu
             'ship.haCont'     => ['nullable', 'string'],   // ngày hạ cont; gửi null = bỏ đánh dấu
             'ship.bksVao'     => ['nullable', 'string'],   // gán xe nhanh ngoài bảng; gửi '' = bỏ gán

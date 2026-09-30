@@ -1,7 +1,7 @@
 import React from "react";
 const { useState, useMemo, useEffect, useRef } = React;
 import { canCol, I, fmtVND, fmtShort, fmtDate, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, Combo, MultiCombo, useIsMobile, DateField } from "@trk/lib.jsx";
-import { CostPopup, InfoPopup, colorHex, locOptions, bargeDropOptions } from "@trk/pop.jsx";
+import { CostPopup, InfoPopup, colorHex, locOptions, bargeDropOptions, DTField } from "@trk/pop.jsx";
 import { SortBtn, CellBtn, Badge, EditCell, TH, TD } from "@trk/ui.jsx";
 import { loCountOf, parseImportRows, buildTemplateWb, parseCshtRows, buildCshtTemplateWb, cshtRowCount, parseUpdateRows, buildUpdateWb, parseDeclarationRows, buildDeclarationWb } from "./excel.js";
 
@@ -73,6 +73,7 @@ function ShipmentsApp() {
   const [showBulk, setShowBulk] = useState(false);            // popup sửa hàng loạt
   const [bulkTo, setBulkTo] = useState("");                   // Nơi hạ (cảng) áp hàng loạt
   const [bulkBargeDrop, setBulkBargeDrop] = useState("");     // Nơi hạ sà lan áp hàng loạt
+  const [bulkCutOff, setBulkCutOff] = useState("");           // Cắt máng (ngày giờ) áp hàng loạt
   const [bulkTl, setBulkTl] = useState("");                   // "" giữ nguyên · "set" đánh dấu đã TL · "clear" bỏ đánh dấu
   const [bulkHc, setBulkHc] = useState("");                   // hạ cont hàng loạt: "" · "set" · "clear"
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -767,15 +768,16 @@ function ShipmentsApp() {
   const allPageSel = () => { const ids = pageIds(); return ids.length > 0 && ids.every((id) => selIds.has(id)); };
   const toggleSelAllPage = () => setSelIds((p) => { const ids = pageIds(); const n = new Set(p); ids.every((id) => n.has(id)) ? ids.forEach((id) => n.delete(id)) : ids.forEach((id) => n.add(id)); return n; });
   const clearSel = () => setSelIds(new Set());
-  const openBulk = () => { ensureCfg(); setBulkTo(""); setBulkBargeDrop(""); setBulkTl(""); setBulkHc(""); setShowBulk(true); };
+  const openBulk = () => { ensureCfg(); setBulkTo(""); setBulkBargeDrop(""); setBulkCutOff(""); setBulkTl(""); setBulkHc(""); setShowBulk(true); };
   const doBulk = async () => {
     const ids = [...selIds];
     const ship = {};
     if (bulkTo) ship.to = bulkTo;
     if (bulkBargeDrop) ship.bargeDrop = bulkBargeDrop;
+    if (bulkCutOff) ship.cutOff = bulkCutOff;
     if (bulkTl) ship.thanhLy = bulkTl === "set" ? todayISO() : null;   // null = bỏ đánh dấu (khóa CÓ MẶT mới được áp)
     if (bulkHc) ship.haCont = bulkHc === "set" ? todayISO() : null;
-    if (!ids.length || (!ship.to && !ship.bargeDrop && !bulkTl && !bulkHc) || bulkBusy) return;
+    if (!ids.length || (!ship.to && !ship.bargeDrop && !ship.cutOff && !bulkTl && !bulkHc) || bulkBusy) return;
     setBulkBusy(true);
     try {
       const res = await api("POST", ROUTES.shipmentBulk, { ids, ship });
@@ -1627,6 +1629,11 @@ function ShipmentsApp() {
               <Combo value={bulkBargeDrop} onChange={setBulkBargeDrop} options={bargeDropOptions(cfg, "")} placeholder="— Giữ nguyên — (gõ tên hoặc ký hiệu)" clearable strict />
               <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 5, lineHeight: 1.5 }}>Chọn nơi hạ sà lan = các lô tự đi sà lan; loại DRY/NOR suy từ Loại cont từng lô.</div>
             </label>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-3)", marginBottom: 5 }}><i className="bi bi-clock" /> Cắt máng <span style={{ fontWeight: 400, color: "var(--ink-4)" }}>· ngày giờ</span></div>
+              <DTField value={bulkCutOff} onChange={setBulkCutOff} />
+              <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 5, lineHeight: 1.5 }}>Để trống = giữ nguyên giờ cắt máng từng lô.</div>
+            </div>
             <label style={{ display: "block" }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-3)", marginBottom: 5 }}><i className="bi bi-file-earmark-check" /> Thanh lý tờ khai</div>
               <select value={bulkTl} onChange={(e) => setBulkTl(e.target.value)}
