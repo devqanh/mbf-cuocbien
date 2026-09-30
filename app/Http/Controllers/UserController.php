@@ -6,10 +6,10 @@ use App\Exceptions\Domain\DomainException;
 use App\Models\User;
 use App\Notifications\BroadcastTestNotification;
 use App\Services\UserService;
+use App\Support\PermissionScope;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Notification;
-use Spatie\Permission\Models\Role;
 
 class UserController extends Controller
 {
@@ -30,7 +30,8 @@ class UserController extends Controller
             ->paginate(10)
             ->withQueryString();
 
-        $roles = Role::orderBy('name')->get();
+        // Chỉ liệt kê vai trò người đang thao tác được phép gán (không super_admin, không vượt quyền mình).
+        $roles = PermissionScope::assignableRoles($request->user());
 
         // Tổng quan 2FA toàn hệ thống (2 con số nhẹ, phục vụ nhắc nhở bảo mật).
         $twoFactorEnabled = User::whereNotNull('two_factor_confirmed_at')->count();
@@ -49,6 +50,12 @@ class UserController extends Controller
             'roles.*'  => ['string', 'exists:roles,name'],
         ]);
 
+        try {
+            PermissionScope::assertCanAssignRoles($request->user(), $data['roles'] ?? []);
+        } catch (DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
         $user = $this->users->create($data, $data['roles'] ?? []);
 
         return back()->with('success', "Đã thêm thành viên: {$user->name}");
@@ -64,6 +71,13 @@ class UserController extends Controller
             'roles.*'  => ['string', 'exists:roles,name'],
         ]);
 
+        try {
+            PermissionScope::assertCanManageUser($request->user(), $user);
+            PermissionScope::assertCanAssignRoles($request->user(), $data['roles'] ?? [], $user);
+        } catch (DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
         $user = $this->users->update($user, $data, $data['roles'] ?? []);
 
         return back()->with('success', "Đã cập nhật thành viên: {$user->name}");
@@ -72,6 +86,7 @@ class UserController extends Controller
     public function destroy(Request $request, User $user): RedirectResponse
     {
         try {
+            PermissionScope::assertCanManageUser($request->user(), $user);
             $this->users->delete($user, $request->user());
         } catch (DomainException $e) {
             return back()->with('error', $e->getMessage());
@@ -86,6 +101,11 @@ class UserController extends Controller
      */
     public function resetTwoFactor(Request $request, User $user): RedirectResponse
     {
+        try {
+            PermissionScope::assertCanManageUser($request->user(), $user);
+        } catch (DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
         if (! $user->hasTwoFactorEnabled()) {
             return back()->with('error', "{$user->name} chưa bật 2FA.");
         }

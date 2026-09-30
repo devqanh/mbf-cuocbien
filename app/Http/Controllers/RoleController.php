@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\Domain\DomainException;
 use App\Services\RoleService;
+use App\Support\PermissionScope;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Spatie\Permission\Models\Permission;
@@ -35,6 +36,11 @@ class RoleController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $data = $this->validateData($request);
+        try {
+            PermissionScope::assertCanEditRole($request->user(), null, $data['permissions'] ?? []);
+        } catch (DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
         $role = $this->roles->create(
             displayName:     $data['display_name'],
             name:            $data['name'] ?? null,
@@ -47,6 +53,11 @@ class RoleController extends Controller
     public function update(Request $request, Role $role): RedirectResponse
     {
         $data = $this->validateData($request, $role->id);
+        try {
+            PermissionScope::assertCanEditRole($request->user(), $role, $data['permissions'] ?? []);
+        } catch (DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
         $role = $this->roles->update(
             role:            $role,
             displayName:     $data['display_name'],
@@ -57,9 +68,10 @@ class RoleController extends Controller
         return back()->with('success', "Đã cập nhật vai trò: {$role->display_name}");
     }
 
-    public function destroy(Role $role): RedirectResponse
+    public function destroy(Request $request, Role $role): RedirectResponse
     {
         try {
+            PermissionScope::assertCanEditRole($request->user(), $role);
             $this->roles->delete($role);
         } catch (DomainException $e) {
             return back()->with('error', $e->getMessage());
