@@ -425,7 +425,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
               const sug = suggestionOf(l, sg, vatRate);
               const manual = isManualLine(l);
               const sysB = sysBaseOf(l.detail);
-              const note = String(l.ghiChu || "").trim();   // ghi chú tự do của lô (lấy trực tiếp từ lô hàng)
+              const note = String(l.infoNote || "").trim();   // "Ghi chú tự do cho lô hàng" (popup Thông tin lô, lấy trực tiếp từ lô)
               const noteOnly = !!note && !(d && d.found) && !gone;   // có ghi chú nhưng không có dòng chi tiết → dòng riêng
               const noteEl = note ? (
                 <div style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, color: "var(--ink-2)", background: "#fffaf0", border: "1px solid #f3e2b8", borderRadius: 7, padding: "5px 9px", margin: "2px 0 6px", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>

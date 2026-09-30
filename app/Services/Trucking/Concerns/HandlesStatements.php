@@ -92,7 +92,7 @@ trait HandlesStatements
 
     public function statements(): array
     {
-        return TruckingStatement::with(['lines.shipment:id,ghi_chu', 'payments'])->orderBy('id')->get()
+        return TruckingStatement::with(['lines.shipment:id,info_note', 'payments'])->orderBy('id')->get()
             ->map(fn ($st) => $this->statementToArray($st))->all();
     }
 
@@ -198,13 +198,14 @@ trait HandlesStatements
 
     public function statementToArray(TruckingStatement $st): array
     {
-        // Ghi chú tự do của lô (ghi_chu) lấy TRỰC TIẾP từ lô hàng — sửa ghi chú ở popup lô là bảng kê hiện theo.
-        // (Cột note của dòng là snapshot "ghi chú, trống thì tuyến + kết nối" nên không tách được ghi chú thật.)
+        // "Ghi chú tự do cho lô hàng" (info_note — ô Ghi chú ở popup Thông tin lô hàng) lấy TRỰC TIẾP từ lô:
+        // sửa ở popup là bảng kê hiện theo. KHÁC ghi_chu ("Ghi chú kế toán" ở popup Doanh thu).
+        // (Cột note của dòng là snapshot "ghi chú kế toán, trống thì tuyến + kết nối" nên không dùng được.)
         // Đã eager-load lines.shipment thì dùng luôn, không thì 1 query cho cả bảng kê.
-        $ghiChu = $st->lines->every(fn ($l) => $l->relationLoaded('shipment'))
-            ? $st->lines->mapWithKeys(fn ($l) => [(int) $l->shipment_id => $l->shipment?->ghi_chu])->all()
+        $infoNote = $st->lines->every(fn ($l) => $l->relationLoaded('shipment'))
+            ? $st->lines->mapWithKeys(fn ($l) => [(int) $l->shipment_id => $l->shipment?->info_note])->all()
             : \App\Models\TruckingShipment::whereIn('id', $st->lines->pluck('shipment_id')->filter()->unique()->values())
-                ->pluck('ghi_chu', 'id')->all();
+                ->pluck('info_note', 'id')->all();
         // 4 con số tính TỪ detail từng dòng (chân lý, đúng cả bảng kê cũ) + vat_rate đã lưu.
         $rate = (float) ($st->vat_rate ?? 0);
         $amt  = self::statementAmounts($st->lines->map(function ($l) {
@@ -228,7 +229,7 @@ trait HandlesStatements
             'tongThu'     => $amt['total'],   // = Tổng tiền (nền + VAT + chi hộ)
             'lines'       => $st->lines->map(fn ($l) => [
                 'id'        => $l->shipment_id ?? $l->id,
-                'ghiChu'    => trim((string) ($ghiChu[(int) $l->shipment_id] ?? '')),
+                'infoNote'  => trim((string) ($infoNote[(int) $l->shipment_id] ?? '')),
                 'booking'   => $l->booking ?? '',
                 'sheet'     => $l->sheet ?? '',
                 'io'        => $l->io ?? '',
