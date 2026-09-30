@@ -737,4 +737,4 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
 /* ===================== CONFIG (master data) POPUP ===================== */
 
 
-export { CostPopup, RevenuePopup, CostPopupICD, RevenuePopupICD, InfoPopup };
+export { CostPopup, RevenuePopup, CostPopupICD, RevenuePopupICD, InfoPopup, locOptions, bargeDropOptions };

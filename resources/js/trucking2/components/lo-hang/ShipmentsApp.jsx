@@ -1,7 +1,7 @@
 import React from "react";
 const { useState, useMemo, useEffect, useRef } = React;
 import { canCol, I, fmtVND, fmtShort, fmtDate, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, Combo, MultiCombo, useIsMobile, DateField } from "@trk/lib.jsx";
-import { CostPopup, InfoPopup, colorHex } from "@trk/pop.jsx";
+import { CostPopup, InfoPopup, colorHex, locOptions, bargeDropOptions } from "@trk/pop.jsx";
 import { SortBtn, CellBtn, Badge, EditCell, TH, TD } from "@trk/ui.jsx";
 import { loCountOf, parseImportRows, buildTemplateWb, parseCshtRows, buildCshtTemplateWb, cshtRowCount, parseUpdateRows, buildUpdateWb, parseDeclarationRows, buildDeclarationWb } from "./excel.js";
 
@@ -885,7 +885,6 @@ function ShipmentsApp() {
     );
   };
 
-  const locCodeList = () => [...new Set(Object.values(cfg.locationCode || {}).filter(Boolean))].sort();
   const setFilterP = (f) => { setFilter(f); setPage(1); };
   const setFollowP = (f) => { setFollowFilter(f); setPage(1); };
   const setTlP = (f) => { setTlFilter(f); setPage(1); };           // lọc đã / chưa thanh lý tờ khai
@@ -1620,11 +1619,12 @@ function ShipmentsApp() {
           <div style={{ padding: "14px 0 6px", display: "flex", flexDirection: "column", gap: 14 }}>
             <label style={{ display: "block" }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-3)", marginBottom: 5 }}><i className="bi bi-geo-alt-fill" /> Nơi hạ (cảng)</div>
-              <Combo value={bulkTo} onChange={setBulkTo} options={locCodeList().map((c) => ({ value: c, label: c }))} placeholder="— Giữ nguyên — (gõ để tìm)" clearable strict />
+              {/* Giống popup từng lô: hiện MỌI địa điểm "Tên — Ký hiệu", lưu TÊN (nhiều địa điểm chung 1 ký hiệu) */}
+              <Combo value={bulkTo} onChange={setBulkTo} options={locOptions(cfg)} placeholder="— Giữ nguyên — (gõ tên hoặc ký hiệu)" clearable strict />
             </label>
             <label style={{ display: "block" }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-3)", marginBottom: 5 }}><i className="bi bi-water" /> Nơi hạ sà lan (điểm đến)</div>
-              <Combo value={bulkBargeDrop} onChange={setBulkBargeDrop} options={["HPP", "LHP"].map((c) => ({ value: c, label: c }))} placeholder="— Giữ nguyên —" clearable strict />
+              <Combo value={bulkBargeDrop} onChange={setBulkBargeDrop} options={bargeDropOptions(cfg, "")} placeholder="— Giữ nguyên — (gõ tên hoặc ký hiệu)" clearable strict />
               <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 5, lineHeight: 1.5 }}>Chọn nơi hạ sà lan = các lô tự đi sà lan; loại DRY/NOR suy từ Loại cont từng lô.</div>
             </label>
             <label style={{ display: "block" }}>

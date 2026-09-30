@@ -5,6 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 7f0d2428-dc59-47c9-b3b0-a89c0b9bf3a0
+  modified: 2026-09-30T04:20:59.980Z
 ---
 
 Danh mục Địa điểm: **ký hiệu (code) KHÔNG duy nhất** — nhiều địa điểm chung 1 mã (vd HÀ HƯNG HẢI, TÂN VŨ, GIC, SAO Á… đều = HPP; còn có 1 địa điểm tên đúng "HPP"). Vì vậy `locOptions` (popups.jsx) phải dùng `value = TÊN` (duy nhất), label = "Tên — Ký hiệu". Nếu lưu value=code: chọn "HÀ HƯNG HẢI — HPP" sẽ lưu "HPP" rồi curLabel tra ngược ra option đầu trùng mã → nhảy về "HPP — HPP", và from_location_id gộp nhầm mọi depot HPP.
@@ -13,6 +14,8 @@ Danh mục Địa điểm: **ký hiệu (code) KHÔNG duy nhất** — nhiều �
 - Định giá: `$rc($s->from_loc)` (HandlesStatementPricing) name/code → code.
 - from_location_id: `locationIdMap()` key cả name lẫn code → ra đúng location cụ thể.
 - Hiển thị TUYẾN: dùng from_loc trực tiếp = tên; ký hiệu suy bằng `locCode()`. Xem [[trucking-report-schema]], [[coded-catalog-edit]].
+
+**Popup "Thao tác hàng loạt" (/lo-hang, 2026-09-30)** cũng dùng chung `locOptions` / `bargeDropOptions` (export từ popups.jsx qua `@trk/pop.jsx`) — trước đó gom theo ký hiệu (`locCodeList`) nên chỉ hiện BG/HPP/HN…; bulk lưu qua cùng `saveShipment` nên tên hoạt động y như popup từng lô. Thêm ô chọn địa điểm mới → DÙNG LẠI 2 helper này, đừng dựng list theo mã.
 
 Lưu ý dữ liệu: lô đã lưu trong lúc còn bug (from_loc = "HPP") hiển thị "HPP — HPP", phải chọn lại tên. Lô MBF/cũ vốn lưu tên thì đúng ngay.
 
