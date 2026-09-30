@@ -87,6 +87,35 @@ class User extends Authenticatable
         ])->save();
     }
 
+    /**
+     * Trang chủ theo quyền: trang ĐẦU TIÊN user được vào (thứ tự = thứ tự menu). Tránh đăng nhập
+     * xong bị 403 khi vai trò không có quyền Lô hàng (vd Kế toán).
+     */
+    public function homeUrl(): string
+    {
+        $pages = [
+            'shipments.view'     => 'trucking2.shipments',
+            'statements.view'    => 'trucking2.statements',
+            'extStatements.view' => 'trucking2.extStatements',
+            'driverPay.manage'   => 'trucking2.loTrinh',
+            'tripCost.view'      => 'trucking2.tripCost',
+            'tracking.view'      => 'trucking2.tracking',
+            'fleet.view'         => 'trucking2.fleet',
+            'prices.view'        => 'trucking2.prices',
+            'settings.view'      => 'trucking2.settings',
+            'tasks.view'         => 'tasks.index',
+            'reports.view'       => 'trucking2.report',
+            'users.view'         => 'users.index',
+            'roles.view'         => 'roles.index',
+            'system.settings'    => 'system.settings',
+            'spend.request'      => 'trucking2.spendRequest',
+        ];
+        foreach ($pages as $perm => $route) {
+            if ($this->can($perm)) return route($route);
+        }
+        return route('profile.show');
+    }
+
     public function isSuperAdmin(): bool
     {
         return $this->role === 'super_admin' || $this->hasRole('super_admin');

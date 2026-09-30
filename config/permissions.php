@@ -84,6 +84,18 @@ return [
             'color'       => '#0ea5e9',
             'description' => 'Kỳ tính phí chuyến & lương lái xe (theo lô hàng đã ra)',
         ],
+        'driverPay' => [
+            'label'       => 'Chi cho lái xe (Lộ trình)',
+            'icon'        => 'wallet2',
+            'color'       => '#0d9488',
+            'description' => 'Ghi khoản chi cho lái xe theo ngày + chốt ngày ở trang Lộ trình',
+        ],
+        'reports' => [
+            'label'       => 'Báo cáo',
+            'icon'        => 'bar-chart-line-fill',
+            'color'       => '#db2777',
+            'description' => 'Báo cáo chi phí (lãi lỗ toàn công ty) và Báo cáo tài sản',
+        ],
         'fleet' => [
             'label'       => 'Quản lý tài sản & đội xe',
             'icon'        => 'truck-front',
@@ -154,6 +166,10 @@ return [
         'tripCost.create' => ['label' => 'Tạo kỳ phí xe',       'desc' => 'Tạo kỳ tính phí chuyến & lương lái xe mới'],
         'tripCost.update' => ['label' => 'Sửa kỳ phí xe',       'desc' => 'Cập nhật / tính lại kỳ phí xe đã lưu'],
         'tripCost.delete' => ['label' => 'Xoá kỳ phí xe',       'desc' => 'Xoá kỳ phí xe khỏi hệ thống'],
+
+        'driverPay.manage' => ['label' => 'Chi cho lái xe', 'desc' => 'Mở trang Lộ trình, ghi khoản chi cho lái theo ngày và chốt/bỏ chốt ngày (không cần quyền Lô hàng)'],
+
+        'reports.view' => ['label' => 'Xem báo cáo', 'desc' => 'Xem Báo cáo chi phí (doanh thu, chi phí, lãi lỗ toàn công ty) và Báo cáo tài sản'],
 
         'fleet.view'   => ['label' => 'Xem tài sản & đội xe', 'desc' => 'Xem hồ sơ xe MBF & tài sản: chi phí, khấu hao, tài liệu'],
         'fleet.manage' => ['label' => 'Quản lý tài sản & đội xe', 'desc' => 'Thêm/sửa/xoá xe & tài sản, chi phí, tài liệu; hủy phiếu chi xe'],

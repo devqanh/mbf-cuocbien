@@ -40,10 +40,10 @@
             <h2>Đăng nhập</h2>
             <p class="subtitle">Vui lòng nhập email và mật khẩu để tiếp tục.</p>
 
-            @if ($errors->any())
+            @if ($errors->any() || session('error'))
                 <div class="alert alert-danger d-flex align-items-start gap-2">
                     <i class="bi bi-exclamation-octagon-fill mt-1"></i>
-                    <div>{{ $errors->first() }}</div>
+                    <div>{{ $errors->first() ?: session('error') }}</div>
                 </div>
             @endif
 

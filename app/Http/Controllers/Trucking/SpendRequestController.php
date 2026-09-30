@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Trucking;
 
+use App\Http\Middleware\RestrictSpendOnlySession;
 use App\Models\TruckingVehicleCost;
 use App\Support\Hashid;
 use Illuminate\Http\JsonResponse;
@@ -38,15 +39,20 @@ class SpendRequestController extends BaseTruckingController
             return response()->json(['ok' => false, 'message' => 'Vui lòng nhập mật khẩu.']);
         }
         $remember = ! $request->has('remember') || $request->boolean('remember');   // mặc định LUÔN đăng nhập
-        if (! Auth::attempt(['email' => $email, 'password' => $password], $remember)) {
+        $credentials = ['email' => $email, 'password' => $password];
+        if (! Auth::validate($credentials)) {
             return response()->json(['ok' => false, 'message' => 'Email hoặc mật khẩu không đúng.']);
         }
-        $u = auth()->user();
+        $u = Auth::getProvider()->retrieveByCredentials($credentials);
         if (! $u->can('spend.request')) {
-            Auth::logout();
             return response()->json(['ok' => false, 'message' => 'Tài khoản chưa được cấp quyền gửi yêu cầu chi. Liên hệ quản trị.']);
         }
+        // User đã bật 2FA: phiên này bỏ qua 2FA nên CHỈ dùng cho trang Yêu cầu chi (RestrictSpendOnlySession)
+        // và không ghi nhớ đăng nhập — cookie "nhớ tôi" sẽ mở lại phiên đầy đủ mà không còn cờ giới hạn.
+        $spendOnly = $u->hasTwoFactorEnabled();
+        Auth::login($u, $remember && ! $spendOnly);
         $request->session()->regenerate();
+        if ($spendOnly) $request->session()->put(RestrictSpendOnlySession::SESSION_KEY, true);
         return response()->json(['ok' => true, 'name' => $u->name]);
     }
 

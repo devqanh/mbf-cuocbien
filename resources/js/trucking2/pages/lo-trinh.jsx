@@ -388,8 +388,8 @@ function LoTrinhApp() {
                         <i className="bi bi-fuel-pump-fill" /> Dầu (cty): <span className="tnum">{fmtVND(tr.fuelTotal)}</span><span style={{ fontWeight: 500 }}>· {fmtNum(tr.fuelLiters)} l</span>
                       </span>
                     )}
-                    {/* Chi cho lái: tổng các khoản "chi theo ngày" + lái nhận */}
-                    {tr.legs.length > 0 && <button type="button" onClick={() => setPayTruck(tr)} title="Chi cho lái xe (theo phí tuyến)"
+                    {/* Chi cho lái: tổng các khoản "chi theo ngày" + lái nhận — chỉ hiện khi có quyền driverPay.manage (T.canEdit) */}
+                    {T.canEdit && tr.legs.length > 0 && <button type="button" onClick={() => setPayTruck(tr)} title="Chi cho lái xe (theo phí tuyến)"
                       style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 11px", fontSize: 12.5, fontWeight: 700, borderRadius: 999, cursor: "pointer", whiteSpace: "nowrap",
                         border: "1px solid " + (tr.paid ? "var(--good)" : (tr.payTotal > 0 ? "var(--accent)" : "var(--line)")),
                         background: tr.paid ? "var(--good-weak)" : (tr.payTotal > 0 ? "var(--accent-weak)" : "#fff"),

@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Trucking;
 
 use App\Models\TruckingAttachment;
+use App\Models\TruckingShipment;
+use App\Models\TruckingVehicle;
 use App\Models\TruckingVehicleCost;
 use Illuminate\Support\Facades\Storage;
 
@@ -12,12 +14,13 @@ class AttachmentController extends BaseTruckingController
     public function show(TruckingAttachment $attachment)
     {
         $u = auth()->user();
-        if ($attachment->group === 'costPhoto') {
-            $allowed = $u?->can('settings.view')
-                || ($u?->can('spend.request') && TruckingVehicleCost::where('created_by', $u->id)->whereJsonContains('photos', $attachment->id)->exists());
-        } else {
-            $allowed = $u?->can('settings.view');
-        }
+        // Quyền xem file = quyền xem trang chứa nó: tài liệu/ảnh hóa đơn xe → Quản lý tài sản (fleet.view),
+        // ảnh lô hàng → Lô hàng. settings.view giữ như cũ (danh mục đội xe/lái xe ở Cài đặt).
+        $allowed = $u?->can('settings.view')
+            || ($attachment->owner_type === TruckingVehicle::class && $u?->can('fleet.view'))
+            || ($attachment->owner_type === TruckingShipment::class && $u?->can('shipments.view'))
+            || ($attachment->group === 'costPhoto' && $u?->can('spend.request')
+                && TruckingVehicleCost::where('created_by', $u->id)->whereJsonContains('photos', $attachment->id)->exists());
         abort_unless($allowed, 403);
         if ($attachment->disk === 's3') $this->svc->applyS3Config();
         $disk = Storage::disk($attachment->disk);

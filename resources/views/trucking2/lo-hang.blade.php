@@ -12,6 +12,7 @@ window.__TRK = {
   csrf: '{{ csrf_token() }}',
   canEdit: {{ $canEdit ? 'true' : 'false' }},
   canDelete: {{ $canDelete ? 'true' : 'false' }},
+  canCreate: {{ auth()->user()->can('shipments.create') ? 'true' : 'false' }},
   cols: @json($cols),   {{-- quyền xem từng cột bảng Lô hàng (shipments.view_*) --}}
   routes: {
     shipmentStore: '{{ route("trucking2.shipments.store") }}',
@@ -29,7 +30,7 @@ window.__TRK = {
     catalog: '{{ url("trucking-v2/catalog") }}/',
     customers: '{{ route("trucking2.customers.save") }}',
     vehicles: '{{ route("trucking2.vehicles.save") }}',
-    @if(\App\Models\TruckingSetting::bool('sys.feature_plan_link', true))
+    @if($canEdit && \App\Models\TruckingSetting::bool('sys.feature_plan_link', true))
     plan: '{{ route("trucking2.plan") }}',
     @endif
   },

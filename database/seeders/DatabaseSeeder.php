@@ -31,6 +31,7 @@ class DatabaseSeeder extends Seeder
             'tracking.view',   'tracking.manage',
             'tripCost.view',   'tripCost.create',   'tripCost.update',   'tripCost.delete',
             'fleet.view',      'fleet.manage',
+            'driverPay.manage', 'reports.view',
             'system.settings',
             'spend.request',
             'tasks.view',      'tasks.create',      'tasks.update', 'tasks.delete', 'tasks.assign_others', 'tasks.manage_all',
@@ -68,6 +69,7 @@ class DatabaseSeeder extends Seeder
             'tripCost.view', 'tripCost.create', 'tripCost.update', 'tripCost.delete',
             'spend.request',
             'fleet.view', 'fleet.manage',
+            'driverPay.manage', 'reports.view',
         ]);
         $seedIfEmpty($chungTu, [
             'dashboard.view',

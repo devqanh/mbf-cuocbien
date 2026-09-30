@@ -41,7 +41,7 @@
             <div class="collapse navbar-collapse app-nav" id="mainNav">
                 <ul class="navbar-nav me-auto">
                     {{-- Lô hàng = dropdown gom: Lô hàng · Lộ trình · Bảng kê (rút gọn menu chính) --}}
-                    @canany(['shipments.view', 'statements.view', 'extStatements.view'])
+                    @canany(['shipments.view', 'driverPay.manage', 'statements.view', 'extStatements.view'])
                     @php $loActive = request()->routeIs('trucking2.shipments') || request()->routeIs('trucking2.loTrinh') || request()->routeIs('trucking2.statements') || request()->routeIs('trucking2.extStatements'); @endphp
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle {{ $loActive ? 'active' : '' }}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
@@ -50,8 +50,10 @@
                         <ul class="dropdown-menu">
                             @can('shipments.view')
                             <li><a class="dropdown-item {{ request()->routeIs('trucking2.shipments') ? 'active' : '' }}" href="{{ route('trucking2.shipments') }}"><i class="bi bi-box-seam me-2"></i> Lô hàng</a></li>
-                            <li><a class="dropdown-item {{ request()->routeIs('trucking2.loTrinh') ? 'active' : '' }}" href="{{ route('trucking2.loTrinh') }}"><i class="bi bi-signpost-split me-2"></i> Lộ trình</a></li>
                             @endcan
+                            @canany(['shipments.view', 'driverPay.manage'])
+                            <li><a class="dropdown-item {{ request()->routeIs('trucking2.loTrinh') ? 'active' : '' }}" href="{{ route('trucking2.loTrinh') }}"><i class="bi bi-signpost-split me-2"></i> Lộ trình</a></li>
+                            @endcanany
                             @can('statements.view')
                             <li><a class="dropdown-item {{ request()->routeIs('trucking2.statements') ? 'active' : '' }}" href="{{ route('trucking2.statements') }}"><i class="bi bi-receipt me-2"></i> Bảng kê</a></li>
                             @endcan
@@ -138,14 +140,14 @@
                     @endcan
 
                     {{-- Quản trị — hiện nếu có quyền quản trị HOẶC xem báo cáo --}}
-                    @if(auth()->user()->hasAnyPermission(['users.view', 'roles.view', 'system.settings', 'tripCost.view']))
+                    @if(auth()->user()->hasAnyPermission(['users.view', 'roles.view', 'system.settings', 'reports.view']))
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle {{ request()->routeIs('users.*','roles.*','system.*','trucking2.report','trucking2.assetReport') ? 'active' : '' }}"
                            href="#" data-bs-toggle="dropdown" role="button">
                             <i class="bi bi-shield-lock"></i> Quản trị
                         </a>
                         <ul class="dropdown-menu">
-                            @can('tripCost.view')
+                            @can('reports.view')
                             <li><a class="dropdown-item {{ request()->routeIs('trucking2.report') ? 'active' : '' }}"
                                    href="{{ route('trucking2.report') }}">
                                 <i class="bi bi-bar-chart-line-fill"></i> Báo cáo chi phí</a></li>

@@ -25,11 +25,12 @@ use App\Http\Controllers\Trucking\TrackingController;
 use App\Http\Controllers\Trucking\TripCostController;
 use App\Http\Controllers\Trucking\ReportController;
 use App\Http\Controllers\UserController;
+use App\Http\Middleware\RestrictSpendOnlySession;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
-    return redirect()->route(auth()->check() ? 'trucking2.shipments' : 'login');
+    return auth()->check() ? redirect(auth()->user()->homeUrl()) : redirect()->route('login');
 });
 
 // ===== Yêu cầu chi (mobile SPA, có đăng nhập) — tài xế gửi đề nghị chi, kế toán duyệt sau =====
@@ -62,7 +63,8 @@ Route::middleware('guest')->group(function () {
     Route::post('/login/2fa', [TwoFactorChallengeController::class, 'store'])->name('login.2fa.attempt');
 });
 
-Route::middleware('auth')->group(function () {
+// RestrictSpendOnlySession: phiên đăng nhập từ /yeu-cau-chi (bỏ 2FA) không dùng được cho các trang dưới đây.
+Route::middleware(['auth', RestrictSpendOnlySession::class])->group(function () {
     Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
 
     // ===== Profile (mọi user đã login) =====
@@ -125,9 +127,9 @@ Route::middleware('auth')->group(function () {
     });
     } // end if features.shipments
 
-    // ===== Trucking cũ (Luckysheet) ĐÃ GỠ — giữ tên 'trucking.index' làm alias chuyển sang v2
-    //        (nhiều nơi vẫn link 'Trang chủ' tới route này) =====
-    Route::get('/trucking', fn () => redirect()->route('trucking2.shipments'))->name('trucking.index');
+    // ===== Trucking cũ (Luckysheet) ĐÃ GỠ — giữ tên 'trucking.index' làm alias 'Trang chủ'
+    //        (đăng nhập xong + nhiều nơi link tới đây) → trang đầu tiên user có quyền =====
+    Route::get('/trucking', fn () => redirect(auth()->user()->homeUrl()))->name('trucking.index');
 
     // ===== Trucking v2 (record + popup) — phân quyền TÁCH theo 4 tính năng =====
     Route::prefix('trucking-v2')->name('trucking2.')->group(function () {
@@ -139,10 +141,23 @@ Route::middleware('auth')->group(function () {
             Route::get('/config',         [TruckingShipmentController::class, 'configData'])->name('configData');
             Route::get('/bootstrap',      [TruckingShipmentController::class, 'bootstrap'])->name('bootstrap');
             Route::get('/ke-hoach',                [PlanLinkController::class, 'index'])->name('plan');   // quản lý link kế hoạch
+        });
+        // --- Lộ trình lái xe: xem = quyền Lô hàng HOẶC quyền chi cho lái; chi / chốt ngày = driverPay.manage ---
+        Route::middleware('permission:shipments.view|driverPay.manage')->group(function () {
             Route::get('/lo-trinh',                [LoTrinhController::class, 'index'])->name('loTrinh');      // lộ trình lái xe theo chuyến
             Route::get('/lo-trinh/data',           [LoTrinhController::class, 'data'])->name('loTrinh.data');
-            Route::post('/lo-trinh/pay',           [LoTrinhController::class, 'savePay'])->name('loTrinh.savePay')->middleware('permission:shipments.update');
-            Route::post('/lo-trinh/freeze',        [LoTrinhController::class, 'freeze'])->name('loTrinh.freeze')->middleware('permission:shipments.update');
+        });
+        Route::middleware('permission:driverPay.manage')->group(function () {
+            Route::post('/lo-trinh/pay',           [LoTrinhController::class, 'savePay'])->name('loTrinh.savePay');
+            Route::post('/lo-trinh/freeze',        [LoTrinhController::class, 'freeze'])->name('loTrinh.freeze');
+        });
+        // --- Báo cáo chi phí (lãi lỗ) + báo cáo tài sản (quyền riêng reports.view) ---
+        Route::middleware('permission:reports.view')->group(function () {
+            Route::get('/bao-cao',                   [ReportController::class, 'index'])->name('report');
+            Route::get('/bao-cao-tai-san',           [ReportController::class, 'assetIndex'])->name('assetReport');
+            Route::get('/bao-cao-tai-san/data',      [ReportController::class, 'assetData'])->name('assetReport.data');
+            Route::get('/bao-cao/data',              [ReportController::class, 'data'])->name('report.data');
+            Route::get('/bao-cao/trend',             [ReportController::class, 'trend'])->name('report.trend');
         });
         // --- Phí xe & lương lái xe (quyền riêng tripCost.*) ---
         Route::middleware('permission:tripCost.view')->group(function () {
@@ -151,11 +166,6 @@ Route::middleware('auth')->group(function () {
             Route::get('/phi-xe/compute',            [TripCostController::class, 'compute'])->name('tripCost.compute');
             Route::get('/phi-xe/{tripCost}/recompute', [TripCostController::class, 'recompute'])->name('tripCost.recompute');
             Route::get('/phi-xe/{tripCost}',         [TripCostController::class, 'view'])->name('tripCost.view');
-            Route::get('/bao-cao',                   [ReportController::class, 'index'])->name('report');
-            Route::get('/bao-cao-tai-san',           [ReportController::class, 'assetIndex'])->name('assetReport');
-            Route::get('/bao-cao-tai-san/data',      [ReportController::class, 'assetData'])->name('assetReport.data');
-            Route::get('/bao-cao/data',              [ReportController::class, 'data'])->name('report.data');
-            Route::get('/bao-cao/trend',             [ReportController::class, 'trend'])->name('report.trend');
         });
         Route::middleware('permission:tripCost.create')->group(function () {
             Route::post('/trip-costs', [TripCostController::class, 'store'])->name('tripCost.store');

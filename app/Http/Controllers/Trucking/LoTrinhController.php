@@ -17,7 +17,8 @@ class LoTrinhController extends BaseTruckingController
                 'name'  => $d->name,
                 'banks' => is_array($d->bank_accounts) ? array_values($d->bank_accounts) : [],
             ])->values()->all();
-        return view('trucking2.lo-trinh', $this->pageData(['drivers' => $drivers], 'shipments.view', 'shipments.delete'));
+        // canEdit = quyền chi cho lái / chốt ngày (driverPay.manage) — tách khỏi quyền sửa lô hàng.
+        return view('trucking2.lo-trinh', $this->pageData(['drivers' => $drivers], 'driverPay.manage', 'driverPay.manage'));
     }
 
     /** JSON: lộ trình của 1 chuyến theo ngày (mặc định hôm nay). */

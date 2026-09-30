@@ -13,7 +13,7 @@ class ReportController extends BaseTruckingController
         $now = now();
         return view('trucking2.bao-cao', $this->pageData([
             'report' => $this->svc->monthlyCostReport((int) $now->year, (int) $now->month),
-        ], 'tripCost.view'));
+        ], 'reports.view'));
     }
 
     /** JSON: báo cáo 1 tháng (year, month). */
@@ -33,7 +33,7 @@ class ReportController extends BaseTruckingController
         return view('trucking2.bao-cao-tai-san', $this->pageData([
             'report' => $this->svc->assetReport($ym, $ym),
             'years'  => $this->svc->assetReportYears(),   // năm có dữ liệu → chọn Tháng + Năm
-        ], 'tripCost.view'));
+        ], 'reports.view'));
     }
 
     /** JSON: báo cáo tài sản theo khoảng tháng (from, to = YYYY-MM). */

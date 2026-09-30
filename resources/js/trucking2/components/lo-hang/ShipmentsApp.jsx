@@ -977,19 +977,24 @@ function ShipmentsApp() {
               <i className="bi bi-link-45deg" style={{ color: "var(--accent)" }} /> Link kế hoạch
             </a>
           )}
-          <button type="button" onClick={() => { ensureCfg(); setImpMsg(""); setShowImport(true); }} title="Import lô hàng từ Excel"
-            style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "var(--ink-2)", background: "#fff", border: "1px solid var(--line)", borderRadius: 10 }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
-            <i className="bi bi-upload" style={{ color: "var(--accent)" }} /> Import lô
-          </button>
+          {/* Nút ghi dữ liệu chỉ hiện khi có quyền: Import lô / Thêm lô = shipments.create; còn lại = shipments.update */}
+          {T.canCreate && (
+            <button type="button" onClick={() => { ensureCfg(); setImpMsg(""); setShowImport(true); }} title="Import lô hàng từ Excel"
+              style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "var(--ink-2)", background: "#fff", border: "1px solid var(--line)", borderRadius: 10 }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
+              <i className="bi bi-upload" style={{ color: "var(--accent)" }} /> Import lô
+            </button>
+          )}
           <input ref={impFileRef} type="file" accept=".xlsx,.xls" onChange={onImpFile} style={{ display: "none" }} />
-          <button type="button" onClick={() => { setCshtMsg(""); setShowCsht(true); }} title="Import phí CSHT + Thanh lý vào chi phí lô hàng theo số cont"
-            style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "var(--ink-2)", background: "#fff", border: "1px solid var(--line)", borderRadius: 10 }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
-            <i className="bi bi-receipt" style={{ color: "var(--accent)" }} /> Import CSHT
-          </button>
+          {T.canEdit && (
+            <button type="button" onClick={() => { setCshtMsg(""); setShowCsht(true); }} title="Import phí CSHT + Thanh lý vào chi phí lô hàng theo số cont"
+              style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "var(--ink-2)", background: "#fff", border: "1px solid var(--line)", borderRadius: 10 }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
+              <i className="bi bi-receipt" style={{ color: "var(--accent)" }} /> Import CSHT
+            </button>
+          )}
           <input ref={cshtFileRef} type="file" accept=".xlsx,.xls,.csv" onChange={onCshtFile} style={{ display: "none" }} />
-          {SHOW_UPDATE_IMPORT && (
+          {SHOW_UPDATE_IMPORT && T.canEdit && (
             <>
               <button type="button" onClick={() => { setUpdMsg(""); setShowUpd(true); }} title="Cập nhật hàng loạt lô ĐÃ CÓ bằng Excel (xuất → sửa → nhập lại)"
                 style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "var(--ink-2)", background: "#fff", border: "1px solid var(--line)", borderRadius: 10 }}
@@ -999,11 +1004,13 @@ function ShipmentsApp() {
               <input ref={updFileRef} type="file" accept=".xlsx,.xls" onChange={onUpdFile} style={{ display: "none" }} />
             </>
           )}
-          <button type="button" onClick={() => { setDeclMsg(""); setShowDecl(true); }} title="Cập nhật tờ khai hàng loạt — 1 lô có thể nhiều tờ khai, mỗi tờ khai một phí mở"
-            style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "var(--ink-2)", background: "#fff", border: "1px solid var(--line)", borderRadius: 10 }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
-            <i className="bi bi-file-earmark-text" style={{ color: "var(--accent)" }} /> Cập nhật tờ khai
-          </button>
+          {T.canEdit && (
+            <button type="button" onClick={() => { setDeclMsg(""); setShowDecl(true); }} title="Cập nhật tờ khai hàng loạt — 1 lô có thể nhiều tờ khai, mỗi tờ khai một phí mở"
+              style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "var(--ink-2)", background: "#fff", border: "1px solid var(--line)", borderRadius: 10 }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
+              <i className="bi bi-file-earmark-text" style={{ color: "var(--accent)" }} /> Cập nhật tờ khai
+            </button>
+          )}
           <input ref={declFileRef} type="file" accept=".xlsx,.xls" onChange={onDeclFile} style={{ display: "none" }} />
           <div style={{ position: "relative" }}>
             <button type="button" onClick={() => setShowExport((v) => !v)} title="Xuất danh sách lô hàng ra Excel"
@@ -1041,10 +1048,12 @@ function ShipmentsApp() {
               </>
             )}
           </div>
-          <button type="button" onClick={addRow}
-            style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 15px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "#fff", background: "var(--accent)", border: "none", borderRadius: 10, boxShadow: "0 1px 2px rgba(42,111,219,.4)" }}>
-            <I.plus /> Thêm lô hàng
-          </button>
+          {T.canCreate && (
+            <button type="button" onClick={addRow}
+              style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 15px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "#fff", background: "var(--accent)", border: "none", borderRadius: 10, boxShadow: "0 1px 2px rgba(42,111,219,.4)" }}>
+              <I.plus /> Thêm lô hàng
+            </button>
+          )}
         </div>
       </header>
 
