@@ -67,11 +67,12 @@ function ExtKePage({ ke, onNew, onOpen }) {
             <div>Số bảng kê</div><div>Nhà xe</div><div>Ngày lập</div><div>Kỳ (Giờ xe đến)</div><div style={{ textAlign: "right" }}>Số lô</div><div style={{ textAlign: "right" }}>Tổng (cước+chi hộ)</div><div style={{ textAlign: "right" }}>Đã trả</div><div style={{ textAlign: "right" }}>Còn nợ</div>
           </div>
           {ke.length === 0 && <div style={{ padding: "44px", textAlign: "center", color: "var(--ink-4)", fontSize: 13.5 }}>Chưa có bảng kê xe ngoài nào. Bấm “Tạo bảng kê mới” để bắt đầu.</div>}
-          {ke.map((st) => {
+          {ke.map((st, i, arr) => {
+            const n = arr.length;
             const con = (st.conNo != null) ? st.conNo : (st.total - st.paid);
             return (
             <button key={st.id} type="button" onClick={() => onOpen(st)}
-              style={{ width: "100%", textAlign: "left", display: "grid", gridTemplateColumns: cols, gap: 12, alignItems: "center", padding: "12px 16px", borderBottom: "1px solid var(--line-2)", background: "transparent", border: "none", borderBottomStyle: "solid", cursor: "pointer", fontSize: 13.5 }}
+              style={{ width: "100%", textAlign: "left", display: "grid", gridTemplateColumns: cols, gap: 12, alignItems: "center", padding: "12px 16px", background: "transparent", border: "none", borderBottom: i < n - 1 ? "1px solid var(--line-2)" : "none", cursor: "pointer", fontSize: 13.5 }}
               onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent-weak-2)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
               <span className="tnum" style={{ fontWeight: 600, color: "var(--accent)" }}>{st.no}</span>

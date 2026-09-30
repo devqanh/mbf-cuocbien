@@ -791,9 +791,9 @@ function KePage({ ke, drift = {}, onNew, onOpen }) {
             <div>Số bảng kê</div><div>Khách hàng</div><div>Ngày lập</div><div>Kỳ cont ra</div><div style={{ textAlign: "right" }}>Phải thu<br/>(cước+dầu)</div><div style={{ textAlign: "right" }}>+VAT</div><div style={{ textAlign: "right" }}>Chi hộ</div><div style={{ textAlign: "right" }}>Tổng tiền</div>
           </div>
           {ke.length === 0 && <div style={{ padding: "44px", textAlign: "center", color: "var(--ink-4)", fontSize: 13.5 }}>Chưa có bảng kê nào. Bấm “Tạo bảng kê mới” để bắt đầu.</div>}
-          {ke.slice().reverse().map((st) => (
+          {ke.slice().reverse().map((st, i, arr) => { const n = arr.length; return (
             <button key={st.id} type="button" onClick={() => onOpen(st)}
-              style={{ width: "100%", textAlign: "left", display: "grid", gridTemplateColumns: cols, gap: 12, alignItems: "center", padding: "12px 16px", borderBottom: "1px solid var(--line-2)", background: "transparent", border: "none", borderBottomStyle: "solid", cursor: "pointer", fontSize: 13.5 }}
+              style={{ width: "100%", textAlign: "left", display: "grid", gridTemplateColumns: cols, gap: 12, alignItems: "center", padding: "12px 16px", background: "transparent", border: "none", borderBottom: i < n - 1 ? "1px solid var(--line-2)" : "none", cursor: "pointer", fontSize: 13.5 }}
               onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent-weak-2)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
               <span className="tnum" style={{ fontWeight: 600, color: "var(--accent)", whiteSpace: "nowrap" }}>{st.no}</span>
@@ -808,7 +808,7 @@ function KePage({ ke, drift = {}, onNew, onOpen }) {
               <span className="tnum" style={{ ...money, color: "var(--ink-3)" }}>{fmtNum(num(st.chohoAmount, 0))}</span>
               <span className="tnum" style={{ ...money, fontWeight: 700 }}>{fmtVND(st.tongThu)}</span>
             </button>
-          ))}
+          ); })}
         </div>
         )}
       </div>
