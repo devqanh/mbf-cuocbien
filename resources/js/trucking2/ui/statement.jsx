@@ -425,17 +425,25 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
               const sug = suggestionOf(l, sg, vatRate);
               const manual = isManualLine(l);
               const sysB = sysBaseOf(l.detail);
+              const note = String(l.ghiChu || "").trim();   // ghi chú tự do của lô (lấy trực tiếp từ lô hàng)
+              const noteOnly = !!note && !(d && d.found) && !gone;   // có ghi chú nhưng không có dòng chi tiết → dòng riêng
+              const noteEl = note ? (
+                <div style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, color: "var(--ink-2)", background: "#fffaf0", border: "1px solid #f3e2b8", borderRadius: 7, padding: "5px 9px", margin: "2px 0 6px", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+                  <i className="bi bi-sticky" style={{ color: "#b7791f", marginTop: 1 }} />
+                  <span><b style={{ color: "#9a6700" }}>Ghi chú:</b> {note}</span>
+                </div>
+              ) : null;
               return (
               <React.Fragment key={l.id}>
-              <tr className={(i % 2 ? "ke-zebra " : "") + (d ? "" : "ke-lo-end")}>
-                <td className="tnum" style={{ textAlign: "center", padding: "8px", borderBottom: d ? "none" : "1px solid var(--line-2)", color: "var(--ink-4)", verticalAlign: "top" }}>{i + 1}</td>
-                <td style={{ padding: "8px", borderBottom: d ? "none" : "1px solid var(--line-2)", verticalAlign: "top" }}><div style={{ fontWeight: 600 }} className="tnum">{l.booking || "—"}</div><div style={{ fontSize: 11, color: "var(--ink-4)" }}>{l.sheet} · {l.io}</div></td>
-                <td style={{ padding: "8px", borderBottom: d ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top" }}>{l.from} → {l.to}<div style={{ fontSize: 11, color: "var(--ink-4)" }} className="tnum">{(ROUTES_TRK.loHang && l.contNo)
+              <tr className={(i % 2 ? "ke-zebra " : "") + (d || noteOnly ? "" : "ke-lo-end")}>
+                <td className="tnum" style={{ textAlign: "center", padding: "8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", color: "var(--ink-4)", verticalAlign: "top" }}>{i + 1}</td>
+                <td style={{ padding: "8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", verticalAlign: "top" }}><div style={{ fontWeight: 600 }} className="tnum">{l.booking || "—"}</div><div style={{ fontSize: 11, color: "var(--ink-4)" }}>{l.sheet} · {l.io}</div></td>
+                <td style={{ padding: "8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top" }}>{l.from} → {l.to}<div style={{ fontSize: 11, color: "var(--ink-4)" }} className="tnum">{(ROUTES_TRK.loHang && l.contNo)
                   ? <a className="ke-noprint" href={ROUTES_TRK.loHang + "?q=" + encodeURIComponent(l.contNo) + "&open=1"} target="_blank" rel="noopener" title="Mở lô hàng (tab mới, lọc đúng cont này)" style={{ color: "var(--accent)", textDecoration: "none" }}>{l.contLabel}</a>
                   : l.contLabel}<span style={{ display: "none" }} className="ke-printonly">{l.contLabel}</span></div></td>
-                <td className="tnum" style={{ padding: "8px", borderBottom: d ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top" }}>{fmtDate(l.date) || "—"}</td>
+                <td className="tnum" style={{ padding: "8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top" }}>{fmtDate(l.date) || "—"}</td>
                 {(() => { const a = lineAmt(l); return (<>
-                <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d ? "none" : "1px solid var(--line-2)", fontWeight: 600, verticalAlign: "top" }}>
+                <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", fontWeight: 600, verticalAlign: "top" }}>
                   <span className="ke-noprint"><span style={{ position: "relative", display: "inline-block", width: 130 }}>
                     <input inputMode="numeric" value={(a.base || 0).toLocaleString("vi-VN")} onChange={(e) => setLineBase(l.id, parseInt(e.target.value.replace(/[^\d]/g, ""), 10) || 0)} className="tnum"
                       title={manual ? "Giá tùy chỉnh (bạn đặt tay) — Tính lại không ghi đè" : "Nền cước+dầu(+sà lan). Gõ số khác = giá tùy chỉnh"}
@@ -463,7 +471,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
                   )}
                   <span style={{ display: "none" }} className="ke-printonly">{fmtVND(a.base)}</span>
                 </td>
-                <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d ? "none" : "1px solid var(--line-2)", verticalAlign: "top" }}>
+                <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", verticalAlign: "top" }}>
                   <span className="ke-noprint">
                     <select value={(l.detail && l.detail.vat != null && l.detail.vat !== "") ? String(l.detail.vat) : ""} onChange={(e) => setLineVat(l.id, e.target.value)} style={lineVatStyle} title="VAT riêng dòng này (mặc định theo bảng kê)">
                       <option value="">Mặc định ({vatRate}%)</option>
@@ -473,14 +481,15 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
                   </span>
                   <span style={{ display: "none" }} className="ke-printonly">{fmtNum(a.vat)}{a.rate ? ` (${a.rate}%)` : ""}</span>
                 </td>
-                <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top" }}>{fmtNum(a.choho)}</td>
-                <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d ? "none" : "1px solid var(--line-2)", fontWeight: 700, verticalAlign: "top" }}>{fmtNum(a.total)}</td>
+                <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top" }}>{fmtNum(a.choho)}</td>
+                <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", fontWeight: 700, verticalAlign: "top" }}>{fmtNum(a.total)}</td>
                 </>); })()}
               </tr>
               {d && d.found && (
                 <tr className={(i % 2 ? "ke-zebra " : "") + "ke-lo-end"}>
                   <td style={{ borderBottom: "1px solid var(--line-2)" }}></td>
                   <td colSpan={7} style={{ padding: "0 8px 9px", borderBottom: "1px solid var(--line-2)" }}>
+                    {noteEl}
                     {/* LỘ TRÌNH lô (ĐI → NHÀ MÁY → HẠ, theo ký hiệu) — để kế toán dò bảng giá */}
                     {(d.loTrinh || l.from || l.to) && (
                       <div style={{ fontSize: 12, fontWeight: 700, margin: "2px 0 4px", color: "var(--ink-2)" }}>
@@ -528,6 +537,9 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
                     </div>
                   </td>
                 </tr>
+              )}
+              {noteOnly && (
+                <tr className={(i % 2 ? "ke-zebra " : "") + "ke-lo-end"}><td style={{ borderBottom: "1px solid var(--line-2)" }}></td><td colSpan={7} style={{ padding: "0 8px 7px", borderBottom: "1px solid var(--line-2)" }}>{noteEl}</td></tr>
               )}
               {gone && (
                 <tr className={(i % 2 ? "ke-zebra " : "") + "ke-lo-end"}><td style={{ borderBottom: "1px solid var(--line-2)" }}></td><td colSpan={7} style={{ padding: "0 8px 9px", borderBottom: "1px solid var(--line-2)", fontSize: 11.5, color: "var(--ink-4)" }}>Lô không còn trong hệ thống — giữ số đã lưu, không tính lại được.</td></tr>

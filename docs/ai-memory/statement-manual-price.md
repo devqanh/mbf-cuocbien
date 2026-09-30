@@ -18,3 +18,5 @@ Từ 2026-09-23 (plan `plans/260923-0328-bang-ke-gia-tuy-chinh`), user chốt: *
 **Danh sách (`KePage`):** cột khách `minmax(0,1fr)` + ellipsis, chip xuống dòng riêng, số tiền nowrap, khung 1120 — trước đây chip nowrap trong ô khách làm lưới tràn, cột Tổng tiền bị cắt.
 
 **Dữ liệu cũ:** 19 dòng của 2 bảng kê T6 có `phai_thu` = nền + chi hộ (semantics cũ) — không sửa, vì nền vẫn tính từ detail; không có dòng tùy chỉnh thật nào trước ngày này. Liên quan [[price-by-cont-type]], [[json-schema-evolution]], [[cost-item-auto-vat]].
+
+**Ghi chú lô trong chi tiết bảng kê (2026-09-30):** `statementToArray` trả `lines[].ghiChu` = `ghi_chu` LẤY TRỰC TIẾP từ lô (sửa ở popup lô là bảng kê hiện theo, 1 query/bảng kê; `statements()` eager-load `lines.shipment:id,ghi_chu`). KHÔNG dùng cột `note` của dòng: đó là snapshot "ghi chú, trống thì tuyến + Connect/Disconnect" nên không tách được. `StatementDetailBody` hiện khối "Ghi chú:" (pre-wrap) đầu phần chi tiết lô; bảng kê cũ không có detail → dòng riêng `noteOnly` ngay dưới lô (kẻ cuối lô chuyển xuống dòng đó). Có in (không ke-noprint). Excel xuất vẫn dùng `note` snapshot.
