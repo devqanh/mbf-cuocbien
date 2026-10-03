@@ -15,6 +15,7 @@ use App\Models\TruckingFuelPrice;
 use App\Models\TruckingRevenueItem;
 use App\Models\TruckingRevenueLine;
 use App\Models\TruckingRouteFee;
+use App\Models\TruckingRouteFeeBook;
 use App\Models\TruckingSalaryItem;
 use App\Models\TruckingTripCostBatch;
 use App\Models\TruckingTripCostLine;
@@ -165,10 +166,11 @@ trait HandlesTripAndDrivers
     private function tripConfigBundle(): array
     {
         // Khóa tuyến TÍNH LẠI từ text (không tin route_key đã lưu — có thể cũ/rỗng nếu chưa lưu lại).
-        $routeByKey = [];
-        foreach (TruckingRouteFee::all() as $rf) { $k = $this->routeKey((string) $rf->route); if ($k !== '') $routeByKey[$k] = $rf; }
+        // Index theo BẢNG PHÍ TUYẾN (book) → lô ngày D tra trong bảng áp cho ngày D (pickRouteFeeBook).
+        $routeByBook = [];
+        foreach (TruckingRouteFee::all() as $rf) { $k = $this->routeKey((string) $rf->route); if ($k !== '') $routeByBook[(int) $rf->book_id][$k] = $rf; }
         return [
-            'routeByKey'  => $routeByKey,
+            'routeByBook' => $routeByBook,
             'vehByPlate'  => TruckingVehicle::get()->keyBy('plate'),
             'fuels'       => TruckingFuelPrice::orderByDesc('from_date')->orderByDesc('id')->get(),
             'usagesByVeh' => TruckingVehicleUsage::get()->groupBy('vehicle_id'),
@@ -179,7 +181,8 @@ trait HandlesTripAndDrivers
     private function tripSuggest($s, array $bundle): array
     {
         $date = $s->gio_xe_ra?->format('Y-m-d');
-        $rf   = $bundle['routeByKey'][$this->routeKey((string) $s->kho)] ?? null;
+        $book = $this->pickRouteFeeBook($date);
+        $rf   = $book ? ($bundle['routeByBook'][(int) $book->id][$this->routeKey((string) $s->kho)] ?? null) : null;
         $veh  = $bundle['vehByPlate'][$s->bks_vao] ?? null;
         $axle = $veh?->axle;
         $liters = $rf ? (float) ($axle === '2' ? $rf->dau_2cau : $rf->dau_1cau) : 0;
@@ -226,11 +229,105 @@ trait HandlesTripAndDrivers
         ];
     }
 
-    /** Bảng giá tuyến (để chọn/áp tay khi không khớp tự động). */
+    // ===================================================================
+    // BẢNG PHÍ TUYẾN theo thời gian (TruckingRouteFeeBook) — như price book ở Bảng giá
+    // ===================================================================
+
+    /** @var TruckingRouteFeeBook[]|null memoize / request */
+    private ?array $routeFeeBooksCache = null;
+
+    /** Mọi bảng phí tuyến: from_date MỚI NHẤT trước, bảng không ngày (mặc định) cuối. */
+    private function routeFeeBookList(): array
+    {
+        if ($this->routeFeeBooksCache !== null) return $this->routeFeeBooksCache;
+        $list = TruckingRouteFeeBook::get()->all();
+        usort($list, fn ($a, $b) => strcmp($b->from_date?->format('Y-m-d') ?? '', $a->from_date?->format('Y-m-d') ?? '') ?: ($b->id <=> $a->id));
+        return $this->routeFeeBooksCache = $list;
+    }
+
+    /**
+     * Bảng phí tuyến áp cho 1 NGÀY (Y-m-d): from_date LỚN NHẤT ≤ ngày; không có → bảng KHÔNG ngày (mọi thời
+     * điểm); không có nữa → null. Ngày rỗng → chỉ bảng không ngày. Không rơi về bảng cũ hơn: tạo bảng mới là
+     * sao chép đủ tuyến, nên bảng áp cho ngày phải tự đủ (giống Bảng giá "không khớp kỳ → chưa khớp").
+     */
+    private function pickRouteFeeBook(?string $date): ?TruckingRouteFeeBook
+    {
+        $d = $date ? substr($date, 0, 10) : '';
+        $open = null;
+        foreach ($this->routeFeeBookList() as $b) {
+            $from = $b->from_date?->format('Y-m-d');
+            if (! $from) { $open ??= $b; continue; }
+            if ($d !== '' && $from <= $d) return $b;
+        }
+        return $open;
+    }
+
+    /** Bảng mặc định (không ngày) — tạo nếu chưa có; đích khi lưu/nhập không chỉ rõ bảng. */
+    private function defaultRouteFeeBookId(): int
+    {
+        $b = TruckingRouteFeeBook::whereNull('from_date')->orderBy('id')->first()
+            ?? TruckingRouteFeeBook::create(['label' => 'Mặc định (mọi thời điểm)', 'sort' => 0]);
+        $this->routeFeeBooksCache = null;
+        return (int) $b->id;
+    }
+
+    /** Danh sách bảng phí tuyến cho FE: [{id,label,from,count}] — bảng không ngày trước, rồi theo from_date tăng dần. */
+    public function routeFeeBooks(): array
+    {
+        return TruckingRouteFeeBook::withCount('fees')->get()
+            ->sortBy(fn ($b) => ($b->from_date?->format('Y-m-d') ?? '0000-00-00') . '#' . str_pad((string) $b->id, 9, '0', STR_PAD_LEFT))
+            ->values()
+            ->map(fn ($b) => ['id' => (int) $b->id, 'label' => $b->label ?? '', 'from' => $this->outDate($b->from_date), 'count' => (int) ($b->fees_count ?? 0)])
+            ->all();
+    }
+
+    /** Tạo bảng phí tuyến mới (áp dụng từ ngày); $copyFrom = sao chép toàn bộ tuyến ĐÃ LƯU của bảng đó. */
+    public function createRouteFeeBook(?string $label, ?string $from, ?int $copyFrom): array
+    {
+        $book = DB::transaction(function () use ($label, $from, $copyFrom) {
+            $sort = (int) (TruckingRouteFeeBook::max('sort') ?? 0) + 1;
+            $book = TruckingRouteFeeBook::create(['label' => $this->str($label), 'from_date' => $this->inDate($from), 'sort' => $sort]);
+            if ($copyFrom) {
+                $cols = ['route', 'route_key', 've_tram', 'tien_duong', 'tro_cap', 'phi_khac', 'cru', 'luong', 'luong_no_cru', 'luong_nokeo', 'luong_nokeo_no_cru', 'km', 'dau_2cau', 'dau_1cau', 'sort'];
+                $now = now();
+                $rows = TruckingRouteFee::where('book_id', $copyFrom)->orderBy('sort')->orderBy('id')->get()->map(function ($r) use ($cols, $book, $now) {
+                    $a = ['book_id' => $book->id, 'created_at' => $now, 'updated_at' => $now];
+                    foreach ($cols as $c) $a[$c] = $r->$c;
+                    $a['salary_parts'] = json_encode($r->salary_parts ?? []);
+                    $a['extra_fees']   = json_encode($r->extra_fees ?? []);
+                    return $a;
+                })->all();
+                foreach (array_chunk($rows, 500) as $chunk) TruckingRouteFee::insert($chunk);
+            }
+            return $book;
+        });
+        $this->routeFeeBooksCache = null;
+        return ['ok' => true, 'bookId' => (int) $book->id, 'books' => $this->routeFeeBooks(), 'routeFees' => $this->routeFees((int) $book->id)];
+    }
+
+    public function updateRouteFeeBook(int $bookId, ?string $label, ?string $from): array
+    {
+        $b = TruckingRouteFeeBook::find($bookId);
+        if (! $b) return ['ok' => false, 'message' => 'Bảng phí tuyến không tồn tại'];
+        $b->update(['label' => $this->str($label), 'from_date' => $this->inDate($from)]);
+        $this->routeFeeBooksCache = null;
+        return ['ok' => true, 'books' => $this->routeFeeBooks()];
+    }
+
+    public function deleteRouteFeeBook(int $bookId): array
+    {
+        $b = TruckingRouteFeeBook::find($bookId);
+        if (! $b) return ['ok' => false, 'message' => 'Bảng phí tuyến không tồn tại'];
+        $b->delete();   // cascade tuyến của bảng
+        $this->routeFeeBooksCache = null;
+        return ['ok' => true, 'books' => $this->routeFeeBooks()];
+    }
+
+    /** Bảng giá tuyến (để chọn/áp tay khi không khớp tự động) — kèm bảng (book) + ngày áp dụng của bảng. */
     private function routeFeesOut(): array
     {
-        return TruckingRouteFee::orderBy('sort')->get()->map(fn ($r) => [
-            'route' => $r->route, 'routeKey' => $r->route_key,
+        return TruckingRouteFee::with('book')->orderBy('sort')->get()->map(fn ($r) => [
+            'route' => $r->route, 'routeKey' => $r->route_key, 'bookId' => (int) $r->book_id, 'fromDate' => $this->outDate($r->book?->from_date),
             'veTram' => $this->outMoney($r->ve_tram), 'tienDuong' => $this->outMoney($r->tien_duong),
             'troCap' => $this->outMoney($r->tro_cap), 'phiKhac' => $this->outMoney($r->phi_khac),
             'luong' => $this->outMoney($r->luong), 'luongNoCru' => $this->outMoney($r->luong_no_cru),
@@ -631,11 +728,14 @@ trait HandlesTripAndDrivers
         });
     }
 
-    /** Phí tuyến đường — danh sách đã serialize. */
-    public function routeFees(): array
+    /** Phí tuyến đường — danh sách đã serialize (mọi bảng, mỗi dòng mang bookId; $bookId = chỉ 1 bảng). */
+    public function routeFees(?int $bookId = null): array
     {
-        return TruckingRouteFee::orderBy('sort')->orderBy('id')->get()->map(fn ($r) => [
+        $q = TruckingRouteFee::orderBy('sort')->orderBy('id');
+        if ($bookId) $q->where('book_id', $bookId);
+        return $q->get()->map(fn ($r) => [
             'id'        => $r->id,
+            'bookId'    => (int) $r->book_id,
             'route'     => $r->route ?? '',
             'veTram'    => $this->outMoney($r->ve_tram),
             'tienDuong' => $this->outMoney($r->tien_duong),
@@ -699,14 +799,15 @@ trait HandlesTripAndDrivers
     /** Nhãn ↔ key cho cột "Chi theo ngày" khi xuất/nhập Excel. */
     private const SALARY_LABELS = ['veTram' => 'Vé trạm', 'tienDuong' => 'Tiền đường', 'troCap' => 'Trợ cấp', 'phiKhac' => 'Phí khác', 'luong' => 'Lương', 'dau1' => 'Dầu 1 cầu', 'dau2' => 'Dầu 2 cầu'];
 
-    /** Header + dữ liệu phí tuyến để XUẤT Excel (điền nhanh rồi nhập lại). */
-    public function routeFeeExportRows(): array
+    /** Header + dữ liệu phí tuyến của 1 BẢNG để XUẤT Excel (điền nhanh rồi nhập lại vào đúng bảng đó). */
+    public function routeFeeExportRows(?int $bookId = null): array
     {
+        $bookId = $bookId ?: $this->defaultRouteFeeBookId();
         $header = ['Tuyến', 'Vé trạm', 'Tiền đường', 'Trợ cấp', 'Phí khác',
             'Lương kéo CRU', 'Lương kéo không CRU', 'Lương không kéo CRU', 'Lương không kéo không CRU',
             'Km', 'Dầu 2 cầu (lít)', 'Dầu 1 cầu (lít)', 'Chi theo ngày (cách nhau dấu phẩy)'];
         $rows = [];
-        foreach (TruckingRouteFee::orderBy('sort')->orderBy('id')->get() as $r) {
+        foreach (TruckingRouteFee::where('book_id', $bookId)->orderBy('sort')->orderBy('id')->get() as $r) {
             $parts = $this->cleanSalaryParts($r->salary_parts);
             $ctn = implode(', ', array_map(fn ($k) => self::SALARY_LABELS[$k] ?? $k, $parts));
             $rows[] = [
@@ -722,10 +823,12 @@ trait HandlesTripAndDrivers
      * KIỂM TRA (dry-run) file nhập phí tuyến: phân loại từng dòng create/update/error + cảnh báo,
      * KHÔNG ghi gì. canImport=true khi 0 lỗi. Dùng chung cho popup check + import (chặn nếu có lỗi).
      */
-    public function analyzeRouteFeeImport(array $rows): array
+    public function analyzeRouteFeeImport(array $rows, ?int $bookId = null): array
     {
+        // Định danh tuyến = TẬP node TRONG 1 BẢNG phí tuyến (bảng = phiên bản theo thời gian).
+        $bookId = $bookId ?: $this->defaultRouteFeeBookId();
         $existing = [];
-        foreach (TruckingRouteFee::all() as $rf) { $k = $this->routeNodeKey($this->routeStringNodes((string) $rf->route)); if ($k !== '') $existing[$k] = true; }
+        foreach (TruckingRouteFee::where('book_id', $bookId)->get() as $rf) { $k = $this->routeNodeKey($this->routeStringNodes((string) $rf->route)); if ($k !== '') $existing[$k] = true; }
         $codeMap = $this->normalizedCodeMap();
         $norm = fn ($v) => mb_strtoupper(preg_replace('/\s+/u', '', trim(\Illuminate\Support\Str::ascii((string) $v))) ?? '');
         $numCells = ['veTram', 'tienDuong', 'troCap', 'phiKhac', 'luongKeoCru', 'luongKeoKhongCru', 'luongKhongKeoCru', 'luongKhongKeoKhongCru', 'km', 'dau2', 'dau1'];
@@ -739,24 +842,27 @@ trait HandlesTripAndDrivers
                 $issues[] = ['level' => 'error', 'msg' => 'Thiếu tên tuyến'];
             } else {
                 $key = $this->routeNodeKey($this->routeStringNodes($route));
+                $vkey = $key;
                 if ($key === '') {
                     $issues[] = ['level' => 'error', 'msg' => 'Tuyến không hợp lệ'];
-                } elseif (isset($seen[$key])) {
-                    $issues[] = ['level' => 'error', 'msg' => 'Trùng tuyến với dòng ' . $seen[$key] . ' trong file'];
+                } elseif (isset($seen[$vkey])) {
+                    $issues[] = ['level' => 'error', 'msg' => 'Trùng tuyến với dòng ' . $seen[$vkey] . ' trong file'];
                 } else {
-                    $seen[$key] = $line;
-                    // Mỗi điểm PHẢI tồn tại trong danh mục Cảng/Kho (khớp theo ký hiệu hoặc tên) — sai = LỖI, chặn nhập.
+                    $seen[$vkey] = $line;
+                    // Mỗi điểm PHẢI là Cảng/Kho trong danh mục (khớp theo ký hiệu hoặc tên) HOẶC 1 Tỉnh/thành
+                    // (tuyến Cảng → Tỉnh → Cảng) — sai = LỖI, chặn nhập.
                     $badNode = false;
                     foreach ($this->routeStringNodes($route) as $node) {
-                        if (! isset($codeMap[$norm($node)])) { $issues[] = ['level' => 'error', 'msg' => "Không tồn tại địa điểm/kho \"$node\" (kiểm tra ký hiệu ở Cài đặt → Địa điểm/Kho)"]; $badNode = true; }
+                        if (! isset($codeMap[$norm($node)]) && ! \App\Support\VnProvinces::isProvince($node)) { $issues[] = ['level' => 'error', 'msg' => "Không tồn tại địa điểm/kho/tỉnh \"$node\" (kiểm tra ký hiệu ở Cài đặt → Địa điểm/Kho, hoặc tên tỉnh)"]; $badNode = true; }
                     }
-                    $action = $badNode ? 'error' : (isset($existing[$key]) ? 'update' : 'create');
+                    $action = $badNode ? 'error' : (isset($existing[$vkey]) ? 'update' : 'create');
                 }
             }
             foreach ($numCells as $c) {
                 $v = trim((string) ($r[$c] ?? ''));
                 if ($v !== '' && preg_match('/[^\d.,\s-]/u', $v)) { $issues[] = ['level' => 'error', 'msg' => "Giá trị \"$v\" không phải số"]; $action = 'error'; }
             }
+            if (array_filter($issues, fn ($is) => $is['level'] === 'error')) $action = 'error';
             foreach ($issues as $is) { $is['level'] === 'error' ? $errors++ : $warnings++; }
             if ($action === 'update') $willUpdate++; elseif ($action === 'create') $willCreate++;
             $out[] = ['line' => $line, 'route' => $route, 'action' => $action, 'issues' => $issues];
@@ -774,10 +880,11 @@ trait HandlesTripAndDrivers
      * $rows: mảng assoc theo cột {route, veTram, tienDuong, troCap, phiKhac, luongKeoCru,
      * luongKeoKhongCru, luongKhongKeoCru, luongKhongKeoKhongCru, km, dau2, dau1, chiTheoNgay}.
      */
-    public function importRouteFees(array $rows): array
+    public function importRouteFees(array $rows, ?int $bookId = null): array
     {
+        $bookId = $bookId ?: $this->defaultRouteFeeBookId();
         // CHẶN nếu file còn lỗi — không ghi gì cả (validate lại ở server cho chắc).
-        $analysis = $this->analyzeRouteFeeImport($rows);
+        $analysis = $this->analyzeRouteFeeImport($rows, $bookId);
         if (! $analysis['canImport']) {
             return ['ok' => false, 'message' => 'File còn lỗi — chưa nhập gì. Sửa rồi tải lại.'] + $analysis;
         }
@@ -794,18 +901,19 @@ trait HandlesTripAndDrivers
             return $out;
         };
 
-        // index tuyến hiện có theo TẬP node
+        // index tuyến hiện có theo TẬP node TRONG BẢNG đang nhập
         $byKey = [];
-        foreach (TruckingRouteFee::all() as $rf) { $k = $this->routeNodeKey($this->routeStringNodes((string) $rf->route)); if ($k !== '') $byKey[$k] = $rf; }
-        $maxSort = (int) (TruckingRouteFee::max('sort') ?? -1);
+        foreach (TruckingRouteFee::where('book_id', $bookId)->get() as $rf) { $k = $this->routeNodeKey($this->routeStringNodes((string) $rf->route)); if ($k !== '') $byKey[$k] = $rf; }
+        $maxSort = (int) (TruckingRouteFee::where('book_id', $bookId)->max('sort') ?? -1);
 
         $created = 0; $updated = 0; $skipped = 0;
-        DB::transaction(function () use ($rows, $parseParts, &$byKey, &$maxSort, &$created, &$updated, &$skipped) {
+        DB::transaction(function () use ($rows, $parseParts, $bookId, &$byKey, &$maxSort, &$created, &$updated, &$skipped) {
             foreach ($rows as $r) {
                 $route = trim((string) ($r['route'] ?? ''));
                 $key = $route === '' ? '' : $this->routeNodeKey($this->routeStringNodes($route));
                 if ($key === '') { $skipped++; continue; }
                 $attrs = [
+                    'book_id'      => $bookId,
                     'route'        => $route,
                     'route_key'    => $this->routeKey($route),
                     've_tram'      => $this->inMoney($r['veTram'] ?? null) ?? 0,
@@ -850,13 +958,25 @@ trait HandlesTripAndDrivers
         return mb_strtolower(preg_replace('/\s+/u', '', trim($v)) ?? '');
     }
 
-    /** Lưu phí tuyến đường — xóa sạch & tạo lại (không có FK liên kết). */
+    /**
+     * Lưu phí tuyến đường — xóa & tạo lại TRONG PHẠM VI từng BẢNG có mặt trong payload (gom theo bookId;
+     * dòng không có bookId → bảng mặc định). Bảng không có trong payload giữ nguyên.
+     */
     public function saveRouteFees(array $rows): void
     {
-        DB::transaction(function () use ($rows) {
-            TruckingRouteFee::query()->delete();
-            foreach (array_values($rows) as $i => $r) {
+        $validIds = TruckingRouteFeeBook::pluck('id')->map(fn ($v) => (int) $v)->all();
+        $byBook = [];
+        foreach (array_values($rows) as $r) {
+            $bid = (int) ($r['bookId'] ?? 0);
+            if (! in_array($bid, $validIds, true)) $bid = $this->defaultRouteFeeBookId();
+            $byBook[$bid][] = $r;
+        }
+        DB::transaction(function () use ($byBook) {
+            foreach ($byBook as $bid => $list) {
+                TruckingRouteFee::where('book_id', $bid)->delete();
+                foreach (array_values($list) as $i => $r) {
                 TruckingRouteFee::create([
+                    'book_id'    => $bid,
                     'route'      => $this->str($r['route'] ?? null),
                     'route_key'  => $this->routeKey((string) ($r['route'] ?? '')),
                     've_tram'    => $this->inMoney($r['veTram'] ?? null) ?? 0,
@@ -875,6 +995,7 @@ trait HandlesTripAndDrivers
                     'extra_fees' => $this->extraFeesIn($r['extraFees'] ?? null),
                     'sort'       => $i,
                 ]);
+                }
             }
         });
     }

@@ -11,7 +11,7 @@ const CAT_KEYS = {
   locations: ["locations", "locationCodeArr", "locationsIdArr"],
   customers: ["customers", "customerInfo"],
   contTypes: ["contTypes"],
-  warehouses: ["warehouses", "warehouseCodeArr", "warehouseAddrArr", "warehouseNoteArr", "warehouseGeoArr", "warehousesIdArr"],
+  warehouses: ["warehouses", "warehouseCodeArr", "warehouseAddrArr", "warehouseNoteArr", "warehouseGeoArr", "warehouseProvinceArr", "warehousesIdArr"],
   payers: ["payers"],
   costItems: ["costItems", "prices", "costColors", "costAuto", "costVat"],
   choHoItems: ["choHoItems", "prices"],

@@ -10,6 +10,19 @@ import { CustomerManager } from "./config/CustomerManager.jsx";
 import { DriversManager } from "./config/DriversManager.jsx";
 import { CFG_GROUPS } from "./config/groups.js";
 
+/* Đoán tỉnh/thành từ địa chỉ kho — cùng quy tắc với App\Support\VnProvinces::guess (bỏ dấu, chỉ chữ+số, in hoa;
+   tên dài khớp trước; nhận cả tên cũ trước sáp nhập qua aliases). Chỉ GỢI Ý, người dùng bấm mới điền. */
+const pnorm = (s) => String(s || "").normalize("NFD").replace(/\p{M}/gu, "").replace(/[đĐ]/g, "D").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+function guessProvince(address, provinces = [], aliases = {}) {
+  const a = pnorm(address);
+  if (!a) return "";
+  const cands = [];
+  provinces.forEach((p) => { cands.push([pnorm(p), p]); cands.push([pnorm(String(p).replace(/^TP\.?\s*/i, "")), p]); });
+  Object.entries(aliases).forEach(([old, nw]) => cands.push([pnorm(old), nw]));
+  const hit = cands.filter(([k]) => k.length >= 4).sort((x, y) => y[0].length - x[0].length).find(([k]) => a.includes(k));
+  return hit ? hit[1] : "";
+}
+
 function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap, counts = {}, loading = false }) {
   const isMobile = useIsMobile();
   const [draft, setDraft] = useState("");
@@ -51,6 +64,13 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
   const geoArrKey = "warehouseGeoArr";
   const geoArr = cfg[geoArrKey] || [];
   const setGeo = (i, val) => { const a = [...geoArr]; while (a.length < list.length) a.push(""); a[i] = val; setCfg(geoArrKey, a); };
+  // Tỉnh/thành của kho (chỉ danh mục provinced = Kho) — lưu theo CHỈ SỐ dòng; đặt ở header NHÓM ký hiệu (áp cả nhóm)
+  // vì lô/phí tuyến nhận diện kho theo ký hiệu. Dùng để khớp Phí tuyến "Cảng → Tỉnh → Cảng".
+  const provArrKey = "warehouseProvinceArr";
+  const provArr = cfg[provArrKey] || [];
+  const provinces = cfg.provinces || [];
+  const provAliases = cfg.provinceAliases || {};
+  const setGroupProvince = (indices, val) => { const a = [...provArr]; while (a.length < list.length) a.push(""); indices.forEach((i) => { a[i] = val || ""; }); setCfg(provArrKey, a); };
   const [pickIdx, setPickIdx] = useState(null);   // dòng đang mở MapPicker
   const [focusIdx, setFocusIdx] = useState(null); // dòng vừa thêm → tự focus ô tên
   const mapsKey = (window.__TRK && window.__TRK.boot && window.__TRK.boot.mapsKey) || "";
@@ -93,11 +113,12 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
   });
   const hasCodeDraft = Object.keys(codeDrafts).length > 0;
   // Phí tuyến đường: phát hiện trùng TUYẾN — THEO CHIỀU (Kho1→Kho2 ≠ Kho2→Kho1, giữ thứ tự kho)
-  const routeKey = (s) => (s || "").split(/\s*-\s*/).map((x) => x.trim().toUpperCase()).filter(Boolean).join(" | ");
+  // Định danh = tuyến TRONG 1 BẢNG phí (bookId) → cùng tuyến ở 2 bảng (2 thời kỳ) không phải trùng.
+  const routeKey = (r) => { const k = ((r && r.route) || "").split(/\s*-\s*/).map((x) => x.trim().toUpperCase()).filter(Boolean).join(" | "); return k ? k + "@" + ((r && r.bookId) ?? "") : ""; };
   const rfRows = cfg.routeFees || [];
   const rfCounts = {};
-  if (g && g.routefees) rfRows.forEach((r) => { const k = routeKey(r.route); if (k) rfCounts[k] = (rfCounts[k] || 0) + 1; });
-  const isDupRoute = (s) => { const k = routeKey(s); return !!k && rfCounts[k] > 1; };
+  if (g && g.routefees) rfRows.forEach((r) => { const k = routeKey(r); if (k) rfCounts[k] = (rfCounts[k] || 0) + 1; });
+  const isDupRoute = (r) => { const k = routeKey(r); return !!k && rfCounts[k] > 1; };
   const hasDupRoute = !!(g && g.routefees) && Object.values(rfCounts).some((n) => n > 1);
   // Gán xe GPS: 1 xe GPS chỉ được gán cho 1 xe MBF — phát hiện trùng ref.
   const gpsUsedBy = {};   // ref => [plate...] (xe nào đang gán ref này)
@@ -130,6 +151,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
     if (g && g.addressed) { const a = [...addrArr]; while (a.length < list.length) a.push(""); a.push(""); setCfg(addrArrKey, a); }
     if (g && g.noted) { const a = [...noteArr]; while (a.length < list.length) a.push(""); a.push(""); setCfg(noteArrKey, a); }
     if (g && g.geo) { const a = [...geoArr]; while (a.length < list.length) a.push(""); a.push(""); setCfg(geoArrKey, a); }
+    if (g && g.provinced) { const a = [...provArr]; while (a.length < list.length) a.push(""); a.push(""); setCfg(provArrKey, a); }
     setDraft("");
   };
   // Thêm 1 dòng đã biết KÝ HIỆU (dùng cho giao diện gom nhóm — Địa điểm): mỗi ký hiệu có thể nhiều tên.
@@ -145,6 +167,8 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
     if (g && g.addressed) setCfg(addrArrKey, insert(addrArr, "", ""));
     if (g && g.noted) setCfg(noteArrKey, insert(noteArr, "", ""));
     if (g && g.geo) setCfg(geoArrKey, insert(geoArr, "", ""));
+    // Tỉnh thuộc NHÓM ký hiệu → dòng thêm vào nhóm kế thừa tỉnh của nhóm.
+    if (g && g.provinced) { const grpProv = (code || "").trim() ? (list.map((_, j) => (normCode(codeArr[j]) === normCode(code) ? provArr[j] : "")).find(Boolean) || "") : ""; setCfg(provArrKey, insert(provArr, grpProv, "")); }
     setFocusIdx(pos);
   };
   // Đổi ký hiệu cho TẤT CẢ dòng trong 1 nhóm (sửa ở header nhóm → áp cho mọi tên cùng nhóm).
@@ -167,6 +191,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
     if (g && g.addressed) setCfg(addrArrKey, addrArr.filter((_, j) => j !== i));
     if (g && g.noted) setCfg(noteArrKey, noteArr.filter((_, j) => j !== i));
     if (g && g.geo) setCfg(geoArrKey, geoArr.filter((_, j) => j !== i));
+    if (g && g.provinced) setCfg(provArrKey, provArr.filter((_, j) => j !== i));
     const drop = (mapKey, map) => { if (map[old] === undefined) return; const m = { ...map }; delete m[old]; setCfg(mapKey, m); };
     if (g && g.priced)  drop("prices", prices);
     if (g && g.colored) { drop("costColors", costColors); drop("costAuto", costAuto); drop("costVat", costVat); }
@@ -242,7 +267,8 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
           ) : sel === "drivers" ? (
             <DriversManager cfg={cfg} setCfg={setCfg} />
           ) : g.routefees ? (
-            <RouteFees rows={cfg.routeFees || []} onChange={(rows) => setCfg("routeFees", rows)} warehouses={cfg.warehouses || []} locations={cfg.locations || []} isDup={isDupRoute} />
+            <RouteFees rows={cfg.routeFees || []} onChange={(rows) => setCfg("routeFees", rows)} books={cfg.routeFeeBooks || []} onBooks={(b) => setCfg("routeFeeBooks", b)}
+              warehouses={cfg.warehouses || []} locations={cfg.locations || []} provinces={cfg.provinces || []} isDup={isDupRoute} />
           ) : g.fuelprices ? (
             <FuelPrices rows={cfg.fuelPrices || []} onChange={(rows) => setCfg("fuelPrices", rows)} />
           ) : g.general ? (
@@ -364,6 +390,24 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                             title={codeLock ? "Ký hiệu đã lưu — không sửa để giữ khớp import/bảng giá" : grp.saved ? "Ký hiệu là định danh kho — không được trùng với nhóm khác" : ""}
                             style={{ width: 130, padding: "5px 9px", fontSize: 13, fontWeight: 700, textTransform: "uppercase", border: "1px solid " + (codeErr ? "var(--danger)" : "var(--line)"), borderRadius: 7, outline: "none", background: codeLock ? "var(--line-2)" : "#fff", color: codeLock ? "var(--ink-3)" : "var(--ink)", cursor: codeLock ? "not-allowed" : "text" }}
                             onFocus={(e) => { if (!codeLock && !codeErr) e.target.style.borderColor = "var(--accent)"; }} onBlur={(e) => (e.target.style.borderColor = codeErr ? "var(--danger)" : "var(--line)")} />
+                          {/* Tỉnh/thành của NHÓM kho (áp cho mọi tên cùng ký hiệu) — để khớp Phí tuyến "Cảng → Tỉnh → Cảng". */}
+                          {g.provinced && (() => {
+                            const cur = grp.idxs.map((j) => provArr[j] || "").find(Boolean) || "";
+                            const sug = cur ? "" : (grp.idxs.map((j) => guessProvince(addrArr[j] || "", provinces, provAliases)).find(Boolean) || "");
+                            return (
+                              <>
+                                <span style={{ width: 170, flexShrink: 0 }} title="Tỉnh/thành của kho — Lộ trình khớp Phí tuyến dạng Cảng → Tỉnh → Cảng khi không có tuyến kho cụ thể">
+                                  <Combo value={cur} onChange={(v) => setGroupProvince(grp.idxs, v)} options={provinces} placeholder="Tỉnh / thành…" small clearable />
+                                </span>
+                                {sug && (
+                                  <button type="button" onClick={() => setGroupProvince(grp.idxs, sug)} title={`Đoán từ địa chỉ kho: ${sug} — bấm để điền`}
+                                    style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", fontSize: 11.5, fontWeight: 600, cursor: "pointer", borderRadius: 999, border: "1px dashed var(--accent)", background: "#fff", color: "var(--accent)", whiteSpace: "nowrap" }}>
+                                    <i className="bi bi-magic" /> {sug}
+                                  </button>
+                                )}
+                              </>
+                            );
+                          })()}
                           <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--ink-4)" }}>{grp.idxs.length} {noun}</span>
                           {codeErr && <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--danger)" }}>⚠ {codeErr}</span>}
                           <button type="button" onClick={() => addRow(grp.code, "", grp.idxs[0])} title={"Thêm 1 " + noun + " vào nhóm này"}

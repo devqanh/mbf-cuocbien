@@ -115,6 +115,13 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
                   <i className={"bi " + (warn ? "bi-exclamation-triangle-fill" : "bi-signpost-split")} style={{ color: warn ? "#c9820f" : "var(--accent)", fontSize: 13 }} />
                   <span className="tnum" style={{ fontWeight: 700, fontSize: 12.5, color: warn ? "#a05a00" : "var(--accent)" }}>{g.route}</span>
                   {g.cont ? <span className="tnum" style={{ fontSize: 11, color: "var(--ink-4)", fontWeight: 600 }}>· cont {g.cont}</span> : null}
+                  {/* Phí tuyến đã áp: khớp theo TỈNH của kho (tuyến Cảng → Tỉnh → Cảng) và/hoặc phiên bản theo ngày */}
+                  {g.matched && (g.byProvince || g.feeFrom) && (
+                    <span className="tnum" style={{ fontSize: 10.5, fontWeight: 600, color: "var(--ink-3)", background: "var(--line-2)", padding: "1px 7px", borderRadius: 999, whiteSpace: "nowrap" }}
+                      title={(g.byProvince ? "Không có phí tuyến theo kho cụ thể → áp tuyến theo TỈNH của kho" : "Bảng phí tuyến đang áp") + (g.feeBook ? " · bảng " + g.feeBook : "") + (g.feeFrom ? " · áp dụng từ " + g.feeFrom.split("-").reverse().join("/") : "")}>
+                      <i className="bi bi-signpost-2" /> {g.byProvince ? "theo tỉnh: " + (g.feeRoute || "") : "bảng phí"}{g.feeFrom ? " từ " + g.feeFrom.slice(5).split("-").reverse().join("/") : ""}
+                    </span>
+                  )}
                   <span style={{ flex: 1 }} />
                   <span className="tnum" style={{ fontWeight: 700, fontSize: 12.5, color: warn ? "#a05a00" : "var(--ink-1)" }}>{warn ? "—" : fmtVND(gt)}</span>
                 </div>

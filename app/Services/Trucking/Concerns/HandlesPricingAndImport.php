@@ -516,6 +516,7 @@ trait HandlesPricingAndImport
             $addrArr  = $key === 'warehouses' ? ($cfg['warehouseAddrArr'] ?? null) : null;   // Kho có thêm Địa chỉ
             $geoArr   = $key === 'warehouses' ? ($cfg['warehouseGeoArr'] ?? null) : null;    // Kho có thêm Tọa độ "lat,lng"
             $noteArr  = $key === 'warehouses' ? ($cfg['warehouseNoteArr'] ?? null) : null;   // Kho có thêm Ghi chú (địa chỉ đóng hàng)
+            $provArr  = $key === 'warehouses' ? ($cfg['warehouseProvinceArr'] ?? null) : null;   // Kho có thêm Tỉnh (khớp phí tuyến theo tỉnh)
             // Trang Cài đặt đã chặn trùng; đây là chốt chặn cuối (tab mở lâu, payload cũ). Thêm nhanh không sửa dòng cũ nên bỏ qua.
             // Đổi ký hiệu cả nhóm → ghi nhận TRƯỚC khi cập nhật dòng (cần ký hiệu cũ trong DB) để đổi theo sau khi lưu.
             $renames = [];
@@ -533,6 +534,7 @@ trait HandlesPricingAndImport
                 if ($addrArr !== null) $attrs['address'] = (trim((string) ($addrArr[$i] ?? '')) ?: null);
                 if ($geoArr !== null) { [$lat, $lng] = $this->parseLatLng($geoArr[$i] ?? ''); $attrs['lat'] = $lat; $attrs['lng'] = $lng; }
                 if ($noteArr !== null) $attrs['note'] = (trim((string) ($noteArr[$i] ?? '')) ?: null);
+                if ($provArr !== null) $attrs['province'] = (trim((string) ($provArr[$i] ?? '')) ?: null);
                 // Ưu tiên KHỚP THEO ID (dòng đã có sẵn) → cho phép SỬA mã mà không đứt link.
                 // Có idArr (payload mới, authoritative): id rỗng = dòng MỚI → LUÔN tạo mới, KHÔNG gộp theo mã
                 // → cho phép NHIỀU TÊN dùng chung 1 ký hiệu (vd: Địa điểm). Không có idArr (payload cũ):

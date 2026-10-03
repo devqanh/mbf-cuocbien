@@ -66,7 +66,7 @@ class CatalogController extends BaseTruckingController
         return response()->json(['ok' => true]);
     }
 
-    /** Lưu cấu hình Phí tuyến đường (repeater). */
+    /** Lưu cấu hình Phí tuyến đường (repeater) — mỗi dòng mang bookId; chỉ ghi lại các bảng có mặt trong payload. */
     public function saveRouteFees(Request $request): JsonResponse
     {
         $rows = $request->input('cfg.routeFees', $request->input('rows', []));
@@ -75,10 +75,30 @@ class CatalogController extends BaseTruckingController
         return response()->json(['ok' => true]);
     }
 
-    /** Xuất Phí tuyến ra Excel (điền nhanh rồi nhập lại). */
-    public function exportRouteFees()
+    /** Tạo BẢNG phí tuyến mới (áp dụng từ ngày); copyFrom = sao chép toàn bộ tuyến đã lưu của bảng đó. */
+    public function createRouteFeeBook(Request $request): JsonResponse
     {
-        $data = $this->svc->routeFeeExportRows();
+        $d = $request->validate(['label' => ['nullable', 'string'], 'from' => ['nullable', 'date'], 'copyFrom' => ['nullable', 'integer']]);
+        return response()->json($this->svc->createRouteFeeBook($d['label'] ?? null, $d['from'] ?? null, isset($d['copyFrom']) ? (int) $d['copyFrom'] : null));
+    }
+
+    /** Sửa nhãn / ngày áp dụng của 1 bảng phí tuyến. */
+    public function updateRouteFeeBook(Request $request, int $book): JsonResponse
+    {
+        $d = $request->validate(['label' => ['nullable', 'string'], 'from' => ['nullable', 'date']]);
+        return response()->json($this->svc->updateRouteFeeBook($book, $d['label'] ?? null, $d['from'] ?? null));
+    }
+
+    /** Xóa 1 bảng phí tuyến (kèm tuyến của nó). */
+    public function deleteRouteFeeBook(int $book): JsonResponse
+    {
+        return response()->json($this->svc->deleteRouteFeeBook($book));
+    }
+
+    /** Xuất Phí tuyến của 1 BẢNG ra Excel (điền nhanh rồi nhập lại vào đúng bảng). */
+    public function exportRouteFees(Request $request)
+    {
+        $data = $this->svc->routeFeeExportRows((int) $request->query('book', 0) ?: null);
         $ss = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
         $sheet = $ss->getActiveSheet();
         $sheet->setTitle('Phi tuyen');
@@ -98,15 +118,15 @@ class CatalogController extends BaseTruckingController
     {
         [$rows, $err] = $this->parseRouteFeeFile($request);
         if ($err) return response()->json(['ok' => false, 'message' => $err], 422);
-        return response()->json(['ok' => true] + $this->svc->analyzeRouteFeeImport($rows));
+        return response()->json(['ok' => true] + $this->svc->analyzeRouteFeeImport($rows, (int) $request->input('book', 0) ?: null));
     }
 
-    /** Nhập Phí tuyến từ Excel — upsert theo tuyến (chặn nếu còn lỗi). */
+    /** Nhập Phí tuyến từ Excel vào 1 BẢNG — upsert theo tuyến trong bảng đó (chặn nếu còn lỗi). */
     public function importRouteFees(Request $request): JsonResponse
     {
         [$rows, $err] = $this->parseRouteFeeFile($request);
         if ($err) return response()->json(['ok' => false, 'message' => $err], 422);
-        return response()->json($this->svc->importRouteFees($rows));
+        return response()->json($this->svc->importRouteFees($rows, (int) $request->input('book', 0) ?: null));
     }
 
     /** Đọc file Excel phí tuyến → mảng dòng (assoc theo cột). Trả [rows, errorMsg]. */
@@ -120,6 +140,7 @@ class CatalogController extends BaseTruckingController
         } catch (\Throwable $e) {
             return [[], 'Không đọc được file Excel.'];
         }
+        // Cột theo VỊ TRÍ (khớp header xuất Excel). Ngày áp dụng thuộc BẢNG (chọn trên giao diện), không nằm trong file.
         $keys = ['route', 'veTram', 'tienDuong', 'troCap', 'phiKhac', 'luongKeoCru', 'luongKeoKhongCru',
             'luongKhongKeoCru', 'luongKhongKeoKhongCru', 'km', 'dau2', 'dau1', 'chiTheoNgay'];
         $rows = [];

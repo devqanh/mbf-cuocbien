@@ -548,10 +548,12 @@ trait HandlesShipments
         $vehById = $vehIds ? TruckingVehicle::whereIn('id', $vehIds)->get(['id', 'plate', 'type', 'axle'])->keyBy('id') : collect();
         $legacyPlates = array_values(array_unique(array_map(fn ($l) => $l['bks'], array_filter($allLegs, fn ($l) => empty($l['vehicleId'])))));
         $vehByPlate = $legacyPlates ? TruckingVehicle::whereIn('plate', $legacyPlates)->get(['plate', 'type', 'axle'])->keyBy('plate') : collect();
-        // Phí tuyến (khớp theo TẬP node Cảng+Kho — không thứ tự) + giá dầu + chi đã lưu cho ngày này.
+        // Phí tuyến (khớp theo TẬP node Cảng+Kho/Tỉnh — không thứ tự) + giá dầu + chi đã lưu cho ngày này.
+        // Chỉ tra trong BẢNG phí tuyến áp cho NGÀY vận hành này (bảng "áp dụng từ ngày" lớn nhất ≤ ngày, như price book).
         $dateStr = $start->format('Y-m-d');
+        $feeBook = $this->pickRouteFeeBook($dateStr);
         $rfBySet = [];
-        foreach (\App\Models\TruckingRouteFee::all() as $rf) { $k = $this->routeNodeKey($this->routeStringNodes((string) $rf->route)); if ($k !== '') $rfBySet[$k] = $rf; }
+        if ($feeBook) foreach (\App\Models\TruckingRouteFee::where('book_id', $feeBook->id)->get() as $rf) { $k = $this->routeNodeKey($this->routeStringNodes((string) $rf->route)); if ($k !== '') $rfBySet[$k] = $rf; }
         $fuels = TruckingFuelPrice::orderByDesc('from_date')->orderByDesc('id')->get();
         $paysByBks = \App\Models\TruckingRoutePay::whereDate('work_date', $dateStr)->get()->keyBy('bks');
 
@@ -658,9 +660,55 @@ trait HandlesShipments
         return implode('|', $set);
     }
 
+    /** @var array<string,string>|null [ký hiệu kho (như routeNodeKey) => tỉnh đã chuẩn hóa] — memoize / request. */
+    private ?array $provByCodeCache = null;
+
+    /**
+     * Kho nào đã gán Tỉnh (Cài đặt → Kho): [ký hiệu kho => tỉnh], cả 2 chuẩn hóa ĐÚNG như routeNodeKey
+     * (ký hiệu qua normalizedCodeMap; tỉnh bỏ dấu + khoảng trắng, in hoa). 1 ký hiệu nhiều tên → lấy dòng đầu có tỉnh.
+     */
+    private function warehouseProvinceByCode(): array
+    {
+        if ($this->provByCodeCache !== null) return $this->provByCodeCache;
+        $codeMap = $this->normalizedCodeMap();
+        $norm = fn ($v) => mb_strtoupper(preg_replace('/\s+/u', '', trim(\Illuminate\Support\Str::ascii((string) $v))) ?? '');
+        $m = [];
+        foreach (TruckingWarehouse::whereNotNull('province')->where('province', '!=', '')->orderBy('sort')->get(['name', 'code', 'province']) as $w) {
+            $raw = $w->code ?: $w->name;
+            $c = $codeMap[$norm($raw)] ?? $norm($raw);
+            if ($c === '' || isset($m[$c])) continue;
+            $m[$c] = $codeMap[$norm($w->province)] ?? $norm($w->province);
+        }
+        return $this->provByCodeCache = $m;
+    }
+
+    /**
+     * Khóa tuyến khi thay MỖI KHO bằng TỈNH của nó → khớp phí tuyến dạng "Cảng → Tỉnh → Cảng".
+     * Trả '' nếu không node nào là kho có tỉnh (không có gì để rơi về).
+     */
+    private function routeNodeKeyByProvince(array $labels): string
+    {
+        $prov = $this->warehouseProvinceByCode();
+        if (! $prov) return '';
+        $codeMap = $this->normalizedCodeMap();
+        $norm = fn ($v) => mb_strtoupper(preg_replace('/\s+/u', '', trim(\Illuminate\Support\Str::ascii((string) $v))) ?? '');
+        $set = []; $hit = false;
+        foreach ($labels as $l) {
+            $c = $codeMap[$norm($l)] ?? $norm($l);
+            if ($c === '') continue;
+            if (isset($prov[$c])) { $c = $prov[$c]; $hit = true; }
+            $set[$c] = true;
+        }
+        if (! $hit) return '';
+        $set = array_keys($set);
+        sort($set);
+        return implode('|', $set);
+    }
+
     /**
      * 1 CHUYẾN (leg) → nhóm chi cho lái: luôn trả nhóm (kể cả KHÔNG khớp phí tuyến) để
      * Lộ trình hiện ĐỦ mọi chuyến + cảnh báo cho kế toán. matched/note cho biết lý do = 0.
+     * Khớp tuyến theo KHO cụ thể trước; không có → rơi về tuyến theo TỈNH của kho (Cảng → Tỉnh → Cảng).
      */
     private function legPayGroup(array $leg, ?string $axle, array $rfBySet, $fuels, string $date): array
     {
@@ -681,9 +729,20 @@ trait HandlesShipments
         $g = ['route' => $routeDisp, 'cont' => $leg['cont'] ?? '', 'mode' => $leg['mode'] ?? '',
               'items' => [], 'sub' => 0, 'payrollItems' => [], 'payrollSub' => 0, 'fuel' => null, 'matched' => false, 'note' => ''];
 
+        // $rfBySet = tuyến của BẢNG phí áp cho ngày chuyến (caller chọn bảng bằng pickRouteFeeBook).
         $rf = $rfBySet[$this->routeNodeKey($nodes)] ?? null;
-        if (! $rf) { $g['note'] = 'Chưa có Phí tuyến khớp lộ trình này'; return $g; }
+        $byProvince = false;
+        if (! $rf) {
+            $pk = $this->routeNodeKeyByProvince($nodes);
+            if ($pk !== '' && isset($rfBySet[$pk])) { $rf = $rfBySet[$pk]; $byProvince = true; }
+        }
+        if (! $rf) { $g['note'] = 'Chưa có Phí tuyến khớp lộ trình này' . ($this->pickRouteFeeBook($date) ? '' : ' (chưa có bảng phí tuyến áp cho ngày này)'); return $g; }
         $g['matched'] = true;
+        $g['feeRoute'] = (string) $rf->route;   // tuyến phí đã áp — khác lộ trình thực tế khi khớp theo tỉnh
+        $feeBook = $this->pickRouteFeeBook($date);   // memoize/request → rẻ
+        $g['feeFrom']  = $this->outDate($feeBook?->from_date);   // bảng phí áp dụng từ ngày ('' = bảng mặc định)
+        $g['feeBook']  = $feeBook?->label ?? '';
+        $g['byProvince'] = $byProvince;
         $parts = $this->cleanSalaryParts($rf->salary_parts);   // khoản TÍCH "chi theo ngày"
 
         // Tính TẤT CẢ khoản, gắn cờ perDay: tích chi theo ngày = đã chi trong ngày;

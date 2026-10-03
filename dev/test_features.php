@@ -208,6 +208,42 @@ try {
     $svc->bulkUpdateShipments([$sb->id], ['haCont' => null]);
     $ok(TruckingShipment::find($sb->id)->ha_cont_date === null && collect($svc->pagedShipments('icd', ['hc' => 'pending'])['data'])->every(fn ($x) => $x['haCont'] === ''), 'E9 haCont null → bỏ đánh dấu; lọc hc=pending chỉ ra lô chưa hạ');
 
+    // ---------- Phí tuyến theo TỈNH của kho + BẢNG phí tuyến theo thời gian (book "áp dụng từ ngày") ----------
+    // Kho CEV (chưa có tuyến riêng) gán tỉnh Bắc Ninh. Bảng mặc định: tuyến tỉnh 100k; bảng mới từ 1/10/2026 (sao chép) đổi thành 200k.
+    \App\Models\TruckingWarehouse::where('code', 'CEV')->update(['province' => 'Bắc Ninh']);
+    $mkM = fn ($svc) => fn ($m) => (function () use ($svc, $m) { $x = new ReflectionMethod($svc, $m); $x->setAccessible(true); return $x; })();
+    $svcP = new TruckingV2Service(); $mP = $mkM($svcP);
+    $defId = $mP('defaultRouteFeeBookId')->invoke($svcP);
+    \App\Models\TruckingRouteFee::create(['book_id' => $defId, 'route' => 'ICDQV - Bắc Ninh - ICDQV', 'route_key' => 'ICDQV|BẮC NINH|ICDQV', 'tien_duong' => 100000, 'salary_parts' => ['tienDuong'], 'extra_fees' => [], 'sort' => 90]);
+    $defCount = \App\Models\TruckingRouteFee::where('book_id', $defId)->count();
+    $nb = $svcP->createRouteFeeBook('T10', '2026-10-01', $defId);
+    $nbId = (int) ($nb['bookId'] ?? 0);
+    $ok(($nb['ok'] ?? false) && \App\Models\TruckingRouteFee::where('book_id', $nbId)->count() === $defCount && count($nb['routeFees']) === $defCount && collect($nb['books'])->firstWhere('id', $nbId)['from'] === '2026-10-01', 'E10 tạo bảng phí mới từ 1/10 sao chép đủ ' . $defCount . ' tuyến của bảng mặc định');
+    \App\Models\TruckingRouteFee::where('book_id', $nbId)->where('route', 'ICDQV - Bắc Ninh - ICDQV')->update(['tien_duong' => 200000]);
+    $svcP = new TruckingV2Service(); $mP = $mkM($svcP);   // nạp lại cache bảng phí + danh mục kho
+    $setFor = function ($date) use ($svcP, $mP) {
+        $book = $mP('pickRouteFeeBook')->invoke($svcP, $date); $set = [];
+        if ($book) foreach (\App\Models\TruckingRouteFee::where('book_id', $book->id)->get() as $rf) { $k = $mP('routeNodeKey')->invoke($svcP, $mP('routeStringNodes')->invoke($svcP, (string) $rf->route)); if ($k !== '') $set[$k] = $rf; }
+        return $set;
+    };
+    $legOf = fn ($kho) => ['from' => 'ICDQV', 'kho' => $kho, 'to' => 'ICDQV', 'mode' => 'self', 'cont' => 'TEST', 'cru' => false];
+    $gOld = $mP('legPayGroup')->invoke($svcP, $legOf('CEV'), '2', $setFor('2026-09-15'), collect(), '2026-09-15');
+    $ok($gOld['matched'] && $gOld['byProvince'] && $gOld['feeRoute'] === 'ICDQV - Bắc Ninh - ICDQV' && $gOld['feeFrom'] === '' && (int) $gOld['sub'] === 100000, 'E11 ngày 15/9 → bảng mặc định: kho CEV (tỉnh Bắc Ninh) không có tuyến riêng → khớp tuyến theo tỉnh 100k');
+    $gNew = $mP('legPayGroup')->invoke($svcP, $legOf('CEV'), '2', $setFor('2026-10-03'), collect(), '2026-10-03');
+    $ok($gNew['matched'] && $gNew['feeFrom'] === '2026-10-01' && $gNew['feeBook'] === 'T10' && (int) $gNew['sub'] === 200000, 'E12 ngày 3/10 → bảng "T10 từ 1/10" 200k (chuyến cũ vẫn theo bảng cũ)');
+    $gQV = $mP('legPayGroup')->invoke($svcP, $legOf('QV'), '2', $setFor('2026-10-03'), collect(), '2026-10-03');
+    $ok($gQV['matched'] && empty($gQV['byProvince']) && $gQV['feeRoute'] === 'ICDQV - QV - ICDQV', 'E13 kho QV có tuyến riêng (đã sao chép sang bảng mới) → ưu tiên tuyến kho, không rơi về tỉnh');
+    $ok(\App\Support\VnProvinces::guess('Lô D4, KCN Đình Trám, huyện Việt Yên, Bắc Giang') === 'Bắc Ninh' && \App\Support\VnProvinces::guess('KCN An Dương, An Phong, Hải Phòng') === 'Hải Phòng' && \App\Support\VnProvinces::isProvince('bắc ninh') && \App\Support\VnProvinces::guess('KHO TÂN QUANG Chị Bút') === null, 'E14 đoán tỉnh từ địa chỉ (kể cả tên cũ Bắc Giang → Bắc Ninh), không đoán bừa');
+    $anl = $svcP->analyzeRouteFeeImport([
+        ['_line' => 2, 'route' => 'ICDQV - Bắc Ninh - ICDQV', 'tienDuong' => '300000'],
+        ['_line' => 3, 'route' => 'ICDQV - Hà Nội - ICDQV', 'tienDuong' => '1'],
+        ['_line' => 4, 'route' => 'ICDQV - Xứ Lạ - ICDQV', 'tienDuong' => '1'],
+    ], $defId);
+    $acts = array_column($anl['rows'], 'action');
+    $ok($acts === ['update', 'create', 'error'] && $anl['canImport'] === false, 'E15 nhập Excel vào 1 bảng: tuyến có sẵn → cập nhật, tuyến tỉnh mới → thêm, tỉnh/kho lạ → lỗi');
+    $svcP->saveRouteFees([['bookId' => $nbId, 'route' => 'ICDQV - QV - ICDQV', 'tienDuong' => '1']]);
+    $ok(\App\Models\TruckingRouteFee::where('book_id', $nbId)->count() === 1 && \App\Models\TruckingRouteFee::where('book_id', $defId)->count() === $defCount, 'E16 lưu phí tuyến chỉ ghi lại bảng có trong payload, bảng khác giữ nguyên');
+
     // ---------- F. Bảng kê khách VAT ----------
     $section('F. Bảng kê khách: VAT% + cột');
     $lines = [['cuoc' => 800000, 'dau' => 200000, 'chiHo' => 300000], ['cuoc' => 500000, 'dau' => 0, 'bargeCuoc' => 0, 'chiHo' => 0]];

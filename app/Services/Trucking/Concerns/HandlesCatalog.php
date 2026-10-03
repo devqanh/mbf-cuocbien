@@ -14,6 +14,7 @@ use App\Models\TruckingPriceRow;
 use App\Models\TruckingFuelPrice;
 use App\Models\TruckingRevenueItem;
 use App\Models\TruckingRouteFee;
+use App\Models\TruckingRouteFeeBook;
 use App\Models\TruckingSalaryItem;
 use App\Models\TruckingTripCostBatch;
 use App\Models\TruckingTripCostLine;
@@ -72,6 +73,8 @@ trait HandlesCatalog
                 $cfg['warehouseNoteArr'] = $rows->map(fn ($r) => $r->note ?? '')->all();
                 $cfg['warehouseNoteCode'] = $rows->filter(fn ($r) => $r->note && $r->code)
                     ->reduce(function ($acc, $r) { $acc[$r->code] ??= $r->note; return $acc; }, []);
+                // Tỉnh/thành của kho (theo chỉ số dòng) — khớp Phí tuyến "Cảng → Tỉnh → Cảng".
+                $cfg['warehouseProvinceArr'] = $rows->map(fn ($r) => $r->province ?? '')->all();
             }
             if ($priced) {
                 foreach ($rows as $r) {
@@ -216,6 +219,10 @@ trait HandlesCatalog
                     $out['warehouseNoteArr'] = $rows->map(fn ($r) => $r->note ?? '')->all();
                     $out['warehouseNoteCode'] = $rows->filter(fn ($r) => $r->note && $r->code)
                         ->reduce(function ($acc, $r) { $acc[$r->code] ??= $r->note; return $acc; }, []);
+                    // Tỉnh/thành của kho (theo chỉ số dòng) + danh sách tỉnh để chọn + tên cũ → mới để gợi ý từ địa chỉ.
+                    $out['warehouseProvinceArr'] = $rows->map(fn ($r) => $r->province ?? '')->all();
+                    $out['provinces']        = \App\Support\VnProvinces::LIST;
+                    $out['provinceAliases']  = \App\Support\VnProvinces::ALIASES;
                 }
                 if ($key === 'locations') {
                     $lockedIds = TruckingPriceRow::query()->whereNotNull('location_id')->distinct()->pluck('location_id');
@@ -278,11 +285,16 @@ trait HandlesCatalog
             ];
         }
         if ($key === 'routeFees') {
-            // kèm danh sách KHO + ĐỊA ĐIỂM (cảng) để chọn cả chuỗi tuyến Cảng→Kho→Kho→Cảng (MultiCombo groups)
+            // kèm danh sách KHO + ĐỊA ĐIỂM (cảng) + TỈNH để chọn cả chuỗi tuyến Cảng→Kho→Kho→Cảng hoặc Cảng→Tỉnh→Cảng
+            // (MultiCombo groups). Tỉnh = danh sách chuẩn ∪ tỉnh đã gán cho kho (phòng tên tự nhập).
+            $usedProv = TruckingWarehouse::whereNotNull('province')->where('province', '!=', '')->distinct()->pluck('province')->all();
+            if (! TruckingRouteFeeBook::exists()) $this->defaultRouteFeeBookId();   // luôn có bảng mặc định để thêm tuyến
             return [
-                'routeFees'  => $this->routeFees(),
+                'routeFeeBooks' => $this->routeFeeBooks(),   // bảng phí theo thời gian ("áp dụng từ ngày")
+                'routeFees'  => $this->routeFees(),          // mọi tuyến của mọi bảng (mỗi dòng mang bookId)
                 'warehouses' => TruckingWarehouse::orderBy('sort')->orderBy('name')->pluck('name')->all(),
                 'locations'  => TruckingLocation::orderBy('sort')->orderBy('name')->pluck('name')->all(),
+                'provinces'  => array_values(array_unique(array_merge(\App\Support\VnProvinces::LIST, $usedProv))),
             ];
         }
         if ($key === 'fuelPrices') {

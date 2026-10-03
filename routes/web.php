@@ -290,6 +290,10 @@ Route::middleware(['auth', RestrictSpendOnlySession::class])->group(function () 
             Route::put('/vehicles',          [CatalogController::class, 'saveVehicles'])->name('vehicles.save');
             Route::put('/settings',          [CatalogController::class, 'saveSettings'])->name('settings.save');
             Route::put('/route-fees',        [CatalogController::class, 'saveRouteFees'])->name('routeFees.save');
+            // Bảng phí tuyến theo thời gian ("áp dụng từ ngày" — như price book)
+            Route::post('/route-fee-books',          [CatalogController::class, 'createRouteFeeBook'])->name('routeFeeBooks.create');
+            Route::put('/route-fee-books/{book}',    [CatalogController::class, 'updateRouteFeeBook'])->name('routeFeeBooks.update')->whereNumber('book');
+            Route::delete('/route-fee-books/{book}', [CatalogController::class, 'deleteRouteFeeBook'])->name('routeFeeBooks.delete')->whereNumber('book');
             Route::get('/route-fees/export', [CatalogController::class, 'exportRouteFees'])->name('routeFees.export');
             Route::post('/route-fees/import-check', [CatalogController::class, 'importRouteFeesCheck'])->name('routeFees.importCheck');
             Route::post('/route-fees/import',[CatalogController::class, 'importRouteFees'])->name('routeFees.import');

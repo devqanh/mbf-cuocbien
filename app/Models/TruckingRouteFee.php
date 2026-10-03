@@ -3,17 +3,27 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/** Phí tuyến đường — định mức phí/dầu/km cho mỗi tuyến (tập kho). */
+/**
+ * Phí tuyến đường — định mức phí/dầu/km cho mỗi tuyến (chuỗi Cảng/Kho/Tỉnh), thuộc 1 BẢNG PHÍ TUYẾN
+ * (TruckingRouteFeeBook, có "áp dụng từ ngày"). Chuyến ngày D tra tuyến trong bảng áp cho ngày D.
+ */
 class TruckingRouteFee extends Model
 {
     protected $fillable = [
-        'route', 'route_key', 've_tram', 'tien_duong', 'tro_cap', 'phi_khac',
+        'book_id', 'route', 'route_key', 've_tram', 'tien_duong', 'tro_cap', 'phi_khac',
         'cru', 'luong', 'luong_no_cru', 'luong_nokeo', 'luong_nokeo_no_cru',
         'salary_parts', 'km', 'dau_2cau', 'dau_1cau', 'extra_fees', 'sort',
     ];
 
+    public function book(): BelongsTo
+    {
+        return $this->belongsTo(TruckingRouteFeeBook::class, 'book_id');
+    }
+
     protected $casts = [
+        'book_id'      => 'integer',
         'cru'          => 'boolean',
         'salary_parts' => 'array',
         'extra_fees'   => 'array',

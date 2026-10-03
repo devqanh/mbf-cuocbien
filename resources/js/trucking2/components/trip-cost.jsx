@@ -165,13 +165,16 @@ function ExtrasRepeater({ extras = [], onChange, readOnly, accent, addLabel = "T
  * Trình sửa phí xe cho 1 danh sách lô — dùng chung cho trang Tạo & Xem/Sửa.
  * rows: [{shipmentId|lineId, booking, route, kho, bks, axle, date, matched, usedIn[], cur{}, sug{}}]
  */
+// Nhãn tuyến trong dropdown áp tay: cùng tuyến có thể nhiều phiên bản "áp dụng từ ngày" → kèm ngày để phân biệt.
+const routeFeeLabel = (f) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(f.fromDate || ""); return (f.route || "") + (m ? ` (từ ${m[3]}/${m[2]}/${m[1]})` : ""); };
+
 export function TripEditor({ rows, onRows, routeFees = [], drivers = [], costItems = [], salaryItems = [], readOnly = false }) {
   const [open, setOpen] = React.useState({});   // nhóm lái xe nào đang mở (mặc định thu gọn)
   const toggle = (k) => setOpen((o) => ({ ...o, [k]: !o[k] }));
   const upd = (key, np) => onRows(rows.map((x) => (rk(x) === key ? { ...x, cur: { ...x.cur, ...np } } : x)));
   const recalc = (key) => onRows(rows.map((x) => (rk(x) === key && x.sug ? { ...x, cur: { ...x.sug, extras: x.cur.extras || [], salaryExtras: x.cur.salaryExtras || [] } } : x)));
   const applyRoute = (key, label) => {
-    const rf = routeFees.find((f) => f.route === label); if (!rf) return;
+    const rf = routeFees.find((f) => routeFeeLabel(f) === label); if (!rf) return;
     onRows(rows.map((x) => {
       if (rk(x) !== key) return x;
       const liters = x.axle === "2" ? rf.dau2 : rf.dau1;
@@ -221,7 +224,7 @@ export function TripEditor({ rows, onRows, routeFees = [], drivers = [], costIte
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 10 }}>
               <div>{lbl("Lái xe")}<Combo value={c.driver} onChange={(v) => upd(key, { driver: v })} options={drivers} placeholder="Chọn lái xe…" /></div>
               {!readOnly && <div>{lbl(x.matched ? "Áp tuyến khác (tùy chọn)" : "Chọn tuyến (chưa khớp tự động)")}
-                <Combo value="" onChange={(label) => applyRoute(key, label)} options={routeFees.map((r) => r.route)} placeholder="Chọn tuyến trong Phí tuyến đường…" /></div>}
+                <Combo value="" onChange={(label) => applyRoute(key, label)} options={routeFees.map(routeFeeLabel)} placeholder="Chọn tuyến trong Phí tuyến đường…" /></div>}
             </div>
             {/* NHẬP NGAY TRONG 2 CỘT: Chi phí lương (lái xe) | Chi phí khác — vận hành (công ty) */}
             {(() => {
