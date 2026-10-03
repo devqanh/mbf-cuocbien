@@ -3,7 +3,7 @@ const { useState, useMemo, useEffect, useRef } = React;
 import { canCol, I, fmtVND, fmtShort, fmtDate, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, Combo, MultiCombo, useIsMobile, DateField } from "@trk/lib.jsx";
 import { CostPopup, InfoPopup, colorHex, locOptions, bargeDropOptions, DTField } from "@trk/pop.jsx";
 import { SortBtn, CellBtn, Badge, EditCell, TH, TD } from "@trk/ui.jsx";
-import { loCountOf, parseImportRows, buildTemplateWb, parseCshtRows, buildCshtTemplateWb, cshtRowCount, parseUpdateRows, buildUpdateWb, parseDeclarationRows, buildDeclarationWb } from "./excel.js";
+import { loCountOf, parseImportRows, buildTemplateWb, parseCshtRows, buildCshtTemplateWb, buildCostExportWb, parseUpdateRows, buildUpdateWb, parseDeclarationRows, buildDeclarationWb } from "./excel.js";
 
 // Chip số INV — nổi bật để kế toán dễ dò
 const invChip = { display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", padding: "1px 8px", borderRadius: 7 };
@@ -506,6 +506,22 @@ function ShipmentsApp() {
     if (typeof XLSX === "undefined") { window.alert("Thư viện Excel chưa tải xong."); return; }
     XLSX.writeFile(buildCshtTemplateWb(), "mau-import-csht.xlsx");
   };
+  // Xuất CHI PHÍ LÔ theo đúng bộ lọc đang xem: 1 dòng / lô, có ID LÔ + số tiền hiện tại từng khoản
+  // → điền / sửa rồi import lại, khớp đúng lô kể cả khi 1 số cont có ở nhiều lô.
+  const exportCosts = async () => {
+    if (exporting) return;
+    if (typeof XLSX === "undefined") { window.alert("Thư viện Excel chưa tải xong."); return; }
+    setExporting(true); setCshtMsg("");
+    try {
+      const qs = buildParams({ page: 1 }).toString() + "&all=1";
+      const [r, c] = await Promise.all([window.trkApi("GET", ROUTES.shipmentsPage + "?" + qs), ensureCfg()]);
+      const list = (r && r.ok) ? (r.data || []) : [];
+      if (!list.length) { window.trkToast && window.trkToast("Không có lô nào trong bộ lọc đang xem", "error"); return; }
+      XLSX.writeFile(buildCostExportWb(list, (c || cfgRef.current || {}).costItems || []), `chi-phi-lo-${new Date().toISOString().slice(0, 10)}.xlsx`);
+      setCshtMsg(`Đã xuất ${list.length} lô theo bộ lọc đang xem — điền / sửa số tiền rồi chọn lại file để import.`);
+    } catch (e) { window.trkToast && window.trkToast("Lỗi tải dữ liệu xuất Excel", "error"); }
+    finally { setExporting(false); }
+  };
   const onCshtFile = (e) => {
     const f = e.target.files && e.target.files[0]; e.target.value = "";
     if (!f) return;
@@ -519,11 +535,11 @@ function ShipmentsApp() {
     if (!cshtWb || !cshtSheet) return;
     setCshtBusy(true); setCshtMsg(""); setCshtCheck(null);
     const out = parseCshtRows(cshtWb.wb, cshtSheet); setCshtRows(out);
-    if (!out.length) { setCshtBusy(false); setCshtCheck({ valid: false, total: 0, errors: [{ line: 0, reasons: ["Sheet không có dòng dữ liệu hợp lệ"] }] }); return; }
+    if (!out.length) { setCshtBusy(false); setCshtCheck({ valid: false, total: 0, errors: [{ line: 0, reasons: ["Sheet không có dòng dữ liệu (cần cột ID LÔ hoặc SỐ CONT)"] }] }); return; }
     try {
       const res = await api("POST", ROUTES.cshtCheck, { sheet, rows: out });
       setCshtBusy(false);
-      if (res && res.ok) setCshtCheck({ valid: res.valid, total: res.total, errors: res.errors || [] });
+      if (res && res.ok) setCshtCheck({ valid: res.valid, total: res.total, errors: res.errors || [], warnings: res.warnings || [], items: res.items || [], columns: res.columns || {}, stats: res.stats || {} });
       else setCshtCheck({ valid: false, total: out.length, errors: [{ line: 0, reasons: [(res && res.message) || "Lỗi kiểm tra"] }] });
     } catch (err) { setCshtBusy(false); setCshtMsg("Lỗi kết nối khi kiểm tra."); }
   };
@@ -534,7 +550,7 @@ function ShipmentsApp() {
       const res = await api("POST", ROUTES.cshtImport, { sheet, rows: cshtRows });
       setCshtBusy(false);
       if (res && res.ok && res.valid) {
-        setCshtMsg(`Đã cập nhật ${res.updated} khoản trên ${res.shipments} lô.`); setCshtWb(null); setCshtCheck(null); setCshtRows([]);
+        setCshtMsg(`Đã tạo ${res.created || 0} · sửa ${res.updated || 0} khoản chi phí trên ${res.shipments} lô.`); setCshtWb(null); setCshtCheck(null); setCshtRows([]);
         await load();   // nạp lại danh sách + tổng chi phí sau import
       } else if (res && res.errors) {
         setCshtCheck({ valid: false, total: cshtRows.length, errors: res.errors });
@@ -988,7 +1004,7 @@ function ShipmentsApp() {
           )}
           <input ref={impFileRef} type="file" accept=".xlsx,.xls" onChange={onImpFile} style={{ display: "none" }} />
           {T.canEdit && (
-            <button type="button" onClick={() => { setCshtMsg(""); setShowCsht(true); }} title="Import phí CSHT + Thanh lý vào chi phí lô hàng theo số cont"
+            <button type="button" onClick={() => { setCshtMsg(""); setShowCsht(true); }} title="Import phí CSHT, Thanh lí và các khoản chi phí lô hàng — khớp theo ID lô (file Xuất chi phí lô) hoặc số cont"
               style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "var(--ink-2)", background: "#fff", border: "1px solid var(--line)", borderRadius: 10 }}
               onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line-2)")} onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
               <i className="bi bi-receipt" style={{ color: "var(--accent)" }} /> Import CSHT
@@ -1802,16 +1818,17 @@ function ShipmentsApp() {
       )}
 
       {showCsht && (
-        <Modal title="Import CSHT" subtitle="Nạp phí CSHT + Số tiền thanh lý vào Chi phí lô hàng theo SỐ CONT. Cột (*) bắt buộc: Số cont · đối chiếu Nhập/Xuất, lệch là báo lỗi · Số HĐ / Ngày HĐ / Ghi chú áp cho cả 2 khoản · import lại GHI ĐÈ dòng cũ · kiểm tra trước, 1 lỗi là không import gì cả" width={720} icon={<I.truck />}
+        <Modal title="Import CSHT · chi phí lô hàng" subtitle="Nạp số tiền các khoản (CSHT, Thanh lí, Nâng, Hạ…) vào Chi phí lô hàng. Khớp lô theo ID LÔ (file Xuất chi phí lô) — không có ID thì theo số cont · ô trống = không đổi · đối chiếu Nhập/Xuất · kiểm tra trước, 1 lỗi là không import gì cả" width={860} icon={<I.truck />}
           onClose={() => setShowCsht(false)}
           footer={
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
               <div style={{ fontSize: 12.5, color: cshtCheck ? (cshtCheck.valid ? "var(--good)" : "var(--danger)") : "var(--ink-3)", fontWeight: cshtCheck ? 600 : 400 }}>
-                {cshtCheck ? (cshtCheck.valid ? `✓ ${cshtRowCount(cshtRows)} dòng hợp lệ` : `${cshtCheck.errors.length} dòng lỗi — chưa import gì`) : (cshtWb ? "Đã chọn file — bấm Kiểm tra" : "Chọn file để bắt đầu")}
+                {cshtCheck ? (cshtCheck.valid ? `✓ Hợp lệ · ${(cshtCheck.stats || {}).create || 0} tạo mới · ${(cshtCheck.stats || {}).update || 0} sửa` : `${cshtCheck.errors.length} dòng lỗi — chưa import gì`) : (cshtWb ? "Đã chọn file — bấm Kiểm tra" : "Chọn file để bắt đầu")}
               </div>
               <div style={{ display: "flex", gap: 10 }}>
                 <Btn onClick={() => setShowCsht(false)}>Đóng</Btn>
-                {cshtCheck && cshtCheck.valid && <Btn variant="primary" onClick={doCshtImport}>{cshtBusy ? "Đang nhập…" : `Import ${cshtRowCount(cshtRows)} dòng`}</Btn>}
+                {cshtCheck && cshtCheck.valid && (() => { const st = cshtCheck.stats || {}; const n = (st.create || 0) + (st.update || 0);
+                  return n > 0 ? <Btn variant="primary" onClick={doCshtImport}>{cshtBusy ? "Đang nhập…" : `Import ${n} khoản`}</Btn> : <span style={{ fontSize: 12.5, color: "var(--ink-4)", alignSelf: "center" }}>Không có gì thay đổi</span>; })()}
               </div>
             </div>
           }>
@@ -1821,6 +1838,12 @@ function ShipmentsApp() {
                 style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--ink-2)", cursor: "pointer" }}>
                 <i className="bi bi-download" /> Tải file mẫu
               </button>
+              {col("cost") && (
+                <button type="button" onClick={exportCosts} disabled={exporting} title="Xuất mọi lô theo bộ lọc đang xem: 1 dòng / lô, có ID LÔ + số tiền hiện tại từng khoản chi phí"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13, fontWeight: 600, border: "1px solid #bfe4d1", borderRadius: 9, background: "var(--good-weak)", color: "var(--good)", cursor: exporting ? "default" : "pointer", opacity: exporting ? 0.6 : 1 }}>
+                  <i className="bi bi-file-earmark-excel" /> {exporting ? "Đang xuất…" : "Xuất chi phí lô (bộ lọc đang xem)"}
+                </button>
+              )}
               <button type="button" onClick={() => cshtFileRef.current && cshtFileRef.current.click()}
                 style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13, fontWeight: 600, border: "none", borderRadius: 9, background: "var(--accent)", color: "#fff", cursor: "pointer" }}>
                 <i className="bi bi-file-earmark-arrow-up" /> {cshtWb ? "Chọn file khác" : "Chọn file"}
@@ -1847,23 +1870,34 @@ function ShipmentsApp() {
             {cshtCheck && cshtCheck.valid && (() => {
               const fmtDT = (iso) => { if (!iso) return "—"; const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso)); return m ? `${m[3]}/${m[2]}/${m[1]}` : String(iso); };
               const ioLabel = (v) => { const s = String(v || "").toLowerCase(); if (/nh[âaạ]p|import/.test(s)) return "Nhập"; if (/xu[âaấ]t|export/.test(s)) return "Xuất"; return v || "—"; };
-              const amt = (v) => { const n = toNum(v); return n ? fmtVND(n) : "—"; };
+              const amt = (v) => { const n = toNum(v); return n ? fmtVND(n) : ""; };
+              const colMap = cshtCheck.columns || {};   // tiêu đề cột file → tên khoản (null = bỏ qua)
+              const items = cshtCheck.items || [];
+              const valOf = (l, name) => { const h = Object.keys(colMap).find((k) => colMap[k] === name && String(((l.amounts || {})[k]) || "").trim() !== ""); return h ? l.amounts[h] : ""; };
+              const st = cshtCheck.stats || {};
+              // Chỉ hiện dòng có số liệu (file xuất có đủ mọi lô, phần lớn để trống).
+              const rowsV = cshtRows.filter((l) => items.some((n) => valOf(l, n)) || l.invoiceNo || l.note || l.date);
               const cols = [
-                { h: "#", get: (l, i) => i + 1, al: "center", muted: true },
-                { h: "Ngày HĐ", get: (l) => l.dateRaw ? l.dateRaw : fmtDT(l.date), num: true },
+                { h: "Dòng", get: (l) => l.line || "", al: "center", muted: true },
+                { h: "ID lô", get: (l) => l.id || "—", num: true },
                 { h: "Số cont", get: (l) => l.contNo || "—", contCol: true },
-                { h: "Nhập/Xuất", get: (l) => ioLabel(l.io), al: "center" },
-                { h: "Phí CSHT", get: (l) => amt(l.csht), al: "right", num: true },
-                { h: "Thanh lý", get: (l) => amt(l.thanhLy), al: "right", num: true },
-                { h: "Ghi chú", get: (l) => l.note || "—" },
+                { h: "N/X", get: (l) => ioLabel(l.io), al: "center" },
+                ...items.map((n) => ({ h: n, get: (l) => amt(valOf(l, n)) || "—", al: "right", num: true })),
                 { h: "Số HĐ", get: (l) => l.invoiceNo || "—", num: true },
+                { h: "Ngày HĐ", get: (l) => l.dateRaw ? l.dateRaw : fmtDT(l.date), num: true },
+                { h: "Ghi chú", get: (l) => l.note || "—" },
               ];
-              const rowsV = cshtRows.filter((r) => String(r.contNo || "").trim() !== "");
               return (
                 <div style={{ border: "1px solid #bfe4d1", borderRadius: 10, overflow: "hidden" }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--good)", padding: "10px 13px", background: "var(--good-weak)", borderBottom: "1px solid #bfe4d1" }}>
-                    <i className="bi bi-check-circle-fill" /> {rowsV.length} dòng hợp lệ → ghi/ghi đè khoản <b>CSHT</b> và <b>Thanh lí</b> vào chi phí từng lô. Kiểm tra rồi bấm <b>Import</b>.
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--good)", padding: "10px 13px", background: "var(--good-weak)", borderBottom: "1px solid #bfe4d1", lineHeight: 1.55 }}>
+                    <i className="bi bi-check-circle-fill" /> {rowsV.length} dòng có số liệu → <b>{st.create || 0}</b> khoản tạo mới · <b>{st.update || 0}</b> khoản sửa · {st.same || 0} khoản giữ nguyên
+                    {st.shipments ? <> · trên <b>{st.shipments}</b> lô</> : null}. Kiểm tra rồi bấm <b>Import</b>.
                   </div>
+                  {(cshtCheck.warnings || []).length > 0 && (
+                    <div style={{ fontSize: 12, color: "#7c5b16", background: "var(--warn-weak)", padding: "7px 13px", borderBottom: "1px solid #f3d9a4" }}>
+                      {(cshtCheck.warnings || []).map((w, i) => <div key={i}><i className="bi bi-info-circle" /> {w}</div>)}
+                    </div>
+                  )}
                   <div style={{ maxHeight: "44vh", overflow: "auto", overscrollBehavior: "contain" }}>
                     <table style={{ borderCollapse: "collapse", fontSize: 12.5, minWidth: 720, width: "100%" }}>
                       <thead>
@@ -1878,8 +1912,8 @@ function ShipmentsApp() {
                           <tr key={i}>
                             {cols.map((c, ci) => {
                               const v = c.get(l, i);
-                              const base = { padding: "6px 11px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)", textAlign: c.al || "left", whiteSpace: c.num ? "nowrap" : "normal" };
-                              if (c.contCol) return <td key={ci} className="tnum" style={{ ...base, fontWeight: 700 }}>{l.contNo}</td>;
+                              const base = { padding: "6px 11px", borderBottom: "1px solid var(--line-2)", color: c.muted ? "var(--ink-4)" : "var(--ink-2)", textAlign: c.al || "left", whiteSpace: c.num ? "nowrap" : "normal" };
+                              if (c.contCol) return <td key={ci} className="tnum" style={{ ...base, fontWeight: 700 }}>{l.contNo || "—"}</td>;
                               return <td key={ci} className={c.num ? "tnum" : undefined} style={base}>{v}</td>;
                             })}
                           </tr>
@@ -1900,7 +1934,7 @@ function ShipmentsApp() {
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
                     <thead>
                       <tr style={{ background: "#fafbfc" }}>
-                        {["Dòng", "Số cont", "Nhập/Xuất", "Lý do"].map((h, i) => (
+                        {["Dòng", "ID lô", "Số cont", "Nhập/Xuất", "Lý do"].map((h, i) => (
                           <th key={i} style={{ textAlign: "left", padding: "7px 12px", fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "1px solid var(--line)", position: "sticky", top: 0, background: "#fafbfc", whiteSpace: "nowrap" }}>{h}</th>
                         ))}
                       </tr>
@@ -1908,7 +1942,8 @@ function ShipmentsApp() {
                     <tbody>
                       {cshtCheck.errors.map((er, i) => (
                         <tr key={i}>
-                          <td className="tnum" style={{ padding: "7px 12px", borderBottom: "1px solid var(--line-2)", fontWeight: 600, color: "var(--ink-2)", whiteSpace: "nowrap" }}>{er.line}</td>
+                          <td className="tnum" style={{ padding: "7px 12px", borderBottom: "1px solid var(--line-2)", fontWeight: 600, color: "var(--ink-2)", whiteSpace: "nowrap" }}>{er.line || "—"}</td>
+                          <td className="tnum" style={{ padding: "7px 12px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{er.id || "—"}</td>
                           <td className="tnum" style={{ padding: "7px 12px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{er.cont || "—"}</td>
                           <td style={{ padding: "7px 12px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{er.io || "—"}</td>
                           <td style={{ padding: "7px 12px", borderBottom: "1px solid var(--line-2)", color: "var(--danger)" }}>{(er.reasons || []).join("; ")}</td>
@@ -1920,7 +1955,7 @@ function ShipmentsApp() {
               </div>
             )}
 
-            {cshtMsg && <div style={{ fontSize: 12.5, fontWeight: 600, marginTop: 10, color: cshtMsg.startsWith("Đã cập nhật") ? "var(--good)" : "var(--danger)" }}>{cshtMsg}</div>}
+            {cshtMsg && <div style={{ fontSize: 12.5, fontWeight: 600, marginTop: 10, color: cshtMsg.startsWith("Đã") ? "var(--good)" : "var(--danger)" }}>{cshtMsg}</div>}
           </div>
         </Modal>
       )}
