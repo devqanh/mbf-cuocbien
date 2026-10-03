@@ -47,6 +47,25 @@ trait HandlesStatements
     // ===================================================================
 
     /**
+     * PHẠM VI bảng kê (io_scope: all | nhap | xuat): lô có io ("Nhập"/"Xuất") thuộc phạm vi mới được TÍNH TIỀN,
+     * in và xuất Excel; lô khác loại vẫn nằm trong bảng kê (hiện mờ) nhưng không tính. Khớp ioKey ở frontend.
+     */
+    public static function ioInScope(?string $io, ?string $scope): bool
+    {
+        $scope = $scope ?: 'all';
+        if ($scope === 'all') return true;
+        $v = mb_strtolower((string) $io);
+        return $scope === 'xuat' ? str_contains($v, 'xu') : str_contains($v, 'nh');
+    }
+
+    /** Chuẩn hóa giá trị phạm vi từ client / DB. */
+    private static function ioScopeOf($v): string
+    {
+        $v = (string) ($v ?? 'all');
+        return in_array($v, ['nhap', 'xuat'], true) ? $v : 'all';
+    }
+
+    /**
      * NGUỒN CHÂN LÝ DUY NHẤT cho 4 con số bảng kê (backend).
      * VAT chỉ áp lên NỀN vận chuyển (cước+dầu+sà lan); chi hộ KHÔNG chịu VAT.
      *
@@ -124,6 +143,7 @@ trait HandlesStatements
                     'date'        => $this->outDate($st->date),
                     'from'        => $this->outDate($st->period_from),
                     'to'          => $this->outDate($st->period_to),
+                    'ioScope'     => self::ioScopeOf($st->io_scope ?? 'all'),
                     // 4 con số bảng kê (nền/VAT/chi hộ/tổng).
                     'vatRate'     => (float) ($st->vat_rate ?? 0),
                     'baseAmount'  => $a['base'],
@@ -206,9 +226,10 @@ trait HandlesStatements
             ? $st->lines->mapWithKeys(fn ($l) => [(int) $l->shipment_id => $l->shipment?->info_note])->all()
             : \App\Models\TruckingShipment::whereIn('id', $st->lines->pluck('shipment_id')->filter()->unique()->values())
                 ->pluck('info_note', 'id')->all();
-        // 4 con số tính TỪ detail từng dòng (chân lý, đúng cả bảng kê cũ) + vat_rate đã lưu.
-        $rate = (float) ($st->vat_rate ?? 0);
-        $amt  = self::statementAmounts($st->lines->map(function ($l) {
+        // 4 con số tính TỪ detail từng dòng (chân lý, đúng cả bảng kê cũ) + vat_rate đã lưu — CHỈ lô trong phạm vi io_scope.
+        $rate  = (float) ($st->vat_rate ?? 0);
+        $scope = self::ioScopeOf($st->io_scope ?? 'all');
+        $amt  = self::statementAmounts($st->lines->filter(fn ($l) => self::ioInScope($l->io, $scope))->map(function ($l) {
             $d = is_array($l->detail ?? null) ? $l->detail : [];
             if (! $d) $d = ['phaiThu' => (float) $l->phai_thu];
             return $d;
@@ -222,6 +243,7 @@ trait HandlesStatements
             'date'        => $this->outDate($st->date),
             'from'        => $this->outDate($st->period_from),
             'to'          => $this->outDate($st->period_to),
+            'ioScope'     => $scope,   // phạm vi lô tính tiền: all | nhap | xuat
             'vatRate'     => $rate,
             'baseAmount'  => $amt['base'],
             'vatAmount'   => $amt['vat'],
@@ -268,12 +290,14 @@ trait HandlesStatements
             // 4 con số = NGUỒN CHÂN LÝ (server tự cộng từ detail từng dòng) — không tin client.
             // VAT chỉ áp nền (cước+dầu+sà lan); chi hộ không VAT.
             $vatRate = max(0.0, (float) ($data['vatRate'] ?? 0));
+            // Phạm vi Nhập/Xuất: chỉ lô trong phạm vi được cộng vào 4 con số (lô khác loại vẫn lưu dòng, không tính).
+            $scope = self::ioScopeOf($data['ioScope'] ?? 'all');
             $details = array_map(function ($l) {
                 $d = is_array($l['detail'] ?? null) ? $l['detail'] : [];
                 // Nếu thiếu detail nhưng có phaiThu (override thủ công) → dùng phaiThu làm nền.
                 if (! $d) $d = ['phaiThu' => $this->inMoney($l['phaiThu'] ?? null) ?? 0];
                 return $d;
-            }, $data['lines'] ?? []);
+            }, array_values(array_filter($data['lines'] ?? [], fn ($l) => self::ioInScope($l['io'] ?? '', $scope))));
             $amt = self::statementAmounts($details, $vatRate);
 
             $st ??= new TruckingStatement();
@@ -286,6 +310,7 @@ trait HandlesStatements
                 'period_from'   => $this->inDate($data['from'] ?? null),
                 'period_to'     => $this->inDate($data['to'] ?? null),
                 'vat_rate'      => $vatRate,
+                'io_scope'      => $scope,
                 'base_amount'   => $amt['base'],
                 'choho_amount'  => $amt['choho'],
                 // total = nền + VAT(nền) + chi hộ — backward-compat: vat=0 → = nền + chi hộ.

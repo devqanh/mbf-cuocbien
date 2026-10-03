@@ -48,6 +48,26 @@ const ROUTES_TRK = (window.__TRK && window.__TRK.routes) || {};
 const CO_NAME = CO.name || "MBF JOINT STOCK COMPANY";
 const CO_SUB = [CO.website, CO.phone].filter(Boolean).join(" · ") || "http://mbf.com.vn · 84-24-39449616";
 
+/* Lọc lô theo NHẬP / XUẤT (io của lô: "Nhập" | "Xuất"). Dùng ở trang tạo (lọc ứng viên) và trang xem (lọc hiển thị). */
+const ioKey = (io) => { const v = String(io || "").toLowerCase(); return /xu/.test(v) ? "xuat" : /nh/.test(v) ? "nhap" : ""; };
+function IoSeg({ value, onChange, counts }) {
+  return (
+    <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 9, padding: 3, gap: 1 }}>
+      {[["all", "Tất cả"], ["nhap", "Nhập"], ["xuat", "Xuất"]].map(([k, lb]) => {
+        const on = value === k; const n = counts ? counts[k] : null;
+        return (
+          <button key={k} type="button" onClick={() => onChange(k)} title={k === "all" ? "Mọi lô" : `Chỉ lô hàng ${lb.toLowerCase()}`}
+            style={{ border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, padding: "5px 11px", borderRadius: 7, whiteSpace: "nowrap",
+              background: on ? "#fff" : "transparent", color: on ? "var(--accent)" : "var(--ink-3)", boxShadow: on ? "0 1px 2px rgba(16,19,23,.14)" : "none" }}>
+            {lb}{n != null ? <span className="tnum" style={{ marginLeft: 5, fontSize: 10.5, fontWeight: 700, color: "var(--ink-4)" }}>{n}</span> : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+const ioCounts = (lines) => { const c = { all: 0, nhap: 0, xuat: 0 }; (lines || []).forEach((l) => { c.all++; const k = ioKey(l.io); if (k) c[k]++; }); return c; };
+
 /* Select % VAT cho bảng kê (cấp statement). VAT chỉ áp nền cước+dầu+sà lan. */
 function VatSelect({ value, onChange }) {
   return (
@@ -114,7 +134,10 @@ function StatementForm({ cfg, onCancel, onSaved }) {
 
   const [amtOv, setAmtOv] = useState({}); // override NỀN (cước+dầu+sà lan) theo lô
   const [vatOv, setVatOv] = useState({}); // override % VAT riêng theo lô ("" = theo mặc định bảng kê)
-  const sel = all.filter((x) => picked[x.id] !== false); // mặc định chọn hết
+  // Lọc NHẬP / XUẤT ngay trên danh sách ứng viên (client): bảng kê lưu CHỈ các lô đang hiện (+ đang tích).
+  const [io, setIo] = useState("all");
+  const shown = io === "all" ? all : all.filter((x) => ioKey(x.io) === io);
+  const sel = shown.filter((x) => picked[x.id] !== false); // mặc định chọn hết
   // 3 con số/dòng từ NGUỒN CHÂN LÝ chung (nền cước+dầu+sà lan; VAT chỉ áp nền; chi hộ không VAT).
   const ovOf = (x) => (amtOv[x.id] != null ? amtOv[x.id] : null);   // null = chưa sửa tay
   const vatOf = (x) => vatOv[x.id];                                 // undefined/"" = theo mặc định
@@ -146,7 +169,8 @@ function StatementForm({ cfg, onCancel, onSaved }) {
         detail,
       };
     });
-    const payload = { id: Date.now(), no: keNo, customer: cust, info, date: today, from, to, lines, vatRate, tongThu, payments: [], createdAt: new Date().toISOString() };
+    // ioScope = phạm vi Nhập/Xuất đã chọn → lưu cùng bảng kê (backend chỉ tính tiền lô trong phạm vi).
+    const payload = { id: Date.now(), no: keNo, customer: cust, info, date: today, from, to, ioScope: io, lines, vatRate, tongThu, payments: [], createdAt: new Date().toISOString() };
     // onSaved có thể async + trả về false để huỷ (vd bấm Huỷ ở confirm) → giữ nguyên trang
     let result;
     try { result = await Promise.resolve(onSaved && onSaved(payload)); }
@@ -187,8 +211,12 @@ function StatementForm({ cfg, onCancel, onSaved }) {
           <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>VAT</div>
           <VatSelect value={vatRate} onChange={setVatRate} />
         </div>
+        <div style={{ display: "block" }}>
+          <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>Lô hàng</div>
+          <IoSeg value={io} onChange={setIo} counts={ioCounts(all)} />
+        </div>
         <div style={{ flex: 1 }} />
-        <div style={{ fontSize: 12, color: "var(--ink-4)" }}>{all.length} lô có phải thu</div>
+        <div style={{ fontSize: 12, color: "var(--ink-4)" }}>{io === "all" ? `${all.length} lô có phải thu` : `${shown.length} / ${all.length} lô (${io === "nhap" ? "Nhập" : "Xuất"})`}</div>
       </div>
 
       {/* Ghi chú cho kế toán: bộ lọc kỳ dựa theo Giờ xe ra của lô */}
@@ -244,7 +272,8 @@ function StatementForm({ cfg, onCancel, onSaved }) {
                 : (cust ? "Không có lô nào phù hợp trong kỳ đã chọn." : "Chọn khách hàng để bắt đầu.")}
             </td></tr>}
             {loading && <tr><td colSpan={9} style={{ padding: "24px", textAlign: "center", color: "var(--ink-4)" }}>Đang tải lô + định giá…</td></tr>}
-            {!loading && all.map((x, i) => {
+            {!loading && all.length > 0 && shown.length === 0 && <tr><td colSpan={9} style={{ padding: "24px", textAlign: "center", color: "var(--ink-4)" }}>Không có lô <b>{io === "nhap" ? "Nhập" : "Xuất"}</b> trong kỳ — đổi bộ lọc Lô hàng ở trên.</td></tr>}
+            {!loading && shown.map((x, i) => {
               const on = picked[x.id] !== false;
               return (
                 <tr key={x.id} className={(i % 2 ? "ke-zebra " : "") + "ke-lo-end"} style={{ opacity: on ? 1 : 0.4 }}>
@@ -370,8 +399,17 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
     return { ...l, detail: d };
   }) });
   const lineVatStyle = { padding: "5px 6px", fontSize: 12, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 7, background: "#fff", cursor: "pointer", textAlign: "right" };
-  // 4 con số = Σ per-line (khớp 3 cột mỗi dòng).
-  const amt = statementAmounts(st.lines || [], vatRate);
+  // PHẠM VI bảng kê (ioScope: all | nhap | xuat) — LƯU cùng bảng kê, khớp backend ioInScope: chỉ lô đúng loại được
+  // TÍNH TIỀN (4 con số), in và xuất Excel. Lô khác loại vẫn lưu trong bảng kê nhưng ẨN HẲN khỏi danh sách
+  // (user: hiện mờ nhìn rối) — đổi phạm vi về "Tất cả" là hiện lại; thanh cảnh báo nêu số lô đang ẩn.
+  const scope = st.ioScope || "all";
+  const setScope = (k) => onUpdate && onUpdate({ ...st, ioScope: k });
+  const inScope = (l) => scope === "all" || ioKey(l.io) === scope;
+  const scopedLines = (st.lines || []).filter(inScope);
+  const outCount = (st.lines || []).length - scopedLines.length;
+  const scopeLabel = scope === "nhap" ? "Nhập" : "Xuất";
+  // 4 con số = Σ per-line TRONG PHẠM VI (khớp 3 cột mỗi dòng).
+  const amt = statementAmounts(scopedLines, vatRate);
   const tongThu = amt.total;
   const grp = (d) => { d = (d || "").toString().replace(/[^\d]/g, ""); return d ? d.replace(/\B(?=(\d{3})+(?!\d))/g, ".") : ""; };
   const daTT = payments.reduce((a, p) => a + toNum(p.amount), 0);
@@ -397,9 +435,16 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
                 style={{ border: "none", background: "transparent", color: "var(--ink-4)", cursor: "pointer", fontSize: 12, padding: "2px 4px" }}>✕</button>}
               <span style={{ fontWeight: 600, marginLeft: 6 }}>VAT</span>
               <VatSelect value={vatRate} onChange={setVat} />
+              <span style={{ fontWeight: 600, marginLeft: 6 }} title="Phạm vi lô được tính tiền / in / xuất Excel — lưu cùng bảng kê">Phạm vi</span>
+              <IoSeg value={scope} onChange={setScope} counts={ioCounts(st.lines)} />
             </div>
-            {/* VAT cho bản in (read-only) */}
-            <div className="ke-printonly" style={{ display: "none", fontSize: 12.5, color: "var(--ink-3)", marginTop: 4 }}>VAT: {vatRate}%</div>
+            {scope !== "all" && (
+              <div className="ke-noprint tnum" style={{ marginTop: 6, fontSize: 12, color: "#7a5200", background: "#fff7e6", border: "1px solid #ffe1a8", borderRadius: 8, padding: "6px 10px", lineHeight: 1.5 }}>
+                Bảng kê <b>hàng {scopeLabel.toLowerCase()}</b>: tính tiền <b>{scopedLines.length}</b> lô {scopeLabel}{outCount > 0 ? <> — <b>{outCount}</b> lô khác loại đã ẩn, <b>không tính</b>, không in / xuất Excel (chọn <b>Tất cả</b> để xem lại)</> : null}. Bấm <b>Lưu</b> để chốt phạm vi.
+              </div>
+            )}
+            {/* VAT + phạm vi cho bản in (read-only) */}
+            <div className="ke-printonly" style={{ display: "none", fontSize: 12.5, color: "var(--ink-3)", marginTop: 4 }}>VAT: {vatRate}%{scope !== "all" ? ` · Phạm vi: lô hàng ${scopeLabel.toLowerCase()}` : ""}</div>
           </div>
           <div style={{ textAlign: "right", fontSize: 12 }}>
             <div style={{ fontWeight: 700, color: "var(--accent)" }}>{CO_NAME}</div>
@@ -418,7 +463,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
           <thead><tr style={{ background: "#fafbfc" }}>{th("#", "center")}{th("Lô / Booking")}{th("Tuyến · Cont")}{th("Cont ra")}{th(<>Phải thu<br/>(cước+dầu)</>, "right")}{th("VAT", "right")}{th("Chi hộ", "right")}{th("Tổng tiền", "right")}</tr></thead>
           <tbody>
-            {st.lines.map((l, i) => {
+            {scopedLines.map((l, i) => {
               const d = detailById[l.id];
               const sg = suggestById ? suggestById[l.id] : null;   // gợi ý từ Tính lại (nếu có)
               const gone = !!(sg && !sg.found);                      // lô không còn trong hệ thống
@@ -435,7 +480,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
               ) : null;
               return (
               <React.Fragment key={l.id}>
-              <tr className={(i % 2 ? "ke-zebra " : "") + (d || noteOnly ? "" : "ke-lo-end")}>
+              <tr className={(i % 2 ? "ke-zebra " : "") +(d || noteOnly ? "" : "ke-lo-end")}>
                 <td className="tnum" style={{ textAlign: "center", padding: "8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", color: "var(--ink-4)", verticalAlign: "top" }}>{i + 1}</td>
                 <td style={{ padding: "8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", verticalAlign: "top" }}><div style={{ fontWeight: 600 }} className="tnum">{l.booking || "—"}</div><div style={{ fontSize: 11, color: "var(--ink-4)" }}>{l.sheet} · {l.io}</div></td>
                 <td style={{ padding: "8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top" }}>{l.from} → {l.to}<div style={{ fontSize: 11, color: "var(--ink-4)" }} className="tnum">{(ROUTES_TRK.loHang && l.contNo)
@@ -486,7 +531,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
                 </>); })()}
               </tr>
               {d && d.found && (
-                <tr className={(i % 2 ? "ke-zebra " : "") + "ke-lo-end"}>
+                <tr className={(i % 2 ? "ke-zebra " : "") +"ke-lo-end"}>
                   <td style={{ borderBottom: "1px solid var(--line-2)" }}></td>
                   <td colSpan={7} style={{ padding: "0 8px 9px", borderBottom: "1px solid var(--line-2)" }}>
                     {noteEl}
@@ -539,10 +584,10 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
                 </tr>
               )}
               {noteOnly && (
-                <tr className={(i % 2 ? "ke-zebra " : "") + "ke-lo-end"}><td style={{ borderBottom: "1px solid var(--line-2)" }}></td><td colSpan={7} style={{ padding: "0 8px 7px", borderBottom: "1px solid var(--line-2)" }}>{noteEl}</td></tr>
+                <tr className={(i % 2 ? "ke-zebra " : "") +"ke-lo-end"}><td style={{ borderBottom: "1px solid var(--line-2)" }}></td><td colSpan={7} style={{ padding: "0 8px 7px", borderBottom: "1px solid var(--line-2)" }}>{noteEl}</td></tr>
               )}
               {gone && (
-                <tr className={(i % 2 ? "ke-zebra " : "") + "ke-lo-end"}><td style={{ borderBottom: "1px solid var(--line-2)" }}></td><td colSpan={7} style={{ padding: "0 8px 9px", borderBottom: "1px solid var(--line-2)", fontSize: 11.5, color: "var(--ink-4)" }}>Lô không còn trong hệ thống — giữ số đã lưu, không tính lại được.</td></tr>
+                <tr className={(i % 2 ? "ke-zebra " : "") +"ke-lo-end"}><td style={{ borderBottom: "1px solid var(--line-2)" }}></td><td colSpan={7} style={{ padding: "0 8px 9px", borderBottom: "1px solid var(--line-2)", fontSize: 11.5, color: "var(--ink-4)" }}>Lô không còn trong hệ thống — giữ số đã lưu, không tính lại được.</td></tr>
               )}
               </React.Fragment>
             );})}
@@ -811,7 +856,12 @@ function KePage({ ke, drift = {}, onNew, onOpen }) {
               <span className="tnum" style={{ fontWeight: 600, color: "var(--accent)", whiteSpace: "nowrap" }}>{st.no}</span>
               <span style={{ fontWeight: 500, minWidth: 0 }}>
                 <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={st.customer}>{st.customer}</div>
-                {driftOf(st) ? <div style={{ marginTop: 3 }}><DriftChip n={driftOf(st).changed} /></div> : null}
+                {(driftOf(st) || (st.ioScope && st.ioScope !== "all")) ? (
+                  <div style={{ marginTop: 3, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {st.ioScope && st.ioScope !== "all" ? <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", padding: "1px 8px", borderRadius: 999, whiteSpace: "nowrap" }} title="Phạm vi bảng kê — chỉ tính tiền lô loại này">{st.ioScope === "nhap" ? "Hàng nhập" : "Hàng xuất"}</span> : null}
+                    {driftOf(st) ? <DriftChip n={driftOf(st).changed} /> : null}
+                  </div>
+                ) : null}
               </span>
               <span className="tnum" style={{ color: "var(--ink-2)", whiteSpace: "nowrap" }}>{fmtDate(st.date)}</span>
               <span className="tnum" style={{ color: "var(--ink-3)", fontSize: 12.5, whiteSpace: "nowrap" }}>{(st.from || st.to) ? `${fmtDate(st.from) || "…"} – ${fmtDate(st.to) || "…"}` : "—"}</span>

@@ -264,6 +264,15 @@ try {
     $arrM = $svc->statementToArray($stM->fresh(['lines', 'payments', 'customer']));
     $ok((int) $stM->base_amount === 2234000 && $arrM['baseAmount'] === 2234000 && $arrM['chohoAmount'] === 50000
         && ($arrM['lines'][0]['detail']['manualBase'] ?? null) === 1234000 && ($arrM['lines'][0]['detail']['cuoc'] ?? null) === 800000, 'F5 lưu + đọc lại: nền = 1.234tr (tùy chỉnh) + 1tr; snapshot cuoc hệ thống 800k giữ nguyên');
+    // PHẠM VI Nhập/Xuất: chỉ lô đúng loại được tính tiền; lô khác loại vẫn lưu dòng nhưng không cộng.
+    $stS = $svc->saveStatement(['no' => '__TEST_BK_S', 'customer' => $cA->name, 'date' => '2026-10-03', 'vatRate' => 10, 'ioScope' => 'xuat', 'lines' => [
+        ['id' => null, 'booking' => 'X1', 'io' => 'Xuất', 'phaiThu' => 1000000, 'cuoc' => 1000000, 'detail' => ['cuoc' => 1000000, 'dau' => 0, 'chiHo' => 50000]],
+        ['id' => null, 'booking' => 'N1', 'io' => 'Nhập', 'phaiThu' => 700000, 'cuoc' => 700000, 'detail' => ['cuoc' => 700000, 'dau' => 0, 'chiHo' => 30000]],
+    ]]);
+    $arrS = $svc->statementToArray($stS->fresh(['lines', 'payments', 'customer']));
+    $ok($arrS['ioScope'] === 'xuat' && (int) $stS->base_amount === 1000000 && $arrS['baseAmount'] === 1000000 && $arrS['vatAmount'] === 100000 && $arrS['chohoAmount'] === 50000 && $arrS['tongThu'] === 1150000 && count($arrS['lines']) === 2, 'F6 phạm vi Xuất: tính tiền chỉ lô Xuất (nền 1tr + VAT 100k + chi hộ 50k), lô Nhập vẫn lưu dòng');
+    $stS->update(['io_scope' => 'all']);
+    $ok($svc->statementToArray($stS->fresh(['lines', 'payments', 'customer']))['baseAmount'] === 1700000, 'F7 đổi phạm vi về Tất cả → tính đủ cả 2 lô (1.7tr)');
 
     // ---------- G. Đơn vị xe ngoài + Bảng kê xe ngoài ----------
     $section('G. Đơn vị xe ngoài + Bảng kê xe ngoài (payable)');

@@ -558,6 +558,7 @@ trait HandlesStatementPricing
                 foreach ($st->lines as $l) {
                     $s = $l->shipment_id ? $ships->get($l->shipment_id) : null;
                     if (! $s) continue;   // lô đã xóa → giữ số đã lưu, không phải "phát sinh"
+                    if (! self::ioInScope($l->io, $st->io_scope ?? 'all')) continue;   // ngoài phạm vi Nhập/Xuất → không tính, không lệch
                     $sheet = strtoupper((string) $s->sheet);
                     $date  = $this->outDate($s->gio_xe_ra) ?: ($sheet === 'HPH' ? $this->outDate($s->sail_date) : '');
                     $pr = $this->priceShipment($s, $this->pricingContextForDate($custId, $custName, $date));

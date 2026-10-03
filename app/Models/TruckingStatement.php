@@ -16,6 +16,7 @@ class TruckingStatement extends Model
         'no', 'customer_id', 'customer_name', 'info',
         'date', 'period_from', 'period_to', 'total',
         'vat_rate', 'base_amount', 'choho_amount',
+        'io_scope',   // phạm vi lô tính tiền: all | nhap | xuat
     ];
 
     protected $casts = [

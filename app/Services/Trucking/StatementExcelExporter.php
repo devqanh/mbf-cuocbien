@@ -48,7 +48,9 @@ class StatementExcelExporter
         $sh->setCellValueExplicit('O18', (string) ($st['no'] ?? ''), DataType::TYPE_STRING);
         $sh->setCellValueExplicit('O19', $dmy($st['date'] ?? null), DataType::TYPE_STRING);
 
-        $lines    = array_values($st['lines'] ?? []);
+        // Chỉ lô trong PHẠM VI Nhập/Xuất của bảng kê (ioScope) — lô khác loại không tính, không in ra Excel.
+        $scope    = $st['ioScope'] ?? 'all';
+        $lines    = array_values(array_filter($st['lines'] ?? [], fn ($l) => \App\Services\TruckingV2Service::ioInScope($l['io'] ?? '', $scope)));
         $M        = max(count($lines), 1);     // luôn giữ ≥1 dòng vùng dữ liệu
         $start    = 22;
         $tplRows  = 46;                         // mẫu có 46 dòng (22..67)
