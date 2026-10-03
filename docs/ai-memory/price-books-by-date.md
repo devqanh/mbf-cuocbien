@@ -1,6 +1,6 @@
 ---
 name: price-books-by-date
-description: "Bảng giá theo khoảng ngày — mỗi khách nhiều price book [from,to]; bảng kê định giá per-lô theo NGÀY cont ra"
+description: "Bảng giá theo khoảng ngày — mỗi khách nhiều price book [from,to]; định giá per-lô theo NGÀY ĐỊNH GIÁ = ngày vận hành 08:00 của giờ xe ra (pricingDateOf)"
 metadata: 
   node_type: memory
   type: project
@@ -13,7 +13,7 @@ Bảng giá nay có **nhiều phiên bản theo khoảng ngày** (price book) ch
 
 **Chọn book theo ngày (định giá):** `pickPriceBook($customerId,$date)` (HandlesStatementPricing) — book "phủ" ngày `d` nếu `(from null||from<=d)&&(to null||d<=to)`; nhiều book phủ → ưu tiên CỤ THỂ hơn (có from, from mới nhất, id lớn) → book có ngày THẮNG book mở. Không book nào phủ → null = **"chưa khớp bảng giá"** (KHÔNG fallback — user chốt). Lô không có ngày → dùng book mở nếu có.
 
-**Bảng kê định giá PER-LÔ theo NGÀY CONT RA** (gio_xe_ra / HPH sail_date — đã chốt, không per-kỳ): `statementCandidates`/`statementReprice`/`statementsDrift` gọi `pricingContextForDate($cust,$name,$date)` cho TỪNG lô (kỳ vắt qua mốc → mỗi lô lấy đúng book). `pricingContext($cust,$name,$priceBookId,$bookMeta)` cache key `"{cust}:{book}"`; `customerPriceListById($cust,$bookId)` lọc theo price_book_id (null→[]). `priceShipment` trả `priceBook` (id/label/from/to) → bảng kê hiện "Giá: <kỳ>".
+**Định giá PER-LÔ theo NGÀY ĐỊNH GIÁ** (đã chốt, không per-kỳ): `pricingDateOf($s)` (HandlesStatementPricing) = **ngày vận hành 08:00→08:00 của Giờ xe ra** — ra TRƯỚC 08:00 tính về NGÀY HÔM TRƯỚC (user 2026-10-03: "ra 14/9 trước 8h sáng vẫn tính bảng giá 13/9, sau 8h mới tính 14"), mốc `OPS_DAY_START_HOUR = 8` dùng chung với Lộ trình (`routeTripByDate`); HPH không giờ xe ra → `sail_date` nguyên. MỌI điểm định giá đi qua `pricingContextForShipment($s[,$custId,$name])`: Lô hàng `priceOut` (cột Thu phí + lọc khớp giá), `statementCandidates`/`statementReprice`/`statementsDrift`, báo cáo `reportShipmentRevenue($s)`. CHỈ bảng giá lùi ngày: cột "Cont ra", lọc kỳ bảng kê và tháng báo cáo VẪN theo NGÀY LỊCH của gio_xe_ra (lô ra 01/10 07:30 vào kỳ tháng 10 nhưng giá theo book phủ 30/9). Test A8–A10 dev/test_features.php. `pricingContext($cust,$name,$priceBookId,$bookMeta)` cache key `"{cust}:{book}"`; `customerPriceListById($cust,$bookId)` lọc theo price_book_id (null→[]). `priceShipment` trả `priceBook` (id/label/from/to) → bảng kê hiện "Giá: <kỳ>".
 
 **CRUD (HandlesPricingAndImport):** `priceBooksForCustomer`, `priceBookRows($bookId)`, `createPriceBook`, `updatePriceBook`, `deletePriceBook` (cascade rows), `savePriceBookRows($bookId,$rows)` (xóa-tạo-lại TRONG PHẠM VI book). `importPriceRows`/`copyPriceRows` nhận book id (copy book→book). **`reconcileCustomers` ĐÃ GỠ block priceList** — `/customers` chỉ lưu info khách; giá đi qua endpoint book. `priceBookConfig` trả `customerInfo[].priceBooks[{id,label,from,to,count}]`.
 

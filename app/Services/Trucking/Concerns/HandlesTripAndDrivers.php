@@ -1122,13 +1122,14 @@ trait HandlesTripAndDrivers
      * "Thu phí" ở Lô hàng và bảng kê (1 nguồn công thức). Lô KHÔNG khớp bảng giá → dùng doanh thu NHẬP TAY
      * (revenue_lines kind=doanhThu) nếu có; không có nữa → 0 và tính là "chưa khớp". KHÔNG cộng cả 2 để tránh trùng.
      * (Bảng revenue_lines thực tế gần như không ai nhập → trước đây P&L luôn báo doanh thu 0.)
-     * $s cần eager-load costLines + revenueLines + customer. $date = ngày cont ra (Y-m-d).
+     * $s cần eager-load costLines + revenueLines + customer. Bảng giá chọn theo NGÀY ĐỊNH GIÁ của lô
+     * (ngày vận hành 08:00 của giờ xe ra — pricingDateOf), còn lô thuộc THÁNG nào vẫn theo ngày lịch.
      *
      * @return array{amount:int, source:string} source = price | manual | none
      */
-    private function reportShipmentRevenue(TruckingShipment $s, string $date): array
+    private function reportShipmentRevenue(TruckingShipment $s): array
     {
-        $pr = $this->priceShipment($s, $this->pricingContextForDate($s->customer_id ? (int) $s->customer_id : null, $s->customer?->name, $date));
+        $pr = $this->priceShipment($s, $this->pricingContextForShipment($s));
         if ($pr['matched']) {
             $amt = (int) $pr['cuoc'] + (int) $pr['dau'] + (int) ($pr['bargeCuoc'] ?? 0) + (int) ($pr['bargeDau'] ?? 0);
             return ['amount' => $amt, 'source' => 'price'];
@@ -1164,7 +1165,7 @@ trait HandlesTripAndDrivers
         $revenue = 0; $revManual = 0; $unmatched = 0;
         $revByShip = []; $srcByShip = [];
         foreach ($ships as $sh) {
-            $r = $this->reportShipmentRevenue($sh, substr($this->outDate($sh->gio_xe_ra), 0, 10));
+            $r = $this->reportShipmentRevenue($sh);
             $revByShip[$sh->id] = $r['amount']; $srcByShip[$sh->id] = $r['source'];
             $revenue += $r['amount'];
             if ($r['source'] === 'manual') $revManual += $r['amount'];
@@ -1323,7 +1324,7 @@ trait HandlesTripAndDrivers
             $date = substr($this->outDate($sh->gio_xe_ra), 0, 10);
             $ym = substr($date, 0, 7);
             if (! isset($rev[$ym])) continue;
-            $rev[$ym] += $this->reportShipmentRevenue($sh, $date)['amount'];
+            $rev[$ym] += $this->reportShipmentRevenue($sh)['amount'];
             $conts[$ym]++;
         }
 

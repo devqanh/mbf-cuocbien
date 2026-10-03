@@ -416,6 +416,37 @@ trait HandlesStatementPricing
         return $this->pricingContext($customerId, $customerName, $book['id'] ?? null, $book);
     }
 
+    /** Giờ bắt đầu NGÀY VẬN HÀNH (08:00 → 08:00 hôm sau) — cùng mốc với Lộ trình (routeTripByDate). */
+    public const OPS_DAY_START_HOUR = 8;
+
+    /**
+     * NGÀY ĐỊNH GIÁ của lô = NGÀY VẬN HÀNH của mốc cont ra: Giờ xe ra TRƯỚC 08:00 tính về NGÀY HÔM TRƯỚC
+     * (cont ra 14/9 07:30 → bảng giá ngày 13/9), từ 08:00 trở đi tính ngày đó — cùng mốc với Lộ trình.
+     * HPH không có giờ xe ra → ngày tàu (sail_date, không có giờ nên không lùi).
+     * CHỈ dùng để CHỌN BẢNG GIÁ (mọi điểm định giá: Lô hàng, bảng kê, báo cáo). Cột "Cont ra" và lọc kỳ
+     * bảng kê vẫn theo NGÀY LỊCH của giờ xe ra.
+     */
+    private function pricingDateOf(TruckingShipment $s): string
+    {
+        $ra = $s->gio_xe_ra;
+        if ($ra) {
+            try {
+                $d = $ra instanceof Carbon ? $ra->copy() : Carbon::parse((string) $ra);
+                if ($d->hour < self::OPS_DAY_START_HOUR) $d->subDay();
+                return $d->format('Y-m-d');
+            } catch (\Throwable) { return substr($this->outDate($ra), 0, 10); }
+        }
+        return strtoupper((string) $s->sheet) === 'HPH' ? $this->outDate($s->sail_date) : '';
+    }
+
+    /** Context định giá của 1 lô theo NGÀY ĐỊNH GIÁ (pricingDateOf) — dùng chung mọi điểm định giá. */
+    private function pricingContextForShipment(TruckingShipment $s, ?int $customerId = null, ?string $customerName = null): array
+    {
+        $customerId   ??= $s->customer_id ? (int) $s->customer_id : null;
+        $customerName ??= $s->customer?->name;
+        return $this->pricingContextForDate($customerId, $customerName, $this->pricingDateOf($s));
+    }
+
     /**
      * Ứng viên cho 1 bảng kê: lô CỦA 1 KHÁCH trong khoảng cont-ra, ĐÃ ĐỊNH GIÁ ở server.
      * Trả về dòng sẵn sàng hiển thị + lưu (kèm pr để hiện trạng thái khớp).
@@ -461,8 +492,9 @@ trait HandlesStatementPricing
             if (($from || $to) && ! $date) continue;
             if ($from && $date && $date < $from) continue;
             if ($to && $date && $date > $to) continue;
-            // Định giá theo BẢNG GIÁ phủ NGÀY của LÔ (per-lô) — kỳ vắt qua mốc thì mỗi lô lấy đúng bảng giá.
-            $ctx = $this->pricingContextForDate((int) $custId, $cust, $date);
+            // Định giá theo BẢNG GIÁ phủ NGÀY ĐỊNH GIÁ của LÔ (ngày vận hành 08:00, pricingDateOf) — per-lô,
+            // kỳ vắt qua mốc thì mỗi lô lấy đúng bảng giá.
+            $ctx = $this->pricingContextForShipment($s, (int) $custId, $cust);
             $out[] = $this->candidateRow($s, $sheet, $date, $this->priceShipment($s, $ctx));
         }
         return ['candidates' => $out];
@@ -508,7 +540,7 @@ trait HandlesStatementPricing
             $sheet = strtoupper((string) $s->sheet);
             // Ngày kỳ = ngày "Giờ xe ra" (gio_xe_ra) — đồng bộ với statementCandidates. HPH fallback sail_date.
             $date  = $this->outDate($s->gio_xe_ra) ?: ($sheet === 'HPH' ? $this->outDate($s->sail_date) : '');
-            $ctx   = $this->pricingContextForDate($custId, $custName, $date);   // bảng giá theo NGÀY của lô
+            $ctx   = $this->pricingContextForShipment($s, $custId, $custName);   // bảng giá theo NGÀY ĐỊNH GIÁ (08:00) của lô
             $out[(string) $id] = $this->candidateRow($s, $sheet, $date, $this->priceShipment($s, $ctx));
         }
         return ['repriced' => $out];
@@ -559,9 +591,7 @@ trait HandlesStatementPricing
                     $s = $l->shipment_id ? $ships->get($l->shipment_id) : null;
                     if (! $s) continue;   // lô đã xóa → giữ số đã lưu, không phải "phát sinh"
                     if (! self::ioInScope($l->io, $st->io_scope ?? 'all')) continue;   // ngoài phạm vi Nhập/Xuất → không tính, không lệch
-                    $sheet = strtoupper((string) $s->sheet);
-                    $date  = $this->outDate($s->gio_xe_ra) ?: ($sheet === 'HPH' ? $this->outDate($s->sail_date) : '');
-                    $pr = $this->priceShipment($s, $this->pricingContextForDate($custId, $custName, $date));
+                    $pr = $this->priceShipment($s, $this->pricingContextForShipment($s, $custId, $custName));
                     // So NỀN + CHI HỘ hệ thống tính hiện tại với số ĐÃ LƯU theo đúng quy tắc statementAmounts
                     // (giá tùy chỉnh = manualBase; dòng cũ không detail = phai_thu). Dòng GIÁ TÙY CHỈNH chỉ so chi hộ:
                     // nền do người dùng quyết, không coi là "lệch" để khỏi báo "cần tính lại" mãi.

@@ -18,6 +18,8 @@ $R = function ($m) use ($svc) { $x = new ReflectionMethod($svc, $m); $x->setAcce
 $priceShipment        = $R('priceShipment');
 $pricingContextForDate = $R('pricingContextForDate');
 $pickPriceBook        = $R('pickPriceBook');
+$pricingDateOf        = $R('pricingDateOf');
+$priceOut             = $R('priceOut');
 // Reset memoize-cache (per-request) — TEST tạo book/rows giữa chừng nên phải xoá cache để thấy thay đổi.
 // (Thực tế định giá chạy ở request MỚI sau khi đã lưu book → không gặp vấn đề này.)
 $resetCache = function () use ($svc) {
@@ -60,6 +62,17 @@ try {
     $mk($bOpenId, 9999999);
     $ok((int) $price($mkShip('2026-06-05'), '2026-06-05')['cuoc'] === 1000000, 'A4 trong A + có book mở → vẫn chọn A (cụ thể thắng mở)');
     $ok((int) $price($mkShip('2026-08-20'), '2026-08-20')['cuoc'] === 9999999, 'A5 ngoài kỳ → rơi về book mở');
+    // NGÀY ĐỊNH GIÁ = ngày vận hành 08:00→08:00 (user 03/10: "ra 14/9 trước 8h sáng vẫn tính bảng giá 13/9, sau 8h mới tính 14").
+    $sEarly = $mkShip(''); $sEarly->gio_xe_ra = '2026-06-16 07:30:00';
+    $sLate  = $mkShip(''); $sLate->gio_xe_ra  = '2026-06-16 08:00:00';
+    $sNight = $mkShip(''); $sNight->gio_xe_ra = '2026-06-16 00:10:00';
+    $ok($pricingDateOf->invoke($svc, $sEarly) === '2026-06-15' && $pricingDateOf->invoke($svc, $sNight) === '2026-06-15'
+        && $pricingDateOf->invoke($svc, $sLate) === '2026-06-16', 'A8 ngày định giá: ra 16/6 07:30 và 00:10 → 15/6; ra 16/6 08:00 → 16/6');
+    $resetCache();
+    $ok((int) $priceOut->invoke($svc, $sEarly)['cuoc'] === 1000000 && (int) $priceOut->invoke($svc, $sLate)['cuoc'] === 2000000,
+        'A9 priceOut (Lô hàng): ra 16/6 07:30 → book A (1tr) dù ngày lịch 16/6 thuộc B; ra 08:00 → book B (2tr)');
+    $sH = $mkShip(''); $sH->sheet = 'HPH'; $sH->sail_date = '2026-06-16';
+    $ok($pricingDateOf->invoke($svc, $sH) === '2026-06-16' && $pricingDateOf->invoke($svc, $mkShip('')) === '', 'A10 HPH không giờ xe ra → ngày tàu nguyên (không lùi); ICD chưa ra → rỗng');
     // CRUD: savePriceBookRows chỉ đụng book đó
     $svc->savePriceBookRows($bA, []); // xóa rows book A
     $ok(TruckingPriceRow::where('price_book_id', $bA)->count() === 0 && TruckingPriceRow::where('price_book_id', $bB)->count() === 1, 'A6 savePriceBookRows chỉ đụng book A, book B nguyên');

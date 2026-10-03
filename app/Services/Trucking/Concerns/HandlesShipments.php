@@ -379,14 +379,13 @@ trait HandlesShipments
     }
 
     /**
-     * Định giá lô ĐÃ RA theo bảng giá phủ NGÀY cont ra (HPH fallback ngày tàu) — 1 công thức dùng chung cho
-     * cột "Thu phí" và bộ lọc khớp giá (cùng priceShipment với bảng kê).
+     * Định giá lô ĐÃ RA theo bảng giá phủ NGÀY ĐỊNH GIÁ (ngày vận hành 08:00 của giờ xe ra, HPH fallback
+     * ngày tàu — xem pricingDateOf) — 1 công thức dùng chung cho cột "Thu phí" và bộ lọc khớp giá
+     * (cùng priceShipment với bảng kê).
      */
     private function priceOut(TruckingShipment $s): array
     {
-        $sheet = strtoupper((string) $s->sheet);
-        $date  = $this->outDate($s->gio_xe_ra) ?: ($sheet === 'HPH' ? $this->outDate($s->sail_date) : '');
-        return $this->priceShipment($s, $this->pricingContextForDate($s->customer_id ? (int) $s->customer_id : null, $s->customer?->name, $date));
+        return $this->priceShipment($s, $this->pricingContextForShipment($s));
     }
 
     /**
@@ -423,8 +422,8 @@ trait HandlesShipments
      */
     public function routeTripByDate(string $date, bool $withPlanned = false): array
     {
-        try { $start = Carbon::parse($date . ' 08:00:00'); }
-        catch (\Throwable) { $start = Carbon::today()->setTime(8, 0); }
+        try { $start = Carbon::parse($date)->setTime(self::OPS_DAY_START_HOUR, 0); }
+        catch (\Throwable) { $start = Carbon::today()->setTime(self::OPS_DAY_START_HOUR, 0); }
         $end = (clone $start)->addDay();   // 08:00 sáng hôm sau (07:59 là hết khung)
         $inWin = fn ($dt) => $dt && $dt->gte($start) && $dt->lt($end);
 
