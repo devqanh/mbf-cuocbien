@@ -514,10 +514,10 @@ function ShipmentsApp() {
     setExporting(true); setCshtMsg("");
     try {
       const qs = buildParams({ page: 1 }).toString() + "&all=1";
-      const [r, c] = await Promise.all([window.trkApi("GET", ROUTES.shipmentsPage + "?" + qs), ensureCfg()]);
+      const r = await window.trkApi("GET", ROUTES.shipmentsPage + "?" + qs);
       const list = (r && r.ok) ? (r.data || []) : [];
       if (!list.length) { window.trkToast && window.trkToast("Không có lô nào trong bộ lọc đang xem", "error"); return; }
-      XLSX.writeFile(buildCostExportWb(list, (c || cfgRef.current || {}).costItems || []), `chi-phi-lo-${new Date().toISOString().slice(0, 10)}.xlsx`);
+      XLSX.writeFile(buildCostExportWb(list), `chi-phi-lo-${new Date().toISOString().slice(0, 10)}.xlsx`);
       setCshtMsg(`Đã xuất ${list.length} lô theo bộ lọc đang xem — điền / sửa số tiền rồi chọn lại file để import.`);
     } catch (e) { window.trkToast && window.trkToast("Lỗi tải dữ liệu xuất Excel", "error"); }
     finally { setExporting(false); }
@@ -550,7 +550,7 @@ function ShipmentsApp() {
       const res = await api("POST", ROUTES.cshtImport, { sheet, rows: cshtRows });
       setCshtBusy(false);
       if (res && res.ok && res.valid) {
-        setCshtMsg(`Đã tạo ${res.created || 0} · sửa ${res.updated || 0} khoản chi phí trên ${res.shipments} lô.`); setCshtWb(null); setCshtCheck(null); setCshtRows([]);
+        setCshtMsg(`Đã tạo ${res.created || 0} · sửa ${res.updated || 0} khoản chi phí${res.tags ? ` · đổi nhãn ${res.tags} lô` : ""} — ${res.shipments} lô.`); setCshtWb(null); setCshtCheck(null); setCshtRows([]);
         await load();   // nạp lại danh sách + tổng chi phí sau import
       } else if (res && res.errors) {
         setCshtCheck({ valid: false, total: cshtRows.length, errors: res.errors });
@@ -1818,17 +1818,17 @@ function ShipmentsApp() {
       )}
 
       {showCsht && (
-        <Modal title="Import CSHT · chi phí lô hàng" subtitle="Nạp số tiền các khoản (CSHT, Thanh lí, Nâng, Hạ…) vào Chi phí lô hàng. Khớp lô theo ID LÔ (file Xuất chi phí lô) — không có ID thì theo số cont · ô trống = không đổi · đối chiếu Nhập/Xuất · kiểm tra trước, 1 lỗi là không import gì cả" width={860} icon={<I.truck />}
+        <Modal title="Import CSHT · chi phí lô hàng" subtitle="Nạp chi phí lô (Nâng, Hạ, CSHT, Thanh lí: số tiền · VAT · số HĐ · người chi · ngày HĐ, Chi hộ LCC, Nhãn). Khớp lô theo ID LÔ (file Xuất chi phí lô) — không có ID thì theo số cont · ô trống = không đổi · đối chiếu Nhập/Xuất · kiểm tra trước, 1 lỗi là không import gì cả" width={860} icon={<I.truck />}
           onClose={() => setShowCsht(false)}
           footer={
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
               <div style={{ fontSize: 12.5, color: cshtCheck ? (cshtCheck.valid ? "var(--good)" : "var(--danger)") : "var(--ink-3)", fontWeight: cshtCheck ? 600 : 400 }}>
-                {cshtCheck ? (cshtCheck.valid ? `✓ Hợp lệ · ${(cshtCheck.stats || {}).create || 0} tạo mới · ${(cshtCheck.stats || {}).update || 0} sửa` : `${cshtCheck.errors.length} dòng lỗi — chưa import gì`) : (cshtWb ? "Đã chọn file — bấm Kiểm tra" : "Chọn file để bắt đầu")}
+                {cshtCheck ? (cshtCheck.valid ? `✓ Hợp lệ · ${(cshtCheck.stats || {}).create || 0} tạo mới · ${(cshtCheck.stats || {}).update || 0} sửa${(cshtCheck.stats || {}).tags ? ` · ${(cshtCheck.stats || {}).tags} đổi nhãn` : ""}` : `${cshtCheck.errors.length} dòng lỗi — chưa import gì`) : (cshtWb ? "Đã chọn file — bấm Kiểm tra" : "Chọn file để bắt đầu")}
               </div>
               <div style={{ display: "flex", gap: 10 }}>
                 <Btn onClick={() => setShowCsht(false)}>Đóng</Btn>
-                {cshtCheck && cshtCheck.valid && (() => { const st = cshtCheck.stats || {}; const n = (st.create || 0) + (st.update || 0);
-                  return n > 0 ? <Btn variant="primary" onClick={doCshtImport}>{cshtBusy ? "Đang nhập…" : `Import ${n} khoản`}</Btn> : <span style={{ fontSize: 12.5, color: "var(--ink-4)", alignSelf: "center" }}>Không có gì thay đổi</span>; })()}
+                {cshtCheck && cshtCheck.valid && (() => { const st = cshtCheck.stats || {}; const n = (st.create || 0) + (st.update || 0) + (st.tags || 0);
+                  return n > 0 ? <Btn variant="primary" onClick={doCshtImport}>{cshtBusy ? "Đang nhập…" : `Import ${n} thay đổi`}</Btn> : <span style={{ fontSize: 12.5, color: "var(--ink-4)", alignSelf: "center" }}>Không có gì thay đổi</span>; })()}
               </div>
             </div>
           }>
@@ -1873,24 +1873,40 @@ function ShipmentsApp() {
               const amt = (v) => { const n = toNum(v); return n ? fmtVND(n) : ""; };
               const colMap = cshtCheck.columns || {};   // tiêu đề cột file → tên khoản (null = bỏ qua)
               const items = cshtCheck.items || [];
-              const valOf = (l, name) => { const h = Object.keys(colMap).find((k) => colMap[k] === name && String(((l.amounts || {})[k]) || "").trim() !== ""); return h ? l.amounts[h] : ""; };
+              // Ô của 1 khoản trên 1 dòng: nhóm (file mới) hoặc cột lẻ mang tên khoản (file cũ / CHI HỘ).
+              const cellOf = (l, name) => {
+                const g = Object.keys(l.groups || {}).find((k) => colMap[k] === name);
+                if (g) return l.groups[g];
+                const h = Object.keys(colMap).find((k) => colMap[k] === name && String(((l.amounts || {})[k]) || "").trim() !== "");
+                return h ? { amount: l.amounts[h] } : null;
+              };
+              const cellText = (c) => {
+                if (!c) return "—";
+                const extra = [c.vat !== undefined && c.vat !== "" ? `VAT ${c.vat}%` : "", c.invoiceNo ? `HĐ ${c.invoiceNo}` : "", c.dateRaw || (c.date ? fmtDT(c.date) : ""), c.payer || "", c.note || ""].filter(Boolean);
+                return (<>{amt(c.amount) || (extra.length ? "" : "—")}{extra.length ? <div style={{ fontSize: 10.5, color: "var(--ink-4)", whiteSpace: "normal" }}>{extra.join(" · ")}</div> : null}</>);
+              };
               const st = cshtCheck.stats || {};
               // Chỉ hiện dòng có số liệu (file xuất có đủ mọi lô, phần lớn để trống).
-              const rowsV = cshtRows.filter((l) => items.some((n) => valOf(l, n)) || l.invoiceNo || l.note || l.date);
+              const rowsV = cshtRows.filter((l) => items.some((n) => cellOf(l, n)) || l.tags || l.invoiceNo || l.note || l.date);
+              const hasShared = rowsV.some((l) => l.invoiceNo || l.note || l.date);
+              const hasTags = rowsV.some((l) => l.tags);
               const cols = [
                 { h: "Dòng", get: (l) => l.line || "", al: "center", muted: true },
                 { h: "ID lô", get: (l) => l.id || "—", num: true },
                 { h: "Số cont", get: (l) => l.contNo || "—", contCol: true },
                 { h: "N/X", get: (l) => ioLabel(l.io), al: "center" },
-                ...items.map((n) => ({ h: n, get: (l) => amt(valOf(l, n)) || "—", al: "right", num: true })),
-                { h: "Số HĐ", get: (l) => l.invoiceNo || "—", num: true },
-                { h: "Ngày HĐ", get: (l) => l.dateRaw ? l.dateRaw : fmtDT(l.date), num: true },
-                { h: "Ghi chú", get: (l) => l.note || "—" },
+                ...items.map((n) => ({ h: n, get: (l) => cellText(cellOf(l, n)), al: "right", num: true })),
+                ...(hasShared ? [
+                  { h: "Số HĐ", get: (l) => l.invoiceNo || "—", num: true },
+                  { h: "Ngày HĐ", get: (l) => l.dateRaw ? l.dateRaw : fmtDT(l.date), num: true },
+                  { h: "Ghi chú", get: (l) => l.note || "—" },
+                ] : []),
+                ...(hasTags ? [{ h: "Nhãn", get: (l) => l.tags || "—" }] : []),
               ];
               return (
                 <div style={{ border: "1px solid #bfe4d1", borderRadius: 10, overflow: "hidden" }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: "var(--good)", padding: "10px 13px", background: "var(--good-weak)", borderBottom: "1px solid #bfe4d1", lineHeight: 1.55 }}>
-                    <i className="bi bi-check-circle-fill" /> {rowsV.length} dòng có số liệu → <b>{st.create || 0}</b> khoản tạo mới · <b>{st.update || 0}</b> khoản sửa · {st.same || 0} khoản giữ nguyên
+                    <i className="bi bi-check-circle-fill" /> {rowsV.length} dòng có số liệu → <b>{st.create || 0}</b> khoản tạo mới · <b>{st.update || 0}</b> khoản sửa{st.tags ? <> · <b>{st.tags}</b> lô đổi nhãn</> : null} · {st.same || 0} mục giữ nguyên
                     {st.shipments ? <> · trên <b>{st.shipments}</b> lô</> : null}. Kiểm tra rồi bấm <b>Import</b>.
                   </div>
                   {(cshtCheck.warnings || []).length > 0 && (
