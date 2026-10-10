@@ -96,6 +96,12 @@ return [
             'color'       => '#db2777',
             'description' => 'Báo cáo chi phí (lãi lỗ toàn công ty) và Báo cáo tài sản',
         ],
+        'activity' => [
+            'label'       => 'Nhật ký thao tác',
+            'icon'        => 'journal-text',
+            'color'       => '#475569',
+            'description' => 'Lịch sử ai đã lưu / sửa / xóa gì trong hệ thống',
+        ],
         'fleet' => [
             'label'       => 'Quản lý tài sản & đội xe',
             'icon'        => 'truck-front',
@@ -170,6 +176,8 @@ return [
         'driverPay.manage' => ['label' => 'Chi cho lái xe', 'desc' => 'Mở trang Lộ trình, ghi khoản chi cho lái theo ngày và chốt/bỏ chốt ngày (không cần quyền Lô hàng)'],
 
         'reports.view' => ['label' => 'Xem báo cáo', 'desc' => 'Xem Báo cáo chi phí (doanh thu, chi phí, lãi lỗ toàn công ty) và Báo cáo tài sản'],
+
+        'activity.view' => ['label' => 'Xem nhật ký thao tác', 'desc' => 'Xem trang Nhật ký thao tác: ai đã lưu/sửa/xóa gì, giá trị cũ → mới (gồm cả thao tác của người khác)'],
 
         'fleet.view'   => ['label' => 'Xem tài sản & đội xe', 'desc' => 'Xem hồ sơ xe MBF & tài sản: chi phí, khấu hao, tài liệu'],
         'fleet.manage' => ['label' => 'Quản lý tài sản & đội xe', 'desc' => 'Thêm/sửa/xoá xe & tài sản, chi phí, tài liệu; hủy phiếu chi xe'],

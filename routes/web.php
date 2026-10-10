@@ -409,4 +409,7 @@ Route::middleware(['auth', RestrictSpendOnlySession::class])->group(function () 
         Route::post('/system-settings/backup', [SystemSettingController::class, 'backupNow'])->name('system.settings.backupNow');
         Route::get ('/system-settings/backup/{file}/download', [SystemSettingController::class, 'downloadBackup'])->name('system.settings.backupDownload');
     });
+    // ===== Nhật ký thao tác nhân viên =====
+    Route::get('/nhat-ky-thao-tac', [\App\Http\Controllers\ActivityLogController::class, 'index'])
+        ->middleware('permission:activity.view')->name('system.activityLog');
 });

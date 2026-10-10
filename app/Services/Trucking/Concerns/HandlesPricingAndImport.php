@@ -623,8 +623,9 @@ trait HandlesPricingAndImport
     public function normalizePlate(string $raw): ?string
     {
         $p = mb_strtoupper(preg_replace('/[.\s]+/u', '', trim($raw)));
-        // Tự chèn gạch ngang: 29E72123 → 29E-72123
-        if ($p !== '' && ! str_contains($p, '-') && preg_match('/^(\d{2}[A-Z]{1,2})(\d+)$/', $p, $m)) {
+        // Đặt gạch ngang đúng chỗ: 29E72123 / 15H308-58 → 29E-72123 / 15H-30858. Gạch đặt sai chỗ trước đây
+        // được giữ nguyên → cùng 1 xe ra 2 biển, mỗi lần lưu Cài đặt gộp xong lại tạo lại xe trùng.
+        if ($p !== '' && preg_match('/^(\d{2}[A-Z]{1,2})(\d+)$/', str_replace('-', '', $p), $m)) {
             $p = $m[1] . '-' . $m[2];
         }
         return $p !== '' ? $p : null;

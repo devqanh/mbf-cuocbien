@@ -34,6 +34,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Chặn browser cache HTML pages — fix bug bấm Back về login (cached login HTML).
         $middleware->web(append: [
             \App\Http\Middleware\NoCacheHeaders::class,
+            \App\Http\Middleware\LogActivity::class,   // nhật ký thao tác (ghi gộp khi app terminating)
         ]);
 
         // Gỡ header X-Socket-ID rỗng/sai định dạng trước khi toOthers() đọc nó,

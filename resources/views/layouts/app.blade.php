@@ -140,7 +140,7 @@
                     @endcan
 
                     {{-- Quản trị — hiện nếu có quyền quản trị HOẶC xem báo cáo --}}
-                    @if(auth()->user()->hasAnyPermission(['users.view', 'roles.view', 'system.settings', 'reports.view']))
+                    @if(auth()->user()->hasAnyPermission(['users.view', 'roles.view', 'system.settings', 'reports.view', 'activity.view']))
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle {{ request()->routeIs('users.*','roles.*','system.*','trucking2.report','trucking2.assetReport') ? 'active' : '' }}"
                            href="#" data-bs-toggle="dropdown" role="button">
@@ -171,6 +171,11 @@
                             <li><a class="dropdown-item {{ request()->routeIs('system.*') ? 'active' : '' }}"
                                    href="{{ route('system.settings') }}">
                                 <i class="bi bi-gear-wide-connected"></i> Cài đặt hệ thống</a></li>
+                            @endcan
+                            @can('activity.view')
+                            <li><a class="dropdown-item {{ request()->routeIs('system.activityLog') ? 'active' : '' }}"
+                                   href="{{ route('system.activityLog') }}">
+                                <i class="bi bi-journal-text"></i> Nhật ký thao tác</a></li>
                             @endcan
                         </ul>
                     </li>

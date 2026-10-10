@@ -15,6 +15,11 @@ Schedule::command('db:backup')
     ->withoutOverlapping()
     ->runInBackground();
 
+// Dọn nhật ký thao tác quá thời hạn (Cài đặt hệ thống → Nhật ký) — 03:00, sau giờ sao lưu 02:00.
+Schedule::command('activity:prune')
+    ->dailyAt('03:00')
+    ->withoutOverlapping();
+
 // Quét GPS ghi lịch sử xe đến/rời kho — mỗi 5 phút (cần cron schedule:run mỗi phút).
 // runInBackground: command gọi HTTP provider (có thể chậm) → chạy nền, KHÔNG chặn các task khác trong tick.
 // withoutOverlapping(10): hạn khóa 10' (mặc định 24h) → nếu 1 lần treo thì tự nhả, không kẹt lịch.

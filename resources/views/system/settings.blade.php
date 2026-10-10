@@ -26,6 +26,7 @@
     <li><button type="button" data-stab="seller"><i class="bi bi-file-earmark-spreadsheet"></i> Bên bán</button></li>
     <li><button type="button" data-stab="storage"><i class="bi bi-hdd-stack"></i> Lưu trữ file</button></li>
     <li><button type="button" data-stab="features"><i class="bi bi-toggles"></i> Tính năng</button></li>
+    <li><button type="button" data-stab="activity"><i class="bi bi-journal-text"></i> Nhật ký</button></li>
     <li><button type="button" data-stab="gps"><i class="bi bi-geo-alt"></i> Giám sát hành trình</button></li>
     <li><button type="button" data-stab="backup"><i class="bi bi-database-down"></i> Sao lưu CSDL</button></li>
   </ul>
@@ -194,10 +195,46 @@
       </div>
     </div>
 
+    {{-- Tab: Nhật ký thao tác --}}
+    <div class="settings-pane" data-spane="activity">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body p-4">
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <i class="bi bi-journal-text text-primary"></i>
+            <h6 class="mb-0 fw-bold">Nhật ký thao tác nhân viên</h6>
+          </div>
+          <p class="text-muted small mb-3">Ghi lại mọi lần lưu / sửa / xóa: ai làm, lúc nào, ở trang nào, giá trị cũ → mới (lô hàng, bảng kê, phiếu chi, xe, bảng giá, lộ trình, kỳ lương, danh mục, cấu hình). Mật khẩu và khóa bí mật luôn được che.</p>
+
+          <div class="d-flex align-items-start justify-content-between gap-3 p-3 rounded-3 mb-3" style="background:#f8f9fb;border:1px solid #e9edf3;">
+            <div>
+              <div class="fw-semibold">Bật ghi nhật ký</div>
+              <div class="text-muted small mt-1">Tắt → ngừng ghi dòng mới, nhật ký cũ vẫn giữ.</div>
+            </div>
+            <div class="form-check form-switch fs-4 mt-1" style="padding-left:3.2em;">
+              <input type="checkbox" class="form-check-input" role="switch" name="activity_enabled" value="1"
+                     {{ old('activity_enabled', $activity['enabled']) ? 'checked' : '' }} style="cursor:pointer;">
+            </div>
+          </div>
+          <div class="row g-3 align-items-end">
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">Giữ nhật ký (ngày)</label>
+              <input type="number" min="0" max="3650" name="activity_retention_days" class="form-control" value="{{ old('activity_retention_days', $activity['days']) }}">
+              <div class="form-text">Tự xóa bản ghi cũ hơn số ngày này lúc 03:00 hằng đêm. 0 = giữ vĩnh viễn.</div>
+            </div>
+            <div class="col-md-8 text-md-end">
+              @can('activity.view')
+                <a href="{{ route('system.activityLog') }}" class="btn btn-outline-primary"><i class="bi bi-search me-1"></i> Xem nhật ký thao tác</a>
+              @endcan
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     {{-- Thanh lưu (hiện ở các tab cấu hình, ẩn ở tab Sao lưu) --}}
     <div id="settings-savebar" class="settings-savebar mt-3">
       <button type="submit" class="btn btn-primary fw-semibold"><i class="bi bi-save me-1"></i> Lưu cài đặt</button>
-      <span class="small text-muted">Lưu chung cho các tab: Công ty, Bên bán, Lưu trữ file, Tính năng.</span>
+      <span class="small text-muted">Lưu chung cho các tab: Công ty, Bên bán, Lưu trữ file, Tính năng, Nhật ký.</span>
     </div>
   </form>
 
@@ -416,7 +453,7 @@
   trkToggleS3();
 
   (function(){
-    var TABS = ['company','seller','storage','features','gps','backup'];
+    var TABS = ['company','seller','storage','features','activity','gps','backup'];
     var wrap = document.querySelector('[data-initial-tab]');
     var btns = document.querySelectorAll('.settings-tabs [data-stab]');
     var panes = document.querySelectorAll('.settings-pane');

@@ -10,6 +10,7 @@ use App\Observers\TruckingCustomerObserver;
 use App\Observers\TruckingDriverObserver;
 use App\Observers\TruckingLocationObserver;
 use App\Observers\TruckingWarehouseObserver;
+use App\Services\ActivityLogger;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Broadcast;
@@ -25,7 +26,7 @@ class AppServiceProvider extends ServiceProvider
 
     public function register(): void
     {
-        //
+        $this->app->singleton(ActivityLogger::class);
     }
 
     public function boot(): void
@@ -47,6 +48,15 @@ class AppServiceProvider extends ServiceProvider
         TruckingDriver::observe(TruckingDriverObserver::class);
         TruckingLocation::observe(TruckingLocationObserver::class);
         TruckingWarehouse::observe(TruckingWarehouseObserver::class);
+
+        // Nhật ký thao tác: model khai ở config/activity.php → bắt tạo/sửa/xóa qua Eloquent, đệm trong
+        // ActivityLogger và ghi gộp 1 lần khi app terminating (sau khi đã trả response / hết lệnh artisan).
+        foreach (array_keys(config('activity.models', [])) as $cls) {
+            foreach (['created', 'updated', 'deleted'] as $event) {
+                $cls::$event(fn ($model) => app(ActivityLogger::class)->model($event, $model));
+            }
+        }
+        $this->app->terminating(fn () => app(ActivityLogger::class)->flush());
 
         // Blade directive @assetVer('css/app.css') — emit asset URL với cache-busting version
         // Dùng filemtime nếu file tồn tại (cache hợp lý — bust khi file đổi),
