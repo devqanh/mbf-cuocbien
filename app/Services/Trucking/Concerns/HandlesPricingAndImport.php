@@ -674,7 +674,9 @@ trait HandlesPricingAndImport
         foreach ($survivors as $n => $old) {
             if (isset($newByN[$n])) {
                 $newPlate = $newByN[$n];
-                if ($old->plate !== $newPlate) {
+                // Thêm nhanh KHÔNG đổi biển xe có sẵn: chưa gộp xe trùng ở chế độ này nên đổi định dạng
+                // (vd "15H308-58" → "15H-30858") có thể đụng unique 'plate' của xe trùng kia → lỗi 500.
+                if ($old->plate !== $newPlate && ! $addOnly) {
                     // plate format đổi → propagate ra Lô hàng + route_pays (an toàn: mỗi normKey chỉ còn 1 xe)
                     TruckingShipment::where('vehicle_id', $old->id)->where('bks_vao', $old->plate)->update(['bks_vao' => $newPlate]);
                     TruckingShipment::where('bks_ra', $old->plate)->update(['bks_ra' => $newPlate]);
@@ -695,6 +697,11 @@ trait HandlesPricingAndImport
         // Tạo / cập nhật attrs (type/axle/gps/lái xe) — updateOrCreate theo plate (giờ plate đã đồng bộ)
         $usedGps = [];
         $driverIds = array_key_exists('vehicleDriverId', $cfg) ? \App\Models\TruckingDriver::pluck('id')->flip()->all() : [];
+        // Hạ xe MBF xuống "Xe ngoài" phải được XÁC NHẬN từng biển (confirmDemote): xe sẽ ẩn khỏi Quản lý xe
+        // (phiếu chi/khấu hao/hồ sơ còn nhưng không ai thấy) và mất GPS/số cầu/lái xe. Trước đây 1 cú bấm nhầm
+        // nút "Xe ngoài" rồi Lưu là đủ làm "mất" xe.
+        $confirmDemote = array_flip(array_map($normP, (array) ($cfg['confirmDemote'] ?? [])));
+        $unconfirmed = [];
         foreach ($plates as $plate) {
             // Lookup attrs by current plate HOẶC plate gốc (trước khi chuẩn hóa) — vì frontend gửi key cũ
             $lookupKeys = [$plate, str_replace('-', '', $plate)];
@@ -727,7 +734,14 @@ trait HandlesPricingAndImport
             // xe MBF sẵn có → trước đây update xuống 'Ngoài', xe biến mất khỏi trang Quản lý xe (lọc
             // type='MBF') và lần lưu Cài đặt kế tiếp xóa luôn gps_ref → trông như mất sạch dữ liệu.
             if ($row && $addOnly) continue;
+            if ($row && $row->type === 'MBF' && $type !== 'MBF' && ! isset($confirmDemote[$normP($plate)])) { $unconfirmed[] = $plate; continue; }
             $row ? $row->update($attrs) : TruckingVehicle::create($attrs + ['plate' => $plate, 'kind' => 'vehicle']);
+        }
+        if ($unconfirmed) {   // ném lỗi → transaction rollback toàn bộ lần lưu, không ghi dở
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'cfg' => 'Chưa xác nhận chuyển xe MBF sang Xe ngoài: ' . implode(', ', $unconfirmed)
+                       . '. Tải lại trang Cài đặt rồi lưu lại để xác nhận.',
+            ]);
         }
     }
 

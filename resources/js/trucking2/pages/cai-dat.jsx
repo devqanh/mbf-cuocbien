@@ -52,6 +52,7 @@ function SettingsApp() {
   const [saving, setSaving] = useState(false);
   const [loadingTab, setLoadingTab] = useState(null);
   const loaded = React.useRef(new Set());
+  const origVehType = React.useRef({});   // loại xe theo server lúc tải tab Đội xe → phát hiện hạ MBF → Xe ngoài khi lưu
 
   // Nạp dữ liệu TƯƠI của 1 tab từ server (bỏ qua mọi guard — dùng cho lần đầu & sau khi lưu).
   const fetchTab = (tab) => {
@@ -59,6 +60,7 @@ function SettingsApp() {
     api("GET", ROUTES.catalog + tab).then((r) => {
       if (r && r.ok) {
         setCfgState((c) => ({ ...c, ...(r.cfg || {}) }));
+        if (tab === "vehicles") origVehType.current = { ...((r.cfg || {}).vehicleType || {}) };
         if (Array.isArray((r.cfg || {})[tab])) setCounts((m) => ({ ...m, [tab]: r.cfg[tab].length }));
         loaded.current.add(tab);
       }
@@ -111,13 +113,24 @@ function SettingsApp() {
         : `Bạn sắp xóa <b>${removed}</b> mục khỏi danh mục <b>${esc(label)}</b>. Không thể hoàn tác.`;
       confirmText = '<i class="bi bi-trash me-1"></i> Xóa & lưu';
     }
-    const ok = await window.confirmAction({ title, text, confirmText, danger: removed > 0 });
+    // Xe đang là MBF trên server mà nay chọn "Xe ngoài" → cảnh báo riêng, liệt kê biển số (server bắt xác nhận từng biển).
+    const demoted = cur === "vehicles" ? (cfg.vehicles || []).filter((p) =>
+      origVehType.current[p] === "MBF" && ((cfg.vehicleType || {})[p] || "MBF") !== "MBF") : [];
+    if (demoted.length) {
+      title = "Chuyển xe MBF sang Xe ngoài?";
+      text = `Bạn đang chuyển <b>${demoted.length}</b> xe MBF sang <b>Xe ngoài</b>: <b>${demoted.map(esc).join(", ")}</b>.`
+        + `<br>Xe sẽ <b>ẩn khỏi Quản lý xe</b> (phiếu chi, khấu hao, hồ sơ không còn hiện), bị gỡ GPS / số cầu / lái xe mặc định và không còn tính ở Lộ trình, lương lái xe.`
+        + (removed > 0 ? `<br><br>Đồng thời xóa <b>${removed}</b> mục khỏi danh mục. Không thể hoàn tác.` : "");
+      confirmText = '<i class="bi bi-arrow-left-right me-1"></i> Vẫn chuyển & lưu';
+    }
+    const ok = await window.confirmAction({ title, text, confirmText, danger: removed > 0 || demoted.length > 0 });
     if (!ok) return;
 
     setSaving(true);
     const keys = CAT_KEYS[cur] || [cur];
     const partial = {};
     keys.forEach((k) => { partial[k] = cfg[k]; });
+    if (demoted.length) partial.confirmDemote = demoted;
     // Tab Khách hàng: KHÔNG gửi priceList (bảng giá quản lý ở trang Bảng giá) để không ghi đè
     if (cur === "customers" && partial.customerInfo) {
       const ci = {};
