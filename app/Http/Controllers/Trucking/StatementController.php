@@ -66,11 +66,27 @@ class StatementController extends BaseTruckingController
         return response()->json(['ok' => true] + $this->svc->statementCandidates($customer, $from, $to));
     }
 
-    /** Tính lại bảng kê đã lưu — định giá lại ở backend theo dữ liệu hiện tại. */
-    public function reprice(TruckingStatement $statement): JsonResponse
+    /** Khách có lô ra trong kỳ (from, to = Y-m-d) + số lô đã / chưa vào bảng kê — khung trên trang danh sách. */
+    public function customersInPeriod(Request $request): JsonResponse
     {
+        $d = $request->validate([
+            'from' => ['nullable', 'date_format:Y-m-d'],
+            'to'   => ['nullable', 'date_format:Y-m-d'],
+        ]);
+        return response()->json(['ok' => true] + $this->svc->statementCustomersInPeriod($d['from'] ?? null, $d['to'] ?? null));
+    }
+
+    /** Tính lại bảng kê đã lưu — định giá lại ở backend theo dữ liệu hiện tại. */
+    public function reprice(Request $request, TruckingStatement $statement): JsonResponse
+    {
+        // from / to / io = kỳ + phạm vi ĐANG HIỆN trên trang (có thể vừa sửa, chưa lưu) để tìm lô mới trong kỳ.
+        $d = $request->validate([
+            'from' => ['nullable', 'date_format:Y-m-d'],
+            'to'   => ['nullable', 'date_format:Y-m-d'],
+            'io'   => ['nullable', 'in:all,nhap,xuat'],
+        ]);
         $statement->loadMissing(['lines', 'customer']);
-        return response()->json(['ok' => true] + $this->svc->statementReprice($statement));
+        return response()->json(['ok' => true] + $this->svc->statementReprice($statement, $d['from'] ?? null, $d['to'] ?? null, $d['io'] ?? null));
     }
 
     /**
@@ -133,6 +149,13 @@ class StatementController extends BaseTruckingController
         $st = $this->svc->saveStatement($data, $statement);
 
         return response()->json(['ok' => true, 'statement' => $this->svc->statementToArray($st)]);
+    }
+
+    /** Gắn / bỏ hạn thanh toán ngay trên danh sách (chỉ ghi info.dueDate). Trả hạn hiệu lực để lọc Quá hạn / Sắp đến hạn. */
+    public function setDueDate(Request $request, TruckingStatement $statement): JsonResponse
+    {
+        $d = $request->validate(['dueDate' => ['nullable', 'date_format:Y-m-d']]);
+        return response()->json(['ok' => true, 'dueDate' => $this->svc->setStatementDueDate($statement, $d['dueDate'] ?? null)]);
     }
 
     public function destroy(TruckingStatement $statement): JsonResponse

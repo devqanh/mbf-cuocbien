@@ -11,7 +11,7 @@ class TruckingStatementLine extends Model
     protected $fillable = [
         'statement_id', 'shipment_id', 'booking', 'sheet', 'io',
         'decl_no', 'cont_type', 'inv', 'cont_no', 'bks',
-        'from_loc', 'to_loc', 'date', 'cont_label', 'phai_thu', 'cuoc', 'thanh_ly', 'note', 'detail', 'sort',
+        'from_loc', 'to_loc', 'date', 'cont_label', 'phai_thu', 'cuoc', 'thanh_ly', 'note', 'user_note', 'detail', 'sort',
     ];
 
     protected $casts = [

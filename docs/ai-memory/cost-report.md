@@ -1,6 +1,6 @@
 ---
 name: cost-report
-description: Báo cáo chi phí công ty theo tháng (/bao-cao) — P&L + cơ cấu chi phí (donut) + chi phí theo xe; biểu đồ không cần thư viện
+description: Báo cáo chi phí công ty theo tháng (/bao-cao) — P&L + cơ cấu chi phí; DOANH THU lô = bảng kê đã lập (kể cả giá gõ tay) → bảng giá → nhập tay
 metadata: 
   node_type: memory
   type: project
@@ -31,3 +31,5 @@ Liên quan [[payroll-period-plan]], [[route-pays-lo-trinh]], [[trucking-report-s
 - **So tháng trước**: FE tải NGẦM báo cáo tháng trước qua cùng endpoint `report.data` (cache Map theo ym trong `ReportApp`), không thêm endpoint — tránh nhân đôi ~140 query trong 1 request. Xu hướng tải khi mở tab (cache theo tháng kết).
 - FE tách `components/bao-cao/` (ReportApp + OverviewTab/FleetTab/CustomersTab/TrendTab), 4 tab nhớ localStorage `trk:baocao:tab`; entry `pages/bao-cao.jsx` chỉ mount. Mảnh UI chung ở **`components/report-ui.jsx`** (KPI, Delta có `goodWhen="up|down"`, CardTitle, card, pctOf, Empty, SplitBar, Stacked, TopList); Donut/PALETTE ở `components/charts.jsx`. Blade thêm route `fleet` (deep-link `#<hashid>/cost`).
 - Chi phí tháng ≈ 90–160 ms / ~140–165 query (route-pay loop theo ngày); trend ~0,9 s / ~1500 query → giữ lazy.
+
+**DOANH THU ƯU TIÊN BẢNG KÊ (2026-10-06, user: "doanh thu tự điền tay không lên báo cáo tab Khách & sản lượng"):** "điền tay" = GIÁ TÙY CHỈNH trên bảng kê (`detail.manualBase`, xem [[statement-manual-price]]) — /lo-hang KHÔNG còn popup nhập doanh thu (RevenuePopup không mount), `revenue_lines` rỗng. `reportShipmentRevenue($s, $stmt)` lấy 1 nguồn, không cộng dồn: (1) lô đã nằm trong bảng kê → nền dòng bảng kê (`statementAmounts([$detail],0)['base']`, manualBase trước) — source `manual` nếu có manualBase, else `statement`; (2) bảng giá → `price`; (3) revenue_lines → `manual`; (4) `none`. `statementRevenueMap($shipIds)` 1 query join statements, sắp statement_id → bảng kê MỚI NHẤT thắng, BỎ dòng ngoài `io_scope` (bảng kê đó không thu lô đó); dòng nền 0 → rơi xuống bảng giá. Áp ở cả `monthlyCostReport` và `costTrend`. Trả thêm `revenueStatement`; `revenueManual` = giá gõ tay. HỆ QUẢ: lô có bảng kê lệch bảng giá hiện tại thì báo cáo theo số bảng kê (T9 local: 15 lô Msk Thăng Long 8,65tr/lô bảng kê vs 3,07tr bảng giá → DT T9 786→870tr).

@@ -51,14 +51,24 @@ const STATEMENT_VAT_RATES = [0, 8, 10];
  * Thứ tự ưu tiên nền: baseOv (đang gõ ở form tạo) → detail.manualBase (GIÁ TÙY CHỈNH đã lưu; cuoc/dau/sà lan
  * trong detail chỉ là số hệ thống tính để đối chiếu, "Tính lại" không ghi đè) → cuoc+dau+sà lan → phaiThu (dòng cũ).
  *
- * @param line     dòng có .detail (cuoc/dau/chiHo/bargeCuoc/bargeDau/manualBase) hoặc .phaiThu (fallback)
- * @param vatRate  % VAT (0/8/10)
- * @param baseOv   (tùy chọn) override nền dòng do người dùng sửa tay
- * @returns {base, vat, choho, total}
+ * CỘT CHI PHÍ RIÊNG của bảng kê (extraCols [{key,label,vat}]): phí riêng dòng = Σ detail.extras[key] theo cột
+ * còn tồn tại; cột có cờ vat thì cộng vào phần chịu VAT. Tổng = nền + VAT + chi hộ + phí riêng.
+ *
+ * @param line      dòng có .detail (cuoc/dau/chiHo/bargeCuoc/bargeDau/manualBase/extras) hoặc .phaiThu (fallback)
+ * @param vatRate   % VAT (0/8/10)
+ * @param baseOv    (tùy chọn) override nền dòng do người dùng sửa tay
+ * @param extraCols (tùy chọn) cột chi phí riêng của bảng kê
+ * @returns {base, vat, choho, extra, extras: {key: số}, total, rate}
  */
-function lineAmounts(line, vatRate, baseOv) {
+function lineAmounts(line, vatRate, baseOv, extraCols) {
   const d = (line && typeof line.detail === "object" && line.detail) ? line.detail : null;
-  let base, choho = 0;
+  let base, choho = 0, extra = 0, extraVat = 0;
+  const extras = {};
+  const ex = (d && d.extras && typeof d.extras === "object") ? d.extras : {};
+  (extraCols || []).forEach((c) => {
+    const v = Math.round(+ex[c.key] || 0);
+    extras[c.key] = v; extra += v; if (c.vat) extraVat += v;
+  });
   if (baseOv != null) {
     base = +baseOv || 0;
     if (d) choho = +d.chiHo || 0;
@@ -74,28 +84,32 @@ function lineAmounts(line, vatRate, baseOv) {
   base = Math.round(base); choho = Math.round(choho);
   // VAT theo DÒNG: ưu tiên override detail.vat (sửa riêng từng dòng), else % mặc định bảng kê.
   const rate = (d && d.vat != null && d.vat !== "") ? (+d.vat || 0) : (+vatRate || 0);
-  const vat = Math.round(base * rate / 100);
-  return { base, vat, choho, total: base + vat + choho, rate };
+  const vat = Math.round((base + extraVat) * rate / 100);
+  return { base, vat, choho, extra, extras, total: base + vat + choho + extra, rate };
 }
 
 /**
- * NGUỒN CHÂN LÝ DUY NHẤT (frontend) cho 4 con số bảng kê — khớp backend statementAmounts().
- * VAT chỉ áp lên NỀN vận chuyển (cước+dầu+sà lan); chi hộ KHÔNG chịu VAT.
- * = Σ per-line (lineAmounts) để luôn khớp 3 cột từng dòng.
+ * NGUỒN CHÂN LÝ DUY NHẤT (frontend) cho các con số bảng kê — khớp backend statementAmounts().
+ * VAT áp lên NỀN vận chuyển (cước+dầu+sà lan) + cột chi phí riêng có cờ vat; chi hộ KHÔNG chịu VAT.
+ * = Σ per-line (lineAmounts) để luôn khớp từng cột mỗi dòng.
  *
- * @param lines    mảng dòng, mỗi dòng có .detail (cuoc/dau/chiHo/bargeCuoc/bargeDau) hoặc .phaiThu
- * @param vatRate  % VAT (0/8/10)
- * @param baseOvOf (tùy chọn) fn(line, idx) → override nền dòng (null = không override)
- * @returns {base, choho, vat, total}
+ * @param lines     mảng dòng, mỗi dòng có .detail (cuoc/dau/chiHo/bargeCuoc/bargeDau/extras) hoặc .phaiThu
+ * @param vatRate   % VAT (0/8/10)
+ * @param baseOvOf  (tùy chọn) fn(line, idx) → override nền dòng (null = không override)
+ * @param extraCols (tùy chọn) cột chi phí riêng của bảng kê [{key,label,vat}]
+ * @returns {base, choho, extra, extras: {key: Σ cột}, vat, total}
  */
-function statementAmounts(lines, vatRate, baseOvOf) {
-  let base = 0, choho = 0, vat = 0;
+function statementAmounts(lines, vatRate, baseOvOf, extraCols) {
+  let base = 0, choho = 0, vat = 0, extra = 0;
+  const extras = {};
+  (extraCols || []).forEach((c) => { extras[c.key] = 0; });
   (lines || []).forEach((l, i) => {
     const ov = baseOvOf ? baseOvOf(l, i) : null;
-    const a = lineAmounts(l, vatRate, ov);
-    base += a.base; choho += a.choho; vat += a.vat;
+    const a = lineAmounts(l, vatRate, ov, extraCols);
+    base += a.base; choho += a.choho; vat += a.vat; extra += a.extra;
+    Object.keys(a.extras).forEach((k) => { extras[k] = (extras[k] || 0) + a.extras[k]; });
   });
-  return { base, choho, vat, total: base + vat + choho };
+  return { base, choho, extra, extras, vat, total: base + vat + choho + extra };
 }
 
 /* ============================ icons ============================ */
@@ -289,15 +303,32 @@ function Combo({ value, onChange, options = [], onCreate, placeholder = "Chọn�
 function MultiCombo({ values = [], onChange, options = [], groups = null, onCreate, max = 3, placeholder = "Chọn…", strict, allowDup = false, labelOf = null }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
+  const [pos, setPos] = useState(null);   // vị trí dropdown (fixed, portal) — không bị khung cuộn / bảng / modal che
   const wrapRef = useRef(null);
+  const boxRef = useRef(null);
+  const popRef = useRef(null);
   const searchRef = useRef(null);
+  // Đặt dropdown theo viewport như Combo: tự lật LÊN khi phía dưới thiếu chỗ.
+  const place = () => {
+    const el = boxRef.current; if (!el) return;
+    const r = el.getBoundingClientRect();
+    const below = window.innerHeight - r.bottom, above = r.top;
+    const up = below < 220 && above > below;
+    setPos({ left: r.left, width: r.width, top: r.top, bottom: r.bottom, up, listH: Math.max(110, Math.min(196, (up ? above : below) - 76)) });
+  };
   useEffect(() => {
-    if (!open) return;
-    const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) { setOpen(false); setQ(""); } };
+    if (!open) { setPos(null); return; }
+    place();
+    const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target) && !(popRef.current && popRef.current.contains(e.target))) { setOpen(false); setQ(""); } };
+    const onMove = (e) => { if (!(popRef.current && popRef.current.contains(e.target))) place(); };
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    window.addEventListener("scroll", onMove, true);
+    window.addEventListener("resize", onMove);
+    return () => { document.removeEventListener("mousedown", onDoc); window.removeEventListener("scroll", onMove, true); window.removeEventListener("resize", onMove); };
   }, [open]);
   const sel = Array.isArray(values) ? values : (values ? [values] : []);
+  // Thêm/bỏ chip làm ô cao/thấp đi → đặt lại vị trí dropdown
+  useEffect(() => { if (open) place(); }, [sel.length]);
   const selRef = useRef(sel);
   selRef.current = sel;   // luôn giữ danh sách MỚI NHẤT để chống stale-closure khi re-render trễ
   const full = sel.length >= max;
@@ -319,13 +350,14 @@ function MultiCombo({ values = [], onChange, options = [], groups = null, onCrea
   const avail = rankSort(flatOpts.filter((o) => allowDup || !has(sel, o)));
   const exact = has(flatOpts, q) || (!allowDup && has(sel, q));
   // Chọn xong GIỮ mở + focus lại ô tìm để chọn tiếp nhiều mục (không bị mất các mục đã chọn)
-  const refocus = () => { setTimeout(() => { try { searchRef.current && searchRef.current.focus(); } catch (e) {} }, 0); };
+  // preventScroll: dropdown nằm ở portal (fixed) — focus lại không được kéo trang cuộn theo
+  const refocus = () => { setTimeout(() => { try { searchRef.current && searchRef.current.focus({ preventScroll: true }); } catch (e) {} }, 0); };
   const addVal = (v) => { const cur = selRef.current; if (!v || (!allowDup && has(cur, v)) || cur.length >= max) return; onChange([...cur, v]); setQ(""); refocus(); };
   const removeAt = (idx) => onChange(selRef.current.filter((_, j) => j !== idx));
   const create = () => { const v = q.trim(); if (!v || sel.length >= max) return; if (onCreate && !flatOpts.includes(v)) onCreate(v); addVal(v); };
   return (
     <div ref={wrapRef} style={{ position: "relative", width: "100%" }}>
-      <div onClick={() => { if (!full) setOpen(true); }}
+      <div ref={boxRef} onClick={() => { if (!full) setOpen(true); }}
         style={{ display: "flex", flexWrap: "wrap", gap: 5, alignItems: "center", minHeight: 38, padding: "5px 8px",
           border: `1px solid ${open ? "var(--accent)" : "var(--line)"}`, borderRadius: 9, background: "#fff", cursor: full ? "default" : "pointer",
           boxShadow: open ? "0 0 0 3px var(--accent-weak)" : "none" }}>
@@ -341,15 +373,17 @@ function MultiCombo({ values = [], onChange, options = [], groups = null, onCrea
           ? <span style={{ fontSize: 13, color: "var(--ink-4)" }}>{sel.length ? "Thêm…" : placeholder}</span>
           : <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>Đã đủ tối đa {max}</span>}
       </div>
-      {open && !full && (
-        <div style={{ position: "absolute", zIndex: 80, top: "calc(100% + 4px)", left: 0, right: 0, background: "#fff", border: "1px solid var(--line)", borderRadius: 11, boxShadow: "0 12px 32px -8px rgba(16,19,23,.24), 0 2px 8px rgba(16,19,23,.08)", overflow: "hidden" }}>
+      {open && !full && pos && createPortal(
+        <div ref={popRef} style={{ position: "fixed", zIndex: 9999, left: pos.left, width: pos.width,
+          ...(pos.up ? { bottom: Math.round(window.innerHeight - pos.top + 4) } : { top: Math.round(pos.bottom + 4) }),
+          background: "#fff", border: "1px solid var(--line)", borderRadius: 11, boxShadow: "0 12px 32px -8px rgba(16,19,23,.24), 0 2px 8px rgba(16,19,23,.08)", overflow: "hidden" }}>
           <div style={{ padding: 7, borderBottom: "1px solid var(--line-2)", position: "relative" }}>
             <span style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)" }}><I.search /></span>
             <input ref={searchRef} autoFocus value={q} onChange={(e) => setQ(e.target.value)} onCompositionEnd={(e) => setQ(e.currentTarget.value)} placeholder={strict ? "Tìm trong danh mục…" : "Tìm hoặc thêm mới…"}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (avail.length === 1) addVal(avail[0]); else if (!strict && !exact && q.trim()) create(); } }}
               style={{ width: "100%", padding: "7px 10px 7px 30px", fontSize: 13, border: "1px solid var(--line)", borderRadius: 8, outline: "none" }} />
           </div>
-          <div style={{ maxHeight: 196, overflowY: "auto", padding: 4 }}>
+          <div style={{ maxHeight: pos.listH, overflowY: "auto", padding: 4 }}>
             {!groups && avail.map((o) => (
               <button key={o} type="button" onClick={() => addVal(o)}
                 style={{ width: "100%", textAlign: "left", padding: "8px 10px", fontSize: 13.5, border: "none", borderRadius: 7, cursor: "pointer", background: "transparent", color: "var(--ink-2)" }}
@@ -379,7 +413,8 @@ function MultiCombo({ values = [], onChange, options = [], groups = null, onCrea
             {strict && ql && !avail.length && <div style={{ padding: "12px 10px", fontSize: 12.5, color: "var(--ink-4)" }}>Không có mục khớp. Thêm kho mới ở <b>Cài đặt → Kho</b>.</div>}
             {!avail.length && !ql && <div style={{ padding: "12px 10px", fontSize: 12.5, color: "var(--ink-4)" }}>{strict ? "Hết mục để chọn." : "Hết mục để chọn — gõ để thêm mới."}</div>}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

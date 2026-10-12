@@ -18,6 +18,11 @@ function PricesApp() {
     ...c, customerInfo: { ...(c.customerInfo || {}), [cust]: { ...((c.customerInfo || {})[cust] || {}), priceBooks: books } },
   }));
 
+  // Đổi trường thông tin của 1 khách (vd priceSource sau khi đặt / bỏ dùng chung bảng giá).
+  const setCustInfo = (cust, patch) => setCfgState((c) => ({
+    ...c, customerInfo: { ...(c.customerInfo || {}), [cust]: { ...((c.customerInfo || {})[cust] || {}), ...patch } },
+  }));
+
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
       <header style={{ background: "#fff", borderBottom: "1px solid var(--line)", padding: "0 22px", flexShrink: 0 }}>
@@ -28,7 +33,7 @@ function PricesApp() {
           <div style={{ fontSize: 12, color: "var(--ink-4)" }}>Mỗi khách nhiều bảng giá · bảng kê lấy theo ngày cont ra</div>
         </div>
       </header>
-      <BangGiaPage cfg={cfg} setBooks={setBooks} api={api} routes={ROUTES} />
+      <BangGiaPage cfg={cfg} setBooks={setBooks} setCustInfo={setCustInfo} api={api} routes={ROUTES} />
     </div>
   );
 }

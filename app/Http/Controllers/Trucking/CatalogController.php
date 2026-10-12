@@ -82,6 +82,18 @@ class CatalogController extends BaseTruckingController
         return response()->json($this->svc->createRouteFeeBook($d['label'] ?? null, $d['from'] ?? null, isset($d['copyFrom']) ? (int) $d['copyFrom'] : null));
     }
 
+    /** Thử tính 1 chuyến theo quy chế đang sửa (chưa lưu) — giải thích từng bước cho người cấu hình. */
+    public function previewRegulation(Request $request): JsonResponse
+    {
+        return response()->json($this->svc->previewRegulationTrip($request->input('regulation', []), $request->only(['from', 'to', 'kho', 'axle', 'ioIn', 'ioOut', 'tryProvince'])));
+    }
+
+    /** Lưu quy chế lương chuyến của 1 bảng phí tuyến (bảng vùng / KCN / định mức dầu / km theo chặng). */
+    public function saveRouteFeeBookRegulation(Request $request, int $book): JsonResponse
+    {
+        return response()->json($this->svc->saveRouteFeeBookRegulation($book, $request->input('regulation', [])));
+    }
+
     /** Sửa nhãn / ngày áp dụng của 1 bảng phí tuyến. */
     public function updateRouteFeeBook(Request $request, int $book): JsonResponse
     {
@@ -104,8 +116,8 @@ class CatalogController extends BaseTruckingController
         $sheet->setTitle('Phi tuyen');
         $sheet->fromArray($data['header'], null, 'A1');
         if ($data['rows']) $sheet->fromArray($data['rows'], null, 'A2');
-        $sheet->getStyle('A1:M1')->getFont()->setBold(true);
-        foreach (range('A', 'M') as $c) $sheet->getColumnDimension($c)->setAutoSize(true);
+        $sheet->getStyle('A1:N1')->getFont()->setBold(true);
+        foreach (range('A', 'N') as $c) $sheet->getColumnDimension($c)->setAutoSize(true);
 
         $name = 'phi-tuyen-' . now()->format('Ymd-Hi') . '.xlsx';
         return response()->streamDownload(function () use ($ss) {
@@ -142,7 +154,7 @@ class CatalogController extends BaseTruckingController
         }
         // Cột theo VỊ TRÍ (khớp header xuất Excel). Ngày áp dụng thuộc BẢNG (chọn trên giao diện), không nằm trong file.
         $keys = ['route', 'veTram', 'tienDuong', 'troCap', 'phiKhac', 'luongKeoCru', 'luongKeoKhongCru',
-            'luongKhongKeoCru', 'luongKhongKeoKhongCru', 'km', 'dau2', 'dau1', 'chiTheoNgay'];
+            'luongKhongKeoCru', 'luongKhongKeoKhongCru', 'km', 'dau2', 'dau1', 'chiTheoNgay', 'customers'];   // customers = cột "Khách áp dụng" (file cũ 13 cột vẫn đọc được)
         $rows = [];
         foreach ($raw as $i => $line) {
             if (! is_array($line)) continue;

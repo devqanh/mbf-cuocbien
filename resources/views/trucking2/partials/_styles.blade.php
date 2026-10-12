@@ -44,6 +44,8 @@
     .ke-print, .ke-print * { visibility: visible !important; }
     .ke-print { position: absolute !important; left: 0; top: 0; width: 100%; box-shadow: none !important; max-height: none !important; border-radius: 0 !important; }
     .ke-noprint { display: none !important; }
+    .ke-scroll { overflow: visible !important; }   /* in: bảng kê nhiều cột chi phí riêng không bị cắt bởi khung cuộn ngang */
+    .ke-scroll > table { min-width: 0 !important; }   /* in: bỏ bề rộng tối thiểu (ô nhập đã ẩn nên bảng vừa trang) */
     .ke-printonly { display: inline !important; }
     .ke-zebra > td { background: #fff !important; }   /* in: bỏ nền xen kẽ cho sạch */
   }

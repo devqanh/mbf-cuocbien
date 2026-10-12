@@ -181,6 +181,10 @@ trait HandlesShipments
 
         // Lọc theo GIỜ ĐẾN KẾ HOẠCH (gio_den_du_kien) — chọn 1 NGÀY.
         $denDate = trim((string) ($p['denDate'] ?? ''));
+        // KHOẢNG ngày đóng hàng (từ / đến, gồm 2 đầu) — dùng cho Xuất chi phí lô. Sai định dạng thì bỏ qua.
+        $isYmd = fn ($v) => preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) === 1;
+        $denFrom = trim((string) ($p['denFrom'] ?? '')); if (! $isYmd($denFrom)) $denFrom = '';
+        $denTo   = trim((string) ($p['denTo'] ?? ''));   if (! $isYmd($denTo)) $denTo = '';
 
         // Lọc theo NHÃN (tags) — chọn nhiều = OR. Danh sách nhãn thực có để đổ vào bộ lọc.
         $tagSel = array_values(array_filter(array_map(fn ($x) => trim((string) $x), (array) ($p['tags'] ?? [])), fn ($x) => $x !== ''));
@@ -229,7 +233,7 @@ trait HandlesShipments
                 $b->whereIn($col, $raw ?: ['\\0__none__']);
             }
         };
-        $searched = function () use ($sheet, $applySearch, $applyLoc, $toLocSel, $toLocRaw, $toMode, $fromSel, $fromRaw, $fromMode, $custSel, $custIds, $denDate, $tagSel) {
+        $searched = function () use ($sheet, $applySearch, $applyLoc, $toLocSel, $toLocRaw, $toMode, $fromSel, $fromRaw, $fromMode, $custSel, $custIds, $denDate, $denFrom, $denTo, $tagSel) {
             $b = TruckingShipment::ofSheet($sheet);
             $applySearch($b);
             $applyLoc($b, 'to_loc', $toLocSel, $toLocRaw, $toMode);
@@ -237,6 +241,8 @@ trait HandlesShipments
             // Khách hàng = OR trên customer_id; tên chọn không còn khách nào → không lô nào khớp.
             if ($custSel) $b->whereIn('customer_id', $custIds ?: [0]);
             if ($denDate !== '') $b->whereDate('gio_den_du_kien', $denDate);       // lô có Giờ đến KH = ngày chọn
+            if ($denFrom !== '') $b->whereDate('gio_den_du_kien', '>=', $denFrom);
+            if ($denTo !== '')   $b->whereDate('gio_den_du_kien', '<=', $denTo);
             // Lọc nhãn = OR. Dùng JSON_SEARCH (khớp được trên MariaDB + JSON lưu unicode escaped, whereJsonContains fail).
             if ($tagSel) $b->where(function ($w) use ($tagSel) { foreach ($tagSel as $t) $w->orWhereRaw('JSON_SEARCH(tags, \'one\', ?) IS NOT NULL', [$t]); });
             return $b;
@@ -476,6 +482,14 @@ trait HandlesShipments
                 'kho'      => $s->kho ?? '', 'cru' => (bool) $out->cru,   // cho tính "chi theo ngày" (khớp phí tuyến + lương CRU)
                 'from'     => $s->from_loc ?? '', 'to' => $out->to_loc ?? '',
                 'customer' => $s->customer?->name ?? '',
+                'customerId' => $s->customer_id ? (int) $s->customer_id : null,   // chọn phí tuyến riêng của khách
+                // Cont VÀO có hàng = lô Nhập (đưa hàng tới kho); cont RA có hàng = lô Xuất (kéo hàng về cảng) → Hàng–Hàng / Hàng–Rỗng.
+                'io'       => (string) $s->io, 'ioOut' => (string) $out->io,   // Nhập / Xuất của cont vào · cont ra (hiện nhãn ở Lộ trình)
+                'loadIn'   => mb_stripos((string) $s->io, 'nh') !== false,
+                'loadOut'  => mb_stripos((string) $out->io, 'xu') !== false,
+                // Loại chuyến theo quy chế lương (đánh dấu ở lô): kẹp 2 cont 20' / kết hợp nhập → xuất
+                'kepCont'  => (bool) ($s->kep_cont || $out->kep_cont),
+                'ketHop'   => (bool) ($s->ket_hop || $out->ket_hop),
                 'booking'  => $s->booking ?? '',
                 'hashid'   => \App\Support\Hashid::encode($s->id),
             ], $extra);
@@ -547,14 +561,15 @@ trait HandlesShipments
         $vehById = $vehIds ? TruckingVehicle::whereIn('id', $vehIds)->get(['id', 'plate', 'type', 'axle'])->keyBy('id') : collect();
         $legacyPlates = array_values(array_unique(array_map(fn ($l) => $l['bks'], array_filter($allLegs, fn ($l) => empty($l['vehicleId'])))));
         $vehByPlate = $legacyPlates ? TruckingVehicle::whereIn('plate', $legacyPlates)->get(['plate', 'type', 'axle'])->keyBy('plate') : collect();
-        // Phí tuyến (khớp theo TẬP node Cảng+Kho/Tỉnh — không thứ tự) + giá dầu + chi đã lưu cho ngày này.
-        // Chỉ tra trong BẢNG phí tuyến áp cho NGÀY vận hành này (bảng "áp dụng từ ngày" lớn nhất ≤ ngày, như price book).
+        // Tiền chuyến tính theo QUY CHẾ LƯƠNG CHUYẾN của bảng áp cho ngày vận hành (legPayGroup) + giá dầu + chi đã lưu.
         $dateStr = $start->format('Y-m-d');
-        $feeBook = $this->pickRouteFeeBook($dateStr);
-        $rfBySet = [];
-        if ($feeBook) foreach (\App\Models\TruckingRouteFee::where('book_id', $feeBook->id)->get() as $rf) { $k = $this->routeNodeKey($this->routeStringNodes((string) $rf->route)); if ($k !== '') $rfBySet[$k] = $rf; }
         $fuels = TruckingFuelPrice::orderByDesc('from_date')->orderByDesc('id')->get();
         $paysByBks = \App\Models\TruckingRoutePay::whereDate('work_date', $dateStr)->get()->keyBy('bks');
+        // Trợ cấp THEO NGÀY của quy chế áp cho ngày (sửa ở Quy chế › Trợ cấp; quy chế cũ chưa khai → mức mặc định 100.000):
+        //  - quay đầu tuyến ngoài Hải Phòng · chuyến thứ 3 trong ngày.
+        $dayReg = $this->regulationOf($this->pickRouteFeeBook($dateStr));
+        $turnaroundAllowance = (int) ($dayReg['allowances']['turnaround'] ?? TruckingSetting::get('turnaround_allowance', '100000'));
+        $thirdTripAllowance  = (int) ($dayReg['allowances']['thirdTrip'] ?? 100000);
 
         $byBks = [];
         foreach ($legs as $l) { $byBks[$l['bks']][] = $l; }
@@ -582,28 +597,97 @@ trait HandlesShipments
                 if (! is_array($m)) continue;
                 $manualByCont[(string) ($m['cont'] ?? '')][] = $m;
             }
+            // CHỈNH TAY theo chuyến (cont) — route_pays.trip_overrides {cont: {liters?, choho?}}.
+            $tripOv = is_array($pay?->trip_overrides) ? $pay->trip_overrides : [];
             // MỖI chuyến (leg) = 1 nhóm (kể cả không khớp phí tuyến → cảnh báo cho kế toán).
             // payTotal = chi theo ngày; payrollTotal = khoản gom trả 1 đợt (lương) cho kỳ lương.
             $payGroups = []; $payTotal = 0; $payrollTotal = 0; $payWarn = 0;
+            $prevOutHp = false;   // chuyến kéo cont TRƯỚC của xe trong ngày có đi kho ngoài Hải Phòng (tỉnh cũ) không
+            $tripNo = 0;          // số thứ tự chuyến KÉO CONT của xe trong ngày vận hành (08:00 → 08:00)
             foreach ($ls as $l) {
-                $g = $this->legPayGroup($l, $axle, $rfBySet, $fuels, $dateStr);
-                // Gắn chi khác phát sinh của chuyến (theo cont) — perDay→chi theo ngày, không→gom lương.
-                $manual = [];
+                $g = $this->legPayGroup($l, $axle, $fuels, $dateStr);
+                // Lít dầu sửa tay (vd 12 → 12,4) ghi đè định mức quy chế của chuyến; tiền = lít × giá dầu theo ngày.
+                $ov = is_array($tripOv[(string) $g['cont']] ?? null) ? $tripOv[(string) $g['cont']] : [];
+                $fl = $ov['liters'] ?? null;
+                if ($fl !== null && $fl !== '') {
+                    $unit = $g['fuel']['unitPrice'] ?? (int) round((float) $this->fuelPriceForDate($fuels, $dateStr));
+                    $g['fuel'] = ['axle' => $g['fuel']['axle'] ?? ($axle === '2' ? 2 : 1), 'liters' => (float) $fl, 'unitPrice' => $unit,
+                        'amount' => (int) round((float) $fl * $unit), 'baseLiters' => $g['fuel']['liters'] ?? null, 'edited' => true];
+                }
+                // SỐ TIỀN NHẬP TAY cho khoản cho phép sửa (tiền đường chuyến khác nhóm cảng; phụ cấp + lương chuyến xe ra
+                // không kéo cont) — trip_overrides[cont].amounts; áp cho cả khoản chi trong ngày lẫn khoản kỳ lương.
+                $amts = is_array($ov['amounts'] ?? null) ? $ov['amounts'] : [];
+                if ($amts) {
+                    foreach (['items', 'payrollItems'] as $bucket) {
+                        foreach ($g[$bucket] as &$it) {
+                            if (empty($it['editable']) || ! array_key_exists($it['key'], $amts)) continue;
+                            $it['amount'] = (int) $amts[$it['key']];
+                            $it['edited'] = true;
+                        }
+                        unset($it);
+                    }
+                    $g['sub'] = array_sum(array_column($g['items'], 'amount'));
+                    $g['payrollSub'] = array_sum(array_column($g['payrollItems'], 'amount'));
+                    // Đã nhập đủ mọi khoản BẮT BUỘC nhập → hết cảnh báo "nhập tay"
+                    if (! empty($g['needInput']) && ! array_filter(array_merge($g['items'], $g['payrollItems']), fn ($x) => ! empty($x['required']) && empty($x['edited']))) {
+                        $g['needInput'] = false;
+                        $g['note'] = '';
+                        $g['issues'] = array_values(array_filter($g['issues'] ?? [], fn ($x) => $x['type'] !== 'needInput'));
+                    }
+                }
+                // Lít dầu sửa tay → không còn vướng "thiếu km chặng" (đã có lít)
+                if (! empty($g['fuel']['edited'])) $g['issues'] = array_values(array_filter($g['issues'] ?? [], fn ($x) => $x['type'] !== 'kmMissing'));
+                // CHI HỘ: khoản chi trong ngày được chọn "Chi hộ" ở popup Chi lái — vẫn chi cho lái hôm nay (nằm trong sub)
+                // nhưng KHÔNG tính vào lương; chohoSub = phần chi hộ của chuyến (kỳ lương trừ ra khỏi "đã chi tính lương").
+                $chohoKeys = array_flip(array_map('strval', (array) ($ov['choho'] ?? [])));
+                $g['chohoSub'] = 0;
+                foreach ($g['items'] as &$it) {
+                    $fixed = (string) ($it['fixed'] ?? '');   // khoản loại cố định theo quy chế (vé trạm = chi hộ, tiền đường = lương)
+                    $it['choHo'] = $fixed !== '' ? $fixed === 'choho' : isset($chohoKeys[(string) ($it['ck'] ?? $it['key'] ?? '')]);
+                    if ($it['choHo']) $g['chohoSub'] += (int) $it['amount'];
+                }
+                unset($it);
+                // Gắn chi khác phát sinh của chuyến (theo cont) — perDay→chi theo ngày, không→gom lương; choHo→chi hộ;
+                // khac→CHI PHÍ KHÁC (chi phí công ty lái chi giúp: sửa xe, rửa xe, gửi xe… — đưa lái hôm nay, KHÔNG tính lương,
+                // thống kê riêng với chi hộ).
+                $manual = []; $g['khacSub'] = 0;
                 foreach ($manualByCont[(string) $g['cont']] ?? [] as $m) {
                     $amt = (int) round((float) ($m['amount'] ?? 0));
                     $perDay = ! isset($m['perDay']) || ! empty($m['perDay']);
-                    $manual[] = ['name' => (string) ($m['name'] ?? ''), 'amount' => $amt, 'perDay' => $perDay];
+                    $khac = $perDay && ! empty($m['khac']);
+                    $choHo = $perDay && ! $khac && ! empty($m['choHo']);
+                    $manual[] = ['name' => (string) ($m['name'] ?? ''), 'amount' => $amt, 'perDay' => $perDay, 'choHo' => $choHo, 'khac' => $khac];
                     if ($amt <= 0) continue;
                     if ($perDay) $g['sub'] += $amt; else $g['payrollSub'] += $amt;
+                    if ($choHo) $g['chohoSub'] += $amt;
+                    if ($khac) $g['khacSub'] += $amt;
                 }
                 $g['manual'] = $manual;
-                if ($g['sub'] > 0 && $g['note'] !== '') $g['note'] = '';   // có tiền (kể cả thủ công) → hết cảnh báo
+                // có tiền (kể cả thủ công) → hết cảnh báo; trừ khoản còn chờ NHẬP TAY (vd tiền đường khác nhóm cảng)
+                if ($g['sub'] > 0 && $g['note'] !== '' && empty($g['needInput'])) $g['note'] = '';
+                // TRỢ CẤP THEO NGÀY (quy chế; kế toán chốt 09/10/2026) — chi trong ngày, tính lương. Thêm sau dòng xóa cảnh báo
+                // (chuyến chưa tính được theo quy chế vẫn giữ cảnh báo). Xe ra không kéo cont không tính là chuyến.
+                //  - QUAY ĐẦU ngoài HP: chuyến tra BẢNG VÙNG đi kho có tỉnh CŨ khác HP mà chuyến kéo cont trước đó cũng vậy
+                //    (vd Hải Dương rồi Bắc Ninh). Chuyến ngắn trên Bắc Ninh (ICD / Tri Phương — bảng KCN) tính như chuyến ngắn
+                //    Hải Phòng → KHÔNG xét quay đầu.
+                //  - TỪ CHUYẾN THỨ 3 trong ngày: chuyến kéo cont thứ 3, 4, 5… của xe (bất kể đi đâu) → MỖI chuyến +100k.
+                if (($l['mode'] ?? '') !== 'none') {
+                    $tripNo++;
+                    $outHp = ($g['tripMode'] ?? '') === 'zone' && $this->legOutsideHaiPhong($l);
+                    $add = function ($key, $label, $amount) use (&$g) {
+                        $g['items'][] = ['key' => $key, 'ck' => $key, 'label' => $label, 'amount' => $amount, 'perDay' => true, 'fixed' => 'luong', 'choHo' => false];
+                        $g['sub'] += $amount;
+                    };
+                    if ($outHp && $prevOutHp && $turnaroundAllowance > 0) $add('quayDau', 'Trợ cấp quay đầu ngoài HP', $turnaroundAllowance);
+                    if ($tripNo >= 3 && $thirdTripAllowance > 0) $add('chuyen3', 'Trợ cấp chuyến thứ ' . $tripNo . ' trong ngày', $thirdTripAllowance);
+                    $prevOutHp = $outHp;
+                }
                 $payGroups[] = $g;
                 $payTotal += $g['sub'];
                 $payrollTotal += $g['payrollSub'];
                 if ($g['note'] !== '') $payWarn++;   // chuyến chưa ra tiền (không khớp / chưa tick / =0)
             }
-            // ĐÓNG BĂNG (chốt): nếu xe/ngày đã chốt → dùng số ĐÃ CHỐT (không đổi dù sửa phí tuyến).
+            // ĐÓNG BĂNG (chốt): nếu xe/ngày đã chốt → dùng số ĐÃ CHỐT (không đổi dù sửa quy chế).
             $frozen = (bool) ($pay?->frozen);
             if ($frozen && is_array($pay->frozen_data)) {
                 $fd = $pay->frozen_data;
@@ -613,10 +697,14 @@ trait HandlesShipments
                 $payWarn      = $fd['payWarn'] ?? $payWarn;
             }
             // Dầu = chi phí CÔNG TY (tách khỏi tiền lái) — tổng lít + tiền theo các chuyến trong ngày.
-            $fuelTotal = 0; $fuelLiters = 0.0;
-            foreach ($payGroups as $g) { if (! empty($g['fuel'])) { $fuelTotal += (int) ($g['fuel']['amount'] ?? 0); $fuelLiters += (float) ($g['fuel']['liters'] ?? 0); } }
+            $fuelTotal = 0; $fuelLiters = 0.0; $chohoTotal = 0; $khacTotal = 0;
+            foreach ($payGroups as $g) {
+                if (! empty($g['fuel'])) { $fuelTotal += (int) ($g['fuel']['amount'] ?? 0); $fuelLiters += (float) ($g['fuel']['liters'] ?? 0); }
+                $chohoTotal += (int) ($g['chohoSub'] ?? 0);   // phần chi hộ trong chi theo ngày (không tính lương)
+                $khacTotal  += (int) ($g['khacSub'] ?? 0);    // phần chi phí khác trong chi theo ngày (không tính lương)
+            }
             $trucks[] = ['bks' => $bks, 'vehicleId' => $vid, 'matched' => $matched, 'type' => $type, 'axle' => $axle, 'legs' => $ls, 'planned' => $pl,
-                'payGroups' => $payGroups, 'payTotal' => $payTotal, 'payrollTotal' => $payrollTotal, 'payWarn' => $payWarn,
+                'payGroups' => $payGroups, 'payTotal' => $payTotal, 'payrollTotal' => $payrollTotal, 'payWarn' => $payWarn, 'chohoTotal' => $chohoTotal, 'khacTotal' => $khacTotal,
                 'fuelTotal' => $fuelTotal, 'fuelLiters' => round($fuelLiters, 1),
                 'frozen' => $frozen,
                 'payDriver' => $pay?->driver ?? '', 'paid' => (bool) ($pay?->paid ?? false), 'paidDate' => $pay ? $this->outDate($pay->paid_date) : ''];
@@ -659,60 +747,16 @@ trait HandlesShipments
         return implode('|', $set);
     }
 
-    /** @var array<string,string>|null [ký hiệu kho (như routeNodeKey) => tỉnh đã chuẩn hóa] — memoize / request. */
-    private ?array $provByCodeCache = null;
-
     /**
-     * Kho nào đã gán Tỉnh (Cài đặt → Kho): [ký hiệu kho => tỉnh], cả 2 chuẩn hóa ĐÚNG như routeNodeKey
-     * (ký hiệu qua normalizedCodeMap; tỉnh bỏ dấu + khoảng trắng, in hoa). 1 ký hiệu nhiều tên → lấy dòng đầu có tỉnh.
+     * 1 CHUYẾN (leg) → nhóm chi cho lái, tính theo QUY CHẾ LƯƠNG CHUYẾN của bảng áp cho ngày (book.regulation). Luôn trả
+     * nhóm (kể cả chưa tính được) để Lộ trình hiện ĐỦ mọi chuyến + cảnh báo cho kế toán; matched/note cho biết lý do = 0.
+     * Khoản: Vé trạm (cộng chặng, chi hộ hằng ngày) · Phụ cấp đi đường (chi hằng ngày, tính lương) · Lương chuyến (kỳ lương).
+     * Km: khứ hồi bảng KCN (lấy & hạ cùng nhóm) → cộng chặng; dầu = km × định mức (số cầu, Hàng–Hàng / Hàng–Rỗng).
      */
-    private function warehouseProvinceByCode(): array
-    {
-        if ($this->provByCodeCache !== null) return $this->provByCodeCache;
-        $codeMap = $this->normalizedCodeMap();
-        $norm = fn ($v) => mb_strtoupper(preg_replace('/\s+/u', '', trim(\Illuminate\Support\Str::ascii((string) $v))) ?? '');
-        $m = [];
-        foreach (TruckingWarehouse::whereNotNull('province')->where('province', '!=', '')->orderBy('sort')->get(['name', 'code', 'province']) as $w) {
-            $raw = $w->code ?: $w->name;
-            $c = $codeMap[$norm($raw)] ?? $norm($raw);
-            if ($c === '' || isset($m[$c])) continue;
-            $m[$c] = $codeMap[$norm($w->province)] ?? $norm($w->province);
-        }
-        return $this->provByCodeCache = $m;
-    }
-
-    /**
-     * Khóa tuyến khi thay MỖI KHO bằng TỈNH của nó → khớp phí tuyến dạng "Cảng → Tỉnh → Cảng".
-     * Trả '' nếu không node nào là kho có tỉnh (không có gì để rơi về).
-     */
-    private function routeNodeKeyByProvince(array $labels): string
-    {
-        $prov = $this->warehouseProvinceByCode();
-        if (! $prov) return '';
-        $codeMap = $this->normalizedCodeMap();
-        $norm = fn ($v) => mb_strtoupper(preg_replace('/\s+/u', '', trim(\Illuminate\Support\Str::ascii((string) $v))) ?? '');
-        $set = []; $hit = false;
-        foreach ($labels as $l) {
-            $c = $codeMap[$norm($l)] ?? $norm($l);
-            if ($c === '') continue;
-            if (isset($prov[$c])) { $c = $prov[$c]; $hit = true; }
-            $set[$c] = true;
-        }
-        if (! $hit) return '';
-        $set = array_keys($set);
-        sort($set);
-        return implode('|', $set);
-    }
-
-    /**
-     * 1 CHUYẾN (leg) → nhóm chi cho lái: luôn trả nhóm (kể cả KHÔNG khớp phí tuyến) để
-     * Lộ trình hiện ĐỦ mọi chuyến + cảnh báo cho kế toán. matched/note cho biết lý do = 0.
-     * Khớp tuyến theo KHO cụ thể trước; không có → rơi về tuyến theo TỈNH của kho (Cảng → Tỉnh → Cảng).
-     */
-    private function legPayGroup(array $leg, ?string $axle, array $rfBySet, $fuels, string $date): array
+    private function legPayGroup(array $leg, ?string $axle, $fuels, string $date, ?array $regOverride = null): array
     {
         // Chuỗi node thực tế của chuyến — đúng như Lộ trình hiển thị:
-        //  - KHÔNG kéo cont ra (mode none): xe chỉ tới NƠI LẤY rồi ra → chỉ tính điểm pickup.
+        //  - KHÔNG kéo cont ra (mode none): xe chỉ tới NƠI LẤY rồi ra → chỉ hiện điểm pickup.
         //  - Có kéo cont ra (self/other): đủ Nơi lấy (cảng) → các Kho → Nơi hạ (cảng).
         $noPull = ($leg['mode'] ?? '') === 'none';
         if ($noPull) {
@@ -726,63 +770,263 @@ trait HandlesShipments
         foreach ($nodes as $n) { $n = trim((string) $n); if ($n === '' || (count($disp) && end($disp) === $n)) continue; $disp[] = $n; }
         $routeDisp = implode(' → ', $disp) ?: ($this->khoRouteDisplay($leg['kho'] ?? '') ?: '—');
         $g = ['route' => $routeDisp, 'cont' => $leg['cont'] ?? '', 'mode' => $leg['mode'] ?? '',
-              'items' => [], 'sub' => 0, 'payrollItems' => [], 'payrollSub' => 0, 'fuel' => null, 'matched' => false, 'note' => ''];
+              'items' => [], 'sub' => 0, 'payrollItems' => [], 'payrollSub' => 0, 'fuel' => null, 'matched' => false, 'note' => '',
+              'issues' => []];   // [{type, refs[]}] — khung "Kiểm tra dữ liệu" ở Lộ trình gom theo loại để chỉ chỗ cần nhập
 
-        // $rfBySet = tuyến của BẢNG phí áp cho ngày chuyến (caller chọn bảng bằng pickRouteFeeBook).
-        $rf = $rfBySet[$this->routeNodeKey($nodes)] ?? null;
-        $byProvince = false;
-        if (! $rf) {
-            $pk = $this->routeNodeKeyByProvince($nodes);
-            if ($pk !== '' && isset($rfBySet[$pk])) { $rf = $rfBySet[$pk]; $byProvince = true; }
-        }
-        if (! $rf) { $g['note'] = 'Chưa có Phí tuyến khớp lộ trình này' . ($this->pickRouteFeeBook($date) ? '' : ' (chưa có bảng phí tuyến áp cho ngày này)'); return $g; }
-        $g['matched'] = true;
-        $g['feeRoute'] = (string) $rf->route;   // tuyến phí đã áp — khác lộ trình thực tế khi khớp theo tỉnh
         $feeBook = $this->pickRouteFeeBook($date);   // memoize/request → rẻ
-        $g['feeFrom']  = $this->outDate($feeBook?->from_date);   // bảng phí áp dụng từ ngày ('' = bảng mặc định)
-        $g['feeBook']  = $feeBook?->label ?? '';
-        $g['byProvince'] = $byProvince;
-        $parts = $this->cleanSalaryParts($rf->salary_parts);   // khoản TÍCH "chi theo ngày"
+        $reg = $regOverride ?? $this->regulationOf($feeBook);   // [] = chưa cấu hình; override = bản nháp (Thử tính 1 chuyến)
+        if (! $reg) {
+            $g['note'] = 'Chưa cấu hình Quy chế lương chuyến cho ngày này (Cài đặt › Quy chế lương chuyến)';
+            $g['issues'][] = ['type' => 'noRegulation', 'refs' => [$feeBook ? ($feeBook->label ?: 'bảng ' . ($this->outDate($feeBook->from_date) ?: 'mặc định')) : 'chưa có bảng']];
+            return $g;
+        }
+        // Xe vào nhưng ra KHÔNG kéo cont: quy chế chưa có mức → kế toán NHẬP TAY phụ cấp đi đường (chi trong ngày) + lương
+        // chuyến (kỳ lương) ở popup Chi lái (trip_overrides[cont].amounts); giữ cảnh báo tới khi nhập (nhập 0 = không trả).
+        if ($noPull) {
+            $hint = 'Xe ra không kéo cont — quy chế chưa có mức, nhập tay';
+            $g['matched'] = true; $g['feeSource'] = 'regulation'; $g['feeRule'] = 'xe ra không kéo cont · nhập tay';
+            $g['feeFrom'] = $this->outDate($feeBook?->from_date); $g['feeBook'] = $feeBook?->label ?? '';
+            $g['items'] = [['key' => 'tienDuong', 'ck' => 'tienDuong', 'label' => 'Phụ cấp đi đường', 'amount' => 0, 'perDay' => true, 'fixed' => 'luong', 'editable' => true, 'required' => true]];
+            $g['payrollItems'] = [['key' => 'luong', 'ck' => 'luong', 'label' => 'Lương chuyến', 'amount' => 0, 'perDay' => false, 'editable' => true, 'required' => true]];
+            $g['needInput'] = true; $g['inputHint'] = $hint;
+            $g['note'] = $hint . ' ở Chi lái';
+            $g['issues'][] = ['type' => 'needInput', 'refs' => ['Xe ra không kéo cont']];
+            return $g;
+        }
+        $q = $this->regulationTripRate($leg, $reg);
+        if (! $q['ok']) { $g['note'] = $q['note']; if (! empty($q['issue'])) $g['issues'][] = $q['issue']; return $g; }
+        $g['matched']   = true;
+        $g['feeSource'] = 'regulation';
+        $g['feeRule']   = $q['rule'];
+        $g['tripMode']  = $q['mode'];   // zone = tra bảng vùng (HP) · kcn = chuyến ngắn trên Bắc Ninh (ICD / Tri Phương)
+        $g['feeFrom']   = $this->outDate($feeBook?->from_date);   // quy chế áp dụng từ ngày ('' = bảng mặc định)
+        $g['feeBook']   = $feeBook?->label ?? '';
 
-        // Tính TẤT CẢ khoản, gắn cờ perDay: tích chi theo ngày = đã chi trong ngày;
-        // KHÔNG tích = gom trả 1 đợt (lương) → tách ra payrollItems cho kỳ lương.
-        $all = [];
-        $daily = fn ($k) => in_array($k, $parts, true);
-        $add = function ($key, $label, $amount, bool $perDay, array $extra = []) use (&$all) {
-            $amount = (int) round((float) $amount);
-            if ($amount <= 0) return;
-            $all[] = ['key' => $key, 'label' => $label, 'amount' => $amount, 'perDay' => $perDay] + $extra;
-        };
-        $add('veTram', 'Vé trạm', $rf->ve_tram, $daily('veTram'));
-        $add('tienDuong', 'Tiền đường', $rf->tien_duong, $daily('tienDuong'));
-        $add('troCap', 'Trợ cấp', $rf->tro_cap, $daily('troCap'));
-        // Lương theo 2 chiều: (CÓ/KHÔNG kéo cont ra) × (CRU/không CRU). $noPull tính ở trên.
-        $cru    = ! empty($leg['cru']);
-        $wage   = $noPull ? ($cru ? $rf->luong_nokeo : $rf->luong_nokeo_no_cru)
-                          : ($cru ? $rf->luong       : $rf->luong_no_cru);
-        $label  = 'Lương' . ($noPull ? ' · không kéo cont' : '') . ($cru ? ' · CRU' : ' · không CRU');
-        $add('luong', $label, $wage, $daily('luong'));
-        // DẦU = CHI PHÍ CÔNG TY (KHÔNG chi theo ngày cho lái) → tách riêng $g['fuel'], hiển thị lít + tiền công ty trả ở Lộ trình.
-        $is2 = ($axle === '2');                                  // chọn lít dầu theo SỐ CẦU xe
-        $liters = (float) ($is2 ? $rf->dau_2cau : $rf->dau_1cau);
-        if ($liters > 0) {
+        // Đi chặng (1 lần): km cộng chặng + vé trạm cộng chặng.
+        $walk = $this->segmentWalk($leg, $reg);
+        // items = chi trong ngày (hiện ở Lộ trình); payrollItems = gom trả kỳ lương. Loại cố định (fixed) — popup không đổi.
+        $item = fn ($key, $label, $amount, array $extra = []) => ['key' => $key, 'ck' => $key, 'label' => $label, 'amount' => (int) $amount, 'perDay' => true] + $extra;
+        // Chuyến KHÁC nhóm cảng: tiền đường không có định mức → 0 + cho NHẬP TAY ở popup Chi lái (gợi ý = mức nhóm lấy);
+        // giữ cảnh báo (needInput) tới khi nhập (routeTripByDate áp trip_overrides[cont].amounts).
+        $cross = $q['cross'] ?? '';
+        $items = array_values(array_filter([
+            $item('veTram', 'Vé trạm', $walk['toll'], ['fixed' => 'choho']),
+            // Phụ cấp đi đường + lương chuyến: kế toán SỬA TAY được từng chuyến khi cần (base = mức quy chế; trống = theo quy chế).
+            // required = BẮT BUỘC nhập (quy chế không có định mức) → giữ cảnh báo tới khi nhập.
+            $cross
+                ? $item('tienDuong', 'Phụ cấp đi đường', 0, ['fixed' => 'luong', 'editable' => true, 'required' => true, 'suggest' => (int) $q['phuCap']])
+                : $item('tienDuong', 'Phụ cấp đi đường', $q['phuCap'], ['fixed' => 'luong', 'editable' => true, 'base' => (int) $q['phuCap']]),
+        ], fn ($x) => $x['amount'] > 0 || ! empty($x['editable'])));
+        if ($cross) {
+            $g['cross'] = $cross;
+            $g['needInput'] = true;
+            $g['inputHint'] = "Khác nhóm cảng ($cross) — không có định mức, nhập tay";
+            $g['issues'][] = ['type' => 'needInput', 'refs' => ['Khác nhóm cảng: ' . $cross]];
+        }
+        $payroll = [['key' => 'luong', 'ck' => 'luong', 'label' => 'Lương chuyến', 'amount' => (int) $q['luong'], 'perDay' => false, 'editable' => true, 'base' => (int) $q['luong']]];
+
+        // KM: khứ hồi bảng KCN (lấy & hạ cùng nhóm) → cộng chặng theo lộ trình thực tế; thiếu chặng → báo ở Lộ trình.
+        $km = null; $kmSrc = '';
+        if (! empty($q['km'])) { $km = (float) $q['km']; $kmSrc = 'quy chế KCN'; }
+        elseif ($walk['km'] !== null) { $km = $walk['km']; $kmSrc = 'chặng: ' . $walk['path']; }
+        elseif ($walk['missing']) { $g['kmMissing'] = $walk['missing']; $g['issues'][] = ['type' => 'kmMissing', 'refs' => $walk['missing']]; }
+        if ($km !== null) $g['km'] = $km;
+        // DẦU = CHI PHÍ CÔNG TY (KHÔNG chi cho lái): km × định mức theo SỐ CẦU xe và Hàng–Hàng / Hàng–Rỗng (cont vào có
+        // hàng (Nhập) VÀ cont ra có hàng (Xuất), hoặc chuyến KẾT HỢP nhập → xuất). Lít sửa tay ở Lộ trình ghi đè sau.
+        $is2 = ($axle === '2');
+        $hh = (! empty($leg['loadIn']) && ! empty($leg['loadOut'])) || ! empty($leg['ketHop']);
+        $rate = (float) ($reg['fuel'][$is2 ? 'axle2' : 'axle1'][$hh ? 'hh' : 'hr'] ?? 0);
+        if ($km && $rate > 0) {
+            $liters = round($km * $rate / 100, 2);
             $unit = (float) $this->fuelPriceForDate($fuels, $date);   // đơn giá dầu theo NGÀY của chuyến
-            $g['fuel'] = ['axle' => $is2 ? 2 : 1, 'liters' => $liters, 'unitPrice' => (int) round($unit), 'amount' => (int) round($liters * $unit)];
+            $g['fuel'] = ['axle' => $is2 ? 2 : 1, 'liters' => $liters, 'unitPrice' => (int) round($unit), 'amount' => (int) round($liters * $unit),
+                'km' => $km, 'kmSrc' => $kmSrc, 'rate' => $rate, 'load' => $hh ? 'Hàng–Hàng' : 'Hàng–Rỗng'];
+            if ($unit <= 0) $g['issues'][] = ['type' => 'noFuelPrice', 'refs' => [$date]];
         }
-        // Chi khác (repeater phí tuyến) — mỗi dòng TỰ quyết "chi theo ngày".
-        foreach ((array) ($rf->extra_fees ?? []) as $ex) {
-            if (! is_array($ex)) continue;
-            $add('extra', trim((string) ($ex['name'] ?? '')) ?: 'Chi khác', $ex['amount'] ?? 0, ! empty($ex['perDay']));
-        }
-        // Tách 2 rổ: items = chi theo ngày (hiện ở Lộ trình); payrollItems = gom trả 1 đợt (kỳ lương).
-        $items = array_values(array_filter($all, fn ($x) => $x['perDay']));
-        $payroll = array_values(array_filter($all, fn ($x) => ! $x['perDay']));
         $g['items'] = $items;
         $g['sub']   = array_sum(array_column($items, 'amount'));
         $g['payrollItems'] = $payroll;
         $g['payrollSub']   = array_sum(array_column($payroll, 'amount'));
-        if (! $items) $g['note'] = $parts ? 'Các khoản "chi theo ngày" của tuyến đều = 0' : 'Phí tuyến chưa tích "chi theo ngày" khoản nào';
+        if ($cross) $g['note'] = "Khác nhóm cảng ($cross): quy chế không có định mức tiền đường — nhập tay ở Chi lái";
+        elseif (! $items) $g['note'] = 'Quy chế: phụ cấp đi đường = 0';
         return $g;
+    }
+
+    /**
+     * THỬ TÍNH 1 CHUYẾN theo quy chế ĐANG SỬA (chưa lưu) — trang Quy chế lương chuyến, để người mới thấy hệ thống tra
+     * từng bước thế nào. Dùng đúng legPayGroup như Lộ trình (không tính riêng) + thông tin giải thích: nhóm cảng của
+     * Nơi lấy / Nơi hạ, tỉnh cũ + vùng của từng kho.
+     * $in = {from, to: tên/ký hiệu cảng, kho: [tên kho], axle: '1'|'2', ioIn: 'Nhập'|'Xuất', ioOut: 'Nhập'|'Xuất'}
+     */
+    public function previewRegulationTrip($regulation, array $in): array
+    {
+        $reg = \App\Support\SalaryZones::cleanRegulation($regulation);
+        $khos = array_values(array_filter(array_map(fn ($k) => trim((string) $k), (array) ($in['kho'] ?? [])), fn ($k) => $k !== ''));
+        $leg = ['from' => trim((string) ($in['from'] ?? '')), 'to' => trim((string) ($in['to'] ?? '')), 'kho' => implode(', ', $khos),
+            'mode' => 'self', 'cont' => '', 'points' => [], 'ketHop' => false,
+            'loadIn' => ($in['ioIn'] ?? '') === 'Nhập', 'loadOut' => ($in['ioOut'] ?? '') === 'Xuất'];
+        $axle = ($in['axle'] ?? '1') === '2' ? '2' : '1';
+        // "Tỉnh cũ thử": kho CHƯA gán tỉnh cũ → tạm coi như tỉnh này (chỉ trong lần thử, không lưu) để xem trọn kết quả.
+        $tried = [];
+        if (($tp = trim((string) ($in['tryProvince'] ?? ''))) !== '') {
+            $norm = fn ($v) => mb_strtoupper(preg_replace('/\s+/u', '', trim(\Illuminate\Support\Str::ascii((string) $v))) ?? '');
+            foreach ($this->khoPoints($leg['kho']) as $k) {
+                if ($this->khoOldProvince($k) !== null) continue;
+                $this->zoneByKhoCache['N:' . $norm($k)] = $tp;
+                $tried[$k] = true;
+            }
+        }
+        $fuels = TruckingFuelPrice::orderByDesc('from_date')->orderByDesc('id')->get();
+        $g = $this->legPayGroup($leg, $axle, $fuels, now()->toDateString(), $reg);
+        // Giải thích: nhóm cảng của 2 đầu + tỉnh cũ / vùng của từng kho
+        $grp = function (string $label) use ($reg) {
+            $c = $this->pointCode($label);
+            foreach ($reg['originGroups'] ?? [] as $gr) if ($c !== '' && in_array($c, $gr['codes'], true)) return ['code' => $c, 'group' => $gr['name'], 'mode' => $gr['mode']];
+            return ['code' => $c, 'group' => null, 'mode' => null];
+        };
+        $zoneOf = $reg ? \App\Support\SalaryZones::zoneIndex($reg) : [];
+        $khoInfo = array_map(function ($k) use ($zoneOf, $reg, $tried) {
+            $p = $this->khoOldProvince($k);
+            $zi = $p !== null ? ($zoneOf[$p] ?? null) : null;
+            return ['name' => $k, 'code' => $this->pointCode($k), 'oldProvince' => $p, 'tried' => isset($tried[$k]),
+                'zone' => $zi !== null ? 'V' . ($zi + 1) . ' · ' . $reg['zones'][$zi]['name'] : null];
+        }, $this->khoPoints($leg['kho']));
+        return ['ok' => true, 'from' => $grp($leg['from']), 'to' => $grp($leg['to']), 'khos' => $khoInfo, 'axle' => $axle, 'trip' => $g];
+    }
+
+    /** @var array<int,array> quy chế đã chuẩn hóa theo id bảng phí — memoize / request. */
+    private array $regCache = [];
+
+    /** Quy chế lương chuyến của bảng phí áp cho ngày ([] = chưa cấu hình). */
+    private function regulationOf(?\App\Models\TruckingRouteFeeBook $book): array
+    {
+        if (! $book) return [];
+        return $this->regCache[(int) $book->id] ??= \App\Support\SalaryZones::cleanRegulation($book->regulation);
+    }
+
+    /** Mã điểm (cảng / kho) chuẩn hóa IN HOA từ tên hoặc ký hiệu — dùng so bảng KCN, nhóm cảng, bảng km. */
+    private function pointCode(?string $label): string
+    {
+        $norm = fn ($v) => mb_strtoupper(preg_replace('/\s+/u', '', trim(\Illuminate\Support\Str::ascii((string) $v))) ?? '');
+        $n = $norm($label);
+        return $n === '' ? '' : mb_strtoupper((string) ($this->normalizedCodeMap()[$n] ?? $n));
+    }
+
+    /**
+     * Mức QUY CHẾ cho 1 chuyến kéo cont: nhóm xuất phát = nhóm có Nơi lấy (không có → nhóm có Nơi hạ). Nhóm & vùng là
+     * dữ liệu tùy chỉnh của bảng phí (book.regulation):
+     *  - nhóm tra "bảng KCN" → theo ký hiệu kho (nhiều kho → mức lương cao nhất); km khứ hồi chỉ khi hạ cùng nhóm.
+     *  - nhóm tra "bảng vùng" → vùng chứa TỈNH CŨ của kho (nhiều kho → vùng lương cao nhất = "mức chuyến xa nhất").
+     * @return array{ok:bool, luong?:int, phuCap?:int, km?:?float, rule?:string, note?:string}
+     */
+    private function regulationTripRate(array $leg, array $reg): array
+    {
+        $grpOf = function (string $c) use ($reg) { if ($c === '') return null; foreach ($reg['originGroups'] as $g) if (in_array($c, $g['codes'], true)) return $g; return null; };
+        $from = $this->pointCode($leg['from'] ?? ''); $to = $this->pointCode($leg['to'] ?? '');
+        $gFrom = $grpOf($from); $gTo = $grpOf($to);
+        $g = $gFrom ?? $gTo;
+        // issue = lỗi có CẤU TRÚC {type, refs} cho khung "Kiểm tra dữ liệu" ở Lộ trình (gom theo loại, chỉ chỗ sửa).
+        if (! $g) return ['ok' => false, 'note' => "Quy chế: Nơi lấy / Nơi hạ ($from → $to) chưa thuộc nhóm cảng xuất phát nào (Cài đặt › Quy chế lương chuyến)",
+            'issue' => ['type' => 'noGroup', 'refs' => [($from ?: '(trống)') . ' → ' . ($to ?: '(trống)')]]];
+        // Lấy & hạ KHÁC nhóm cảng (kế toán chốt 08/10/2026):
+        //  - lấy nhóm "bảng KCN" (ICD / Tri Phương) → hạ nhóm "bảng vùng" (Hải Phòng): = 1 chuyến của nhóm hạ (lái về HP rồi
+        //    bắt buộc lên lại kho) → tra BẢNG VÙNG theo tỉnh cũ của kho, tự động.
+        //  - lấy nhóm "bảng vùng" (HP) → hạ nhóm "bảng KCN" (vd HP → QV → Tri Phương): quy chế không có định mức tiền đường
+        //    → lương theo nhóm lấy, tiền đường kế toán NHẬP TAY.
+        $cross = []; $via = '';
+        if ($gFrom && $gTo && $gFrom['key'] !== $gTo['key']) {
+            if ($gFrom['mode'] === 'kcn' && $gTo['mode'] === 'zone') { $g = $gTo; $via = $gFrom['name'] . ' → ' . $gTo['name'] . ' (tính như chuyến ' . $gTo['name'] . ') · '; }
+            elseif ($gFrom['mode'] === 'zone' && $gTo['mode'] === 'kcn') $cross = ['cross' => $gFrom['name'] . ' → ' . $gTo['name']];
+        }
+        if ($g['mode'] === 'kcn') {
+            $khoCodes = array_map(fn ($k) => $this->pointCode($k), $this->khoCodePoints($leg['kho'] ?? ''));
+            $best = null;
+            foreach ($reg['kcn'] as $row) if ($row['group'] === $g['key'] && in_array($row['kho'], $khoCodes, true) && (! $best || $row['luong'] > $best['luong'])) $best = $row;
+            if (! $khoCodes) return ['ok' => false, 'note' => 'Lô chưa có Kho — không tra được bảng KCN', 'issue' => ['type' => 'noKho', 'refs' => [(string) ($leg['cont'] ?? '') ?: '(không số cont)']]];
+            if (! $best) return ['ok' => false, 'note' => 'Quy chế ' . $g['name'] . ': chưa có KCN ' . implode(', ', $khoCodes) . ' trong bảng KCN',
+                'issue' => ['type' => 'noKcn', 'refs' => array_map(fn ($c) => $g['name'] . ': ' . $c, $khoCodes)]];
+            return ['ok' => true, 'mode' => 'kcn', 'luong' => $best['luong'], 'phuCap' => $best['phuCap'], 'km' => ($gTo['key'] ?? null) === $g['key'] ? $best['km'] : null, 'rule' => $g['name'] . ' · KCN ' . $best['kho']] + $cross;
+        }
+        $zoneOf = \App\Support\SalaryZones::zoneIndex($reg);
+        $zones = $reg['zones'];
+        $best = null; $noProv = []; $noZone = [];
+        $khoNames = $this->khoPoints($leg['kho'] ?? '');
+        if (! $khoNames) return ['ok' => false, 'note' => 'Lô chưa có Kho — không tra được vùng', 'issue' => ['type' => 'noKho', 'refs' => [(string) ($leg['cont'] ?? '') ?: '(không số cont)']]];
+        foreach ($khoNames as $k) {
+            $p = $this->khoOldProvince($k);
+            $i = $p !== null ? ($zoneOf[$p] ?? null) : null;
+            if ($p === null) { $noProv[] = $k; continue; }
+            if ($i === null) { $noZone[] = $p . ' (kho ' . $k . ')'; continue; }
+            if ($best === null || [$zones[$i]['luong'], $zones[$i]['phuCap']] > [$zones[$best]['luong'], $zones[$best]['phuCap']]) $best = $i;
+        }
+        if ($best === null) return $noProv
+            ? ['ok' => false, 'note' => 'Quy chế ' . $g['name'] . ': kho ' . implode(', ', $noProv) . ' chưa gán tỉnh cũ (Cài đặt › Kho)', 'issue' => ['type' => 'khoNoProvince', 'refs' => $noProv]]
+            : ['ok' => false, 'note' => 'Quy chế ' . $g['name'] . ': tỉnh cũ ' . implode(', ', $noZone) . ' chưa thuộc vùng nào (Quy chế › Bước 3)', 'issue' => ['type' => 'provinceNoZone', 'refs' => $noZone]];
+        $z = $zones[$best];
+        return ['ok' => true, 'mode' => 'zone', 'luong' => $z['luong'], 'phuCap' => $z['phuCap'], 'km' => null, 'rule' => ($via ?: $g['name'] . ' · ') . 'V' . ($best + 1) . ' ' . $z['name']] + $cross;
+    }
+
+    /**
+     * Đi CHẶNG theo lộ trình thực tế (Nơi lấy → các kho → Nơi hạ) trên bảng chặng của quy chế. Bảng theo CHIỀU: tra
+     * A → B trước, không có thì dùng dòng B → A.
+     *  - km = cộng km các chặng; thiếu km chặng nào → km null + danh sách chặng thiếu.
+     *  - toll = cộng VÉ TRẠM các chặng có khai (chặng không khai vé = 0).
+     * @return array{km:?float, toll:int, path:string, missing:string[]}
+     */
+    private function segmentWalk(array $leg, array $reg): array
+    {
+        $pts = [];
+        foreach (array_merge([$leg['from'] ?? ''], $this->khoCodePoints($leg['kho'] ?? ''), [$leg['to'] ?? '']) as $p) {
+            $c = $this->pointCode($p);
+            if ($c !== '' && end($pts) !== $c) $pts[] = $c;
+        }
+        if (count($pts) < 2) return ['km' => null, 'toll' => 0, 'path' => '', 'missing' => []];
+        $map = [];
+        foreach ($reg['distances'] as $d) $map[$this->pointCode($d['from']) . '>' . $this->pointCode($d['to'])] = $d;
+        $sum = 0.0; $toll = 0; $missing = []; $parts = [];
+        for ($i = 0; $i + 1 < count($pts); $i++) {
+            $a = $pts[$i]; $b = $pts[$i + 1];
+            $d = $map["$a>$b"] ?? $map["$b>$a"] ?? null;
+            $toll += (int) ($d['toll'] ?? 0);
+            $km = $d && $d['km'] > 0 ? (float) $d['km'] : null;
+            if ($km === null) { $missing[] = "$a → $b"; continue; }
+            $sum += $km; $parts[] = rtrim(rtrim(number_format($km, 1, ',', ''), '0'), ',');
+        }
+        return $missing ? ['km' => null, 'toll' => $toll, 'path' => '', 'missing' => $missing]
+            : ['km' => round($sum, 1), 'toll' => $toll, 'path' => implode(' → ', $pts) . ' = ' . implode(' + ', $parts), 'missing' => []];
+    }
+
+    /** @var array<string,string>|null [tên/ký hiệu kho chuẩn hóa => tỉnh cũ] — memoize / request. */
+    private ?array $zoneByKhoCache = null;
+
+    /**
+     * Chuyến có đi kho NGOÀI Hải Phòng không — theo TỈNH CŨ của kho (quy chế lương xét tỉnh trước sáp nhập:
+     * Hải Dương là ngoài HP). Kho chưa gán tỉnh cũ → không xác định → coi như không (để không cộng nhầm).
+     * So theo TÊN kho, không có thì theo ký hiệu.
+     */
+    private function legOutsideHaiPhong(array $leg): bool
+    {
+        if ($this->zoneByKhoCache === null) {
+            $norm = fn ($v) => mb_strtoupper(preg_replace('/\s+/u', '', trim(\Illuminate\Support\Str::ascii((string) $v))) ?? '');
+            $m = [];
+            foreach (TruckingWarehouse::whereNotNull('old_province')->where('old_province', '!=', '')->get(['name', 'code', 'old_province']) as $w) {
+                if ($w->name) $m['N:' . $norm($w->name)] = $w->old_province;
+                if ($w->code) $m['C:' . $norm($w->code)] ??= $w->old_province;
+            }
+            $this->zoneByKhoCache = $m;
+        }
+        foreach ($this->khoPoints($leg['kho'] ?? '') as $k) {
+            if (\App\Support\SalaryZones::isOutsideHaiPhong($this->khoOldProvince($k))) return true;
+        }
+        return false;
+    }
+
+    /** Tỉnh cũ (quy chế) của 1 kho theo TÊN, không có thì theo ký hiệu; null = chưa gán. */
+    private function khoOldProvince(string $kho): ?string
+    {
+        if ($this->zoneByKhoCache === null) $this->legOutsideHaiPhong([]);   // nạp map
+        $norm = fn ($v) => mb_strtoupper(preg_replace('/\s+/u', '', trim(\Illuminate\Support\Str::ascii((string) $v))) ?? '');
+        return $this->zoneByKhoCache['N:' . $norm($kho)] ?? $this->zoneByKhoCache['C:' . $norm($kho)] ?? null;
     }
 
     /** Lưu chi cho lái xe theo ngày + xe (chỉ lưu lái nhận + đã chi; tiền tự tính từ phí tuyến). */
@@ -806,7 +1050,32 @@ trait HandlesShipments
                 'name'   => $name,
                 'amount' => $amount,
                 'perDay' => ! isset($m['perDay']) || ! empty($m['perDay']),   // mặc định chi theo ngày
+                'choHo'  => empty($m['khac']) && ! empty($m['choHo']),       // chi hộ — không tính lương
+                'khac'   => ! empty($m['khac']),                              // chi phí khác — không tính lương, thống kê riêng
             ];
+        }
+        // Khoản phí tuyến chọn "Chi hộ" theo từng chuyến: chỉ ghi đè choho của các cont có trong payload, giữ lít dầu sửa tay.
+        $existing = \App\Models\TruckingRoutePay::whereDate('work_date', $date)->where('bks', $bks)->first();
+        $tripOv = is_array($existing?->trip_overrides) ? $existing->trip_overrides : [];
+        foreach ((array) ($data['chohoItems'] ?? []) as $c) {
+            if (! is_array($c)) continue;
+            $cont = (string) ($c['cont'] ?? '');
+            $keys = array_values(array_unique(array_filter(array_map('strval', (array) ($c['keys'] ?? [])), fn ($k) => $k !== '')));
+            $cur = is_array($tripOv[$cont] ?? null) ? $tripOv[$cont] : [];
+            if ($keys) $cur['choho'] = $keys; else unset($cur['choho']);
+            if ($cur) $tripOv[$cont] = $cur; else unset($tripOv[$cont]);
+        }
+        // Số tiền NHẬP TAY theo chuyến (tiền đường chuyến khác nhóm cảng): [{cont, key, amount}] — trống = bỏ nhập tay.
+        foreach ((array) ($data['amountItems'] ?? []) as $a) {
+            if (! is_array($a) || ($key = (string) ($a['key'] ?? '')) === '') continue;
+            $cont = (string) ($a['cont'] ?? '');
+            $cur = is_array($tripOv[$cont] ?? null) ? $tripOv[$cont] : [];
+            $amts = is_array($cur['amounts'] ?? null) ? $cur['amounts'] : [];
+            $raw = $a['amount'] ?? null;
+            if ($raw === null || trim((string) $raw) === '') unset($amts[$key]);
+            else $amts[$key] = $this->inMoney($raw) ?? 0;
+            if ($amts) $cur['amounts'] = $amts; else unset($cur['amounts']);
+            if ($cur) $tripOv[$cont] = $cur; else unset($tripOv[$cont]);
         }
         \App\Models\TruckingRoutePay::updateOrCreate(
             ['work_date' => $date, 'bks' => $bks],
@@ -818,9 +1087,57 @@ trait HandlesShipments
                 'paid_date'  => $paid ? ($this->inDate($data['paidDate'] ?? null) ?: $date) : null,
                 'note'       => $this->str($data['note'] ?? null),
                 'extra_items' => $extraItems,
+                'trip_overrides' => $tripOv ?: null,
                 'updated_by' => auth()->id(),
             ]
         );
+        return ['ok' => true];
+    }
+
+    /**
+     * Sửa LÍT DẦU của 1 chuyến (theo cont) ở Lộ trình — chỉ ghi route_pays.trip_overrides[cont].liters, không đụng lái nhận / chi khác.
+     * $liters null = bỏ sửa tay, về định mức phí tuyến. Ngày đã chốt thì không cho sửa (số đã đóng băng).
+     */
+    public function saveRouteFuel(string $date, string $bks, string $cont, ?float $liters): array
+    {
+        $bks = trim($bks); $date = trim($date);
+        if ($bks === '' || $date === '') return ['ok' => false, 'message' => 'Thiếu ngày/biển số'];
+        $row = \App\Models\TruckingRoutePay::whereDate('work_date', $date)->where('bks', $bks)->first()
+            ?? new \App\Models\TruckingRoutePay(['work_date' => $date, 'bks' => $bks]);
+        if ($row->frozen) return ['ok' => false, 'message' => 'Ngày đã chốt — bỏ chốt ngày để sửa lít dầu'];
+        $map = is_array($row->trip_overrides) ? $row->trip_overrides : [];
+        $cur = is_array($map[$cont] ?? null) ? $map[$cont] : [];
+        if ($liters === null || $liters < 0) unset($cur['liters']); else $cur['liters'] = round($liters, 2);
+        if ($cur) $map[$cont] = $cur; else unset($map[$cont]);
+        $row->trip_overrides = $map ?: null;
+        if (! $row->vehicle_id) $row->vehicle_id = TruckingVehicle::where('plate', $bks)->value('id');
+        $row->updated_by = auth()->id();
+        $row->save();
+        return ['ok' => true];
+    }
+
+    /**
+     * Sửa tay SỐ TIỀN 1 khoản của 1 chuyến ngay trên Lộ trình (phụ cấp đi đường / lương chuyến) — chỉ ghi
+     * trip_overrides[cont].amounts[key], không đụng lái nhận / chi khác. $amount null = về mức quy chế.
+     */
+    public function saveRouteAmount(string $date, string $bks, string $cont, string $key, ?int $amount): array
+    {
+        $bks = trim($bks); $date = trim($date);
+        if ($bks === '' || $date === '') return ['ok' => false, 'message' => 'Thiếu ngày/biển số'];
+        if (! in_array($key, ['tienDuong', 'luong'], true)) return ['ok' => false, 'message' => 'Khoản không cho sửa'];
+        $row = \App\Models\TruckingRoutePay::whereDate('work_date', $date)->where('bks', $bks)->first()
+            ?? new \App\Models\TruckingRoutePay(['work_date' => $date, 'bks' => $bks]);
+        if ($row->frozen) return ['ok' => false, 'message' => 'Ngày đã chốt — bỏ chốt ngày để sửa'];
+        $map = is_array($row->trip_overrides) ? $row->trip_overrides : [];
+        $cur = is_array($map[$cont] ?? null) ? $map[$cont] : [];
+        $amts = is_array($cur['amounts'] ?? null) ? $cur['amounts'] : [];
+        if ($amount === null) unset($amts[$key]); else $amts[$key] = max(0, $amount);
+        if ($amts) $cur['amounts'] = $amts; else unset($cur['amounts']);
+        if ($cur) $map[$cont] = $cur; else unset($map[$cont]);
+        $row->trip_overrides = $map ?: null;
+        if (! $row->vehicle_id) $row->vehicle_id = TruckingVehicle::where('plate', $bks)->value('id');
+        $row->updated_by = auth()->id();
+        $row->save();
         return ['ok' => true];
     }
 
@@ -863,7 +1180,9 @@ trait HandlesShipments
     /**
      * Kỳ LƯƠNG lái xe — gom theo BIỂN SỐ XE qua khoảng ngày [from..to]:
      *  - payroll  = Σ khoản CHƯA "chi theo ngày" (lương gom trả 1 đợt) = TIỀN PHẢI TRẢ.
-     *  - paidDaily = Σ khoản "chi theo ngày" (đã thanh toán theo ngày) — tham khảo.
+     *  - paidDaily = Σ khoản "chi theo ngày" TÍNH LƯƠNG (đã thanh toán theo ngày) — tham khảo.
+     *  - chiHo    = Σ khoản chi theo ngày chọn "Chi hộ" — đã đưa lái nhưng KHÔNG tính vào lương.
+     *  - chiKhac  = Σ chi khác phát sinh chọn "Chi phí khác" — đã đưa lái, KHÔNG tính lương, thống kê riêng.
      * Lái xe TỰ GÁN theo thời điểm (lấy từ route_pays.driver các ngày trong kỳ).
      */
     public function computePayroll(?string $from, ?string $to): array
@@ -880,15 +1199,19 @@ trait HandlesShipments
                 $bks = $t['bks'];
                 if (! isset($byBks[$bks])) {
                     $byBks[$bks] = ['bks' => $bks, 'vehicleId' => $t['vehicleId'] ?? null, 'type' => $t['type'], 'axle' => $t['axle'],
-                        'drivers' => [], 'days' => 0, 'trips' => 0, 'paidDaily' => 0, 'payroll' => 0, 'lines' => []];
+                        'drivers' => [], 'days' => 0, 'trips' => 0, 'paidDaily' => 0, 'chiHo' => 0, 'chiKhac' => 0, 'payroll' => 0, 'lines' => []];
                 }
                 $byBks[$bks]['days']++;
                 $byBks[$bks]['trips']     += count($t['payGroups']);
-                $byBks[$bks]['paidDaily'] += $t['payTotal'];
+                $ch = (int) ($t['chohoTotal'] ?? 0);
+                $kh = (int) ($t['khacTotal'] ?? 0);
+                $byBks[$bks]['paidDaily'] += $t['payTotal'] - $ch - $kh;
+                $byBks[$bks]['chiHo']     += $ch;
+                $byBks[$bks]['chiKhac']   += $kh;
                 $byBks[$bks]['payroll']   += $t['payrollTotal'];
                 if (! empty($t['payDriver'])) $byBks[$bks]['drivers'][$t['payDriver']] = true;
                 $byBks[$bks]['lines'][] = ['date' => $ds, 'driver' => $t['payDriver'] ?? '',
-                    'paidDaily' => $t['payTotal'], 'payroll' => $t['payrollTotal'], 'groups' => $t['payGroups']];
+                    'paidDaily' => $t['payTotal'] - $ch - $kh, 'chiHo' => $ch, 'chiKhac' => $kh, 'payroll' => $t['payrollTotal'], 'groups' => $t['payGroups']];
             }
         }
 
@@ -908,6 +1231,8 @@ trait HandlesShipments
             'rows' => $rows,
             'grandPayroll'   => array_sum(array_column($rows, 'payroll')),
             'grandPaidDaily' => array_sum(array_column($rows, 'paidDaily')),
+            'grandChiHo'     => array_sum(array_column($rows, 'chiHo')),
+            'grandChiKhac'   => array_sum(array_column($rows, 'chiKhac')),
             'drivers' => $this->driversOut(),
         ];
     }
@@ -1033,6 +1358,8 @@ trait HandlesShipments
             'inv'          => $s->inv ?? '',
             'io'           => $s->io ?? '',
             'cru'          => (bool) $s->cru,
+            'kepCont'      => (bool) $s->kep_cont,   // quy chế lương: kẹp 2 cont 20'
+            'ketHop'       => (bool) $s->ket_hop,    // quy chế lương: kết hợp (cont nhập → đóng xuất nhà máy khác)
             'isBarge'      => (bool) $s->is_barge,
             'bargeCont'    => $s->barge_cont ?? '',
             'bargeDrop'    => $s->barge_drop ?? '',
@@ -1052,6 +1379,8 @@ trait HandlesShipments
             'kho'          => $s->kho ?? '',
             'from'         => $s->from_loc ?? '',
             'to'           => $s->to_loc ?? '',
+            'fromCode'     => $this->locCode($s->from_loc),   // ký hiệu nơi lấy/hạ — file Xuất chi phí lô ghi "Tên — Ký hiệu"
+            'toCode'       => $this->locCode($s->to_loc),
             // Chuỗi KÝ HIỆU tuyến: Nơi lấy → các Kho → Nơi hạ (vd HPP → QV → HPP) cho kế toán rà soát nhanh
             // từng lô. Rỗng (ẩn dòng) nếu y hệt chuỗi tên hiển thị (không có kho, ký hiệu = tên).
             'routeCodes'   => (function () use ($s) {
@@ -1171,6 +1500,8 @@ trait HandlesShipments
                 'inv'          => ['inv', $this->str($data['inv'] ?? null)],
                 'io'           => ['io', $this->canonIo($data['io'] ?? null)],
                 'cru'          => ['cru', ! empty($data['cru'])],
+                'kepCont'      => ['kep_cont', ! empty($data['kepCont'])],
+                'ketHop'       => ['ket_hop', ! empty($data['ketHop'])],
                 'isBarge'      => ['is_barge', ! empty($data['isBarge'])],
                 'bargeCont'    => ['barge_cont', $this->str($data['bargeCont'] ?? null)],
                 'bargeDrop'    => ['barge_drop', $this->str($data['bargeDrop'] ?? null)],

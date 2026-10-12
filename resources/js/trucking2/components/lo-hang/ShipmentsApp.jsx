@@ -118,6 +118,8 @@ function ShipmentsApp() {
   const [cshtBusy, setCshtBusy] = useState(false);
   const [cshtMsg, setCshtMsg] = useState("");
   const [cshtRows, setCshtRows] = useState([]);
+  const [costFrom, setCostFrom] = useState("");   // Xuất chi phí lô: khoảng NGÀY ĐÓNG HÀNG (gio_den_du_kien) từ…
+  const [costTo, setCostTo] = useState("");       // …đến (gồm 2 đầu); trống = không giới hạn
   const [cshtCheck, setCshtCheck] = useState(null); // null | { valid, total, errors:[] }
   const cshtFileRef = useRef(null);
   // ---- Import CẬP NHẬT lô đã có (Xuất để cập nhật → sửa → nhập lại) ----
@@ -513,12 +515,16 @@ function ShipmentsApp() {
     if (typeof XLSX === "undefined") { window.alert("Thư viện Excel chưa tải xong."); return; }
     setExporting(true); setCshtMsg("");
     try {
-      const qs = buildParams({ page: 1 }).toString() + "&all=1";
-      const r = await window.trkApi("GET", ROUTES.shipmentsPage + "?" + qs);
+      // Có khoảng ngày đóng hàng → thay cho lọc 1 ngày đóng hàng của danh sách; các bộ lọc khác vẫn áp.
+      const p = buildParams({ page: 1 });
+      if (costFrom || costTo) { p.delete("denDate"); if (costFrom) p.set("denFrom", costFrom); if (costTo) p.set("denTo", costTo); }
+      const r = await window.trkApi("GET", ROUTES.shipmentsPage + "?" + p.toString() + "&all=1");
       const list = (r && r.ok) ? (r.data || []) : [];
-      if (!list.length) { window.trkToast && window.trkToast("Không có lô nào trong bộ lọc đang xem", "error"); return; }
-      XLSX.writeFile(buildCostExportWb(list), `chi-phi-lo-${new Date().toISOString().slice(0, 10)}.xlsx`);
-      setCshtMsg(`Đã xuất ${list.length} lô theo bộ lọc đang xem — điền / sửa số tiền rồi chọn lại file để import.`);
+      const rangeTxt = costFrom || costTo ? ` · đóng hàng ${costFrom ? fmtDate(costFrom) : "…"} → ${costTo ? fmtDate(costTo) : "…"}` : "";
+      if (!list.length) { window.trkToast && window.trkToast("Không có lô nào trong bộ lọc đang xem" + rangeTxt, "error"); return; }
+      const stamp = costFrom || costTo ? `${costFrom || "dau"}_${costTo || "nay"}` : new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(buildCostExportWb(list), `chi-phi-lo-${stamp}.xlsx`);
+      setCshtMsg(`Đã xuất ${list.length} lô theo bộ lọc đang xem${rangeTxt} — điền / sửa số tiền rồi chọn lại file để import.`);
     } catch (e) { window.trkToast && window.trkToast("Lỗi tải dữ liệu xuất Excel", "error"); }
     finally { setExporting(false); }
   };
@@ -1264,6 +1270,8 @@ function ShipmentsApp() {
                           {s.io ? <Badge tone={ioTone(s.io)}>{s.io}</Badge>
                             : <span title="Lô chưa chọn Nhập / Xuất / Khác" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, color: "var(--warn)", background: "#fcf3e2" }}><i className="bi bi-exclamation-triangle-fill" /> chưa chọn N/X</span>}
                           {s.cru ? <Badge tone="amber">CRU</Badge> : null}
+                          {s.kepCont ? <Badge tone="violet">Kẹp cont</Badge> : null}
+                          {s.ketHop ? <Badge tone="violet">Kết hợp</Badge> : null}
                           {s.isBarge ? <Badge tone="blue">Sà lan{s.bargeCont ? " " + s.bargeCont : ""}</Badge> : null}
                         </div>
                       </div>
@@ -1371,6 +1379,8 @@ function ShipmentsApp() {
                           {s.io ? <Badge tone={ioTone(s.io)}>{s.io}</Badge>
                             : <span title="Lô chưa chọn Nhập / Xuất / Khác" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, color: "var(--warn)", background: "#fcf3e2" }}><i className="bi bi-exclamation-triangle-fill" /> chưa chọn N/X</span>}
                           {s.cru ? <Badge tone="amber">CRU</Badge> : null}
+                          {s.kepCont ? <Badge tone="violet">Kẹp cont</Badge> : null}
+                          {s.ketHop ? <Badge tone="violet">Kết hợp</Badge> : null}
                           {s.isBarge ? <Badge tone="blue">Sà lan{s.bargeCont ? " " + s.bargeCont : ""}</Badge> : null}
                         </div>
                       </EditCell>
@@ -1833,13 +1843,29 @@ function ShipmentsApp() {
             </div>
           }>
           <div style={{ padding: "12px 0 4px" }}>
+            {col("cost") && (
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 12, flexWrap: "wrap" }}>
+                <label>
+                  <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>Ngày đóng hàng từ</div>
+                  <div style={{ width: 150 }}><DateField value={costFrom} onChange={setCostFrom} placeholder="Từ ngày" /></div>
+                </label>
+                <label>
+                  <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>đến ngày</div>
+                  <div style={{ width: 150 }}><DateField value={costTo} onChange={setCostTo} placeholder="Đến ngày" /></div>
+                </label>
+                {(costFrom || costTo) && <button type="button" onClick={() => { setCostFrom(""); setCostTo(""); }} title="Bỏ khoảng ngày" style={{ border: "none", background: "transparent", color: "var(--ink-4)", cursor: "pointer", padding: "0 2px 9px" }}><i className="bi bi-x-circle" /></button>}
+                <div style={{ fontSize: 12, color: costFrom && costTo && costFrom > costTo ? "var(--bad)" : "var(--ink-4)", paddingBottom: 9 }}>
+                  {costFrom && costTo && costFrom > costTo ? "Ngày bắt đầu sau ngày kết thúc" : "Chỉ xuất lô có Ngày đóng hàng trong khoảng này (để trống = không giới hạn) · kèm bộ lọc đang xem"}
+                </div>
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
               <button type="button" onClick={downloadCshtTemplate}
                 style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--ink-2)", cursor: "pointer" }}>
                 <i className="bi bi-download" /> Tải file mẫu
               </button>
               {col("cost") && (
-                <button type="button" onClick={exportCosts} disabled={exporting} title="Xuất mọi lô theo bộ lọc đang xem: 1 dòng / lô, có ID LÔ + số tiền hiện tại từng khoản chi phí"
+                <button type="button" onClick={exportCosts} disabled={exporting || (costFrom && costTo && costFrom > costTo)} title="Xuất mọi lô theo bộ lọc đang xem: 1 dòng / lô, có ID LÔ + số tiền hiện tại từng khoản chi phí"
                   style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", fontSize: 13, fontWeight: 600, border: "1px solid #bfe4d1", borderRadius: 9, background: "var(--good-weak)", color: "var(--good)", cursor: exporting ? "default" : "pointer", opacity: exporting ? 0.6 : 1 }}>
                   <i className="bi bi-file-earmark-excel" /> {exporting ? "Đang xuất…" : "Xuất chi phí lô (bộ lọc đang xem)"}
                 </button>
@@ -1882,7 +1908,7 @@ function ShipmentsApp() {
               };
               const cellText = (c) => {
                 if (!c) return "—";
-                const extra = [c.vat !== undefined && c.vat !== "" ? `VAT ${c.vat}%` : "", c.invoiceNo ? `HĐ ${c.invoiceNo}` : "", c.dateRaw || (c.date ? fmtDT(c.date) : ""), c.payer || "", c.note || ""].filter(Boolean);
+                const extra = [c.vat !== undefined && c.vat !== "" ? `VAT ${c.vat}%` : "", c.invoiceNo ? `HĐ ${c.invoiceNo}` : "", c.dateRaw || (c.date ? fmtDT(c.date) : ""), c.payer || "", c.note || "", /^(x|v|1|có|co|yes|true|chi hộ|✓|✔|☑)$/i.test(String(c.billable || "").trim()) ? "☑ Chi hộ" : ""].filter(Boolean);
                 return (<>{amt(c.amount) || (extra.length ? "" : "—")}{extra.length ? <div style={{ fontSize: 10.5, color: "var(--ink-4)", whiteSpace: "normal" }}>{extra.join(" · ")}</div> : null}</>);
               };
               const st = cshtCheck.stats || {};

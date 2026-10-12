@@ -69,9 +69,52 @@ trait HandlesPricingAndImport
         if ($customerId <= 0) return [];
         // $priceBookId === null → KHÔNG có bảng giá phủ ngày → trả rỗng (định giá "chưa khớp").
         if ($priceBookId === null) return [];
-        return TruckingPriceRow::where('customer_id', $customerId)->where('price_book_id', $priceBookId)
+        return TruckingPriceRow::where('customer_id', $this->priceOwnerId($customerId))->where('price_book_id', $priceBookId)
             ->orderBy('sort')->toBase()->get()
             ->map(fn ($p) => $this->priceRowToArray($p))->all();
+    }
+
+    /** @var array<int,int> customer_id → id khách sở hữu bảng giá (memoize/request). */
+    private array $priceOwnerCache = [];
+
+    /**
+     * Khách SỞ HỮU bảng giá dùng cho $customerId: khách nguồn nếu đang dùng chung, ngược lại chính nó.
+     * Mọi chỗ tra bảng giá theo khách (định giá lô, bảng kê, báo cáo) đi qua đây.
+     */
+    public function priceOwnerId(int $customerId): int
+    {
+        if ($customerId <= 0) return $customerId;
+        return $this->priceOwnerCache[$customerId] ??= (int) (TruckingCustomer::whereKey($customerId)->value('price_source_id') ?: $customerId);
+    }
+
+    /**
+     * Đặt / bỏ DÙNG CHUNG bảng giá: khách $customerId lấy bảng giá của khách tên $sourceName (null/'' = bảng giá riêng).
+     * Chỉ 1 cấp: nguồn không được đang dùng chung của khách khác, và khách đang làm nguồn cho khách khác thì
+     * không dùng chung của ai được. Bảng giá riêng của khách vẫn GIỮ NGUYÊN (bỏ liên kết là dùng lại).
+     */
+    public function setCustomerPriceSource(int $customerId, ?string $sourceName): array
+    {
+        $c = TruckingCustomer::find($customerId);
+        if (! $c) return ['ok' => false, 'msg' => 'Không tìm thấy khách hàng'];
+        $sourceName = trim((string) $sourceName);
+        $src = null;
+        if ($sourceName !== '') {
+            $src = TruckingCustomer::where('name', $sourceName)->first();
+            if (! $src) return ['ok' => false, 'msg' => "Không tìm thấy khách “{$sourceName}”"];
+            if ((int) $src->id === (int) $c->id) return ['ok' => false, 'msg' => 'Không thể dùng chung bảng giá của chính khách này'];
+            if ($src->price_source_id) {
+                $root = TruckingCustomer::whereKey($src->price_source_id)->value('name');
+                return ['ok' => false, 'msg' => "“{$src->name}” đang dùng chung bảng giá của “{$root}” — chọn thẳng “{$root}”"];
+            }
+            $children = TruckingCustomer::where('price_source_id', $c->id)->orderBy('name')->pluck('name')->all();
+            if ($children) {
+                return ['ok' => false, 'msg' => "“{$c->name}” đang là bảng giá gốc của " . implode(', ', $children) . ' — bỏ liên kết của các khách đó trước'];
+            }
+        }
+        $c->price_source_id = $src?->id;
+        $c->save();
+        unset($this->priceOwnerCache[$customerId]);
+        return ['ok' => true, 'priceSource' => $src?->name ?? ''];
     }
 
     /**
@@ -103,6 +146,7 @@ trait HandlesPricingAndImport
     {
         $locations = TruckingLocation::orderBy('sort')->orderBy('name')->get();
         $customers = TruckingCustomer::withCount('priceRows')->with(['priceBooks' => fn ($q) => $q->withCount('priceRows')])->orderBy('name')->get();
+        $nameById  = $customers->pluck('name', 'id');
 
         return [
             'locations'    => $locations->pluck('name')->all(),
@@ -121,6 +165,8 @@ trait HandlesPricingAndImport
                 'address'   => $c->address ?? '',
                 'note'      => $c->note ?? '',
                 'priceCount' => (int) ($c->price_rows_count ?? 0),
+                // Tên khách nguồn đang DÙNG CHUNG bảng giá ('' = bảng giá riêng).
+                'priceSource' => $c->price_source_id ? (string) ($nameById[$c->price_source_id] ?? '') : '',
                 // Danh sách BẢNG GIÁ (price book) theo khoảng ngày của khách.
                 'priceBooks' => $c->priceBooks->map(fn ($b) => [
                     'id'    => (int) $b->id,
@@ -517,6 +563,7 @@ trait HandlesPricingAndImport
             $geoArr   = $key === 'warehouses' ? ($cfg['warehouseGeoArr'] ?? null) : null;    // Kho có thêm Tọa độ "lat,lng"
             $noteArr  = $key === 'warehouses' ? ($cfg['warehouseNoteArr'] ?? null) : null;   // Kho có thêm Ghi chú (địa chỉ đóng hàng)
             $provArr  = $key === 'warehouses' ? ($cfg['warehouseProvinceArr'] ?? null) : null;   // Kho có thêm Tỉnh (khớp phí tuyến theo tỉnh)
+            $oldProvArr = $key === 'warehouses' ? ($cfg['warehouseOldProvArr'] ?? null) : null;  // Kho có thêm Tỉnh cũ (quy chế lương)
             // Trang Cài đặt đã chặn trùng; đây là chốt chặn cuối (tab mở lâu, payload cũ). Thêm nhanh không sửa dòng cũ nên bỏ qua.
             // Đổi ký hiệu cả nhóm → ghi nhận TRƯỚC khi cập nhật dòng (cần ký hiệu cũ trong DB) để đổi theo sau khi lưu.
             $renames = [];
@@ -535,6 +582,7 @@ trait HandlesPricingAndImport
                 if ($geoArr !== null) { [$lat, $lng] = $this->parseLatLng($geoArr[$i] ?? ''); $attrs['lat'] = $lat; $attrs['lng'] = $lng; }
                 if ($noteArr !== null) $attrs['note'] = (trim((string) ($noteArr[$i] ?? '')) ?: null);
                 if ($provArr !== null) $attrs['province'] = (trim((string) ($provArr[$i] ?? '')) ?: null);
+                if ($oldProvArr !== null) $attrs['old_province'] = (trim((string) ($oldProvArr[$i] ?? '')) ?: null);
                 // Ưu tiên KHỚP THEO ID (dòng đã có sẵn) → cho phép SỬA mã mà không đứt link.
                 // Có idArr (payload mới, authoritative): id rỗng = dòng MỚI → LUÔN tạo mới, KHÔNG gộp theo mã
                 // → cho phép NHIỀU TÊN dùng chung 1 ký hiệu (vd: Địa điểm). Không có idArr (payload cũ):

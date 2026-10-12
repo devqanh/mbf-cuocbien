@@ -286,6 +286,38 @@ try {
     $ok($arrS['ioScope'] === 'xuat' && (int) $stS->base_amount === 1000000 && $arrS['baseAmount'] === 1000000 && $arrS['vatAmount'] === 100000 && $arrS['chohoAmount'] === 50000 && $arrS['tongThu'] === 1150000 && count($arrS['lines']) === 2, 'F6 phạm vi Xuất: tính tiền chỉ lô Xuất (nền 1tr + VAT 100k + chi hộ 50k), lô Nhập vẫn lưu dòng');
     $stS->update(['io_scope' => 'all']);
     $ok($svc->statementToArray($stS->fresh(['lines', 'payments', 'customer']))['baseAmount'] === 1700000, 'F7 đổi phạm vi về Tất cả → tính đủ cả 2 lô (1.7tr)');
+    // CỘT CHI PHÍ RIÊNG theo bảng kê (extraCols) — số từng lô ở detail.extras; cột có vat chịu VAT; key không còn cột → bỏ qua.
+    $colsX = [['key' => 'lc', 'label' => 'Lưu ca', 'vat' => true], ['key' => 'pk', 'label' => 'Phí khác', 'vat' => false], ['key' => '', 'label' => '  ', 'vat' => true]];
+    $aX = TruckingV2Service::statementAmounts([
+        ['cuoc' => 1000000, 'dau' => 0, 'chiHo' => 50000, 'extras' => ['lc' => 100000, 'pk' => 20000, 'gone' => 999999]],
+        ['cuoc' => 500000, 'dau' => 0, 'chiHo' => 0, 'extras' => ['lc' => 30000]],
+    ], 10, TruckingV2Service::extraColsOf($colsX));
+    // nền 1.5tr; phí riêng 150k; VAT 10% × (nền + lưu ca 130k) = 163k; tổng = 1.5tr + 163k + 50k + 150k = 1.863tr
+    $ok($aX['base'] === 1500000 && $aX['extra'] === 150000 && $aX['vat'] === 163000 && $aX['choho'] === 50000 && $aX['total'] === 1863000 && count(TruckingV2Service::extraColsOf($colsX)) === 2,
+        'F8 cột riêng: Lưu ca (VAT) + Phí khác (không VAT); key lạ bỏ qua; cột không nhãn bị loại; VAT 10% trên nền + lưu ca');
+    $stX = $svc->saveStatement(['no' => '__TEST_BK_X', 'customer' => $cA->name, 'date' => '2026-10-05', 'vatRate' => 10, 'ioScope' => 'xuat', 'extraCols' => $colsX, 'lines' => [
+        ['id' => null, 'booking' => 'X1', 'io' => 'Xuất', 'phaiThu' => 1000000, 'cuoc' => 1000000, 'detail' => ['cuoc' => 1000000, 'dau' => 0, 'chiHo' => 50000, 'extras' => ['lc' => 100000, 'pk' => 20000, 'gone' => 5]]],
+        ['id' => null, 'booking' => 'N1', 'io' => 'Nhập', 'phaiThu' => 700000, 'cuoc' => 700000, 'detail' => ['cuoc' => 700000, 'dau' => 0, 'chiHo' => 0, 'extras' => ['lc' => 999000]]],
+    ]]);
+    $arrX = $svc->statementToArray($stX->fresh(['lines', 'payments', 'customer']));
+    // phạm vi Xuất: chỉ X1 tính → nền 1tr, phí riêng 120k, VAT 10% × (1tr + 100k) = 110k, chi hộ 50k, tổng 1.28tr; N1 vẫn lưu extras
+    $ok(count($arrX['extraCols']) === 2 && $arrX['extraCols'][0]['key'] === 'lc' && $arrX['extraCols'][0]['vat'] === true
+        && (int) $stX->extra_amount === 120000 && $arrX['extraAmount'] === 120000 && $arrX['vatAmount'] === 110000 && $arrX['tongThu'] === 1280000
+        && ($arrX['lines'][0]['detail']['extras'] ?? null) === ['lc' => 100000, 'pk' => 20000] && ($arrX['lines'][1]['detail']['extras']['lc'] ?? null) === 999000,
+        'F9 lưu + đọc lại: extraCols chuẩn hóa, extras dòng chỉ giữ key của cột còn tồn tại, phạm vi Xuất chỉ tính lô Xuất (tổng 1.28tr)');
+    $rowX = collect($svc->statementsForList(null, 0, ['customer' => $cA->name]))->firstWhere('no', '__TEST_BK_X');
+    $ok($rowX && $rowX['extraAmount'] === 120000 && $rowX['vatAmount'] === 110000 && $rowX['tongThu'] === 1280000, 'F10 danh sách: phí riêng 120k, VAT 110k, tổng 1.28tr từ cột dẫn xuất');
+    // Excel: "Lưu ca" trùng cột mẫu K → điền K; "Phí khác" chèn cột mới trước Tổng tiền (O), Tổng tiền dời sang P, Ghi chú sang Q.
+    $resp = (new \App\Services\Trucking\StatementExcelExporter())->download($arrX, $svc->sellerInfo());
+    ob_start(); $resp->sendContent(); $binX = ob_get_clean();
+    $tmpX = tempnam(sys_get_temp_dir(), 'bkx') . '.xlsx'; file_put_contents($tmpX, $binX);
+    $shX = \PhpOffice\PhpSpreadsheet\IOFactory::load($tmpX)->getActiveSheet();
+    $hdrX = fn ($c) => trim((string) $shX->getCell($c . '21')->getValue());
+    $ok($hdrX('K') === 'Lưu ca' && $hdrX('O') === 'Phí khác' && $hdrX('P') === 'Tổng tiền' && $hdrX('Q') === 'Ghi chú'
+        && (int) $shX->getCell('K22')->getValue() === 100000 && (int) $shX->getCell('O22')->getValue() === 20000 && (int) $shX->getCell('P22')->getValue() === 1120000
+        && (int) $shX->getCell('K23')->getValue() === 100000 && (int) $shX->getCell('O23')->getValue() === 20000 && (int) $shX->getCell('P23')->getValue() === 1120000,
+        'F11 Excel: Lưu ca vào cột mẫu K, Phí khác chèn cột O, Tổng tiền dời sang P (= cước 1tr + 100k + 20k), dòng Tổng cộng đúng');
+    @unlink($tmpX);
 
     // ---------- G. Đơn vị xe ngoài + Bảng kê xe ngoài ----------
     $section('G. Đơn vị xe ngoài + Bảng kê xe ngoài (payable)');

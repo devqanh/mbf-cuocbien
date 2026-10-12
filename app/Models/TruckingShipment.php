@@ -20,7 +20,7 @@ class TruckingShipment extends Model
 
     protected $fillable = [
         'sheet', 'customer_id',
-        'booking', 'inv', 'io', 'cru',
+        'booking', 'inv', 'io', 'cru', 'kep_cont', 'ket_hop',
         'qty', 'cont_type', 'cont_no', 'declaration_no', 'declarations', 'declaration_note', 'thanh_ly_date', 'ha_cont_date', 'csht_note', 'kho',
         'from_loc', 'to_loc',
         'bks_vao', 'bks_ra', 'driver', 'ra_mode', 'ra_other_id',
@@ -35,6 +35,8 @@ class TruckingShipment extends Model
 
     protected $casts = [
         'cru'             => 'boolean',
+        'kep_cont'        => 'boolean',   // kẹp 2 cont 20' đi đóng hàng (quy chế lương: kẹp cont)
+        'ket_hop'         => 'boolean',   // cont nhập trả nhà máy rồi dùng sang nhà máy khác đóng xuất (quy chế: kết hợp)
         'is_barge'        => 'boolean',
         'qty'             => 'integer',
         'ra_other_id'     => 'integer',

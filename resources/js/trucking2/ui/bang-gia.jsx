@@ -1,5 +1,5 @@
 import React from "react";
-import { useIsMobile, I, Btn, Modal, DateField } from "@trk/lib.jsx";
+import { useIsMobile, I, Btn, Modal, DateField, Combo } from "@trk/lib.jsx";
 import { PriceList } from "@trk/pop.jsx";
 import { buildPriceBookWb, buildPriceTemplateWb, orderContKeys, rowContKeys } from "../components/price-excel.js";
 
@@ -35,7 +35,7 @@ const writeHash = (kh, bg, info) => {
   try { window.history.replaceState(null, "", url); } catch (e) { window.location.hash = s; }   // replaceState → không spam history
 };
 
-function BangGiaPage({ cfg, setBooks, api, routes }) {
+function BangGiaPage({ cfg, setBooks, setCustInfo, api, routes }) {
   const { useState, useEffect, useRef } = React;
   const isMobile = useIsMobile();
   const customers = cfg.customers || [];
@@ -44,7 +44,25 @@ function BangGiaPage({ cfg, setBooks, api, routes }) {
   const [sel, setSel] = useState(() => (hash0.kh && customers.includes(hash0.kh) ? hash0.kh : (customers[0] || null)));
   const cur = sel != null && customers.includes(sel) ? sel : (customers[0] || null);
   const data = (cur && info[cur]) || {};
-  const books = data.priceBooks || [];
+  // DÙNG CHUNG bảng giá: khách này lấy bảng giá theo ngày của khách nguồn → không có bảng giá để sửa ở đây.
+  const priceSrc = data.priceSource && info[data.priceSource] ? data.priceSource : "";
+  const books = priceSrc ? [] : (data.priceBooks || []);
+  const srcBooks = priceSrc ? (info[priceSrc].priceBooks || []) : [];
+  const linkedFrom = customers.filter((n) => (info[n] || {}).priceSource === cur);   // khách đang dùng chung bảng giá của khách này
+  const [srcBusy, setSrcBusy] = useState(false);
+  const changeSource = async (src) => {
+    if (!cur || srcBusy || src === priceSrc) return;
+    const ok = await window.confirmAction(src
+      ? { title: "Dùng chung bảng giá?", text: `<b>${cur}</b> sẽ lấy bảng giá (theo ngày) của <b>${src}</b> cho định giá lô, bảng kê và báo cáo. Bảng giá riêng của khách này (nếu có) được giữ lại, bỏ dùng chung là dùng lại.`, confirmText: "Dùng chung" }
+      : { title: "Bỏ dùng chung?", text: `<b>${cur}</b> quay về bảng giá riêng của mình${(data.priceBooks || []).length ? "" : " (hiện chưa có bảng giá nào — lô sẽ “chưa khớp bảng giá” cho tới khi tạo)"}.`, confirmText: "Bỏ dùng chung", danger: true });
+    if (!ok) return;
+    setSrcBusy(true); setMsg("");
+    try {
+      const r = await api("PUT", routes.priceSource + "/" + data.id, { source: src || null });
+      if (r && r.ok) setCustInfo(cur, { priceSource: r.priceSource || "" });
+      else window.trkToast && window.trkToast((r && r.msg) || "Không đổi được", "error");
+    } finally { setSrcBusy(false); }
+  };
 
   const [selBookId, setSelBookId] = useState(() => (books.some((b) => b.id === hash0.bg) ? hash0.bg : (books[0]?.id ?? null)));
   // Đổi khách → về bảng giá đầu tiên; riêng khi hash chỉ định book (mở link / back-forward) thì giữ đúng book đó.
@@ -209,16 +227,21 @@ function BangGiaPage({ cfg, setBooks, api, routes }) {
           {customers.map((name) => {
             const active = cur === name;
             const ci = info[name] || {};
-            const n = ci.priceCount || (ci.priceBooks || []).reduce((a, b) => a + (b.count || 0), 0);
-            const nb = (ci.priceBooks || []).length;
+            const srcOf = ci.priceSource && info[ci.priceSource] ? ci.priceSource : "";
+            const bks = srcOf ? (info[srcOf].priceBooks || []) : (ci.priceBooks || []);
+            const n = bks.reduce((a, b) => a + (b.count || 0), 0);
+            const nb = bks.length;
             return (
               <button key={name} type="button" onClick={() => setSel(name)}
                 style={{ textAlign: "left", border: isMobile ? "1px solid var(--line)" : "none", cursor: "pointer", borderRadius: isMobile ? 999 : 8, padding: "9px 11px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexShrink: 0, whiteSpace: isMobile ? "nowrap" : "normal", width: isMobile ? "auto" : "100%",
                   background: active ? "var(--accent-weak)" : (isMobile ? "#fff" : "transparent"), color: active ? "var(--accent)" : "var(--ink)", fontWeight: active ? 600 : 400, fontSize: 13.5 }}
                 onMouseEnter={(e) => { if (!active && !isMobile) e.currentTarget.style.background = "var(--line-2)"; }}
                 onMouseLeave={(e) => { if (!active && !isMobile) e.currentTarget.style.background = "transparent"; }}>
-                <span style={isMobile ? { whiteSpace: "nowrap" } : { flex: 1, minWidth: 0, overflowWrap: "anywhere", lineHeight: 1.3 }}>{name}</span>
-                {nb > 0 && <span className="tnum" style={{ fontSize: 11, fontWeight: 600, color: active ? "var(--accent)" : "var(--ink-4)", background: active ? "#fff" : "var(--line-2)", padding: "1px 7px", borderRadius: 999, flexShrink: 0 }} title={`${nb} bảng giá · ${n} dòng`}>{nb}</span>}
+                <span style={isMobile ? { whiteSpace: "nowrap" } : { flex: 1, minWidth: 0, overflowWrap: "anywhere", lineHeight: 1.3 }}>
+                  {name}
+                  {srcOf && <span style={{ display: isMobile ? "inline" : "block", marginLeft: isMobile ? 6 : 0, fontSize: 11, fontWeight: 500, color: "var(--ink-4)" }}><i className="bi bi-link-45deg" /> giá của {srcOf}</span>}
+                </span>
+                {nb > 0 && <span className="tnum" style={{ fontSize: 11, fontWeight: 600, color: active ? "var(--accent)" : "var(--ink-4)", background: active ? "#fff" : "var(--line-2)", padding: "1px 7px", borderRadius: 999, flexShrink: 0 }} title={srcOf ? `Dùng chung ${nb} bảng giá của ${srcOf} · ${n} dòng` : `${nb} bảng giá · ${n} dòng`}>{srcOf ? <i className="bi bi-link-45deg" /> : null}{nb}</span>}
               </button>
             );
           })}
@@ -236,6 +259,44 @@ function BangGiaPage({ cfg, setBooks, api, routes }) {
               <div style={{ fontSize: 13.5, color: "var(--ink-3)", marginTop: 3 }}>{cur}{data.taxCode ? ` · MST ${data.taxCode}` : ""}</div>
             </div>
 
+            {/* Nguồn bảng giá: riêng hoặc DÙNG CHUNG của 1 khách khác (chỉ 1 cấp — nguồn phải là khách có bảng giá riêng) */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14, padding: "10px 12px", background: "#fff", border: "1px solid var(--line)", borderRadius: 10 }}>
+              <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-3)" }}><i className="bi bi-link-45deg" /> Bảng giá dùng cho khách này</span>
+              {/* Ô chọn có tìm kiếm; trống = bảng giá riêng (nút × để bỏ dùng chung). Khách đang làm gốc thì không chọn được. */}
+              {linkedFrom.length > 0
+                ? <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink-2)" }}>Bảng giá riêng</span>
+                : <div style={{ width: 320, maxWidth: "100%", opacity: srcBusy ? 0.6 : 1, pointerEvents: srcBusy ? "none" : "auto" }}>
+                    <Combo value={priceSrc} strict clearable small placeholder="Bảng giá riêng — gõ tên khách để dùng chung"
+                      onChange={(v) => changeSource(v || "")}
+                      options={customers.filter((n) => n !== cur && !(info[n] || {}).priceSource).map((n) => {
+                        const nb = ((info[n] || {}).priceBooks || []).length;
+                        return { value: n, label: `${n} (${nb ? nb + " bảng giá" : "chưa có bảng giá"})` };
+                      })} />
+                  </div>}
+              {linkedFrom.length > 0 && <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Đang là bảng giá gốc của: <b>{linkedFrom.join(", ")}</b> — sửa giá ở đây là áp cho cả các khách đó.</span>}
+            </div>
+
+            {priceSrc ? (
+              <div style={{ background: "#fff", border: "1px solid var(--accent-weak)", borderRadius: 12, padding: "18px 20px" }}>
+                <div style={{ fontSize: 14, color: "var(--ink-2)", lineHeight: 1.6 }}>
+                  <b>{cur}</b> đang <b>dùng chung bảng giá của {priceSrc}</b> — định giá lô, bảng kê và báo cáo lấy bảng giá phủ ngày của {priceSrc}. Sửa giá thì sửa ở {priceSrc}.
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0 14px" }}>
+                  {srcBooks.map((b) => (
+                    <span key={b.id} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "6px 11px", borderRadius: 999, fontSize: 12.5, fontWeight: 600, border: "1px solid var(--line)", color: "var(--ink-2)" }}>
+                      <i className="bi bi-calendar3" style={{ opacity: .7 }} />{b.label ? <b>{b.label}</b> : null} {bookRange(b)}
+                      <span className="tnum" style={{ fontSize: 11, fontWeight: 700, background: "var(--line-2)", color: "var(--ink-4)", padding: "0 6px", borderRadius: 999 }}>{b.count || 0}</span>
+                    </span>
+                  ))}
+                  {!srcBooks.length && <span style={{ fontSize: 12.5, color: "var(--warn)" }}>{priceSrc} chưa có bảng giá nào — lô sẽ “chưa khớp bảng giá”.</span>}
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <Btn variant="primary" onClick={() => setSel(priceSrc)}><i className="bi bi-box-arrow-up-right" /> Mở bảng giá {priceSrc}</Btn>
+                  <Btn onClick={() => changeSource("")} disabled={srcBusy}>Bỏ dùng chung</Btn>
+                </div>
+                {(data.priceBooks || []).length > 0 && <div style={{ fontSize: 12, color: "var(--ink-4)", marginTop: 10 }}>Khách này còn {(data.priceBooks || []).length} bảng giá riêng (đang không dùng) — bỏ dùng chung là dùng lại.</div>}
+              </div>
+            ) : (<>
             {/* Thanh chọn BẢNG GIÁ (price book theo khoảng ngày) */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
               {books.map((b) => {
@@ -308,9 +369,10 @@ function BangGiaPage({ cfg, setBooks, api, routes }) {
               </>
             ) : (
               <div style={{ display: "grid", placeItems: "center", padding: "50px", color: "var(--ink-4)", fontSize: 13.5, background: "#fff", border: "1px dashed var(--line)", borderRadius: 12 }}>
-                Khách này chưa có bảng giá. Bấm <b style={{ margin: "0 4px" }}>Tạo bảng giá</b> để thêm (chọn khoảng ngày áp dụng).
+                Khách này chưa có bảng giá. Bấm <b style={{ margin: "0 4px" }}>Tạo bảng giá</b> để thêm (chọn khoảng ngày áp dụng), hoặc chọn <b style={{ margin: "0 4px" }}>Dùng chung của</b> 1 khách cùng giá ở ô phía trên.
               </div>
             )}
+            </>)}
           </div>
         ) : (
           <div style={{ display: "grid", placeItems: "center", height: "100%", color: "var(--ink-4)", fontSize: 13.5 }}>Chọn một khách hàng để xem bảng giá.</div>

@@ -12,8 +12,10 @@ use Illuminate\Support\Str;
 /**
  * Import CSHT / CHI PHÍ LÔ HÀNG — 1 dòng file = 1 lô.
  *  - File "Xuất chi phí lô" (2 dòng tiêu đề): mỗi KHOẢN là 1 NHÓM cột (Số tiền · Vat · Số HĐ · Người chi ·
- *    Ngày HĐ · Ghi chú) → frontend gửi `groups[nhãn nhóm] = {amount, vat, invoiceNo, payer, date, note}`.
- *    Cột lẻ mang tên khoản (vd "CHI HỘ" = Chi hộ LCC) → `amounts[tiêu đề]`. Cột NHÃN → `tags`.
+ *    Ngày HĐ · Ghi chú · Chi hộ (x)) → frontend gửi `groups[nhãn nhóm] = {amount, vat, invoiceNo, payer, date, note, billable}`.
+ *    Cột lẻ mang tên khoản (vd "CHI HỘ LCC" = Chi hộ LCC) → `amounts[tiêu đề]`. Cột NHÃN → `tags`.
+ *  - Chi hộ (x) = dấu tích Chi hộ của dòng: x = tích; trống = KHÔNG tích khi nhóm có số liệu (riêng lô nhiều
+ *    dòng cùng khoản mà tích lẫn lộn thì ô trống = giữ nguyên, vì file xuất ghi trống cho trường hợp đó).
  *  - File 1 dòng tiêu đề / mẫu CSHT cũ: `amounts[tiêu đề]` + Số HĐ / Ngày HĐ / Ghi chú dùng chung, chỉ áp
  *    cho CSHT + Thanh lí (như trước).
  *  - Khớp lô theo ID LÔ; dòng không có ID thì theo SỐ CONT (cont trùng nhiều lô → lỗi).
@@ -29,7 +31,7 @@ trait HandlesCshtImport
     private const CSHT_ITEM = 'CSHT';
     private const THANHLY_ITEM = 'Thanh lí';
     private const EXT_TRUCK_ITEM = 'Cước xe ngoài';
-    private const CSHT_FIELD_LABELS = ['amount' => 'Số tiền', 'vat' => 'Vat', 'invoice_no' => 'Số HĐ', 'payer' => 'Người chi', 'date' => 'Ngày HĐ', 'note' => 'Ghi chú'];
+    private const CSHT_FIELD_LABELS = ['amount' => 'Số tiền', 'vat' => 'Vat', 'invoice_no' => 'Số HĐ', 'payer' => 'Người chi', 'date' => 'Ngày HĐ', 'note' => 'Ghi chú', 'billable' => 'Chi hộ'];
 
     /** Dry-run: chỉ kiểm tra + thống kê sẽ tạo / sửa / giữ nguyên, không ghi DB. */
     public function validateCshtImport(string $sheet, array $rows): array
@@ -195,6 +197,10 @@ trait HandlesCshtImport
                 foreach ($specs as [$item, $fields]) {
                     $lines = $s->costLines->filter(fn ($c) => (int) $c->cost_item_id === (int) $item->id
                         || $this->cshtNorm((string) $c->item) === $this->cshtNorm($item->name))->values();
+                    // Chi hộ để trống trên lô nhiều dòng tích lẫn lộn = giữ nguyên (file xuất không ghi được trạng thái đó).
+                    if (! empty($fields['_billableBlank']) && $lines->pluck('billable')->map(fn ($b) => (bool) $b)->unique()->count() > 1) unset($fields['billable']);
+                    unset($fields['_billableBlank']);
+                    if (! $fields) { $stats['same']++; continue; }
                     $diff = $this->cshtDiff($lines, $fields);   // các ô KHÁC hiện tại (nhiều dòng: so tổng tiền / giá trị chung)
 
                     if ($item->name === self::DECL_FEE_ITEM || $lines->contains(fn ($c) => $c->src === 'thanhLyFee')) {
@@ -292,13 +298,34 @@ trait HandlesCshtImport
             if (! $this->isValidDateStr($raw) && trim((string) ($f['date'] ?? '')) === '') $reasons[] = "Ngày HĐ {$itemName} “{$raw}” sai định dạng (cần dd/mm/yyyy)";
             elseif ($d = $this->cshtDate($f)) $out['date'] = $d;
         }
+        // Chi hộ (x): chỉ khi file có ô này. x = tích; trống = không tích nhưng chỉ khi nhóm có số liệu khác
+        // (nhóm trống hoàn toàn = lô không đụng khoản này).
+        if (array_key_exists('billable', $f)) {
+            $b = $this->cshtBillable($f['billable']);
+            if ($b === null) $reasons[] = "Chi hộ {$itemName} “" . trim((string) $f['billable']) . '” không hiểu — ghi x nếu có tích, để trống nếu không';
+            elseif ($b !== '' || $out) {
+                $out['billable'] = $b !== '' && $b;
+                if ($b === '') $out['_billableBlank'] = true;
+            }
+        }
         return $out;
     }
 
     private function cshtGroupHasValue(array $f): bool
     {
-        foreach (['amount', 'vat', 'invoiceNo', 'payer', 'date', 'dateRaw', 'note'] as $k) if (trim((string) ($f[$k] ?? '')) !== '') return true;
+        foreach (['amount', 'vat', 'invoiceNo', 'payer', 'date', 'dateRaw', 'note', 'billable'] as $k) if (trim((string) ($f[$k] ?? '')) !== '') return true;
         return false;
+    }
+
+    /** Ô Chi hộ (x): true = tích, false = ghi rõ không tích, '' = để trống, null = không hiểu. */
+    private function cshtBillable($v): bool|string|null
+    {
+        if (is_bool($v)) return $v;
+        $a = mb_strtolower(trim(Str::ascii(trim((string) $v))));
+        if ($a === '') return '';
+        if (in_array($a, ['x', 'v', '1', 'co', 'yes', 'true', 'chi ho'], true) || in_array(trim((string) $v), ['✓', '✔', '☑'], true)) return true;
+        if (in_array($a, ['0', '-', 'khong', 'no', 'false'], true)) return false;
+        return null;
     }
 
     /**
@@ -318,9 +345,10 @@ trait HandlesCshtImport
             $vals = $lines->map(function ($c) use ($k) {
                 if ($k === 'date') return $this->outDate($c->date);
                 if ($k === 'vat') return (string) round((float) $c->vat, 2);
+                if ($k === 'billable') return $c->billable ? '1' : '0';
                 return trim((string) ($c->{$k} ?? ''));
             })->unique()->values();
-            $want = $k === 'vat' ? (string) round((float) $v, 2) : (string) $v;
+            $want = $k === 'vat' ? (string) round((float) $v, 2) : ($k === 'billable' ? ($v ? '1' : '0') : (string) $v);
             if ($vals->count() !== 1 || (string) $vals->first() !== $want) $diff[$k] = $v;
         }
         return $diff;

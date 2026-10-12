@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /** Khách hàng trucking — master data (MST, liên hệ, hạn TT, bảng giá). */
@@ -14,6 +15,15 @@ class TruckingCustomer extends Model
     ];
 
     protected $casts = ['term_days' => 'integer'];
+
+    /**
+     * Khách nguồn mà khách này DÙNG CHUNG bảng giá (null = bảng giá riêng). Chỉ 1 cấp: khách nguồn không được
+     * tự dùng chung của khách khác. Không nằm trong $fillable để lưu danh mục khách không vô tình xóa liên kết.
+     */
+    public function priceSource(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'price_source_id');
+    }
 
     public function priceRows(): HasMany
     {

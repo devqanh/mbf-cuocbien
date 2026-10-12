@@ -11,7 +11,7 @@ const CAT_KEYS = {
   locations: ["locations", "locationCodeArr", "locationsIdArr"],
   customers: ["customers", "customerInfo"],
   contTypes: ["contTypes"],
-  warehouses: ["warehouses", "warehouseCodeArr", "warehouseAddrArr", "warehouseNoteArr", "warehouseGeoArr", "warehouseProvinceArr", "warehousesIdArr"],
+  warehouses: ["warehouses", "warehouseCodeArr", "warehouseAddrArr", "warehouseNoteArr", "warehouseGeoArr", "warehouseProvinceArr", "warehouseOldProvArr", "warehousesIdArr"],
   payers: ["payers"],
   costItems: ["costItems", "prices", "costColors", "costAuto", "costVat"],
   choHoItems: ["choHoItems", "prices"],
@@ -25,7 +25,7 @@ const CAT_KEYS = {
   assetCostTypes: ["assetCostTypes"],
   officeCostTypes: ["officeCostTypes"],
   payMethods: ["payMethods"],
-  routeFees: ["routeFees"],
+  routeFees: [],   // Quy chế lương chuyến: bảng + quy chế lưu ngay qua endpoint riêng (không còn danh sách tuyến)
   fuelPrices: ["fuelPrices"],
   __general: ["vatDefault", "freeTimeHours", "freeTimeRules", "dueWarnDays"],
 };
@@ -34,7 +34,7 @@ const CAT_KEYS = {
 const TAB_LABELS = {
   locations: "Địa điểm", customers: "Khách hàng", contTypes: "Loại cont", warehouses: "Kho",
   payers: "Bên thanh toán", costItems: "Khoản chi phí", choHoItems: "Khoản chi hộ", revItems: "Khoản doanh thu",
-  vehicles: "Đội xe", drivers: "Tài xế", salaryItems: "Khoản lương", extVendors: "Đơn vị xe ngoài", vehicleCostTypes: "Loại chi phí xe", assetCategories: "Loại tài sản", assetCostTypes: "Loại chi phí tài sản", officeCostTypes: "Loại chi phí văn phòng", payMethods: "Hình thức thanh toán", routeFees: "Phí tuyến đường", fuelPrices: "Bảng giá dầu", __general: "Cấu hình chung",
+  vehicles: "Đội xe", drivers: "Tài xế", salaryItems: "Khoản lương", extVendors: "Đơn vị xe ngoài", vehicleCostTypes: "Loại chi phí xe", assetCategories: "Loại tài sản", assetCostTypes: "Loại chi phí tài sản", officeCostTypes: "Loại chi phí văn phòng", payMethods: "Hình thức thanh toán", routeFees: "Quy chế lương chuyến", fuelPrices: "Bảng giá dầu", __general: "Cấu hình chung",
 };
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -91,7 +91,8 @@ function SettingsApp() {
   }, [sel]);
 
   // Sửa tay → cập nhật state + đánh dấu TAB hiện tại có thay đổi (KHÔNG tự lưu)
-  const setCfgKey = (key, val) => { setCfgState((c) => ({ ...c, [key]: val })); setDirty((d) => ({ ...d, [sel]: true })); };
+  // Ngoại lệ: routeFeeBooks (bảng quy chế lương chuyến) đã lưu NGAY qua endpoint riêng → chỉ cập nhật state, không đánh dấu.
+  const setCfgKey = (key, val) => { setCfgState((c) => ({ ...c, [key]: val })); if (key !== "routeFeeBooks") setDirty((d) => ({ ...d, [sel]: true })); };
 
   // Lưu RIÊNG tab đang chọn — chỉ gửi các key của tab đó. HỎI xác nhận trước khi lưu;
   // cảnh báo mạnh nếu phát hiện đang XÓA bớt mục (xóa khách hàng sẽ kéo theo bảng giá).

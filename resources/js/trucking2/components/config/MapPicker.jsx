@@ -53,7 +53,7 @@ export function AddrInput({ value, onChange, onPlace, mapsKey, placeholder }) {
       onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
       onFocus={(e) => { attach(); e.target.style.borderColor = "var(--accent)"; }}
       onBlur={(e) => (e.target.style.borderColor = "var(--line)")}
-      style={{ width: "100%", padding: "7px 10px", fontSize: 13, border: "1px solid var(--line)", borderRadius: 8, outline: "none", background: "#fff" }} />
+      style={{ width: "100%", minWidth: 0, padding: "7px 10px", fontSize: 13, border: "1px solid var(--line)", borderRadius: 8, outline: "none", background: "#fff" }} />
   );
 }
 

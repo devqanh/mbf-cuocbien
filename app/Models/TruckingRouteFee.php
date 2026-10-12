@@ -12,9 +12,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class TruckingRouteFee extends Model
 {
     protected $fillable = [
-        'book_id', 'route', 'route_key', 've_tram', 'tien_duong', 'tro_cap', 'phi_khac',
+        'book_id', 'route', 'route_key', 'customer_ids', 've_tram', 'tien_duong', 'tro_cap', 'phi_khac',
         'cru', 'luong', 'luong_no_cru', 'luong_nokeo', 'luong_nokeo_no_cru',
-        'salary_parts', 'km', 'dau_2cau', 'dau_1cau', 'extra_fees', 'sort',
+        'salary_parts', 'km', 'dau_2cau', 'dau_1cau', 'extra_fees', 'kho_overrides', 'sort',
     ];
 
     public function book(): BelongsTo
@@ -27,6 +27,8 @@ class TruckingRouteFee extends Model
         'cru'          => 'boolean',
         'salary_parts' => 'array',
         'extra_fees'   => 'array',
+        'kho_overrides' => 'array',   // chi tiết theo kho: [{kho, km, dau2, dau1}] (null = theo tuyến)
+        'customer_ids'  => 'array',   // khách áp dụng (null/[] = mọi khách)
         've_tram'    => 'decimal:2',
         'tien_duong' => 'decimal:2',
         'tro_cap'    => 'decimal:2',

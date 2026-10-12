@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 class TruckingRoutePay extends Model
 {
     protected $fillable = [
-        'work_date', 'bks', 'vehicle_id', 'driver', 'driver_id', 'paid', 'paid_date', 'note', 'extra_items',
+        'work_date', 'bks', 'vehicle_id', 'driver', 'driver_id', 'paid', 'paid_date', 'note', 'extra_items', 'trip_overrides',
         'frozen', 'frozen_at', 'frozen_data', 'updated_by',
     ];
 
@@ -19,6 +19,7 @@ class TruckingRoutePay extends Model
         'vehicle_id' => 'integer',
         'driver_id'  => 'integer',
         'extra_items' => 'array',
+        'trip_overrides' => 'array',   // chỉnh tay theo chuyến: {cont: {liters?, choho?: [khóa khoản]}}
         'frozen'      => 'boolean',
         'frozen_at'   => 'datetime',
         'frozen_data' => 'array',

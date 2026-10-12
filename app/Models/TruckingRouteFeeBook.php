@@ -12,9 +12,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class TruckingRouteFeeBook extends Model
 {
-    protected $fillable = ['label', 'from_date', 'sort'];
+    protected $fillable = ['label', 'from_date', 'regulation', 'sort'];
 
-    protected $casts = ['from_date' => 'date', 'sort' => 'integer'];
+    // regulation = quy chế lương chuyến đi kèm bảng (App\Support\SalaryZones::cleanRegulation)
+    protected $casts = ['from_date' => 'date', 'regulation' => 'array', 'sort' => 'integer'];
 
     public function fees(): HasMany
     {

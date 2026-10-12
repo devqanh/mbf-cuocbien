@@ -150,6 +150,8 @@ Route::middleware(['auth', RestrictSpendOnlySession::class])->group(function () 
         Route::middleware('permission:driverPay.manage')->group(function () {
             Route::post('/lo-trinh/pay',           [LoTrinhController::class, 'savePay'])->name('loTrinh.savePay');
             Route::post('/lo-trinh/freeze',        [LoTrinhController::class, 'freeze'])->name('loTrinh.freeze');
+            Route::post('/lo-trinh/fuel',          [LoTrinhController::class, 'saveFuel'])->name('loTrinh.saveFuel');   // sửa lít dầu 1 chuyến
+            Route::post('/lo-trinh/amount',        [LoTrinhController::class, 'saveAmount'])->name('loTrinh.saveAmount');   // sửa phụ cấp / lương 1 chuyến
         });
         // --- Báo cáo chi phí (lãi lỗ) + báo cáo tài sản (quyền riêng reports.view) ---
         Route::middleware('permission:reports.view')->group(function () {
@@ -234,6 +236,7 @@ Route::middleware(['auth', RestrictSpendOnlySession::class])->group(function () 
             Route::put('/price-books/{book}',     [PriceController::class, 'updateBook'])->name('priceBookUpdate')->whereNumber('book');
             Route::delete('/price-books/{book}',  [PriceController::class, 'deleteBook'])->name('priceBookDelete')->whereNumber('book');
             Route::put('/price-books/{book}/rows', [PriceController::class, 'saveBookRows'])->name('priceBookRows')->whereNumber('book');
+            Route::put('/price-source/{customer}', [PriceController::class, 'setSource'])->name('priceSource')->whereNumber('customer');
         });
 
         // --- Bảng kê ---
@@ -243,6 +246,7 @@ Route::middleware(['auth', RestrictSpendOnlySession::class])->group(function () 
             Route::get('/statement-candidates',        [StatementController::class, 'candidates'])->name('statements.candidates');   // lô đã định giá ở backend cho bảng kê mới
             Route::get('/statement-drift',             [StatementController::class, 'drift'])->name('statements.drift');   // đối soát cả danh sách → cảnh báo cần tính lại
             Route::get('/statement-list',              [StatementController::class, 'list'])->name('statements.list');   // paginate + filter (load-more cho data lớn)
+            Route::get('/statement-customers',         [StatementController::class, 'customersInPeriod'])->name('statements.customers');   // khách có lô ra trong kỳ + đã/chưa lập bảng kê
             Route::get('/bang-ke/{statement}',         [StatementController::class, 'view'])->name('statements.view');
             Route::get('/bang-ke/{statement}/context', [StatementController::class, 'context'])->name('statements.context');
             Route::get('/bang-ke/{statement}/reprice', [StatementController::class, 'reprice'])->name('statements.reprice');   // tính lại ở backend
@@ -253,6 +257,7 @@ Route::middleware(['auth', RestrictSpendOnlySession::class])->group(function () 
         });
         Route::middleware('permission:statements.update')->group(function () {
             Route::put('/statements/{statement}', [StatementController::class, 'update'])->name('statements.update');
+            Route::patch('/statements/{statement}/due', [StatementController::class, 'setDueDate'])->name('statements.due');   // gắn hạn TT ngay trên danh sách
         });
         Route::middleware('permission:statements.delete')->group(function () {
             Route::delete('/statements/{statement}', [StatementController::class, 'destroy'])->name('statements.destroy');
@@ -293,6 +298,8 @@ Route::middleware(['auth', RestrictSpendOnlySession::class])->group(function () 
             // Bảng phí tuyến theo thời gian ("áp dụng từ ngày" — như price book)
             Route::post('/route-fee-books',          [CatalogController::class, 'createRouteFeeBook'])->name('routeFeeBooks.create');
             Route::put('/route-fee-books/{book}',    [CatalogController::class, 'updateRouteFeeBook'])->name('routeFeeBooks.update')->whereNumber('book');
+            Route::put('/route-fee-books/{book}/regulation', [CatalogController::class, 'saveRouteFeeBookRegulation'])->name('routeFeeBooks.regulation')->whereNumber('book');   // quy chế lương chuyến
+            Route::post('/route-fee-books/regulation-preview', [CatalogController::class, 'previewRegulation'])->name('routeFeeBooks.regulationPreview');   // thử tính 1 chuyến theo quy chế đang sửa
             Route::delete('/route-fee-books/{book}', [CatalogController::class, 'deleteRouteFeeBook'])->name('routeFeeBooks.delete')->whereNumber('book');
             Route::get('/route-fees/export', [CatalogController::class, 'exportRouteFees'])->name('routeFees.export');
             Route::post('/route-fees/import-check', [CatalogController::class, 'importRouteFeesCheck'])->name('routeFees.importCheck');
@@ -409,6 +416,7 @@ Route::middleware(['auth', RestrictSpendOnlySession::class])->group(function () 
         Route::post('/system-settings/backup', [SystemSettingController::class, 'backupNow'])->name('system.settings.backupNow');
         Route::get ('/system-settings/backup/{file}/download', [SystemSettingController::class, 'downloadBackup'])->name('system.settings.backupDownload');
     });
+
     // ===== Nhật ký thao tác nhân viên =====
     Route::get('/nhat-ky-thao-tac', [\App\Http\Controllers\ActivityLogController::class, 'index'])
         ->middleware('permission:activity.view')->name('system.activityLog');

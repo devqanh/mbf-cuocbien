@@ -36,7 +36,7 @@ function Badge({ children, tone }) {
   const map = {
     good: ["var(--good)", "var(--good-weak)"], warn: ["var(--warn)", "var(--warn-weak)"],
     blue: ["var(--accent)", "var(--accent-weak)"], gray: ["var(--ink-3)", "#eef0f3"],
-    amber: ["#b45309", "#fef3c7"],
+    amber: ["#b45309", "#fef3c7"], violet: ["#7c3aed", "#f3ecff"],   // violet: loại chuyến quy chế (kẹp cont / kết hợp)
   };
   const [fg, bg] = map[tone] || map.gray;
   return <span style={{ fontSize: 11.5, fontWeight: 600, color: fg, background: bg, padding: "3px 9px", borderRadius: 999, whiteSpace: "nowrap" }}>{children}</span>;

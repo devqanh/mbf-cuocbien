@@ -75,6 +75,8 @@ trait HandlesCatalog
                     ->reduce(function ($acc, $r) { $acc[$r->code] ??= $r->note; return $acc; }, []);
                 // Tỉnh/thành của kho (theo chỉ số dòng) — khớp Phí tuyến "Cảng → Tỉnh → Cảng".
                 $cfg['warehouseProvinceArr'] = $rows->map(fn ($r) => $r->province ?? '')->all();
+                // Tỉnh CŨ theo quy chế lương (theo chỉ số dòng) — trợ cấp quay đầu ngoài HP, lương chuyến theo vùng.
+                $cfg['warehouseOldProvArr'] = $rows->map(fn ($r) => $r->old_province ?? '')->all();
             }
             if ($priced) {
                 foreach ($rows as $r) {
@@ -186,7 +188,7 @@ trait HandlesCatalog
         foreach ($this->lookups() as $key => [$cls]) $c[$key] = $cls::count();
         $c['customers'] = TruckingCustomer::count();
         $c['vehicles']  = TruckingVehicle::count();
-        $c['routeFees'] = TruckingRouteFee::count();
+        $c['routeFees'] = TruckingRouteFeeBook::whereNotNull('regulation')->count();   // số bảng đã có quy chế lương chuyến
         $c['fuelPrices'] = TruckingFuelPrice::count();
         return $c;
     }
@@ -223,6 +225,13 @@ trait HandlesCatalog
                     $out['warehouseProvinceArr'] = $rows->map(fn ($r) => $r->province ?? '')->all();
                     $out['provinces']        = \App\Support\VnProvinces::LIST;
                     $out['provinceAliases']  = \App\Support\VnProvinces::ALIASES;
+                    // TỈNH CŨ theo Quy chế lương 03/2026 (header nhóm ký hiệu như Tỉnh) + vùng lương suy ra + từ khóa gợi ý.
+                    $out['warehouseOldProvArr'] = $rows->map(fn ($r) => $r->old_province ?? '')->all();
+                    $out['oldProvinces']        = \App\Support\SalaryZones::OLD_PROVINCES;
+                    $out['oldProvinceKeywords'] = \App\Support\SalaryZones::keywords();
+                    // Vùng của tỉnh cũ theo quy chế của bảng phí đang áp HÔM NAY (chưa cấu hình → mẫu 03/2026) — chỉ để gợi ý.
+                    $todayReg = $this->regulationOf($this->pickRouteFeeBook(now()->toDateString())) ?: \App\Support\SalaryZones::defaultRegulation();
+                    $out['oldProvinceZone']     = \App\Support\SalaryZones::zoneLabels($todayReg);
                 }
                 if ($key === 'locations') {
                     $lockedIds = TruckingPriceRow::query()->whereNotNull('location_id')->distinct()->pluck('location_id');
@@ -286,15 +295,33 @@ trait HandlesCatalog
         }
         if ($key === 'routeFees') {
             // kèm danh sách KHO + ĐỊA ĐIỂM (cảng) + TỈNH để chọn cả chuỗi tuyến Cảng→Kho→Kho→Cảng hoặc Cảng→Tỉnh→Cảng
-            // (MultiCombo groups). Tỉnh = danh sách chuẩn ∪ tỉnh đã gán cho kho (phòng tên tự nhập).
-            $usedProv = TruckingWarehouse::whereNotNull('province')->where('province', '!=', '')->distinct()->pluck('province')->all();
-            if (! TruckingRouteFeeBook::exists()) $this->defaultRouteFeeBookId();   // luôn có bảng mặc định để thêm tuyến
+            if (! TruckingRouteFeeBook::exists()) $this->defaultRouteFeeBookId();   // luôn có bảng mặc định để khai quy chế
             return [
-                'routeFeeBooks' => $this->routeFeeBooks(),   // bảng phí theo thời gian ("áp dụng từ ngày")
-                'routeFees'  => $this->routeFees(),          // mọi tuyến của mọi bảng (mỗi dòng mang bookId)
-                'warehouses' => TruckingWarehouse::orderBy('sort')->orderBy('name')->pluck('name')->all(),
-                'locations'  => TruckingLocation::orderBy('sort')->orderBy('name')->pluck('name')->all(),
-                'provinces'  => array_values(array_unique(array_merge(\App\Support\VnProvinces::LIST, $usedProv))),
+                'routeFeeBooks' => $this->routeFeeBooks(),   // bảng quy chế theo thời gian ("áp dụng từ ngày")
+                // QUY CHẾ LƯƠNG CHUYẾN (mỗi bảng phí lưu riêng ở book.regulation, nhóm/vùng tùy chỉnh): mẫu mặc định
+                // Quy chế 03/2026, danh sách tỉnh cũ để chọn cho vùng, tỉnh cũ ĐANG gán cho kho (cảnh báo tỉnh chưa thuộc
+                // vùng nào) và ký hiệu cảng / kho để gợi ý khi nhập.
+                'regulationMeta' => [
+                    'default'  => \App\Support\SalaryZones::defaultRegulation(),
+                    'khoProvinces' => $usedOld = TruckingWarehouse::whereNotNull('old_province')->where('old_province', '!=', '')->distinct()->orderBy('old_province')->pluck('old_province')->all(),
+                    'oldProvinces' => array_values(array_unique(array_merge(\App\Support\SalaryZones::OLD_PROVINCES, $usedOld))),
+                    // Trạng thái DỮ LIỆU LIÊN QUAN cho khung "Hướng dẫn cấu hình" (người mới biết còn thiếu gì, ở đâu).
+                    'setup' => [
+                        'khoTotal'  => TruckingWarehouse::count(),
+                        'khoNoOld'  => TruckingWarehouse::where(fn ($q) => $q->whereNull('old_province')->orWhere('old_province', ''))->count(),
+                        'vehTotal'  => TruckingVehicle::mbfFleet()->count(),
+                        'vehNoAxle' => TruckingVehicle::mbfFleet()->where(fn ($q) => $q->whereNull('axle')->orWhereNotIn('axle', ['1', '2']))->count(),
+                        'fuelToday' => TruckingFuelPrice::whereDate('from_date', '<=', now())->where(fn ($q) => $q->whereNull('to_date')->orWhereDate('to_date', '>=', now()))->exists(),
+                        'fuelLast'  => $this->outDate(TruckingFuelPrice::max('to_date') ?? TruckingFuelPrice::max('from_date')),
+                    ],
+                    // Ô chọn của "Thử tính 1 chuyến": lưu TÊN (như lô hàng), hiện "Tên — Ký hiệu"
+                    'locOptions' => TruckingLocation::orderBy('sort')->orderBy('name')->get(['name', 'code'])->filter(fn ($l) => trim((string) $l->name) !== '')
+                        ->map(fn ($l) => ['value' => $l->name, 'label' => $l->name . ($l->code && $l->code !== $l->name ? ' — ' . $l->code : '')])->values()->all(),
+                    'khoOptions' => TruckingWarehouse::orderBy('sort')->orderBy('name')->get(['name', 'code'])->filter(fn ($w) => trim((string) $w->name) !== '')
+                        ->map(fn ($w) => ['value' => $w->name, 'label' => $w->name . ($w->code && $w->code !== $w->name ? ' — ' . $w->code : '')])->values()->all(),
+                    'locCodes' => TruckingLocation::whereNotNull('code')->where('code', '!=', '')->distinct()->orderBy('code')->pluck('code')->all(),
+                    'khoCodes' => TruckingWarehouse::whereNotNull('code')->where('code', '!=', '')->distinct()->orderBy('code')->pluck('code')->all(),
+                ],
             ];
         }
         if ($key === 'fuelPrices') {

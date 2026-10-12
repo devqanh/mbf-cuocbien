@@ -28,19 +28,104 @@ const suggestionOf = (l, s, vatRate) => {
   const a = lineAmounts(l, vatRate);
   const base = sysBaseOf(s) ?? 0, choho = Math.round(+s.chiHo || 0);
   const od = (l.detail && typeof l.detail === "object") ? l.detail : {};
+  // Dòng giá tùy chỉnh thu theo số gõ tay → so giá hệ thống MỚI với giá hệ thống trong snapshot (chỉ để báo),
+  // không so với số gõ tay — nếu không, dòng gõ tay lúc nào cũng "có giá mới".
+  const manual = isManualLine(l);
+  const curBase = manual ? (sysBaseOf(od) ?? 0) : a.base;
   const info = ["route", "conn", "kind", "contKey"].some((k) => (s[k] ?? "") !== (od[k] ?? ""));
-  if (base === a.base && choho === a.choho && !info) return null;
-  return { pr: s, base, choho, baseDiff: base !== a.base, chohoDiff: choho !== a.choho, infoOnly: base === a.base && choho === a.choho };
+  if (base === curBase && choho === a.choho && !info) return null;
+  return { pr: s, base, choho, manual, baseDiff: base !== curBase, chohoDiff: choho !== a.choho, infoOnly: base === curBase && choho === a.choho };
 };
-/* Áp dụng gợi ý vào dòng: snapshot mới thay snapshot cũ (giữ VAT riêng dòng), bỏ giá tùy chỉnh, nền = số hệ thống tính. */
+/* Áp dụng gợi ý vào dòng: snapshot mới thay snapshot cũ (giữ VAT riêng dòng, phí riêng). Dòng GIÁ TÙY CHỈNH giữ nguyên
+   giá gõ tay — chỉ cập nhật chi hộ + thông tin hệ thống; muốn về giá hệ thống thì bấm ↺ ở dòng đó. */
 const applySuggestion = (l, s) => {
   if (!l || !s || !s.found) return l;
   const d = { ...s }; delete d.found; delete d.manualBase;
   const od = (l.detail && typeof l.detail === "object") ? l.detail : {};
   if (od.vat != null && od.vat !== "") d.vat = od.vat; else delete d.vat;
+  if (od.extras && typeof od.extras === "object") d.extras = od.extras; else delete d.extras;   // phí riêng từng lô (cột chi phí riêng) giữ nguyên
+  if (isManualLine(l)) { const mb = Math.round(+od.manualBase || 0); d.manualBase = mb; return { ...l, phaiThu: mb, cuoc: mb, detail: d }; }
   const base = sysBaseOf(d) ?? 0;
   return { ...l, phaiThu: base, cuoc: base, detail: d };
 };
+/* Lô ứng viên (API candidates / lô mới khi Tính lại) → dòng bảng kê (cùng hình dạng trang tạo lưu). */
+const candidateToLine = (x) => {
+  const base = sysBaseOf(x.pr) ?? 0;
+  return {
+    id: x.id, booking: x.booking, sheet: x.sheet, io: x.io,
+    declNo: x.declNo || "", contType: x.contType || "", inv: x.inv || "", contNo: x.contNo || "", bks: x.bks || "",
+    from: x.from, to: x.to, date: x.date, contLabel: x.contLabel,
+    phaiThu: base, cuoc: base, thanhLy: x.thanhLy || 0, note: x.note, infoNote: x.infoNote || "",
+    detail: { ...x.pr },
+  };
+};
+
+/* HẠN THANH TOÁN của bảng kê: lưu ở info.dueDate (Y-m-d) cùng bảng kê; chưa đặt thì gợi ý = ngày lập + số ngày
+   "Hạn TT" của khách (snapshot info.termDays lúc lập, không có thì Hạn TT hiện tại customerTermDays).
+   Khớp backend statementDueDate (danh sách + Excel). */
+const addDaysIso = (iso, n) => { const d = new Date(String(iso || "").slice(0, 10) + "T00:00:00Z"); if (isNaN(d) || !n) return ""; d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const daysBetweenIso = (a, b) => Math.round((Date.parse(String(b).slice(0, 10) + "T00:00:00Z") - Date.parse(String(a).slice(0, 10) + "T00:00:00Z")) / 86400000);
+const defaultDue = (date, info) => addDaysIso(date, parseInt((info || {}).termDays, 10) || 0);
+const dueOf = (st) => { const info = st.info || {}; return info.dueDate || defaultDue(st.date, { termDays: info.termDays || st.customerTermDays }); };
+const DUE_DAY_OPTIONS = [7, 15, 30, 45, 60, 90];
+/* Ô hạn thanh toán: chọn ngày, hoặc chọn nhanh "ngày lập + N ngày". */
+function DueDateField({ base, value, onChange, width = 140 }) {
+  const n = value && base ? daysBetweenIso(base, value) : null;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+      <div style={{ width }}><DateField value={value || ""} onChange={(v) => onChange(v || "")} /></div>
+      <select value={DUE_DAY_OPTIONS.includes(n) ? String(n) : ""} onChange={(e) => e.target.value && onChange(addDaysIso(base, +e.target.value))}
+        title="Chọn nhanh: hạn = ngày lập + số ngày"
+        style={{ padding: "6px 8px", fontSize: 12.5, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 8, background: "#fff", color: n != null ? "var(--ink-2)" : "var(--ink-4)", cursor: "pointer", outline: "none" }}>
+        <option value="">{n != null && n > 0 && !DUE_DAY_OPTIONS.includes(n) ? `${n} ngày` : "Số ngày…"}</option>
+        {DUE_DAY_OPTIONS.map((d) => <option key={d} value={d}>{d} ngày</option>)}
+      </select>
+    </span>
+  );
+}
+/* Ô HẠN THANH TOÁN dưới "CÒN PHẢI THU" (trang xem/sửa): chọn ngày / "ngày lập + N ngày" + nhãn Quá hạn / Còn N ngày /
+   Đã thu đủ (cùng quy tắc dueStatus của danh sách); ghi info.dueDate, chốt khi bấm Lưu. In ra ngày. */
+function DueSummaryRow({ st, tongThu, payments, onChange }) {
+  const due = dueOf(st);
+  const s = dueStatus({ tongThu, payments, dueDate: due }, localTodayIso());
+  const term = (st.info || {}).termDays || st.customerTermDays;
+  return (
+    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed var(--line)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 6, fontSize: 13 }}>
+        <span style={{ color: "var(--ink-3)" }} title={term ? `Chưa đặt thì = ngày lập + ${term} ngày (Hạn TT của khách)` : "Khách chưa cài Hạn TT mặc định (Cài đặt › Khách hàng) — chọn ngày hoặc số ngày"}>Hạn thanh toán</span>
+        <span className="ke-noprint">{(due || s.key === "paid") && <DueChip s={s} />}</span>
+        <b className="ke-printonly tnum" style={{ display: "none" }}>{due ? fmtDate(due) : "—"}</b>
+      </div>
+      <div className="ke-noprint"><DueDateField base={st.date} value={due} onChange={onChange} /></div>
+    </div>
+  );
+}
+
+/* Dòng thông tin khách trên bảng kê: MST · địa chỉ · liên hệ · hạn thanh toán. */
+function CustomerInfoLine({ info, due, base }) {
+  const days = due && base ? daysBetweenIso(base, due) : 0;
+  return (
+    <div style={{ color: "var(--ink-2)", marginTop: 3, display: "flex", gap: 16, flexWrap: "wrap" }}>
+      {info.taxCode && <span>MST: <b className="tnum">{info.taxCode}</b></span>}
+      {info.address && <span>Địa chỉ: {info.address}</span>}
+      {info.contact && <span>Liên hệ: {info.contact}</span>}
+      {due ? <span>Hạn thanh toán: <b className="tnum">{fmtDate(due)}</b>{days > 0 ? <span style={{ color: "var(--ink-4)" }}> ({days} ngày)</span> : null}</span>
+        : (info.termDays ? <span>Hạn TT: {info.termDays} ngày</span> : null)}
+    </div>
+  );
+}
+
+/* "Ghi chú tự do cho lô hàng" (popup Thông tin lô) — dùng chung trang tạo + trang xem bảng kê; có in. */
+function LotNote({ text }) {
+  const t = String(text || "").trim();
+  if (!t) return null;
+  return (
+    <div style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, color: "var(--ink-2)", background: "#fffaf0", border: "1px solid #f3e2b8", borderRadius: 7, padding: "5px 9px", margin: "2px 0 6px", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+      <i className="bi bi-sticky" style={{ color: "#b7791f", marginTop: 1 }} />
+      <span><b style={{ color: "#9a6700" }}>Ghi chú:</b> {t}</span>
+    </div>
+  );
+}
 
 /* Thông tin công ty cho header bảng kê (màn hình + bản in). */
 const CO = (window.__TRK && window.__TRK.boot && window.__TRK.boot.company) || {};
@@ -68,6 +153,90 @@ function IoSeg({ value, onChange, counts }) {
 }
 const ioCounts = (lines) => { const c = { all: 0, nhap: 0, xuat: 0 }; (lines || []).forEach((l) => { c.all++; const k = ioKey(l.io); if (k) c[k]++; }); return c; };
 
+/* CỘT CHI PHÍ RIÊNG của bảng kê (extraCols [{key,label,vat}]) — dùng chung trang tạo + trang xem.
+   Lưu cùng bảng kê, KHÔNG khai trong Cài đặt; số từng lô ở detail.extras[key]; vat = khoản chịu VAT% của bảng kê. */
+const colLabel = (c) => String((c && c.label) || "").trim() || "Khoản mới";
+const newExtraCol = () => ({ key: "x" + Date.now().toString(36), label: "", vat: true });
+function ExtraColsBar({ cols, onAdd, onChange, onDelete }) {
+  return (
+    <div className="ke-noprint" style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, color: "var(--ink-3)", flexWrap: "wrap" }}>
+      <span style={{ fontWeight: 600 }} title="Khoản thu thêm theo từng lô, riêng cho bảng kê này (không cần khai trong Cài đặt). Thêm cột rồi điền số ở từng lô; lưu cùng bảng kê.">Cột chi phí riêng</span>
+      {cols.map((c) => (
+        <span key={c.key} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 5px 3px 8px", border: "1px solid " + (String(c.label || "").trim() ? "var(--line)" : "var(--warn)"), borderRadius: 8, background: "#fff" }}>
+          <input value={c.label || ""} onChange={(e) => onChange(c.key, { label: e.target.value })} placeholder="Tên khoản (VD: Lưu ca)"
+            title={String(c.label || "").trim() ? "Tên cột — hiện ở bảng, bản in và Excel" : "Chưa đặt tên — cột sẽ không được lưu"}
+            style={{ width: 150, border: "none", outline: "none", fontSize: 12.5, fontWeight: 600, color: "var(--ink)", background: "transparent" }} />
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap", color: c.vat ? "var(--accent)" : "var(--ink-4)" }} title="Tích = khoản này chịu VAT% của bảng kê (như cước); bỏ tích = không VAT (như chi hộ)">
+            <input type="checkbox" checked={!!c.vat} onChange={(e) => onChange(c.key, { vat: e.target.checked })} /> VAT
+          </label>
+          <button type="button" onClick={() => onDelete(c.key)} title="Xóa cột (bỏ cả số đã điền ở các lô)"
+            style={{ border: "none", background: "transparent", color: "var(--ink-4)", cursor: "pointer", fontSize: 13, padding: "0 3px", lineHeight: 1 }}>✕</button>
+        </span>
+      ))}
+      <button type="button" onClick={onAdd}
+        style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 9px", fontSize: 12, fontWeight: 600, border: "none", borderRadius: 7, background: "var(--accent-weak)", color: "var(--accent)", cursor: "pointer" }}>
+        <I.plus /> Thêm cột
+      </button>
+    </div>
+  );
+}
+/* Ô số nhập tay cho 1 cột chi phí riêng của 1 lô (màn hình) + số để in. */
+function ExtraCell({ col, value, onChange }) {
+  return (<>
+    <span className="ke-noprint"><span style={{ position: "relative", display: "inline-block", width: 110 }}>
+      <input inputMode="numeric" value={value ? value.toLocaleString("vi-VN") : ""} placeholder="0" className="tnum"
+        onChange={(e) => onChange(parseInt(e.target.value.replace(/[^\d]/g, ""), 10) || 0)}
+        title={colLabel(col) + " của lô này" + (col.vat ? " (chịu VAT)" : " (không VAT)")}
+        style={{ width: "100%", padding: "6px 20px 6px 8px", fontSize: 12.5, textAlign: "right", fontWeight: 600, border: "1px solid var(--line)", background: "#fff", borderRadius: 7, outline: "none" }}
+        onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
+      <span style={{ position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)", fontSize: 12, pointerEvents: "none" }}>₫</span>
+    </span></span>
+    <span style={{ display: "none" }} className="ke-printonly">{fmtNum(value || 0)}</span>
+  </>);
+}
+
+/* Ô GHI CHÚ của 1 lô trong bảng kê (người dùng gõ) — lưu line.userNote; in ra chữ; Excel cột Note
+   (trống thì Excel dùng ghi chú tự sinh như cũ). */
+function LineNoteCell({ value, onChange }) {
+  return (<>
+    <textarea className="ke-noprint" rows={1} value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder="Ghi chú…"
+      style={{ display: "block", width: 170, minHeight: 32, padding: "6px 8px", fontSize: 12.5, lineHeight: 1.4, fontFamily: "inherit", border: "1px solid var(--line)", borderRadius: 7, background: "#fff", outline: "none", resize: "vertical" }}
+      onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
+    <span style={{ display: "none", whiteSpace: "pre-wrap" }} className="ke-printonly">{value || ""}</span>
+  </>);
+}
+
+/* CHI PHÍ CÔNG TY của 1 lô (khoản không tích "chi hộ khách" — vd cước thuê xe ngoài kèm tên nhà xe) để người lập
+   bảng kê đầu ra thấy chi phí đầu vào của cont. Không in. block = hiện thành 1 dòng riêng (trang tạo). */
+function LotCostLine({ items, block }) {
+  const list = (items || []).filter((c) => !c.billable && +c.amount);
+  if (!list.length) return null;
+  const total = list.reduce((s, c) => s + (+c.amount || 0), 0);
+  const body = <>Chi phí công ty (không thu khách): {list.map((c, j) => <React.Fragment key={j}>{j ? " · " : ""}{c.item}{c.vendor ? <b> ({c.vendor})</b> : null} <b className="tnum">{fmtNum(c.amount)}</b></React.Fragment>)}{list.length > 1 ? <> = <b className="tnum">{fmtNum(total)}</b></> : null}</>;
+  return block
+    ? <div style={{ color: "#7c3aed" }}><i className="bi bi-receipt" /> {body}</div>
+    : <span style={{ color: "#7c3aed" }}>· {body}</span>;
+}
+
+/* Ô CHI HỘ của 1 lô: tổng + TỪNG HẠNG MỤC (snapshot choHoItems = khoản chi phí lô đã tích "chi hộ khách"),
+   gộp khoản trùng tên; có in. Bảng kê cũ không có danh sách hạng mục → chỉ hiện tổng. */
+function ChoHoCell({ amount, items }) {
+  const byName = new Map();
+  (Array.isArray(items) ? items : []).forEach((c) => {
+    const amt = Math.round(+c.amount || 0); if (!amt) return;
+    const k = String(c.item || "").trim() || "(khoản)";
+    byName.set(k, (byName.get(k) || 0) + amt);
+  });
+  return (<>
+    <div>{fmtNum(amount)}</div>
+    {byName.size > 0 && (
+      <div style={{ marginTop: 3, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1, fontSize: 10.5, lineHeight: 1.35, fontWeight: 400, color: "var(--ink-3)" }}>
+        {[...byName].map(([k, v]) => <span key={k} title={`${k}: ${fmtNum(v)}`} style={{ whiteSpace: "nowrap" }}>{k} <b className="tnum" style={{ fontWeight: 600, color: "var(--ink-2)" }}>{fmtNum(v)}</b></span>)}
+      </div>
+    )}
+  </>);
+}
+
 /* Select % VAT cho bảng kê (cấp statement). VAT chỉ áp nền cước+dầu+sà lan. */
 function VatSelect({ value, onChange }) {
   return (
@@ -79,7 +248,8 @@ function VatSelect({ value, onChange }) {
 }
 
 /* Khối tổng tiền 4 dòng (dùng chung tạo + xem): nền · VAT · chi hộ · tổng (+ công nợ nếu có). */
-function AmountSummary({ amt, vatRate, paid, payCount, showDebt }) {
+/* extras: [{key,label,vat,sum}] — cột chi phí riêng của bảng kê (đã gồm trong amt.total). */
+function AmountSummary({ amt, vatRate, paid, payCount, showDebt, extras = [], children }) {
   const con = (amt.total || 0) - (paid || 0);
   const row = (label, val, opt = {}) => (
     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6, ...(opt.wrap || {}) }}>
@@ -92,6 +262,7 @@ function AmountSummary({ amt, vatRate, paid, payCount, showDebt }) {
       {row("Phải thu (cước + dầu)", amt.base)}
       {row(`VAT (${vatRate || 0}%)`, amt.vat, { valStyle: { color: (vatRate ? "var(--accent)" : "var(--ink-4)") } })}
       {row("Chi hộ (không VAT)", amt.choho)}
+      {extras.map((c) => <React.Fragment key={c.key}>{row((String(c.label || "").trim() || "Khoản mới") + (c.vat ? " (chịu VAT)" : " (không VAT)"), c.sum)}</React.Fragment>)}
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, paddingTop: 8, marginBottom: showDebt ? 8 : 0, borderTop: "1px solid var(--line)" }}>
         <span style={{ fontWeight: 700 }}>TỔNG TIỀN</span><b className="tnum">{fmtVND(amt.total)}</b>
       </div>
@@ -101,49 +272,101 @@ function AmountSummary({ amt, vatRate, paid, payCount, showDebt }) {
           <span style={{ fontWeight: 600 }}>CÒN PHẢI THU</span><b className="tnum" style={{ color: con > 0 ? "var(--warn)" : "var(--good)" }}>{fmtVND(Math.max(0, con))}</b>
         </div>
       </>}
+      {children}
     </div>
   );
 }
 
-function StatementForm({ cfg, onCancel, onSaved }) {
-  const { useState, useEffect } = React;
+/* onExtraColsCount(n): báo số cột chi phí riêng đang có để trang cha nới khung (bảng rộng thêm theo cột). */
+/* So danh sách ứng viên trước / sau "Làm mới" → câu tóm tắt cho người dùng. */
+function refreshSummary(prev, next) {
+  const old = new Map((prev || []).map((x) => [x.id, x]));
+  const ids = new Set((next || []).map((x) => x.id));
+  let added = 0, choho = 0, price = 0;
+  (next || []).forEach((x) => {
+    const o = old.get(x.id);
+    if (!o) { added++; return; }
+    if (Math.round(+(o.pr || {}).chiHo || 0) !== Math.round(+(x.pr || {}).chiHo || 0)) choho++;
+    if ((sysBaseOf(o.pr) ?? 0) !== (sysBaseOf(x.pr) ?? 0)) price++;
+  });
+  const gone = (prev || []).filter((x) => !ids.has(x.id)).length;
+  const parts = [added && `+${added} lô mới`, choho && `${choho} lô đổi chi hộ`, price && `${price} lô đổi giá hệ thống`, gone && `${gone} lô không còn trong kỳ`].filter(Boolean);
+  return parts.length ? `Đã làm mới: ${parts.join(" · ")}` : "Đã làm mới — không có gì thay đổi";
+}
+
+function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
+  const { useState, useEffect, useRef } = React;
   const T = window.__TRK || {}; const ROUTES = T.routes || {};
   const customers = cfg.customers || [];
-  const [cust, setCust] = useState(customers[0] || "");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  // Mở từ danh sách bảng kê (khung "Khách có lô trong kỳ" → Tạo bảng kê): ?customer=&from=&to= điền sẵn.
+  const qs0 = useRef(new URLSearchParams(window.location.search)).current;
+  const [cust, setCust] = useState(() => { const c = qs0.get("customer"); return c && customers.includes(c) ? c : (customers[0] || ""); });
+  const [from, setFrom] = useState(() => qs0.get("from") || "");
+  const [to, setTo] = useState(() => qs0.get("to") || "");
   const [picked, setPicked] = useState({}); // id -> bool
   const [vatRate, setVatRate] = useState(0); // % VAT cho bảng kê (mặc định 0)
   const info = (cfg.customerInfo || {})[cust] || {};
   const today = new Date().toISOString().slice(0, 10);
+  // Hạn thanh toán: gợi ý theo Hạn TT của khách khi đổi khách (đến khi người dùng tự chọn ngày).
+  const [dueDate, setDueDate] = useState(() => defaultDue(today, info));
+  const dueTouched = useRef(false);
+  useEffect(() => { if (!dueTouched.current) setDueDate(defaultDue(today, (cfg.customerInfo || {})[cust] || {})); }, [cust]);
 
   // ----- Lô + ĐỊNH GIÁ lấy TỪ BACKEND (nguồn chân lý duy nhất) theo khách + kỳ -----
   const [all, setAll] = useState([]);   // [{id,booking,io,sheet,from,to,contType,contNo,qty,cru,date,contLabel,note,thanhLy,pr}]
   const [loading, setLoading] = useState(false);
   // Chưa chọn KỲ (ngày ra) → KHÔNG tải lô (tránh kéo toàn bộ + ép người dùng chọn kỳ trước).
   const needDate = !!cust && !from && !to;
+  // "Làm mới" = tải lại CÙNG khách + kỳ (lấy lô mới / chi hộ vừa điền) mà GIỮ tích chọn, giá gõ tay, VAT riêng,
+  // phí cột riêng (đều lưu theo id lô). Đổi khách / kỳ thì mới bỏ tích chọn như cũ.
+  const [reloadTick, setReloadTick] = useState(0);
+  const [refreshMsg, setRefreshMsg] = useState("");
+  const lastKey = useRef("");
+  const prevAll = useRef([]);
   useEffect(() => {
-    if (!cust || (!from && !to)) { setAll([]); setLoading(false); return; }
-    let alive = true; setLoading(true); setPicked({});
+    if (!cust || (!from && !to)) { setAll([]); setLoading(false); lastKey.current = ""; prevAll.current = []; setRefreshMsg(""); return; }
+    const key = `${cust}|${from}|${to}`;
+    const isRefresh = key === lastKey.current;
+    lastKey.current = key;
+    let alive = true; setLoading(true);
+    if (!isRefresh) { setPicked({}); setRefreshMsg(""); }
     const p = new URLSearchParams({ customer: cust }); if (from) p.set("from", from); if (to) p.set("to", to);
     window.trkApi("GET", ROUTES.candidates + "?" + p.toString())
-      .then((r) => { if (alive) { setAll(r && r.ok ? (r.candidates || []) : []); setLoading(false); } })
-      .catch(() => { if (alive) { setAll([]); setLoading(false); } });
+      .then((r) => {
+        if (!alive) return;
+        const next = r && r.ok ? (r.candidates || []) : [];
+        if (isRefresh) setRefreshMsg(refreshSummary(prevAll.current, next));
+        prevAll.current = next; setAll(next); setLoading(false);
+      })
+      .catch(() => { if (alive) { setLoading(false); if (!isRefresh) setAll([]); } });
     return () => { alive = false; };
-  }, [cust, from, to]);
+  }, [cust, from, to, reloadTick]);
 
   const [amtOv, setAmtOv] = useState({}); // override NỀN (cước+dầu+sà lan) theo lô
   const [vatOv, setVatOv] = useState({}); // override % VAT riêng theo lô ("" = theo mặc định bảng kê)
+  const [noteOv, setNoteOv] = useState({}); // cột Ghi chú theo lô (giữ khi Làm mới)
   // Lọc NHẬP / XUẤT ngay trên danh sách ứng viên (client): bảng kê lưu CHỈ các lô đang hiện (+ đang tích).
   const [io, setIo] = useState("all");
   const shown = io === "all" ? all : all.filter((x) => ioKey(x.io) === io);
   const sel = shown.filter((x) => picked[x.id] !== false); // mặc định chọn hết
-  // 3 con số/dòng từ NGUỒN CHÂN LÝ chung (nền cước+dầu+sà lan; VAT chỉ áp nền; chi hộ không VAT).
+  // CỘT CHI PHÍ RIÊNG của bảng kê đang tạo + số từng lô (extraOv[shipmentId][key]) — lưu cùng bảng kê (extraCols / detail.extras).
+  const [extraCols, setExtraCols] = useState([]);
+  const [extraOv, setExtraOv] = useState({});
+  const addExtraCol = () => setExtraCols((c) => [...c, newExtraCol()]);
+  const setExtraCol = (key, patch) => setExtraCols((c) => c.map((x) => (x.key === key ? { ...x, ...patch } : x)));
+  const delExtraCol = (key) => {
+    setExtraCols((c) => c.filter((x) => x.key !== key));
+    setExtraOv((o) => { const n = {}; Object.keys(o).forEach((id) => { const e = { ...o[id] }; delete e[key]; n[id] = e; }); return n; });
+  };
+  const setLineExtra = (id, key, v) => setExtraOv((o) => ({ ...o, [id]: { ...(o[id] || {}), [key]: v } }));
+  useEffect(() => { onExtraColsCount && onExtraColsCount(extraCols.length); }, [extraCols.length]);
+  const nCols = 10 + extraCols.length;   // số cột bảng (gồm cột tích chọn + cột Ghi chú) cho colSpan
+  // 3 con số/dòng từ NGUỒN CHÂN LÝ chung (nền cước+dầu+sà lan; VAT áp nền + cột riêng có vat; chi hộ không VAT).
   const ovOf = (x) => (amtOv[x.id] != null ? amtOv[x.id] : null);   // null = chưa sửa tay
   const vatOf = (x) => vatOv[x.id];                                 // undefined/"" = theo mặc định
-  const prOf = (x) => ({ ...x.pr, vat: vatOf(x) });                 // gắn override VAT vào detail để lineAmounts đọc
-  const lineAmt = (x) => lineAmounts({ detail: prOf(x) }, vatRate, ovOf(x));   // {base,vat,choho,total,rate}
-  const amt = statementAmounts(sel.map((x) => ({ detail: prOf(x) })), vatRate, (l, i) => ovOf(sel[i]));
+  const prOf = (x) => ({ ...x.pr, vat: vatOf(x), extras: extraOv[x.id] || {} });   // gắn override VAT + phí riêng vào detail để lineAmounts đọc
+  const lineAmt = (x) => lineAmounts({ detail: prOf(x) }, vatRate, ovOf(x), extraCols);   // {base,vat,choho,extra,extras,total,rate}
+  const amt = statementAmounts(sel.map((x) => ({ detail: prOf(x) })), vatRate, (l, i) => ovOf(sel[i]), extraCols);
   const tongThu = amt.total;
   const keNo = "BK-" + today.replace(/-/g, "").slice(2) + "-" + (cust ? cust.slice(0, 3).toUpperCase() : "XXX");
 
@@ -159,18 +382,21 @@ function StatementForm({ cfg, onCancel, onSaved }) {
       if (ov != null) detail.manualBase = a.base; else delete detail.manualBase;
       const vov = vatOf(x);   // VAT riêng dòng → ghi detail.vat (backend per-line)
       if (vov != null && vov !== "") detail.vat = +vov; else delete detail.vat;
+      // Phí riêng từng cột của lô → detail.extras (backend chỉ giữ key của cột còn tồn tại, bỏ số 0)
+      const ex = {}; extraCols.forEach((c) => { const v = Math.round(+(extraOv[x.id] || {})[c.key] || 0); if (v) ex[c.key] = v; });
+      if (Object.keys(ex).length) detail.extras = ex; else delete detail.extras;
       return {
         id: x.id, booking: x.booking, sheet: x.sheet, io: x.io,
         declNo: x.declNo || "", contType: x.contType || "", inv: x.inv || "", contNo: x.contNo || "", bks: x.bks || "",
         from: x.from, to: x.to, date: x.date, contLabel: x.contLabel,
         // phaiThu/cuoc = NỀN dòng (cước+dầu) — giữ cho exporter; tổng có VAT tính ở cấp bảng kê.
-        phaiThu: a.base, cuoc: a.base, thanhLy: x.thanhLy || 0, note: x.note,
+        phaiThu: a.base, cuoc: a.base, thanhLy: x.thanhLy || 0, note: x.note, userNote: (noteOv[x.id] || "").trim(),
         // snapshot định giá (backend) để hiển thị đối soát TĨNH (không query lại khi xem)
         detail,
       };
     });
     // ioScope = phạm vi Nhập/Xuất đã chọn → lưu cùng bảng kê (backend chỉ tính tiền lô trong phạm vi).
-    const payload = { id: Date.now(), no: keNo, customer: cust, info, date: today, from, to, ioScope: io, lines, vatRate, tongThu, payments: [], createdAt: new Date().toISOString() };
+    const payload = { id: Date.now(), no: keNo, customer: cust, info: dueDate ? { ...info, dueDate } : info, date: today, from, to, ioScope: io, extraCols, lines, vatRate, tongThu, payments: [], createdAt: new Date().toISOString() };
     // onSaved có thể async + trả về false để huỷ (vd bấm Huỷ ở confirm) → giữ nguyên trang
     let result;
     try { result = await Promise.resolve(onSaved && onSaved(payload)); }
@@ -180,7 +406,7 @@ function StatementForm({ cfg, onCancel, onSaved }) {
 
   const footer = (
     <div className="ke-noprint" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 8, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
-      <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{sel.length} lô · nền <b className="tnum">{fmtNum(amt.base)}</b> + VAT <b className="tnum">{fmtNum(amt.vat)}</b> + chi hộ <b className="tnum">{fmtNum(amt.choho)}</b> = tổng <b className="tnum" style={{ color: "var(--ink)" }}>{fmtVND(tongThu)}</b></div>
+      <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{sel.length} lô · nền <b className="tnum">{fmtNum(amt.base)}</b> + VAT <b className="tnum">{fmtNum(amt.vat)}</b> + chi hộ <b className="tnum">{fmtNum(amt.choho)}</b>{extraCols.length ? <> + phí riêng <b className="tnum">{fmtNum(amt.extra)}</b></> : null} = tổng <b className="tnum" style={{ color: "var(--ink)" }}>{fmtVND(tongThu)}</b></div>
       <div style={{ display: "flex", gap: 10 }}>
         <Btn onClick={onCancel}>Hủy</Btn>
         <Btn onClick={() => window.print()}>In thử</Btn>
@@ -212,17 +438,31 @@ function StatementForm({ cfg, onCancel, onSaved }) {
           <VatSelect value={vatRate} onChange={setVatRate} />
         </div>
         <div style={{ display: "block" }}>
+          <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }} title={info.termDays ? `Mặc định = ngày lập + ${info.termDays} ngày (Hạn TT của khách)` : "Khách chưa cài Hạn TT mặc định (Cài đặt › Khách hàng) — chọn ngày hoặc số ngày"}>Hạn thanh toán</div>
+          <DueDateField base={today} value={dueDate} width={150} onChange={(v) => { dueTouched.current = true; setDueDate(v); }} />
+        </div>
+        <div style={{ display: "block" }}>
           <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>Lô hàng</div>
           <IoSeg value={io} onChange={setIo} counts={ioCounts(all)} />
         </div>
-        <div style={{ flex: 1 }} />
-        <div style={{ fontSize: 12, color: "var(--ink-4)" }}>{io === "all" ? `${all.length} lô có phải thu` : `${shown.length} / ${all.length} lô (${io === "nhap" ? "Nhập" : "Xuất"})`}</div>
+        <button type="button" onClick={() => setReloadTick((t) => t + 1)} disabled={!cust || (!from && !to) || loading}
+          title="Tải lại lô + chi hộ mới nhất theo khách và kỳ đang chọn — giữ giá gõ tay, VAT riêng, phí cột riêng và lô đã bỏ tích"
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 36, padding: "0 13px", fontSize: 13, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--ink-2)", cursor: (!cust || (!from && !to) || loading) ? "default" : "pointer", opacity: (!cust || (!from && !to)) ? 0.5 : 1 }}>
+          <i className="bi bi-arrow-clockwise" style={loading ? { animation: "trk-spin .8s linear infinite" } : undefined} /> Làm mới
+        </button>
       </div>
 
+      {/* CỘT CHI PHÍ RIÊNG cho bảng kê đang tạo — điền số từng lô ở cột tương ứng trong bảng dưới */}
+      <div style={{ padding: "10px 0 0" }}><ExtraColsBar cols={extraCols} onAdd={addExtraCol} onChange={setExtraCol} onDelete={delExtraCol} /></div>
+
       {/* Ghi chú cho kế toán: bộ lọc kỳ dựa theo Giờ xe ra của lô */}
-      <div className="ke-noprint" style={{ fontSize: 11.5, color: "var(--ink-4)", padding: "8px 0 0", display: "flex", alignItems: "flex-start", gap: 6, lineHeight: 1.5 }}>
+      <div className="ke-noprint" style={{ fontSize: 11.5, color: "var(--ink-4)", padding: "8px 0 0", display: "flex", alignItems: "flex-start", gap: 6, lineHeight: 1.5, flexWrap: "wrap" }}>
         <i className="bi bi-info-circle" style={{ marginTop: 1 }} />
-        <span>Lọc theo <b style={{ color: "var(--ink-3)" }}>Giờ xe ra</b> của lô hàng (mốc cont rời đi, nhập ở popup Lô hàng). Lô <b style={{ color: "var(--ink-3)" }}>chưa có giờ ra</b> sẽ không hiện ở đây.</span>
+        <span style={{ flex: "1 1 320px" }}>Lọc theo <b style={{ color: "var(--ink-3)" }}>Giờ xe ra</b> của lô hàng (mốc cont rời đi, nhập ở popup Lô hàng). Lô <b style={{ color: "var(--ink-3)" }}>chưa có giờ ra</b> sẽ không hiện ở đây.</span>
+        <span className="tnum" style={{ whiteSpace: "nowrap", fontWeight: 600, color: loading ? "var(--accent)" : "var(--ink-3)" }}>
+          {loading ? "Đang tải lô…" : (io === "all" ? `${all.length} lô có phải thu` : `${shown.length} / ${all.length} lô (${io === "nhap" ? "Nhập" : "Xuất"})`)}
+          {!loading && refreshMsg ? <span style={{ color: "var(--good)", fontWeight: 600 }}> · {refreshMsg}</span> : null}
+        </span>
       </div>
 
       {/* printable statement */}
@@ -230,7 +470,7 @@ function StatementForm({ cfg, onCancel, onSaved }) {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 20, marginBottom: 14 }}>
           <div>
             <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em" }}>BẢNG KÊ CẦN THU</div>
-            <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 3 }} className="tnum">Số: {keNo} · Ngày lập: {fmtDate(today)}{(from || to) ? ` · Cont ra: ${fmtDate(from) || "…"} – ${fmtDate(to) || "…"}` : ""}</div>
+            <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 3 }} className="tnum">Số: {keNo} · Ngày lập: {fmtDate(today)}{(from || to) ? ` · Cont ra: ${fmtDate(from) || "…"} – ${fmtDate(to) || "…"}` : ""}{dueDate ? ` · Hạn TT: ${fmtDate(dueDate)}` : ""}</div>
           </div>
           <div style={{ textAlign: "right", fontSize: 12 }}>
             <div style={{ fontWeight: 700, color: "var(--accent)" }}>{CO_NAME}</div>
@@ -239,15 +479,12 @@ function StatementForm({ cfg, onCancel, onSaved }) {
         </div>
         <div style={{ background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", borderRadius: 10, padding: "11px 14px", marginBottom: 14, fontSize: 12.5 }}>
           <div style={{ fontWeight: 700, fontSize: 14 }}>{cust || "—"}</div>
-          <div style={{ color: "var(--ink-2)", marginTop: 3, display: "flex", gap: 16, flexWrap: "wrap" }}>
-            {info.taxCode && <span>MST: <b className="tnum">{info.taxCode}</b></span>}
-            {info.address && <span>Địa chỉ: {info.address}</span>}
-            {info.contact && <span>Liên hệ: {info.contact}</span>}
-            {info.termDays && <span>Hạn TT: {info.termDays} ngày</span>}
-          </div>
+          <CustomerInfoLine info={info} due={dueDate} base={today} />
         </div>
 
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+        {/* Nhiều cột chi phí riêng → bảng giữ bề rộng tối thiểu và cuộn ngang trên màn hình (in: .ke-scroll bỏ cuộn + minWidth) */}
+        <div className="ke-scroll" style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", minWidth: 1080 + 120 * extraCols.length, borderCollapse: "collapse", fontSize: 12.5 }}>
           <thead>
             <tr style={{ background: "#fafbfc" }}>
               <th className="ke-noprint" style={{ width: 34, padding: "9px 8px", borderBottom: "1.5px solid var(--line)" }}></th>
@@ -257,12 +494,14 @@ function StatementForm({ cfg, onCancel, onSaved }) {
               <th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Cont ra</th>
               <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Phải thu<br/>(cước+dầu)</th>
               <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>VAT</th>
+              {extraCols.map((c) => <th key={c.key} style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>{colLabel(c)}{c.vat ? <span style={{ color: "var(--accent)", fontSize: 9.5 }}><br/>+VAT</span> : null}</th>)}
               <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Chi hộ</th>
               <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Tổng tiền</th>
+              <th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Ghi chú</th>
             </tr>
           </thead>
-          <tbody>
-            {!loading && all.length === 0 && <tr><td colSpan={9} style={{ padding: "28px 24px", textAlign: "center", color: "var(--ink-4)" }}>
+          <tbody style={{ opacity: loading && all.length ? 0.5 : 1, transition: "opacity .15s" }}>
+            {!loading && all.length === 0 && <tr><td colSpan={nCols} style={{ padding: "28px 24px", textAlign: "center", color: "var(--ink-4)" }}>
               {needDate
                 ? <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                     <i className="bi bi-calendar-range" style={{ fontSize: 26, color: "var(--accent)", opacity: .8 }} />
@@ -271,31 +510,27 @@ function StatementForm({ cfg, onCancel, onSaved }) {
                   </span>
                 : (cust ? "Không có lô nào phù hợp trong kỳ đã chọn." : "Chọn khách hàng để bắt đầu.")}
             </td></tr>}
-            {loading && <tr><td colSpan={9} style={{ padding: "24px", textAlign: "center", color: "var(--ink-4)" }}>Đang tải lô + định giá…</td></tr>}
-            {!loading && all.length > 0 && shown.length === 0 && <tr><td colSpan={9} style={{ padding: "24px", textAlign: "center", color: "var(--ink-4)" }}>Không có lô <b>{io === "nhap" ? "Nhập" : "Xuất"}</b> trong kỳ — đổi bộ lọc Lô hàng ở trên.</td></tr>}
-            {!loading && shown.map((x, i) => {
+            {loading && all.length === 0 && <tr><td colSpan={nCols} style={{ padding: "24px", textAlign: "center", color: "var(--ink-4)" }}>Đang tải lô + định giá…</td></tr>}
+            {!loading && all.length > 0 && shown.length === 0 && <tr><td colSpan={nCols} style={{ padding: "24px", textAlign: "center", color: "var(--ink-4)" }}>Không có lô <b>{io === "nhap" ? "Nhập" : "Xuất"}</b> trong kỳ — đổi bộ lọc Lô hàng ở trên.</td></tr>}
+            {shown.map((x, i) => {
               const on = picked[x.id] !== false;
               return (
-                <tr key={x.id} className={(i % 2 ? "ke-zebra " : "") + "ke-lo-end"} style={{ opacity: on ? 1 : 0.4 }}>
-                  <td className="ke-noprint" style={{ textAlign: "center", padding: "8px", borderBottom: "1px solid var(--line-2)" }}>
+                <React.Fragment key={x.id}>
+                <tr className={i % 2 ? "ke-zebra" : ""} style={{ opacity: on ? 1 : 0.4 }}>
+                  <td className="ke-noprint" style={{ textAlign: "center", padding: "8px", borderBottom: "none", verticalAlign: "top" }}>
                     <input type="checkbox" checked={on} onChange={(e) => setPicked((p) => ({ ...p, [x.id]: e.target.checked }))} style={{ width: 16, height: 16, accentColor: "var(--accent)", cursor: "pointer" }} />
                   </td>
-                  <td className="tnum" style={{ textAlign: "center", padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-4)" }}>{i + 1}</td>
-                  <td style={{ padding: "8px", borderBottom: "1px solid var(--line-2)" }}>
+                  <td className="tnum" style={{ textAlign: "center", padding: "8px", borderBottom: "none", verticalAlign: "top", color: "var(--ink-4)" }}>{i + 1}</td>
+                  <td style={{ padding: "8px", borderBottom: "none", verticalAlign: "top" }}>
                     <div style={{ fontWeight: 600 }} className="tnum">{x.booking || "—"}</div>
                     <div style={{ fontSize: 11, color: "var(--ink-4)" }}>{x.sheet} · {x.io}</div>
                   </td>
-                  <td style={{ padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>
+                  <td style={{ padding: "8px", borderBottom: "none", verticalAlign: "top", color: "var(--ink-2)" }}>
                     {x.from} → {x.to}<div style={{ fontSize: 11, color: "var(--ink-4)" }} className="tnum">{x.contLabel}</div>
-                    <div className="ke-noprint" style={{ fontSize: 10.5, marginTop: 3 }}>
-                      {x.pr.matched
-                        ? <span style={{ color: "var(--good)" }}>✓ Bảng giá · {x.cru ? (/xu/i.test(x.io || "") ? "CRU ngoại" : "CRU nội") : "1 chiều"} · {x.pr.conn || "—"} · {contColLabel(x.pr)}{x.pr.priceBook ? <span style={{ color: "var(--accent)" }}> · 📅 {bookLabel(x.pr.priceBook)}</span> : null} · <span className="tnum">{x.pr.route}</span>{x.pr.noDrop ? <span style={{ color: "var(--warn)" }}> (lô chưa có Nơi hạ — khớp theo FROM)</span> : null} — <span className="tnum">{x.pr.dau > 0 ? `Cước ${fmtNum(x.pr.cuoc)} + Dầu ${fmtNum(x.pr.dau)}` : `Cước+dầu ${fmtNum(x.pr.cuoc)}`}{(x.pr.bargeCuoc || x.pr.bargeDau) ? " + Sà lan " + fmtNum((x.pr.bargeCuoc || 0) + (x.pr.bargeDau || 0)) : ""}{x.pr.chiHo ? " + Chi hộ " + fmtNum(x.pr.chiHo) : ""} = {fmtNum(x.pr.phaiThu)} ₫</span>{x.pr.isBarge && !x.pr.bargeMatched ? <span style={{ color: "var(--warn)" }}> · ⚠ sà lan chưa khớp giá</span> : null}</span>
-                        : <span style={{ color: "var(--warn)" }}>⚠ Chưa khớp bảng giá{!x.pr.priceBook ? " (ngày cont ra ngoài mọi bảng giá)" : (x.pr.routeMatched ? ` (tuyến có giá nhưng thiếu cột loại cont ${x.pr.contType || "?"})` : "")}{x.pr.chiHo ? " · mới có Chi hộ " + fmtShort(x.pr.chiHo) : " · phải thu 0"}</span>}
-                    </div>
                   </td>
-                  <td className="tnum" style={{ padding: "8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{fmtDate(x.date) || "—"}</td>
+                  <td className="tnum" style={{ padding: "8px", borderBottom: "none", verticalAlign: "top", color: "var(--ink-2)" }}>{fmtDate(x.date) || "—"}</td>
                   {(() => { const a = lineAmt(x); return (<>
-                  <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: "1px solid var(--line-2)", fontWeight: 600 }}>
+                  <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: "none", verticalAlign: "top", fontWeight: 600 }}>
                     <div style={{ position: "relative", width: 130, marginLeft: "auto" }}>
                       <input inputMode="numeric" value={(a.base || 0).toLocaleString("vi-VN")} onChange={(e) => setAmtOv((o) => ({ ...o, [x.id]: parseInt(e.target.value.replace(/[^\d]/g, ""), 10) || 0 }))} className="tnum"
                         style={{ width: "100%", padding: "6px 22px 6px 8px", fontSize: 12.5, textAlign: "right", fontWeight: 600, border: "1px solid var(--line)", borderRadius: 7, outline: "none" }}
@@ -303,7 +538,7 @@ function StatementForm({ cfg, onCancel, onSaved }) {
                       <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)", fontSize: 12, pointerEvents: "none" }}>₫</span>
                     </div>
                   </td>
-                  <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: "1px solid var(--line-2)", verticalAlign: "top" }}>
+                  <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: "none", verticalAlign: "top" }}>
                     <span className="ke-noprint">
                       <select value={vatOf(x) == null ? "" : String(vatOf(x))} onChange={(e) => setVatOv((o) => ({ ...o, [x.id]: e.target.value }))} style={{ padding: "5px 6px", fontSize: 12, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 7, background: "#fff", cursor: "pointer", textAlign: "right" }} title="VAT riêng dòng này (mặc định theo bảng kê)">
                         <option value="">Mặc định ({vatRate}%)</option>
@@ -313,10 +548,30 @@ function StatementForm({ cfg, onCancel, onSaved }) {
                     </span>
                     <span style={{ display: "none" }} className="ke-printonly">{fmtNum(a.vat)}{a.rate ? ` (${a.rate}%)` : ""}</span>
                   </td>
-                  <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-2)" }}>{fmtNum(a.choho)}</td>
-                  <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: "1px solid var(--line-2)", fontWeight: 700 }}>{fmtNum(a.total)}</td>
+                  {extraCols.map((c) => (
+                    <td key={c.key} className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: "none", verticalAlign: "top" }}>
+                      <ExtraCell col={c} value={a.extras[c.key] || 0} onChange={(v) => setLineExtra(x.id, c.key, v)} />
+                    </td>
+                  ))}
+                  <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: "none", verticalAlign: "top", color: "var(--ink-2)", minWidth: 90 }}><ChoHoCell amount={a.choho} items={x.pr.choHoItems} /></td>
+                  <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: "none", verticalAlign: "top", fontWeight: 700 }}>{fmtNum(a.total)}</td>
+                  <td style={{ padding: "6px 8px", borderBottom: "none", verticalAlign: "top" }}><LineNoteCell value={noteOv[x.id]} onChange={(v) => setNoteOv((o) => ({ ...o, [x.id]: v }))} /></td>
                   </>); })()}
                 </tr>
+                <tr className={(i % 2 ? "ke-zebra " : "") + "ke-lo-end"} style={{ opacity: on ? 1 : 0.4 }}>
+                  <td className="ke-noprint" style={{ borderBottom: "1px solid var(--line-2)" }}></td>
+                  <td style={{ borderBottom: "1px solid var(--line-2)" }}></td>
+                  <td colSpan={nCols - 2} style={{ padding: "0 8px", borderBottom: "1px solid var(--line-2)" }}>
+                    <LotNote text={x.infoNote} />
+                    <div className="ke-noprint" style={{ fontSize: 11, lineHeight: 1.55, padding: "0 0 8px" }}>
+                      <LotCostLine items={x.pr.costItems} block />
+                      {x.pr.matched
+                        ? <span style={{ color: "var(--good)" }}>✓ Bảng giá · {x.cru ? (/xu/i.test(x.io || "") ? "CRU ngoại" : "CRU nội") : "1 chiều"} · {x.pr.conn || "—"} · {contColLabel(x.pr)}{x.pr.priceBook ? <span style={{ color: "var(--accent)" }}> · 📅 {bookLabel(x.pr.priceBook)}</span> : null} · <span className="tnum">{x.pr.route}</span>{x.pr.noDrop ? <span style={{ color: "var(--warn)" }}> (lô chưa có Nơi hạ — khớp theo FROM)</span> : null} — <span className="tnum">{x.pr.dau > 0 ? `Cước ${fmtNum(x.pr.cuoc)} + Dầu ${fmtNum(x.pr.dau)}` : `Cước+dầu ${fmtNum(x.pr.cuoc)}`}{(x.pr.bargeCuoc || x.pr.bargeDau) ? " + Sà lan " + fmtNum((x.pr.bargeCuoc || 0) + (x.pr.bargeDau || 0)) : ""}{x.pr.chiHo ? " + Chi hộ " + fmtNum(x.pr.chiHo) : ""} = {fmtNum(x.pr.phaiThu)} ₫</span>{x.pr.isBarge && !x.pr.bargeMatched ? <span style={{ color: "var(--warn)" }}> · ⚠ sà lan chưa khớp giá</span> : null}</span>
+                        : <span style={{ color: "var(--warn)" }}>⚠ Chưa khớp bảng giá{!x.pr.priceBook ? " (ngày cont ra ngoài mọi bảng giá)" : (x.pr.routeMatched ? ` (tuyến có giá nhưng thiếu cột loại cont ${x.pr.contType || "?"})` : "")}{x.pr.chiHo ? " · mới có Chi hộ " + fmtShort(x.pr.chiHo) : " · phải thu 0"}</span>}
+                    </div>
+                  </td>
+                </tr>
+                </React.Fragment>
               );
             })}
           </tbody>
@@ -327,32 +582,42 @@ function StatementForm({ cfg, onCancel, onSaved }) {
               <td colSpan={4} style={{ padding: "9px 8px", borderTop: "1.5px solid var(--line)", textAlign: "right", color: "var(--ink-3)" }}>CỘNG</td>
               <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(amt.base)}</td>
               <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)", color: amt.vat ? "var(--accent)" : "var(--ink-4)" }}>{fmtNum(amt.vat)}</td>
+              {extraCols.map((c) => <td key={c.key} className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(amt.extras[c.key] || 0)}</td>)}
               <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(amt.choho)}</td>
               <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(tongThu)}</td>
+              <td style={{ borderTop: "1.5px solid var(--line)" }}></td>
             </tr>
-            {/* Khối tổng 4 dòng (nền/VAT/chi hộ/tổng tiền) */}
+            {/* Khối tổng (nền/VAT/chi hộ/từng cột riêng/tổng tiền) */}
             <tr>
               <td className="ke-noprint"></td>
-              <td colSpan={6} style={{ padding: "9px 8px 3px", textAlign: "right", color: "var(--ink-3)" }}>Phải thu (cước + dầu)</td>
-              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "9px 8px 3px" }}>{fmtVND(amt.base)}</td>
-            </tr>
-            <tr>
-              <td className="ke-noprint"></td>
-              <td colSpan={6} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>VAT{vatRate ? ` (mặc định ${vatRate}%)` : ""}</td>
-              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px", color: amt.vat ? "var(--accent)" : "var(--ink-4)" }}>{fmtVND(amt.vat)}</td>
+              <td colSpan={nCols - 4} style={{ padding: "9px 8px 3px", textAlign: "right", color: "var(--ink-3)" }}>Phải thu (cước + dầu)</td>
+              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "9px 8px 3px" }}>{fmtVND(amt.base)}</td><td></td>
             </tr>
             <tr>
               <td className="ke-noprint"></td>
-              <td colSpan={6} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>Chi hộ (không VAT)</td>
-              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px" }}>{fmtVND(amt.choho)}</td>
+              <td colSpan={nCols - 4} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>VAT{vatRate ? ` (mặc định ${vatRate}%)` : ""}</td>
+              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px", color: amt.vat ? "var(--accent)" : "var(--ink-4)" }}>{fmtVND(amt.vat)}</td><td></td>
+            </tr>
+            {extraCols.map((c) => (
+              <tr key={c.key}>
+                <td className="ke-noprint"></td>
+                <td colSpan={nCols - 4} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>{colLabel(c)}{c.vat ? " (chịu VAT)" : " (không VAT)"}</td>
+                <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px" }}>{fmtVND(amt.extras[c.key] || 0)}</td><td></td>
+              </tr>
+            ))}
+            <tr>
+              <td className="ke-noprint"></td>
+              <td colSpan={nCols - 4} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>Chi hộ (không VAT)</td>
+              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px" }}>{fmtVND(amt.choho)}</td><td></td>
             </tr>
             <tr style={{ fontWeight: 700 }}>
               <td className="ke-noprint"></td>
-              <td colSpan={6} style={{ padding: "8px 8px 11px", textAlign: "right" }}>TỔNG TIỀN</td>
-              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "8px 8px 11px" }}>{fmtVND(tongThu)}</td>
+              <td colSpan={nCols - 4} style={{ padding: "8px 8px 11px", textAlign: "right" }}>TỔNG TIỀN</td>
+              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "8px 8px 11px" }}>{fmtVND(tongThu)}</td><td></td>
             </tr>
           </tfoot>
         </table>
+        </div>
 
         <div className="ke-noprint" style={{ marginTop: 14, fontSize: 12.5, color: "var(--ink-4)" }}>Sau khi lưu, mở bảng kê để nhập các đợt khách thanh toán và theo dõi công nợ.</div>
       </div>
@@ -374,8 +639,32 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
   const delP = (id) => sync(payments.filter((p) => p.id !== id));
   const vatRate = +st.vatRate || 0;
   const setVat = (v) => onUpdate && onUpdate({ ...st, vatRate: v });
-  // NỀN dòng = cước+dầu+sà lan (từ detail) — NGUỒN CHÂN LÝ khớp backend. VAT áp nền; chi hộ không VAT.
-  const lineAmt = (l) => lineAmounts(l, vatRate);   // {base,vat,choho,total} từ detail
+  // CỘT CHI PHÍ RIÊNG của bảng kê này (extraCols [{key,label,vat}] lưu cùng bảng kê, KHÔNG khai trong Cài đặt);
+  // số từng lô ở detail.extras[key]. Cột có cờ vat → chịu VAT% của bảng kê. Nhãn rỗng → backend bỏ cột khi lưu.
+  const extraCols = Array.isArray(st.extraCols) ? st.extraCols : [];
+  const setExtraCols = (cols) => onUpdate && onUpdate({ ...st, extraCols: cols });
+  const addExtraCol = () => setExtraCols([...extraCols, newExtraCol()]);
+  const setExtraCol = (key, patch) => setExtraCols(extraCols.map((c) => (c.key === key ? { ...c, ...patch } : c)));
+  const delExtraCol = async (key) => {
+    const filled = (st.lines || []).some((l) => l.detail && l.detail.extras && +l.detail.extras[key]);
+    if (filled && window.confirmAction && !(await window.confirmAction({ title: "Xóa cột chi phí riêng?", text: "Các số đã điền ở cột này sẽ bị bỏ (chỉ chốt khi bấm <b>Lưu</b>).", confirmText: "Xóa cột", cancelText: "Huỷ" }))) return;
+    onUpdate && onUpdate({ ...st, extraCols: extraCols.filter((c) => c.key !== key), lines: (st.lines || []).map((l) => {
+      const d = (l.detail && typeof l.detail === "object") ? l.detail : null;
+      if (!d || !d.extras || !(key in d.extras)) return l;
+      const ex = { ...d.extras }; delete ex[key];
+      return { ...l, detail: { ...d, extras: ex } };
+    }) });
+  };
+  const setLineExtra = (id, key, v) => onUpdate && onUpdate({ ...st, lines: (st.lines || []).map((l) => {
+    if (l.id !== id) return l;
+    const d = (l.detail && typeof l.detail === "object") ? { ...l.detail } : {};
+    d.extras = { ...(d.extras || {}), [key]: v };
+    return { ...l, detail: d };
+  }) });
+  const nCols = 9 + extraCols.length;   // số cột của bảng gồm cột Ghi chú (cho colSpan phần chi tiết + tổng kết)
+  const setLineNote = (id, v) => onUpdate && onUpdate({ ...st, lines: (st.lines || []).map((l) => (l.id === id ? { ...l, userNote: v } : l)) });
+  // NỀN dòng = cước+dầu+sà lan (từ detail) — NGUỒN CHÂN LÝ khớp backend. VAT áp nền (+ phí riêng có vat); chi hộ không VAT.
+  const lineAmt = (l) => lineAmounts(l, vatRate, null, extraCols);   // {base,vat,choho,extra,extras,total} từ detail
   // Sửa tay NỀN dòng → GIÁ TÙY CHỈNH: detail.manualBase + phaiThu = nền; snapshot cuoc/dau/sà lan giữ nguyên để đối chiếu.
   const setLineBase = (id, base) => onUpdate && onUpdate({ ...st, lines: (st.lines || []).map((l) => {
     if (l.id !== id) return l;
@@ -408,8 +697,8 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
   const scopedLines = (st.lines || []).filter(inScope);
   const outCount = (st.lines || []).length - scopedLines.length;
   const scopeLabel = scope === "nhap" ? "Nhập" : "Xuất";
-  // 4 con số = Σ per-line TRONG PHẠM VI (khớp 3 cột mỗi dòng).
-  const amt = statementAmounts(scopedLines, vatRate);
+  // Các con số = Σ per-line TRONG PHẠM VI (khớp từng cột mỗi dòng), gồm cột chi phí riêng.
+  const amt = statementAmounts(scopedLines, vatRate, null, extraCols);
   const tongThu = amt.total;
   const grp = (d) => { d = (d || "").toString().replace(/[^\d]/g, ""); return d ? d.replace(/\B(?=(\d{3})+(?!\d))/g, ".") : ""; };
   const daTT = payments.reduce((a, p) => a + toNum(p.amount), 0);
@@ -423,7 +712,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
           <div>
             <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em" }}>BẢNG KÊ CẦN THU</div>
             <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 3 }} className="tnum">Số: {st.no} · Ngày lập: {fmtDate(st.date)}
-              <span className="ke-printonly" style={{ display: "none" }}>{(st.from || st.to) ? ` · Cont ra: ${fmtDate(st.from) || "…"} – ${fmtDate(st.to) || "…"}` : ""}</span>
+              <span className="ke-printonly" style={{ display: "none" }}>{(st.from || st.to) ? ` · Cont ra: ${fmtDate(st.from) || "…"} – ${fmtDate(st.to) || "…"}` : ""}{dueOf(st) ? ` · Hạn TT: ${fmtDate(dueOf(st))}` : ""}</span>
             </div>
             {/* Kỳ cont ra — sửa được để tính lại theo khoảng ngày (ẩn khi in, in dùng dòng text trên) */}
             <div className="ke-noprint" style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 7, fontSize: 12.5, color: "var(--ink-3)", flexWrap: "wrap" }}>
@@ -443,6 +732,8 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
                 Bảng kê <b>hàng {scopeLabel.toLowerCase()}</b>: tính tiền <b>{scopedLines.length}</b> lô {scopeLabel}{outCount > 0 ? <> — <b>{outCount}</b> lô khác loại đã ẩn, <b>không tính</b>, không in / xuất Excel (chọn <b>Tất cả</b> để xem lại)</> : null}. Bấm <b>Lưu</b> để chốt phạm vi.
               </div>
             )}
+            {/* CỘT CHI PHÍ RIÊNG — repeater, chỉ áp cho bảng kê này; mỗi cột = 1 ô số theo lô trong bảng dưới */}
+            <div style={{ marginTop: 8 }}><ExtraColsBar cols={extraCols} onAdd={addExtraCol} onChange={setExtraCol} onDelete={delExtraCol} /></div>
             {/* VAT + phạm vi cho bản in (read-only) */}
             <div className="ke-printonly" style={{ display: "none", fontSize: 12.5, color: "var(--ink-3)", marginTop: 4 }}>VAT: {vatRate}%{scope !== "all" ? ` · Phạm vi: lô hàng ${scopeLabel.toLowerCase()}` : ""}</div>
           </div>
@@ -453,15 +744,14 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
         </div>
         <div style={{ background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", borderRadius: 10, padding: "11px 14px", marginBottom: 14, fontSize: 12.5 }}>
           <div style={{ fontWeight: 700, fontSize: 14 }}>{st.customer}</div>
-          <div style={{ color: "var(--ink-2)", marginTop: 3, display: "flex", gap: 16, flexWrap: "wrap" }}>
-            {info.taxCode && <span>MST: <b className="tnum">{info.taxCode}</b></span>}
-            {info.address && <span>Địa chỉ: {info.address}</span>}
-            {info.contact && <span>Liên hệ: {info.contact}</span>}
-            {info.termDays && <span>Hạn TT: {info.termDays} ngày</span>}
-          </div>
+          <CustomerInfoLine info={info} due={dueOf(st)} base={st.date} />
         </div>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
-          <thead><tr style={{ background: "#fafbfc" }}>{th("#", "center")}{th("Lô / Booking")}{th("Tuyến · Cont")}{th("Cont ra")}{th(<>Phải thu<br/>(cước+dầu)</>, "right")}{th("VAT", "right")}{th("Chi hộ", "right")}{th("Tổng tiền", "right")}</tr></thead>
+        {/* Nhiều cột chi phí riêng → bảng giữ bề rộng tối thiểu và cuộn ngang trên màn hình (in: .ke-scroll bỏ cuộn + minWidth) */}
+        <div className="ke-scroll" style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", minWidth: 1060 + 110 * extraCols.length, borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead><tr style={{ background: "#fafbfc" }}>{th("#", "center")}{th("Lô / Booking")}{th("Tuyến · Cont")}{th("Cont ra")}{th(<>Phải thu<br/>(cước+dầu)</>, "right")}{th("VAT", "right")}
+            {extraCols.map((c) => <React.Fragment key={c.key}>{th(<>{colLabel(c)}{c.vat ? <span style={{ color: "var(--accent)", fontSize: 9.5 }}><br/>+VAT</span> : null}</>, "right")}</React.Fragment>)}
+            {th("Chi hộ", "right")}{th("Tổng tiền", "right")}{th("Ghi chú")}</tr></thead>
           <tbody>
             {scopedLines.map((l, i) => {
               const d = detailById[l.id];
@@ -472,12 +762,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
               const sysB = sysBaseOf(l.detail);
               const note = String(l.infoNote || "").trim();   // "Ghi chú tự do cho lô hàng" (popup Thông tin lô, lấy trực tiếp từ lô)
               const noteOnly = !!note && !(d && d.found) && !gone;   // có ghi chú nhưng không có dòng chi tiết → dòng riêng
-              const noteEl = note ? (
-                <div style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, color: "var(--ink-2)", background: "#fffaf0", border: "1px solid #f3e2b8", borderRadius: 7, padding: "5px 9px", margin: "2px 0 6px", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
-                  <i className="bi bi-sticky" style={{ color: "#b7791f", marginTop: 1 }} />
-                  <span><b style={{ color: "#9a6700" }}>Ghi chú:</b> {note}</span>
-                </div>
-              ) : null;
+              const noteEl = <LotNote text={note} />;
               return (
               <React.Fragment key={l.id}>
               <tr className={(i % 2 ? "ke-zebra " : "") +(d || noteOnly ? "" : "ke-lo-end")}>
@@ -509,8 +794,8 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
                   {/* Gợi ý từ Tính lại: KHÔNG tự điền, bấm Áp dụng mới đổi (giá tùy chỉnh cũng vậy) */}
                   {sug && (
                     <div className="ke-noprint" style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 6, marginTop: 4, fontSize: 10.5, fontWeight: 600, color: "var(--warn)", whiteSpace: "nowrap" }}
-                      title={manual ? "Dòng này đang dùng giá tùy chỉnh — chỉ đổi khi bạn bấm Áp dụng" : "Số hệ thống vừa tính lại theo lô hàng + bảng giá hiện tại"}>
-                      <span>{sug.infoOnly ? "Thông tin tuyến/kết nối đổi" : <>Hệ thống tính {sug.baseDiff ? <b className="tnum">{fmtNum(sug.base)}</b> : null}{sug.chohoDiff ? <> · chi hộ <b className="tnum">{fmtNum(sug.choho)}</b></> : null}</>}</span>
+                      title={manual ? "Dòng giá tùy chỉnh: Áp dụng chỉ cập nhật chi hộ + thông tin hệ thống, GIỮ giá bạn gõ (về giá hệ thống: bấm ↺)" : "Số hệ thống vừa tính lại theo lô hàng + bảng giá hiện tại"}>
+                      <span>{sug.infoOnly ? "Thông tin tuyến/kết nối đổi" : <>Hệ thống tính {sug.baseDiff ? <b className="tnum">{fmtNum(sug.base)}</b> : null}{sug.baseDiff && manual ? " (giữ giá gõ tay)" : null}{sug.chohoDiff ? <> · chi hộ <b className="tnum">{fmtNum(sug.choho)}</b></> : null}</>}</span>
                       {onApplyLine && <button type="button" onClick={() => onApplyLine(l.id)} style={{ ...chipBtn, background: "var(--warn)", color: "#fff" }}>Áp dụng</button>}
                     </div>
                   )}
@@ -526,14 +811,21 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
                   </span>
                   <span style={{ display: "none" }} className="ke-printonly">{fmtNum(a.vat)}{a.rate ? ` (${a.rate}%)` : ""}</span>
                 </td>
-                <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top" }}>{fmtNum(a.choho)}</td>
+                {/* Cột chi phí riêng: số nhập tay theo lô (0 = trống), in ra số */}
+                {extraCols.map((c) => (
+                  <td key={c.key} className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", verticalAlign: "top" }}>
+                    <ExtraCell col={c} value={a.extras[c.key] || 0} onChange={(v) => setLineExtra(l.id, c.key, v)} />
+                  </td>
+                ))}
+                <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top", minWidth: 90 }}><ChoHoCell amount={a.choho} items={l.detail && l.detail.choHoItems} /></td>
                 <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", fontWeight: 700, verticalAlign: "top" }}>{fmtNum(a.total)}</td>
+                <td style={{ padding: "6px 8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", verticalAlign: "top" }}><LineNoteCell value={l.userNote} onChange={(v) => setLineNote(l.id, v)} /></td>
                 </>); })()}
               </tr>
               {d && d.found && (
                 <tr className={(i % 2 ? "ke-zebra " : "") +"ke-lo-end"}>
                   <td style={{ borderBottom: "1px solid var(--line-2)" }}></td>
-                  <td colSpan={7} style={{ padding: "0 8px 9px", borderBottom: "1px solid var(--line-2)" }}>
+                  <td colSpan={nCols - 1} style={{ padding: "0 8px 9px", borderBottom: "1px solid var(--line-2)" }}>
                     {noteEl}
                     {/* LỘ TRÌNH lô (ĐI → NHÀ MÁY → HẠ, theo ký hiệu) — để kế toán dò bảng giá */}
                     {(d.loTrinh || l.from || l.to) && (
@@ -577,17 +869,16 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
                       {d.choHoItems.map((c, j) => <span key={"h" + j} style={{ color: "var(--good)" }}>+ Chi hộ · {c.item} <b className="tnum">{fmtNum(c.amount)}</b></span>)}
                       <span style={{ fontWeight: 700 }}>= <b className="tnum" style={{ color: "var(--accent)" }}>{fmtNum(d.phaiThu)} ₫</b></span>
                       {manual && <span style={{ color: "#9a6700", fontWeight: 600 }}>· đang thu theo giá tùy chỉnh <b className="tnum">{fmtNum(lineAmt(l).base)}</b></span>}
-                      {d.costItems.filter((c) => !c.billable).length > 0 &&
-                        <span style={{ color: "var(--ink-4)" }}>· Chi phí công ty (không thu khách): {d.costItems.filter((c) => !c.billable).map((c) => c.item + " " + fmtNum(c.amount)).join(" · ")}</span>}
+                      <LotCostLine items={d.costItems} />
                     </div>
                   </td>
                 </tr>
               )}
               {noteOnly && (
-                <tr className={(i % 2 ? "ke-zebra " : "") +"ke-lo-end"}><td style={{ borderBottom: "1px solid var(--line-2)" }}></td><td colSpan={7} style={{ padding: "0 8px 7px", borderBottom: "1px solid var(--line-2)" }}>{noteEl}</td></tr>
+                <tr className={(i % 2 ? "ke-zebra " : "") +"ke-lo-end"}><td style={{ borderBottom: "1px solid var(--line-2)" }}></td><td colSpan={nCols - 1} style={{ padding: "0 8px 7px", borderBottom: "1px solid var(--line-2)" }}>{noteEl}</td></tr>
               )}
               {gone && (
-                <tr className={(i % 2 ? "ke-zebra " : "") +"ke-lo-end"}><td style={{ borderBottom: "1px solid var(--line-2)" }}></td><td colSpan={7} style={{ padding: "0 8px 9px", borderBottom: "1px solid var(--line-2)", fontSize: 11.5, color: "var(--ink-4)" }}>Lô không còn trong hệ thống — giữ số đã lưu, không tính lại được.</td></tr>
+                <tr className={(i % 2 ? "ke-zebra " : "") +"ke-lo-end"}><td style={{ borderBottom: "1px solid var(--line-2)" }}></td><td colSpan={nCols - 1} style={{ padding: "0 8px 9px", borderBottom: "1px solid var(--line-2)", fontSize: 11.5, color: "var(--ink-4)" }}>Lô không còn trong hệ thống — giữ số đã lưu, không tính lại được.</td></tr>
               )}
               </React.Fragment>
             );})}
@@ -598,27 +889,36 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
               <td colSpan={4} style={{ padding: "9px 8px", borderTop: "1.5px solid var(--line)", textAlign: "right", color: "var(--ink-3)" }}>CỘNG</td>
               <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(amt.base)}</td>
               <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)", color: amt.vat ? "var(--accent)" : "var(--ink-4)" }}>{fmtNum(amt.vat)}</td>
+              {extraCols.map((c) => <td key={c.key} className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(amt.extras[c.key] || 0)}</td>)}
               <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(amt.choho)}</td>
               <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(tongThu)}</td>
+              <td style={{ borderTop: "1.5px solid var(--line)" }}></td>
             </tr>
             <tr>
-              <td colSpan={6} style={{ padding: "9px 8px 3px", textAlign: "right", color: "var(--ink-3)" }}>Phải thu (cước + dầu)</td>
-              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "9px 8px 3px" }}>{fmtVND(amt.base)}</td>
+              <td colSpan={nCols - 3} style={{ padding: "9px 8px 3px", textAlign: "right", color: "var(--ink-3)" }}>Phải thu (cước + dầu)</td>
+              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "9px 8px 3px" }}>{fmtVND(amt.base)}</td><td></td>
             </tr>
             <tr>
-              <td colSpan={6} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>VAT{vatRate ? ` (mặc định ${vatRate}%)` : ""}</td>
-              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px", color: amt.vat ? "var(--accent)" : "var(--ink-4)" }}>{fmtVND(amt.vat)}</td>
+              <td colSpan={nCols - 3} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>VAT{vatRate ? ` (mặc định ${vatRate}%)` : ""}</td>
+              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px", color: amt.vat ? "var(--accent)" : "var(--ink-4)" }}>{fmtVND(amt.vat)}</td><td></td>
             </tr>
+            {extraCols.map((c) => (
+              <tr key={c.key}>
+                <td colSpan={nCols - 3} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>{colLabel(c)}{c.vat ? " (chịu VAT)" : " (không VAT)"}</td>
+                <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px" }}>{fmtVND(amt.extras[c.key] || 0)}</td><td></td>
+              </tr>
+            ))}
             <tr>
-              <td colSpan={6} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>Chi hộ (không VAT)</td>
-              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px" }}>{fmtVND(amt.choho)}</td>
+              <td colSpan={nCols - 3} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>Chi hộ (không VAT)</td>
+              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px" }}>{fmtVND(amt.choho)}</td><td></td>
             </tr>
             <tr style={{ fontWeight: 700 }}>
-              <td colSpan={6} style={{ padding: "8px 8px 11px", textAlign: "right" }}>TỔNG TIỀN</td>
-              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "8px 8px 11px" }}>{fmtVND(tongThu)}</td>
+              <td colSpan={nCols - 3} style={{ padding: "8px 8px 11px", textAlign: "right" }}>TỔNG TIỀN</td>
+              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "8px 8px 11px" }}>{fmtVND(tongThu)}</td><td></td>
             </tr>
           </tfoot>
         </table>
+        </div>
 
         {/* payments / công nợ */}
         <div style={{ marginTop: 18 }}>
@@ -661,7 +961,9 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
         </div>
 
         <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end" }}>
-          <AmountSummary amt={amt} vatRate={vatRate} paid={daTT} payCount={payments.length} showDebt />
+          <AmountSummary amt={amt} vatRate={vatRate} paid={daTT} payCount={payments.length} showDebt extras={extraCols.map((c) => ({ ...c, sum: amt.extras[c.key] || 0 }))}>
+            <DueSummaryRow st={st} tongThu={tongThu} payments={payments} onChange={(v) => onUpdate && onUpdate({ ...st, info: { ...info, dueDate: v } })} />
+          </AmountSummary>
         </div>
       </div>
   );
@@ -714,17 +1016,20 @@ function SavedStatementModal({ st, onClose, onDelete, onUpdate, onSave, isDirty 
 
 /* Trang xem bảng kê đã lưu (route riêng) — chi tiết đầy đủ như lúc tạo.
    suggestById = kết quả "Tính lại" (gợi ý); onApplyLine/onApplyAll áp gợi ý vào dòng; onClearSuggest ẩn gợi ý. */
-function SavedStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUrl, onExcel, onRecalc, detailById, suggestById = null, onApplyLine, onApplyAll, onClearSuggest }) {
-  // Tổng kết gợi ý: dòng có giá/chi hộ mới, trong đó dòng giá tùy chỉnh được giữ (chỉ áp từng dòng), lô đã mất.
+function SavedStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUrl, onExcel, onRecalc, detailById, suggestById = null, onApplyLine, onApplyAll, onClearSuggest, newLots = null, inOtherStatements = 0, onAddNewLots }) {
+  // Tổng kết gợi ý: dòng có giá/chi hộ mới (dòng giá tùy chỉnh: Áp dụng giữ giá gõ tay), lô đã mất, lô mới trong kỳ.
   const vr = +st.vatRate || 0;
   let nNew = 0, nManualKept = 0, nApplicable = 0, nGone = 0;
   if (suggestById) (st.lines || []).forEach((l) => {
     const s = suggestById[l.id];
     if (s && !s.found) { nGone++; return; }
     if (!suggestionOf(l, s, vr)) return;
-    nNew++; if (isManualLine(l)) nManualKept++; else nApplicable++;
+    nNew++; nApplicable++; if (isManualLine(l)) nManualKept++;
   });
-  const recalcDiff = nNew > 0;
+  const nAdd = (newLots || []).length;
+  const recalcDiff = nNew > 0 || nAdd > 0;
+  // Khung rộng thêm theo số cột chi phí riêng (tối đa 4 cột; nhiều hơn thì bảng cuộn ngang).
+  const wide = 1120 + 110 * Math.min(4, (st.extraCols || []).length);
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
       <div className="ke-noprint trk-head" style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 22px", background: "#fff", borderBottom: "1px solid var(--line)" }}>
@@ -740,7 +1045,7 @@ function SavedStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUrl, 
         </div>
         {onRecalc && <button type="button" onClick={onRecalc} title="Tính lại theo lô hàng + bảng giá hiện tại — chỉ GỢI Ý, không đổi số đã lưu; giá tùy chỉnh giữ nguyên"
           style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 15px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: recalcDiff ? "#fff" : "var(--ink-2)", background: recalcDiff ? "var(--warn)" : "#fff", border: recalcDiff ? "none" : "1px solid var(--line)", borderRadius: 9 }}>
-          <I.fx /> Tính lại{recalcDiff ? ` (${nNew} dòng có giá mới)` : ""}
+          <I.fx /> Tính lại{recalcDiff ? ` (${[nNew && `${nNew} dòng có giá mới`, nAdd && `${nAdd} lô mới`].filter(Boolean).join(", ")})` : ""}
         </button>}
         {onExcel && <button type="button" onClick={onExcel}
           style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 15px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "#fff", background: "var(--good)", border: "none", borderRadius: 9 }}>
@@ -748,28 +1053,31 @@ function SavedStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUrl, 
         </button>}
       </div>
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "22px" }}>
-        <div className="ke-noprint" style={{ maxWidth: 940, margin: "0 auto 14px", display: "flex", gap: 10, alignItems: "flex-start", background: "#eff5ff", border: "1px solid #cfe0fb", borderRadius: 12, padding: "12px 14px", fontSize: 13, color: "#1f4f9e", lineHeight: 1.6 }}>
+        <div className="ke-noprint" style={{ maxWidth: wide, margin: "0 auto 14px", display: "flex", gap: 10, alignItems: "flex-start", background: "#eff5ff", border: "1px solid #cfe0fb", borderRadius: 12, padding: "12px 14px", fontSize: 13, color: "#1f4f9e", lineHeight: 1.6 }}>
           <i className="bi bi-info-circle-fill" style={{ fontSize: 16, marginTop: 1, flexShrink: 0 }} />
           <div>
             Bảng kê này đã được <b>chốt số khi tạo</b> để lưu hồ sơ. Nếu sau này <b>lô hàng gốc bị sửa hoặc xóa</b>, bảng kê này <b>vẫn giữ nguyên</b> — không bị ảnh hưởng.
-            <br />Bấm <b>Tính lại</b> để hệ thống tính theo lô hàng + bảng giá hiện tại và <b>gợi ý</b> bên cạnh từng dòng; số đã lưu chỉ đổi khi bạn bấm <b>Áp dụng</b> rồi <b>Lưu</b>. Ô nào bạn gõ tay là <b>giá tùy chỉnh</b> (viền vàng), không bao giờ bị ghi đè tự động.
+            <br />Bấm <b>Tính lại</b> để hệ thống tính theo lô hàng + bảng giá hiện tại (chi hộ mới, giá mới) và tìm <b>lô mới trong kỳ</b>; số đã lưu chỉ đổi khi bạn bấm <b>Áp dụng</b> / <b>Thêm lô</b> rồi <b>Lưu</b>. Ô nào bạn gõ tay là <b>giá tùy chỉnh</b> (viền vàng) — Áp dụng chỉ cập nhật chi hộ, <b>giữ nguyên giá gõ tay</b>.
           </div>
         </div>
         {/* Thanh tổng kết gợi ý sau Tính lại */}
         {suggestById && (
-          <div className="ke-noprint" style={{ maxWidth: 940, margin: "0 auto 14px", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", background: nNew ? "#fff7e6" : "var(--good-weak)", border: "1px solid " + (nNew ? "#ffe1a8" : "var(--good)"), borderRadius: 12, padding: "10px 14px", fontSize: 13, color: nNew ? "#7a5200" : "var(--good)", lineHeight: 1.5 }}>
+          <div className="ke-noprint" style={{ maxWidth: wide, margin: "0 auto 14px", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", background: nNew ? "#fff7e6" : "var(--good-weak)", border: "1px solid " + (nNew ? "#ffe1a8" : "var(--good)"), borderRadius: 12, padding: "10px 14px", fontSize: 13, color: nNew ? "#7a5200" : "var(--good)", lineHeight: 1.5 }}>
             <i className="bi bi-calculator-fill" style={{ fontSize: 16, flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 240 }}>
               {nNew
-                ? <>Hệ thống tính ra <b>{nNew}</b> dòng có giá / chi hộ khác số đang dùng{nManualKept ? <> — trong đó <b>{nManualKept}</b> dòng <b>giá tùy chỉnh được giữ nguyên</b> (muốn đổi thì bấm <b>Áp dụng</b> ở đúng dòng đó)</> : null}. Số đã lưu chưa thay đổi.</>
-                : <>Khớp dữ liệu hiện tại — không dòng nào chênh lệch.</>}
+                ? <>Hệ thống tính ra <b>{nNew}</b> dòng có giá / chi hộ khác số đang dùng{nManualKept ? <> — trong đó <b>{nManualKept}</b> dòng <b>giá tùy chỉnh</b>: Áp dụng chỉ cập nhật chi hộ, <b>giữ giá gõ tay</b></> : null}. Số đã lưu chưa thay đổi.</>
+                : <>Giá và chi hộ khớp dữ liệu hiện tại.</>}
               {nGone ? <> · {nGone} lô không còn trong hệ thống, giữ số đã lưu.</> : null}
+              {nAdd ? <> · <b>{nAdd}</b> lô mới trong kỳ chưa có trong bảng kê.</> : null}
+              {inOtherStatements ? <> · {inOtherStatements} lô trong kỳ đã nằm ở bảng kê khác (không thêm).</> : null}
             </div>
-            {nApplicable > 0 && onApplyAll && <Btn variant="primary" onClick={onApplyAll} title="Chỉ áp cho dòng KHÔNG phải giá tùy chỉnh">Áp dụng {nApplicable} dòng</Btn>}
+            {nAdd > 0 && onAddNewLots && <Btn variant="primary" onClick={onAddNewLots} title={(newLots || []).map((x) => `${x.contNo || x.booking} · ${x.date || ""}`).join("\n")}>Thêm {nAdd} lô mới</Btn>}
+            {nApplicable > 0 && onApplyAll && <Btn variant="primary" onClick={onApplyAll} title="Áp cho mọi dòng có gợi ý — dòng giá tùy chỉnh giữ giá gõ tay, chỉ cập nhật chi hộ">Áp dụng {nApplicable} dòng</Btn>}
             {onClearSuggest && <Btn onClick={onClearSuggest}>Ẩn gợi ý</Btn>}
           </div>
         )}
-        <div style={{ maxWidth: 940, margin: "0 auto", background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "8px 22px 18px" }}>
+        <div style={{ maxWidth: wide, margin: "0 auto", background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "8px 22px 18px" }}>
           <StatementDetailBody st={st} onUpdate={onUpdate} detailById={detailById || {}} suggestById={suggestById} onApplyLine={onApplyLine} />
           <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
             <StatementActions st={st} isDirty={isDirty} onSave={onSave} onDelete={(id) => { Promise.resolve(onDelete && onDelete(id)).then(() => { window.location.href = backUrl; }); }} />
@@ -791,16 +1099,118 @@ function DriftChip({ n }) {
   );
 }
 
-function KePage({ ke, drift = {}, onNew, onOpen }) {
+/* TRẠNG THÁI HẠN THANH TOÁN ở danh sách — st.dueDate do backend tính (statementDueDate), còn nợ = Tổng tiền − đã thu. */
+const paidOf = (st) => (st.payments || []).reduce((a, p) => a + (parseInt((p.amount || "0").toString().replace(/[^\d]/g, ""), 10) || 0), 0);
+const localTodayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+const DUE_SOON_DAYS = 7;
+function dueStatus(st, today) {
+  const con = (st.tongThu || 0) - paidOf(st);
+  if ((st.tongThu || 0) > 0 && con <= 0) return { key: "paid", con: 0, label: "Đã thu đủ" };
+  if (!st.dueDate) return { key: "none", con, label: "Chưa đặt hạn" };
+  const n = daysBetweenIso(today, st.dueDate);
+  if (n < 0) return { key: "overdue", con, label: `Quá hạn ${-n} ngày` };
+  if (n <= DUE_SOON_DAYS) return { key: "soon", con, label: n === 0 ? "Đến hạn hôm nay" : `Còn ${n} ngày` };
+  return { key: "later", con, label: `Còn ${n} ngày` };
+}
+const DUE_FILTERS = [
+  { key: "all", label: "Tất cả" },
+  { key: "overdue", label: "Quá hạn" },
+  { key: "soon", label: `Đến hạn trong ${DUE_SOON_DAYS} ngày` },
+  { key: "later", label: "Chưa đến hạn" },
+  { key: "none", label: "Chưa đặt hạn" },
+  { key: "paid", label: "Đã thu đủ" },
+];
+const DUE_TONE = {
+  overdue: { c: "#b42318", bg: "#fdecea", bd: "#f6c4bd" },
+  soon:    { c: "#7a5200", bg: "#fff1cc", bd: "#ffe1a8" },
+  later:   { c: "var(--ink-3)", bg: "var(--line-2)", bd: "var(--line)" },
+  none:    { c: "var(--ink-4)", bg: "#fff", bd: "var(--line)" },
+  paid:    { c: "var(--good)", bg: "var(--good-weak)", bd: "#bfe3cf" },
+};
+const DUE_FILTER_KEY = "trk:bangke:dueFilter";
+function DueChip({ s }) {
+  const t = DUE_TONE[s.key] || DUE_TONE.none;
+  return <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, color: t.c, background: t.bg, border: "1px solid " + t.bd, padding: "1px 8px", borderRadius: 999, whiteSpace: "nowrap" }}>{s.label}</span>;
+}
+
+/* GẮN HẠN THANH TOÁN ngay trên danh sách: bấm ngày → popup chọn ngày / "ngày lập + N ngày" → lưu luôn
+   (onSet = PATCH .../due, chỉ ghi info.dueDate). Popup position:fixed để không bị khung bảng cắt. */
+function DueEditor({ st, onSet }) {
+  const btn = React.useRef(null); const pop = React.useRef(null);
+  const [pos, setPos] = useState(null);   // null = đóng
+  const [busy, setBusy] = useState(false);
+  const open = () => {
+    const r = btn.current.getBoundingClientRect(); const h = 120;
+    setPos({ left: Math.max(8, Math.min(r.left, window.innerWidth - 300)), top: r.bottom + h + 8 > window.innerHeight ? r.top - h - 6 : r.bottom + 6 });
+  };
+  useEffect(() => {
+    if (!pos) return;
+    // Lịch Flatpickr gắn vào body → coi là "bên trong" để chọn ngày không làm đóng popup.
+    const inside = (t) => (pop.current && pop.current.contains(t)) || (btn.current && btn.current.contains(t)) || !!(t && t.closest && t.closest(".flatpickr-calendar"));
+    const onDown = (e) => { if (!inside(e.target)) setPos(null); };
+    const onScroll = (e) => { if (!inside(e.target)) setPos(null); };
+    document.addEventListener("mousedown", onDown); window.addEventListener("scroll", onScroll, true);
+    return () => { document.removeEventListener("mousedown", onDown); window.removeEventListener("scroll", onScroll, true); };
+  }, [pos]);
+  const save = async (v) => {
+    setBusy(true);
+    try { const r = await onSet(st, v); if (r && r.ok) setPos(null); } catch (e) { /* trkApi đã báo lỗi */ } finally { setBusy(false); }
+  };
+  return (
+    <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+      <button ref={btn} type="button" onClick={() => (pos ? setPos(null) : open())} title="Bấm để đặt / sửa hạn thanh toán"
+        style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "2px 6px", margin: "-2px -6px", border: "1px dashed transparent", borderRadius: 6, background: "transparent", cursor: "pointer", font: "inherit", color: st.dueDate ? "var(--ink-2)" : "var(--accent)", fontWeight: st.dueDate ? 400 : 600 }}
+        onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--line)")} onMouseLeave={(e) => (e.currentTarget.style.borderColor = "transparent")}>
+        {st.dueDate ? fmtDate(st.dueDate) : "+ Đặt hạn"} <i className="bi bi-pencil" style={{ fontSize: 10, color: "var(--ink-4)" }} />
+      </button>
+      {pos && (
+        <div ref={pop} style={{ position: "fixed", zIndex: 1000, top: pos.top, left: pos.left, width: 290, background: "#fff", border: "1px solid var(--line)", borderRadius: 10, boxShadow: "0 10px 28px rgba(16,19,23,.16)", padding: "10px 12px", cursor: "default", textAlign: "left", whiteSpace: "normal" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-2)", marginBottom: 7 }}>Hạn thanh toán · <span className="tnum">{st.no}</span></div>
+          <DueDateField base={st.date} value={st.dueDate} onChange={save} width={150} />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 8, fontSize: 11.5, color: "var(--ink-4)" }}>
+            <span>{busy ? "Đang lưu…" : `Ngày lập ${fmtDate(st.date)} · lưu ngay khi chọn`}</span>
+            {st.dueDate && <button type="button" onClick={() => save("")} disabled={busy} style={{ border: "none", background: "transparent", color: "var(--danger)", cursor: "pointer", fontSize: 11.5, fontWeight: 600, padding: 0 }}>Bỏ hạn</button>}
+          </div>
+        </div>
+      )}
+    </span>
+  );
+}
+
+/* onSetDue(st, dueDate) → Promise<{ok, dueDate}>; null = không có quyền sửa (chỉ xem hạn). */
+function KePage({ ke, drift = {}, onNew, onOpen, onSetDue = null, children }) {
   const isMobile = useIsMobile();
   // Cột khách minmax(0,1fr) để tên dài/chip KHÔNG kéo lưới tràn khung (trước đây cột Tổng tiền bị cắt).
-  const cols = "130px minmax(0, 1fr) 96px 150px 128px 100px 110px 140px";
+  const cols = "130px minmax(0, 1fr) 96px 128px 150px 128px 100px 110px 140px";
   const money = { textAlign: "right", whiteSpace: "nowrap" };
   const driftOf = (st) => drift[String(st.id)];
   const num = (v, fb) => (v == null ? fb : v);   // số dẫn xuất từ backend; fallback nếu boot cũ
+  // LỌC THEO HẠN THANH TOÁN (nhớ lựa chọn trên máy): Quá hạn / Đến hạn trong 7 ngày / Chưa đến hạn / Chưa đặt hạn / Đã thu đủ.
+  const [fk, setFk] = useState(() => { try { return localStorage.getItem(DUE_FILTER_KEY) || "all"; } catch (e) { return "all"; } });
+  useEffect(() => { try { localStorage.setItem(DUE_FILTER_KEY, fk); } catch (e) {} }, [fk]);
+  const today = localTodayIso();
+  const rows = ke.slice().reverse().map((st) => ({ st, s: dueStatus(st, today) }));
+  const counts = {}; rows.forEach((r) => { counts[r.s.key] = (counts[r.s.key] || 0) + 1; });
+  let shown = fk === "all" ? rows : rows.filter((r) => r.s.key === fk);
+  // Lọc theo hạn → xếp hạn gần nhất (quá hạn lâu nhất) lên đầu; Tất cả giữ mới tạo trước.
+  if (fk === "overdue" || fk === "soon" || fk === "later") shown = shown.slice().sort((a, b) => (a.st.dueDate < b.st.dueDate ? -1 : a.st.dueDate > b.st.dueDate ? 1 : 0));
+  const conSum = shown.reduce((a, r) => a + Math.max(0, r.s.con), 0);
+  const emptyText = ke.length ? "Không có bảng kê nào ở mục này." : "Chưa có bảng kê nào. Bấm “Tạo bảng kê mới” để bắt đầu.";
+  const chip = (on, key, n) => {
+    const t = key !== "all" ? DUE_TONE[key] : null;
+    return { display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 11px", fontSize: 12.5, fontWeight: 600, borderRadius: 8, cursor: "pointer", whiteSpace: "nowrap",
+      border: "1px solid " + (on ? (t ? t.c : "var(--accent)") : "var(--line)"), background: on ? (t ? t.bg : "var(--accent-weak-2)") : "#fff",
+      color: on ? (t ? t.c : "var(--accent)") : (n ? "var(--ink-2)" : "var(--ink-4)") };
+  };
+  const tongCell = (st, s) => (
+    <span className="tnum" style={{ ...money }}>
+      <div style={{ fontWeight: 700 }}>{fmtVND(st.tongThu)}</div>
+      {s.key !== "paid" && s.con > 0 && s.con < (st.tongThu || 0) && <div style={{ fontSize: 11.5, color: "var(--warn)", fontWeight: 600 }} title="Đã thu một phần">còn {fmtNum(s.con)}</div>}
+    </span>
+  );
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", padding: isMobile ? "16px 14px 24px" : "20px 22px 24px", overflow: "auto" }}>
-      <div style={{ maxWidth: 1120, width: "100%", margin: "0 auto" }}>
+      <div style={{ maxWidth: 1280, width: "100%", margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 18, flexWrap: "wrap" }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em" }}>Bảng kê cần thu</h1>
@@ -811,15 +1221,27 @@ function KePage({ ke, drift = {}, onNew, onOpen }) {
             <I.plus /> Tạo bảng kê mới
           </button>
         </div>
+        {children /* vd khung "Khách có lô trong kỳ" — trang danh sách truyền vào */}
+        {/* ===== Lọc theo hạn thanh toán ===== */}
+        {ke.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--ink-3)", display: "inline-flex", alignItems: "center", gap: 6 }}><i className="bi bi-alarm" /> Hạn thanh toán</span>
+            {DUE_FILTERS.map((f) => {
+              const n = f.key === "all" ? rows.length : (counts[f.key] || 0);
+              return <button key={f.key} type="button" onClick={() => setFk(f.key)} style={chip(fk === f.key, f.key, n)}>{f.label} <b className="tnum">{n}</b></button>;
+            })}
+            <div style={{ flex: 1 }} />
+            <span className="tnum" style={{ fontSize: 12.5, color: "var(--ink-3)", whiteSpace: "nowrap" }}>
+              Còn phải thu{fk !== "all" ? ` (${shown.length} bảng kê)` : ""}: <b style={{ color: conSum ? "var(--warn)" : "var(--good)" }}>{fmtVND(conSum)}</b>
+            </span>
+          </div>
+        )}
         {/* ===== Mobile: card list ===== */}
         {isMobile && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {ke.length === 0 && <div style={{ padding: "44px", textAlign: "center", color: "var(--ink-4)", fontSize: 13.5, background: "#fff", border: "1px solid var(--line)", borderRadius: 12 }}>Chưa có bảng kê nào. Bấm “Tạo bảng kê mới” để bắt đầu.</div>}
-            {ke.slice().reverse().map((st) => {
-              const daTT = (st.payments || []).reduce((a, p) => a + (parseInt((p.amount || "0").toString().replace(/[^\d]/g, ""), 10) || 0), 0);
-              const con = st.tongThu - daTT;
-              return (
-                <button key={st.id} type="button" onClick={() => onOpen(st)}
+            {shown.length === 0 && <div style={{ padding: "44px", textAlign: "center", color: "var(--ink-4)", fontSize: 13.5, background: "#fff", border: "1px solid var(--line)", borderRadius: 12 }}>{emptyText}</div>}
+            {shown.map(({ st, s }) => (
+                <div key={st.id} role="button" tabIndex={0} onClick={() => onOpen(st)} onKeyDown={(e) => { if (e.key === "Enter") onOpen(st); }}
                   style={{ width: "100%", textAlign: "left", background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px", cursor: "pointer", boxShadow: "0 1px 2px rgba(16,19,23,.04)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
                     <span className="tnum" style={{ fontWeight: 700, color: "var(--accent)", fontSize: 14 }}>{st.no}</span>
@@ -827,50 +1249,56 @@ function KePage({ ke, drift = {}, onNew, onOpen }) {
                   </div>
                   <div style={{ fontWeight: 600, fontSize: 14.5, marginTop: 4, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>{st.customer}{driftOf(st) ? <DriftChip n={driftOf(st).changed} /> : null}</div>
                   <div className="tnum" style={{ color: "var(--ink-4)", fontSize: 12, marginTop: 2 }}>{(st.from || st.to) ? `Cont ra: ${fmtDate(st.from) || "…"} – ${fmtDate(st.to) || "…"}` : "—"}</div>
+                  <div className="tnum" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, fontSize: 12.5, color: "var(--ink-3)" }}>Hạn TT: {onSetDue ? <DueEditor st={st} onSet={onSetDue} /> : <b style={{ color: "var(--ink-2)" }}>{st.dueDate ? fmtDate(st.dueDate) : "—"}</b>} <DueChip s={s} /></div>
                   <div style={{ marginTop: 9, paddingTop: 9, borderTop: "1px solid var(--line-2)", fontSize: 12.5, color: "var(--ink-3)", display: "flex", flexWrap: "wrap", gap: "2px 12px" }}>
                     <span>Cước+dầu: <b className="tnum" style={{ color: "var(--ink-2)" }}>{fmtNum(num(st.baseAmount, st.tongThu))}</b></span>
                     <span>VAT {num(st.vatRate, 0)}%: <b className="tnum" style={{ color: (st.vatRate ? "var(--accent)" : "var(--ink-2)") }}>{fmtNum(num(st.vatAmount, 0))}</b></span>
                     <span>Chi hộ: <b className="tnum" style={{ color: "var(--ink-2)" }}>{fmtNum(num(st.chohoAmount, 0))}</b></span>
+                    {st.extraAmount > 0 && <span>Phí riêng: <b className="tnum" style={{ color: "var(--ink-2)" }}>{fmtNum(st.extraAmount)}</b></span>}
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 6 }}>
                     <span style={{ fontSize: 13, color: "var(--ink-3)" }}>Tổng tiền: <b className="tnum" style={{ color: "var(--ink)" }}>{fmtVND(st.tongThu)}</b></span>
-                    <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Còn: <b className="tnum" style={{ color: con > 0 ? "var(--warn)" : "var(--good)" }}>{fmtVND(Math.max(0, con))}</b></span>
+                    <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Còn: <b className="tnum" style={{ color: s.con > 0 ? "var(--warn)" : "var(--good)" }}>{fmtVND(Math.max(0, s.con))}</b></span>
                   </div>
-                </button>
-              );
-            })}
+                </div>
+            ))}
           </div>
         )}
         {/* ===== Desktop: grid table ===== */}
         {!isMobile && (
         <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
           <div style={{ display: "grid", gridTemplateColumns: cols, gap: 12, padding: "11px 16px", background: "#fafbfc", borderBottom: "1px solid var(--line)", fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-            <div>Số bảng kê</div><div>Khách hàng</div><div>Ngày lập</div><div>Kỳ cont ra</div><div style={{ textAlign: "right" }}>Phải thu<br/>(cước+dầu)</div><div style={{ textAlign: "right" }}>+VAT</div><div style={{ textAlign: "right" }}>Chi hộ</div><div style={{ textAlign: "right" }}>Tổng tiền</div>
+            <div>Số bảng kê</div><div>Khách hàng</div><div>Ngày lập</div><div>Hạn TT</div><div>Kỳ cont ra</div><div style={{ textAlign: "right" }}>Phải thu<br/>(cước+dầu)</div><div style={{ textAlign: "right" }}>+VAT</div><div style={{ textAlign: "right" }}>Chi hộ</div><div style={{ textAlign: "right" }}>Tổng tiền</div>
           </div>
-          {ke.length === 0 && <div style={{ padding: "44px", textAlign: "center", color: "var(--ink-4)", fontSize: 13.5 }}>Chưa có bảng kê nào. Bấm “Tạo bảng kê mới” để bắt đầu.</div>}
-          {ke.slice().reverse().map((st, i, arr) => { const n = arr.length; return (
-            <button key={st.id} type="button" onClick={() => onOpen(st)}
-              style={{ width: "100%", textAlign: "left", display: "grid", gridTemplateColumns: cols, gap: 12, alignItems: "center", padding: "12px 16px", background: "transparent", border: "none", borderBottom: i < n - 1 ? "1px solid var(--line-2)" : "none", cursor: "pointer", fontSize: 13.5 }}
+          {shown.length === 0 && <div style={{ padding: "44px", textAlign: "center", color: "var(--ink-4)", fontSize: 13.5 }}>{emptyText}</div>}
+          {shown.map(({ st, s }, i) => (
+            <div key={st.id} role="button" tabIndex={0} onClick={() => onOpen(st)} onKeyDown={(e) => { if (e.key === "Enter") onOpen(st); }}
+              style={{ width: "100%", textAlign: "left", display: "grid", gridTemplateColumns: cols, gap: 12, alignItems: "center", padding: "12px 16px", background: "transparent", border: "none", borderBottom: i < shown.length - 1 ? "1px solid var(--line-2)" : "none", cursor: "pointer", fontSize: 13.5 }}
               onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent-weak-2)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
               <span className="tnum" style={{ fontWeight: 600, color: "var(--accent)", whiteSpace: "nowrap" }}>{st.no}</span>
               <span style={{ fontWeight: 500, minWidth: 0 }}>
                 <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={st.customer}>{st.customer}</div>
-                {(driftOf(st) || (st.ioScope && st.ioScope !== "all")) ? (
+                {(driftOf(st) || (st.ioScope && st.ioScope !== "all") || st.extraAmount > 0) ? (
                   <div style={{ marginTop: 3, display: "flex", gap: 6, flexWrap: "wrap" }}>
                     {st.ioScope && st.ioScope !== "all" ? <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", padding: "1px 8px", borderRadius: 999, whiteSpace: "nowrap" }} title="Phạm vi bảng kê — chỉ tính tiền lô loại này">{st.ioScope === "nhap" ? "Hàng nhập" : "Hàng xuất"}</span> : null}
+                    {st.extraAmount > 0 ? <span className="tnum" style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-3)", background: "var(--line-2)", padding: "1px 8px", borderRadius: 999, whiteSpace: "nowrap" }} title="Σ cột chi phí riêng của bảng kê — đã gồm trong Tổng tiền">+ Phí riêng {fmtNum(st.extraAmount)}</span> : null}
                     {driftOf(st) ? <DriftChip n={driftOf(st).changed} /> : null}
                   </div>
                 ) : null}
               </span>
               <span className="tnum" style={{ color: "var(--ink-2)", whiteSpace: "nowrap" }}>{fmtDate(st.date)}</span>
+              <span className="tnum" style={{ whiteSpace: "nowrap" }}>
+                <div>{onSetDue ? <DueEditor st={st} onSet={onSetDue} /> : <span style={{ color: st.dueDate ? "var(--ink-2)" : "var(--ink-4)" }}>{st.dueDate ? fmtDate(st.dueDate) : "—"}</span>}</div>
+                {(st.dueDate || s.key === "paid") && <div style={{ marginTop: 3 }}><DueChip s={s} /></div>}
+              </span>
               <span className="tnum" style={{ color: "var(--ink-3)", fontSize: 12.5, whiteSpace: "nowrap" }}>{(st.from || st.to) ? `${fmtDate(st.from) || "…"} – ${fmtDate(st.to) || "…"}` : "—"}</span>
               <span className="tnum" style={{ ...money, color: "var(--ink-2)" }}>{fmtNum(num(st.baseAmount, st.tongThu))}</span>
               <span className="tnum" style={{ ...money, color: (st.vatRate ? "var(--accent)" : "var(--ink-4)") }} title={`VAT ${num(st.vatRate, 0)}%`}>{fmtNum(num(st.vatAmount, 0))}</span>
               <span className="tnum" style={{ ...money, color: "var(--ink-3)" }}>{fmtNum(num(st.chohoAmount, 0))}</span>
-              <span className="tnum" style={{ ...money, fontWeight: 700 }}>{fmtVND(st.tongThu)}</span>
-            </button>
-          ); })}
+              {tongCell(st, s)}
+            </div>
+          ))}
         </div>
         )}
       </div>
@@ -879,4 +1307,4 @@ function KePage({ ke, drift = {}, onNew, onOpen }) {
 }
 
 
-export { StatementForm, StatementDetailBody, StatementActions, SavedStatementModal, SavedStatementPage, DriftChip, KePage, isManualLine, suggestionOf, applySuggestion };
+export { StatementForm, StatementDetailBody, StatementActions, SavedStatementModal, SavedStatementPage, DriftChip, KePage, isManualLine, suggestionOf, applySuggestion, candidateToLine };

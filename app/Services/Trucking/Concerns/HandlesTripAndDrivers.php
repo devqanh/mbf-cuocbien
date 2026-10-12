@@ -277,7 +277,8 @@ trait HandlesTripAndDrivers
         return TruckingRouteFeeBook::withCount('fees')->get()
             ->sortBy(fn ($b) => ($b->from_date?->format('Y-m-d') ?? '0000-00-00') . '#' . str_pad((string) $b->id, 9, '0', STR_PAD_LEFT))
             ->values()
-            ->map(fn ($b) => ['id' => (int) $b->id, 'label' => $b->label ?? '', 'from' => $this->outDate($b->from_date), 'count' => (int) ($b->fees_count ?? 0)])
+            ->map(fn ($b) => ['id' => (int) $b->id, 'label' => $b->label ?? '', 'from' => $this->outDate($b->from_date), 'count' => (int) ($b->fees_count ?? 0),
+                'regulation' => \App\Support\SalaryZones::cleanRegulation($b->regulation) ?: null])   // quy chế lương chuyến của bảng
             ->all();
     }
 
@@ -287,6 +288,9 @@ trait HandlesTripAndDrivers
         $book = DB::transaction(function () use ($label, $from, $copyFrom) {
             $sort = (int) (TruckingRouteFeeBook::max('sort') ?? 0) + 1;
             $book = TruckingRouteFeeBook::create(['label' => $this->str($label), 'from_date' => $this->inDate($from), 'sort' => $sort]);
+            if ($copyFrom && ($src = TruckingRouteFeeBook::find($copyFrom)) && $src->regulation) {
+                $book->update(['regulation' => $src->regulation]);   // sao chép kèm quy chế lương chuyến
+            }
             if ($copyFrom) {
                 $cols = ['route', 'route_key', 've_tram', 'tien_duong', 'tro_cap', 'phi_khac', 'cru', 'luong', 'luong_no_cru', 'luong_nokeo', 'luong_nokeo_no_cru', 'km', 'dau_2cau', 'dau_1cau', 'sort'];
                 $now = now();
@@ -295,6 +299,8 @@ trait HandlesTripAndDrivers
                     foreach ($cols as $c) $a[$c] = $r->$c;
                     $a['salary_parts'] = json_encode($r->salary_parts ?? []);
                     $a['extra_fees']   = json_encode($r->extra_fees ?? []);
+                    $a['kho_overrides'] = json_encode($r->kho_overrides ?? []);
+                    $a['customer_ids'] = $r->customer_ids ? json_encode($r->customer_ids) : null;   // tuyến riêng cho khách
                     return $a;
                 })->all();
                 foreach (array_chunk($rows, 500) as $chunk) TruckingRouteFee::insert($chunk);
@@ -310,6 +316,16 @@ trait HandlesTripAndDrivers
         $b = TruckingRouteFeeBook::find($bookId);
         if (! $b) return ['ok' => false, 'message' => 'Bảng phí tuyến không tồn tại'];
         $b->update(['label' => $this->str($label), 'from_date' => $this->inDate($from)]);
+        $this->routeFeeBooksCache = null;
+        return ['ok' => true, 'books' => $this->routeFeeBooks()];
+    }
+
+    /** Lưu QUY CHẾ LƯƠNG CHUYẾN của 1 bảng phí tuyến (bảng vùng, bảng KCN, định mức dầu, km theo chặng, nhóm cảng). */
+    public function saveRouteFeeBookRegulation(int $bookId, $data): array
+    {
+        $b = TruckingRouteFeeBook::find($bookId);
+        if (! $b) return ['ok' => false, 'message' => 'Bảng phí tuyến không tồn tại'];
+        $b->update(['regulation' => \App\Support\SalaryZones::cleanRegulation($data) ?: null]);
         $this->routeFeeBooksCache = null;
         return ['ok' => true, 'books' => $this->routeFeeBooks()];
     }
@@ -733,10 +749,12 @@ trait HandlesTripAndDrivers
     {
         $q = TruckingRouteFee::orderBy('sort')->orderBy('id');
         if ($bookId) $q->where('book_id', $bookId);
+        $custNames = \App\Models\TruckingCustomer::pluck('name', 'id');   // id khách → tên (cột "Áp dụng cho khách")
         return $q->get()->map(fn ($r) => [
             'id'        => $r->id,
             'bookId'    => (int) $r->book_id,
             'route'     => $r->route ?? '',
+            'customers' => $this->routeFeeCustomersOut($r->customer_ids, $custNames),   // [] = mọi khách
             'veTram'    => $this->outMoney($r->ve_tram),
             'tienDuong' => $this->outMoney($r->tien_duong),
             'troCap'    => $this->outMoney($r->tro_cap),
@@ -752,7 +770,64 @@ trait HandlesTripAndDrivers
             'dau2'      => $this->outNum($r->dau_2cau),
             'dau1'      => $this->outNum($r->dau_1cau),
             'extraFees' => $this->cleanExtraFees($r->extra_fees),
+            // chi tiết km / dầu theo từng kho của tuyến ('' = theo tuyến)
+            'khoOverrides' => array_map(fn ($o) => ['kho' => $o['kho'], 'km' => $this->outNum($o['km']), 'dau2' => $this->outNum($o['dau2']), 'dau1' => $this->outNum($o['dau1'])],
+                $this->cleanKhoOverrides($r->kho_overrides)),
         ])->all();
+    }
+
+    /** Id khách áp dụng của tuyến (int, duy nhất, tăng dần) — [] = mọi khách. Dùng làm 1 phần định danh tuyến. */
+    private function routeFeeCustomerIds($ids): array
+    {
+        $out = array_values(array_unique(array_filter(array_map('intval', is_array($ids) ? $ids : []), fn ($v) => $v > 0)));
+        sort($out);
+        return $out;
+    }
+
+    /** Tên khách (UI) → id; tên không có trong danh mục bị bỏ. */
+    private function routeFeeCustomerIdsIn($names): array
+    {
+        $ids = [];
+        foreach ((array) $names as $n) { $id = is_string($n) ? $this->customerIdByName($n) : null; if ($id) $ids[] = $id; }
+        return $this->routeFeeCustomerIds($ids);
+    }
+
+    /** Id khách của tuyến → tên (bỏ id đã xóa khỏi danh mục). */
+    private function routeFeeCustomersOut($ids, $names): array
+    {
+        return array_values(array_filter(array_map(fn ($id) => (string) ($names[$id] ?? ''), $this->routeFeeCustomerIds($ids)), fn ($n) => $n !== ''));
+    }
+
+    /** Ô "Khách áp dụng" trong Excel (cách nhau dấu phẩy / chấm phẩy) → [ids, các tên KHÔNG có trong danh mục]. */
+    private function parseRouteFeeCustomerCell($cell): array
+    {
+        $ids = []; $bad = [];
+        foreach (preg_split('/\s*[,;]\s*/u', trim((string) $cell)) ?: [] as $n) {
+            if ($n === '') continue;
+            $id = $this->customerIdByName($n);
+            if ($id) $ids[] = $id; else $bad[] = $n;
+        }
+        return [$this->routeFeeCustomerIds($ids), $bad];
+    }
+
+    /**
+     * Chuẩn hóa "Chi tiết theo kho" của 1 tuyến: [{kho, km, dau2, dau1}], số = float hoặc null (null = theo tuyến).
+     * Bỏ dòng chưa chọn kho; kho trùng (so tên bỏ dấu/khoảng trắng) giữ dòng đầu. Dùng cho cả output, lưu và khớp chuyến.
+     */
+    private function cleanKhoOverrides($list): array
+    {
+        if (! is_array($list)) return [];
+        $num = function ($v) { if ($v === null || trim((string) $v) === '') return null; return $this->inNum($v); };
+        $norm = fn ($v) => mb_strtoupper(preg_replace('/\s+/u', '', trim(\Illuminate\Support\Str::ascii((string) $v))) ?? '');
+        $out = []; $seen = [];
+        foreach ($list as $o) {
+            if (! is_array($o)) continue;
+            $kho = trim((string) ($o['kho'] ?? ''));
+            if ($kho === '' || isset($seen[$norm($kho)])) continue;
+            $seen[$norm($kho)] = true;
+            $out[] = ['kho' => $kho, 'km' => $num($o['km'] ?? null), 'dau2' => $num($o['dau2'] ?? null), 'dau1' => $num($o['dau1'] ?? null)];
+        }
+        return $out;
     }
 
     /** Các key khoản phí hợp lệ có thể tính vào lương nhân sự. */
@@ -805,8 +880,9 @@ trait HandlesTripAndDrivers
         $bookId = $bookId ?: $this->defaultRouteFeeBookId();
         $header = ['Tuyến', 'Vé trạm', 'Tiền đường', 'Trợ cấp', 'Phí khác',
             'Lương kéo CRU', 'Lương kéo không CRU', 'Lương không kéo CRU', 'Lương không kéo không CRU',
-            'Km', 'Dầu 2 cầu (lít)', 'Dầu 1 cầu (lít)', 'Chi theo ngày (cách nhau dấu phẩy)'];
+            'Km', 'Dầu 2 cầu (lít)', 'Dầu 1 cầu (lít)', 'Chi theo ngày (cách nhau dấu phẩy)', 'Khách áp dụng (cách nhau dấu phẩy · trống = mọi khách)'];
         $rows = [];
+        $custNames = \App\Models\TruckingCustomer::pluck('name', 'id');
         foreach (TruckingRouteFee::where('book_id', $bookId)->orderBy('sort')->orderBy('id')->get() as $r) {
             $parts = $this->cleanSalaryParts($r->salary_parts);
             $ctn = implode(', ', array_map(fn ($k) => self::SALARY_LABELS[$k] ?? $k, $parts));
@@ -814,6 +890,7 @@ trait HandlesTripAndDrivers
                 (string) $r->route, (float) $r->ve_tram, (float) $r->tien_duong, (float) $r->tro_cap, (float) $r->phi_khac,
                 (float) $r->luong, (float) $r->luong_no_cru, (float) $r->luong_nokeo, (float) $r->luong_nokeo_no_cru,
                 (float) $r->km, (float) $r->dau_2cau, (float) $r->dau_1cau, $ctn,
+                implode(', ', $this->routeFeeCustomersOut($r->customer_ids, $custNames)),
             ];
         }
         return ['header' => $header, 'rows' => $rows];
@@ -827,8 +904,9 @@ trait HandlesTripAndDrivers
     {
         // Định danh tuyến = TẬP node TRONG 1 BẢNG phí tuyến (bảng = phiên bản theo thời gian).
         $bookId = $bookId ?: $this->defaultRouteFeeBookId();
+        // Định danh = TẬP node + KHÁCH áp dụng (cùng tuyến có thể có 1 bản chung + bản riêng cho khách).
         $existing = [];
-        foreach (TruckingRouteFee::where('book_id', $bookId)->get() as $rf) { $k = $this->routeNodeKey($this->routeStringNodes((string) $rf->route)); if ($k !== '') $existing[$k] = true; }
+        foreach (TruckingRouteFee::where('book_id', $bookId)->get() as $rf) { $k = $this->routeNodeKey($this->routeStringNodes((string) $rf->route)); if ($k !== '') $existing[$k . '#' . implode(',', $this->routeFeeCustomerIds($rf->customer_ids))] = true; }
         $codeMap = $this->normalizedCodeMap();
         $norm = fn ($v) => mb_strtoupper(preg_replace('/\s+/u', '', trim(\Illuminate\Support\Str::ascii((string) $v))) ?? '');
         $numCells = ['veTram', 'tienDuong', 'troCap', 'phiKhac', 'luongKeoCru', 'luongKeoKhongCru', 'luongKhongKeoCru', 'luongKhongKeoKhongCru', 'km', 'dau2', 'dau1'];
@@ -842,11 +920,14 @@ trait HandlesTripAndDrivers
                 $issues[] = ['level' => 'error', 'msg' => 'Thiếu tên tuyến'];
             } else {
                 $key = $this->routeNodeKey($this->routeStringNodes($route));
-                $vkey = $key;
+                [$custIds, $badCust] = $this->parseRouteFeeCustomerCell($r['customers'] ?? '');
+                foreach ($badCust as $bn) $issues[] = ['level' => 'error', 'msg' => "Không có khách hàng \"$bn\" (kiểm tra tên ở Cài đặt → Khách hàng)"];
+                // Dòng có tên khách sai đã là lỗi → khóa riêng để không làm dòng khác bị báo "trùng" oan.
+                $vkey = $key . '#' . implode(',', $custIds) . ($badCust ? '#bad' . $line : '');
                 if ($key === '') {
                     $issues[] = ['level' => 'error', 'msg' => 'Tuyến không hợp lệ'];
                 } elseif (isset($seen[$vkey])) {
-                    $issues[] = ['level' => 'error', 'msg' => 'Trùng tuyến với dòng ' . $seen[$vkey] . ' trong file'];
+                    $issues[] = ['level' => 'error', 'msg' => 'Trùng tuyến (cùng khách áp dụng) với dòng ' . $seen[$vkey] . ' trong file'];
                 } else {
                     $seen[$vkey] = $line;
                     // Mỗi điểm PHẢI là Cảng/Kho trong danh mục (khớp theo ký hiệu hoặc tên) HOẶC 1 Tỉnh/thành
@@ -878,7 +959,7 @@ trait HandlesTripAndDrivers
      * NHẬP phí tuyến từ Excel — UPSERT theo TUYẾN (tập node Cảng+Kho): trùng tuyến → cập nhật,
      * chưa có → tạo mới. KHÔNG xóa tuyến vắng mặt (an toàn, nhập từng phần được). Giữ "Chi khác".
      * $rows: mảng assoc theo cột {route, veTram, tienDuong, troCap, phiKhac, luongKeoCru,
-     * luongKeoKhongCru, luongKhongKeoCru, luongKhongKeoKhongCru, km, dau2, dau1, chiTheoNgay}.
+     * luongKeoKhongCru, luongKhongKeoCru, luongKhongKeoKhongCru, km, dau2, dau1, chiTheoNgay, customers}.
      */
     public function importRouteFees(array $rows, ?int $bookId = null): array
     {
@@ -903,7 +984,7 @@ trait HandlesTripAndDrivers
 
         // index tuyến hiện có theo TẬP node TRONG BẢNG đang nhập
         $byKey = [];
-        foreach (TruckingRouteFee::where('book_id', $bookId)->get() as $rf) { $k = $this->routeNodeKey($this->routeStringNodes((string) $rf->route)); if ($k !== '') $byKey[$k] = $rf; }
+        foreach (TruckingRouteFee::where('book_id', $bookId)->get() as $rf) { $k = $this->routeNodeKey($this->routeStringNodes((string) $rf->route)); if ($k !== '') $byKey[$k . '#' . implode(',', $this->routeFeeCustomerIds($rf->customer_ids))] = $rf; }
         $maxSort = (int) (TruckingRouteFee::where('book_id', $bookId)->max('sort') ?? -1);
 
         $created = 0; $updated = 0; $skipped = 0;
@@ -912,9 +993,12 @@ trait HandlesTripAndDrivers
                 $route = trim((string) ($r['route'] ?? ''));
                 $key = $route === '' ? '' : $this->routeNodeKey($this->routeStringNodes($route));
                 if ($key === '') { $skipped++; continue; }
+                [$custIds] = $this->parseRouteFeeCustomerCell($r['customers'] ?? '');
+                $key .= '#' . implode(',', $custIds);
                 $attrs = [
                     'book_id'      => $bookId,
                     'route'        => $route,
+                    'customer_ids' => $custIds ?: null,
                     'route_key'    => $this->routeKey($route),
                     've_tram'      => $this->inMoney($r['veTram'] ?? null) ?? 0,
                     'tien_duong'   => $this->inMoney($r['tienDuong'] ?? null) ?? 0,
@@ -975,9 +1059,11 @@ trait HandlesTripAndDrivers
             foreach ($byBook as $bid => $list) {
                 TruckingRouteFee::where('book_id', $bid)->delete();
                 foreach (array_values($list) as $i => $r) {
+                $cids = $this->routeFeeCustomerIdsIn($r['customers'] ?? []);
                 TruckingRouteFee::create([
                     'book_id'    => $bid,
                     'route'      => $this->str($r['route'] ?? null),
+                    'customer_ids' => $cids ?: null,   // [] = mọi khách
                     'route_key'  => $this->routeKey((string) ($r['route'] ?? '')),
                     've_tram'    => $this->inMoney($r['veTram'] ?? null) ?? 0,
                     'tien_duong' => $this->inMoney($r['tienDuong'] ?? null) ?? 0,
@@ -993,6 +1079,7 @@ trait HandlesTripAndDrivers
                     'dau_2cau'   => $this->inNum($r['dau2'] ?? null) ?? 0,
                     'dau_1cau'   => $this->inNum($r['dau1'] ?? null) ?? 0,
                     'extra_fees' => $this->extraFeesIn($r['extraFees'] ?? null),
+                    'kho_overrides' => $this->cleanKhoOverrides($r['khoOverrides'] ?? null),
                     'sort'       => $i,
                 ]);
                 }
@@ -1118,17 +1205,22 @@ trait HandlesTripAndDrivers
     // ===================================================================
 
     /**
-     * DOANH THU của 1 lô cho báo cáo = giá theo BẢNG GIÁ (cước + dầu + sà lan) — CÙNG công thức với cột
-     * "Thu phí" ở Lô hàng và bảng kê (1 nguồn công thức). Lô KHÔNG khớp bảng giá → dùng doanh thu NHẬP TAY
-     * (revenue_lines kind=doanhThu) nếu có; không có nữa → 0 và tính là "chưa khớp". KHÔNG cộng cả 2 để tránh trùng.
-     * (Bảng revenue_lines thực tế gần như không ai nhập → trước đây P&L luôn báo doanh thu 0.)
+     * DOANH THU của 1 lô cho báo cáo (nền cước + dầu + sà lan, chưa VAT, không gồm chi hộ). Lấy 1 nguồn, KHÔNG cộng dồn:
+     *  1) Lô ĐÃ LẬP BẢNG KÊ → số trên bảng kê (số thực thu khách, gồm GIÁ TÙY CHỈNH gõ tay) — xem statementRevenueMap.
+     *  2) Chưa lập → giá theo BẢNG GIÁ — cùng công thức cột "Thu phí" ở Lô hàng.
+     *  3) Không khớp bảng giá → doanh thu NHẬP TAY của lô (revenue_lines kind=doanhThu) nếu có; không nữa → "chưa khớp".
      * $s cần eager-load costLines + revenueLines + customer. Bảng giá chọn theo NGÀY ĐỊNH GIÁ của lô
      * (ngày vận hành 08:00 của giờ xe ra — pricingDateOf), còn lô thuộc THÁNG nào vẫn theo ngày lịch.
      *
-     * @return array{amount:int, source:string} source = price | manual | none
+     * @param array{amount:int, manual:bool}|null $stmt dòng bảng kê của lô (từ statementRevenueMap), null = chưa lập
+     * @return array{amount:int, source:string} source = statement | manual | price | none
+     *         (manual = giá tùy chỉnh trên bảng kê hoặc doanh thu nhập tay của lô)
      */
-    private function reportShipmentRevenue(TruckingShipment $s): array
+    private function reportShipmentRevenue(TruckingShipment $s, ?array $stmt = null): array
     {
+        if ($stmt && $stmt['amount'] > 0) {
+            return ['amount' => $stmt['amount'], 'source' => $stmt['manual'] ? 'manual' : 'statement'];
+        }
         $pr = $this->priceShipment($s, $this->pricingContextForShipment($s));
         if ($pr['matched']) {
             $amt = (int) $pr['cuoc'] + (int) $pr['dau'] + (int) ($pr['bargeCuoc'] ?? 0) + (int) ($pr['bargeDau'] ?? 0);
@@ -1138,6 +1230,36 @@ trait HandlesTripAndDrivers
         return ['amount' => $manual, 'source' => $manual ? 'manual' : 'none'];
     }
 
+    /**
+     * NỀN DOANH THU của các lô đã nằm trong bảng kê: shipment_id => [amount, manual].
+     * Lô nằm trong nhiều bảng kê → lấy bảng kê MỚI NHẤT có tính lô đó (dòng ngoài phạm vi Nhập/Xuất
+     * của bảng kê thì bảng kê đó không thu → bỏ qua). Nền dòng theo đúng statementAmounts (giá tùy chỉnh trước).
+     *
+     * @param iterable<int> $shipIds
+     * @return array<int, array{amount:int, manual:bool}>
+     */
+    private function statementRevenueMap(iterable $shipIds): array
+    {
+        $ids = collect($shipIds)->filter()->unique()->values()->all();
+        $out = [];
+        foreach (array_chunk($ids, 1000) as $chunk) {
+            $lines = \App\Models\TruckingStatementLine::join('trucking_statements', 'trucking_statements.id', '=', 'trucking_statement_lines.statement_id')
+                ->whereIn('trucking_statement_lines.shipment_id', $chunk)
+                ->orderBy('trucking_statement_lines.statement_id')
+                ->get(['trucking_statement_lines.shipment_id', 'trucking_statement_lines.io', 'trucking_statement_lines.detail',
+                       'trucking_statement_lines.phai_thu', 'trucking_statements.io_scope as st_io_scope']);
+            foreach ($lines as $l) {
+                if (! self::ioInScope($l->io, $l->st_io_scope ?: 'all')) continue;
+                $d = is_array($l->detail) && $l->detail ? $l->detail : ['phaiThu' => (float) $l->phai_thu];
+                $out[(int) $l->shipment_id] = [   // sắp theo statement_id → bảng kê mới nhất ghi đè
+                    'amount' => self::statementAmounts([$d], 0)['base'],
+                    'manual' => isset($d['manualBase']) && $d['manualBase'] !== '' && $d['manualBase'] !== null,
+                ];
+            }
+        }
+        return $out;
+    }
+
     /** Nhãn 4 NHÓM chi phí lớn của báo cáo (sếp nhìn nhóm trước, khoản chi tiết sau). */
     private const COST_GROUPS = ['driver' => 'Lương & vận hành lái xe', 'vehicle' => 'Chi phí xe', 'asset' => 'Chi phí tài sản', 'office' => 'Chi phí văn phòng', 'shipment' => 'Chi phí lô hàng'];
 
@@ -1145,7 +1267,7 @@ trait HandlesTripAndDrivers
      * Báo cáo chi phí công ty theo THÁNG: Doanh thu − Chi phí = Lợi nhuận, cơ cấu chi phí theo
      * loại (gom 4 nhóm lớn → khoản), chi phí theo xe (+ chi phí/chuyến), doanh thu theo khách.
      * Gộp 4 nguồn (không trùng nhau theo thiết kế):
-     *  1) Doanh thu = lô có Giờ xe ra trong tháng, định giá theo bảng giá (xem reportShipmentRevenue).
+     *  1) Doanh thu = lô có Giờ xe ra trong tháng: theo bảng kê đã lập, chưa lập thì bảng giá (xem reportShipmentRevenue).
      *  2) Lương & vận hành lái xe = route-pay (dầu/lương/cầu đường/trợ cấp/phát sinh) — loop ngày.
      *  3) Chi phí xe / tài sản = vehicle_costs theo spend_date (bỏ phiếu đã hủy).
      *  4) Chi phí lô hàng = cost_lines KHÔNG phải chi hộ (billable=false), số NET.
@@ -1156,19 +1278,21 @@ trait HandlesTripAndDrivers
         $end   = $start->copy()->endOfMonth();
         $s = $start->format('Y-m-d'); $e = $end->format('Y-m-d');
 
-        // 1) Lô có Giờ xe ra trong tháng → doanh thu (bảng giá) + sản lượng + khách hàng
+        // 1) Lô có Giờ xe ra trong tháng → doanh thu (bảng kê / bảng giá / nhập tay) + sản lượng + khách hàng
         $ships = TruckingShipment::whereNotNull('gio_xe_ra')
             ->whereDate('gio_xe_ra', '>=', $s)->whereDate('gio_xe_ra', '<=', $e)
             ->with(['costLines', 'revenueLines', 'customer:id,name', 'raOther:id,gio_xe_ra'])
             ->get();
         $shipIds = $ships->pluck('id');
-        $revenue = 0; $revManual = 0; $unmatched = 0;
+        $stmtRev = $this->statementRevenueMap($shipIds);
+        $revenue = 0; $revManual = 0; $revStatement = 0; $unmatched = 0;
         $revByShip = []; $srcByShip = [];
         foreach ($ships as $sh) {
-            $r = $this->reportShipmentRevenue($sh);
+            $r = $this->reportShipmentRevenue($sh, $stmtRev[$sh->id] ?? null);
             $revByShip[$sh->id] = $r['amount']; $srcByShip[$sh->id] = $r['source'];
             $revenue += $r['amount'];
             if ($r['source'] === 'manual') $revManual += $r['amount'];
+            if ($r['source'] === 'statement') $revStatement += $r['amount'];
             if ($r['source'] === 'none') $unmatched++;
         }
 
@@ -1289,8 +1413,9 @@ trait HandlesTripAndDrivers
             'year' => $year, 'month' => $month, 'monthLabel' => sprintf('%02d/%d', $month, $year),
             'revenue' => $revenue, 'totalCost' => $totalCost, 'profit' => $profit,
             'margin' => $revenue ? round($profit * 100 / $revenue, 1) : 0,
-            'revenueManual' => $revManual,      // phần doanh thu lấy từ nhập tay (lô không khớp bảng giá)
-            'unmatched' => $unmatched,          // lô đã ra nhưng KHÔNG có doanh thu (chưa khớp bảng giá, chưa nhập tay)
+            'revenueManual' => $revManual,      // phần doanh thu theo GIÁ GÕ TAY (giá tùy chỉnh bảng kê / nhập tay ở lô)
+            'revenueStatement' => $revStatement, // phần doanh thu theo bảng kê đã lập (giá hệ thống lúc lập)
+            'unmatched' => $unmatched,          // lô đã ra nhưng KHÔNG có doanh thu (chưa bảng kê, chưa khớp bảng giá, chưa nhập tay)
             'trips' => $totalTrips, 'conts' => $shipIds->count(), 'vehicles' => count($byPlate),
             'costByCategory' => $costByCategory,
             'costGroups' => $costGroups,
@@ -1305,7 +1430,7 @@ trait HandlesTripAndDrivers
 
     /**
      * Xu hướng 12 THÁNG (kết tại year/month): Doanh thu / Chi phí / Lợi nhuận / số cont mỗi tháng.
-     * Doanh thu định giá theo bảng giá từng lô (như báo cáo tháng); chi phí lô (NET) / xe gom bằng SQL;
+     * Doanh thu từng lô theo cùng quy tắc báo cáo tháng (reportShipmentRevenue); chi phí lô (NET) / xe gom bằng SQL;
      * chi phí lái xe (route-pay) cộng theo ngày.
      */
     public function costTrend(int $year, int $month): array
@@ -1318,13 +1443,15 @@ trait HandlesTripAndDrivers
         $keys = []; $rev = []; $cost = []; $conts = [];
         for ($d = $startM->copy(); $d->lte($endM); $d->addMonth()) { $k = $d->format('Y-m'); $keys[] = $k; $rev[$k] = 0; $cost[$k] = 0; $conts[$k] = 0; }
 
-        // Doanh thu theo tháng Giờ xe ra — định giá theo BẢNG GIÁ từng lô (fallback nhập tay), như báo cáo tháng
-        foreach (TruckingShipment::whereNotNull('gio_xe_ra')->whereDate('gio_xe_ra', '>=', $sd)->whereDate('gio_xe_ra', '<=', $ed)
-            ->with(['costLines', 'revenueLines', 'customer:id,name', 'raOther:id,gio_xe_ra'])->get() as $sh) {
+        // Doanh thu theo tháng Giờ xe ra — bảng kê đã lập → bảng giá → nhập tay, như báo cáo tháng
+        $ships = TruckingShipment::whereNotNull('gio_xe_ra')->whereDate('gio_xe_ra', '>=', $sd)->whereDate('gio_xe_ra', '<=', $ed)
+            ->with(['costLines', 'revenueLines', 'customer:id,name', 'raOther:id,gio_xe_ra'])->get();
+        $stmtRev = $this->statementRevenueMap($ships->pluck('id'));
+        foreach ($ships as $sh) {
             $date = substr($this->outDate($sh->gio_xe_ra), 0, 10);
             $ym = substr($date, 0, 7);
             if (! isset($rev[$ym])) continue;
-            $rev[$ym] += $this->reportShipmentRevenue($sh)['amount'];
+            $rev[$ym] += $this->reportShipmentRevenue($sh, $stmtRev[$sh->id] ?? null)['amount'];
             $conts[$ym]++;
         }
 

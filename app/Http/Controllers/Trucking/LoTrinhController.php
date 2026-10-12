@@ -44,8 +44,45 @@ class LoTrinhController extends BaseTruckingController
             'extraItems.*.name'     => ['nullable', 'string'],
             'extraItems.*.amount'   => ['nullable'],
             'extraItems.*.perDay'   => ['nullable', 'boolean'],
+            'extraItems.*.choHo'    => ['nullable', 'boolean'],
+            'extraItems.*.khac'     => ['nullable', 'boolean'],   // chi phí khác (không tính lương, thống kê riêng)
+            'chohoItems'            => ['nullable', 'array'],    // khoản phí tuyến chọn "Chi hộ" theo chuyến: [{cont, keys[]}]
+            'chohoItems.*.cont'     => ['nullable', 'string'],
+            'chohoItems.*.keys'     => ['nullable', 'array'],
+            'amountItems'           => ['nullable', 'array'],    // số tiền nhập tay theo chuyến: [{cont, key, amount}]
+            'amountItems.*.cont'    => ['nullable', 'string'],
+            'amountItems.*.key'     => ['required', 'string', 'max:40'],
+            'amountItems.*.amount'  => ['nullable'],
         ]);
         return response()->json($this->svc->saveRoutePay($d['date'], $d['bks'], $d));
+    }
+
+    /** Sửa lít dầu 1 chuyến (cont) của xe trong ngày; liters rỗng = về định mức phí tuyến. Nhận "12,4" hoặc 12.4. */
+    public function saveFuel(Request $request): JsonResponse
+    {
+        $d = $request->validate([
+            'date'   => ['required', 'string'],
+            'bks'    => ['required', 'string'],
+            'cont'   => ['nullable', 'string'],
+            'liters' => ['nullable'],
+        ]);
+        $raw = trim(str_replace(',', '.', (string) ($d['liters'] ?? '')));
+        if ($raw !== '' && ! is_numeric($raw)) return response()->json(['ok' => false, 'message' => 'Số lít không hợp lệ'], 422);
+        return response()->json($this->svc->saveRouteFuel($d['date'], $d['bks'], (string) ($d['cont'] ?? ''), $raw === '' ? null : (float) $raw));
+    }
+
+    /** Sửa tay phụ cấp đi đường / lương chuyến của 1 chuyến ngay trên Lộ trình (amount trống = về mức quy chế). */
+    public function saveAmount(Request $request): JsonResponse
+    {
+        $d = $request->validate([
+            'date'   => ['required', 'string'],
+            'bks'    => ['required', 'string'],
+            'cont'   => ['nullable', 'string'],
+            'key'    => ['required', 'string', 'in:tienDuong,luong'],
+            'amount' => ['nullable'],
+        ]);
+        $raw = preg_replace('/\D/', '', (string) ($d['amount'] ?? ''));
+        return response()->json($this->svc->saveRouteAmount($d['date'], $d['bks'], (string) ($d['cont'] ?? ''), $d['key'], $raw === '' ? null : (int) $raw));
     }
 
     /** Chốt / bỏ chốt cả ngày (đóng băng số tiền chi cho lái). */

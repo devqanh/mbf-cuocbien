@@ -17,6 +17,7 @@ window.__TRK = {
     view: '{{ url("trucking-v2/bang-ke") }}/',
     statement: '{{ url("trucking-v2/statements") }}/',
     drift: '{{ route("trucking2.statements.drift") }}',
+    customers: '{{ route("trucking2.statements.customers") }}',   // khách có lô ra trong kỳ
   },
   boot: @json($boot),
 };

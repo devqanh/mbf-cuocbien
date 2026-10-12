@@ -15,12 +15,15 @@ class TruckingStatement extends Model
     protected $fillable = [
         'no', 'customer_id', 'customer_name', 'info',
         'date', 'period_from', 'period_to', 'total',
-        'vat_rate', 'base_amount', 'choho_amount',
+        'vat_rate', 'base_amount', 'choho_amount', 'extra_amount',
         'io_scope',   // phạm vi lô tính tiền: all | nhap | xuat
+        'extra_cols', // cột chi phí riêng của bảng kê: [{key, label, vat}] — số từng lô ở lines.detail.extras
     ];
 
     protected $casts = [
         'info'         => 'array',
+        'extra_cols'   => 'array',
+        'extra_amount' => 'decimal:2',
         'date'         => 'date',
         'period_from'  => 'date',
         'period_to'    => 'date',

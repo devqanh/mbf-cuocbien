@@ -95,7 +95,7 @@ export function TrendTab({ rows, loading, monthLabel, isMobile }) {
         </div>
       </div>
       <div style={{ fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.6 }}>
-        <i className="bi bi-info-circle" /> Doanh thu theo tháng Giờ xe ra (giá bảng giá, fallback nhập tay); chi phí = lương & vận hành lái xe + phiếu chi xe/tài sản (theo ngày chi, bỏ phiếu hủy) + chi phí lô (net). Cùng công thức với tab Tổng quan.
+        <i className="bi bi-info-circle" /> Doanh thu theo tháng Giờ xe ra (lô đã lập bảng kê lấy số bảng kê kể cả giá gõ tay, chưa lập lấy giá bảng giá); chi phí = lương & vận hành lái xe + phiếu chi xe/tài sản (theo ngày chi, bỏ phiếu hủy) + chi phí lô (net). Cùng công thức với tab Tổng quan.
       </div>
     </div>
   );

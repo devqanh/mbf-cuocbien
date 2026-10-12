@@ -20,7 +20,7 @@ export function CustomersTab({ rep, prev, isMobile }) {
         <KPI label="Khách có lô ra" value={`${rows.length} khách`} sub={`${fmtNum(rep.conts || 0)} cont trong tháng`} />
         <KPI label="Khách lớn nhất" value={top ? top.label : "—"} sub={top ? `${fmtVND(top.revenue)} · ${pctOf(top.revenue, rev)}% doanh thu · ${top.conts} cont` : ""} />
         <KPI label="Doanh thu TB / cont" value={rep.conts ? fmtVND(Math.round(rev / rep.conts)) : "—"} sub="trên toàn bộ cont ra trong tháng" />
-        <KPI label="Lô chưa khớp bảng giá" value={`${unmatched} lô`} color={unmatched ? "var(--warn)" : "var(--good)"} sub={unmatched ? "chưa có doanh thu — cần thêm bảng giá" : "mọi lô đã có giá"} />
+        <KPI label="Lô chưa có giá" value={`${unmatched} lô`} color={unmatched ? "var(--warn)" : "var(--good)"} sub={unmatched ? "chưa có doanh thu — thêm bảng giá hoặc gõ giá trên bảng kê" : "mọi lô đã có giá"} />
       </div>
 
       <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
@@ -61,6 +61,10 @@ export function CustomersTab({ rep, prev, isMobile }) {
             )}
           </table>
         </div>
+      </div>
+
+      <div style={{ fontSize: 11.5, color: "var(--ink-4)" }}>
+        <i className="bi bi-info-circle" /> Doanh thu khách = lô <b>đã lập bảng kê</b> lấy số trên bảng kê (kể cả giá gõ tay), lô chưa lập lấy giá theo bảng giá. Cước + dầu + sà lan, chưa VAT, không gồm chi hộ.
       </div>
 
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>

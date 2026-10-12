@@ -493,11 +493,14 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", padding: "10px 0 6px" }}>
           {[
             { on: !!ship.cru, set: (v) => set({ cru: v }), icon: "bi-recycle", label: "Hàng CRU" },
+            // Loại chuyến theo Quy chế lương 03/2026 (lương / phụ cấp tính mức xa nhất + phụ cấp riêng)
+            { on: !!ship.kepCont, set: (v) => set({ kepCont: v }), icon: "bi-layers", label: "Kẹp cont (2 cont 20')", title: "Kẹp 2 cont 20' đi đóng hàng" },
+            { on: !!ship.ketHop, set: (v) => set({ ketHop: v }), icon: "bi-arrow-left-right", label: "Kết hợp", title: "Cont nhập lấy ở HP trả nhà máy, rồi dùng luôn sang nhà máy khác đóng hàng xuất (trước đây nhập Nơi lấy = RU)" },
             // Thuê xe ngoài tạo/sửa 1 DÒNG CHI PHÍ nên đi theo quyền cột Chi phí: không được xem
             // chi phí thì cũng không thấy nút này (tránh bật nhầm khi dòng cũ bị ẩn khỏi payload).
             ...(canCol("cost") ? [{ on: extHired, set: toggleExt, icon: "bi-truck", label: "Thuê xe ngoài" }] : []),
           ].map((o, i) => (
-            <button key={i} type="button" onClick={() => o.set(!o.on)}
+            <button key={i} type="button" onClick={() => o.set(!o.on)} title={o.title}
               style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "9px 14px", borderRadius: 10, cursor: "pointer", fontSize: 13.5, fontWeight: 600,
                 border: "1px solid " + (o.on ? "var(--accent)" : "var(--line)"), background: o.on ? "var(--accent-weak-2)" : "#fff", color: o.on ? "var(--accent)" : "var(--ink-2)" }}>
               <span style={{ width: 18, height: 18, borderRadius: 5, display: "grid", placeItems: "center", border: "1.5px solid " + (o.on ? "var(--accent)" : "var(--line-2)"), background: o.on ? "var(--accent)" : "#fff", color: "#fff", fontSize: 11 }}>{o.on ? <i className="bi bi-check-lg" /> : null}</span>

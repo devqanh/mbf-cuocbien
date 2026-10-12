@@ -23,6 +23,15 @@ function guessProvince(address, provinces = [], aliases = {}) {
   return hit ? hit[1] : "";
 }
 
+/* Gợi ý TỈNH CŨ (quy chế lương 03/2026) từ địa chỉ kho — bảng từ khóa từ backend SalaryZones::keywords() [từ khóa, tỉnh cũ],
+   xét theo thứ tự: Phố Nối trước Hưng Yên, mọi tỉnh khác trước Hải Phòng. Chỉ GỢI Ý, bấm mới điền. */
+function guessOldProvince(address, keywords = []) {
+  const a = pnorm(address);
+  if (!a) return "";
+  const hit = (keywords || []).find(([kw]) => a.includes(pnorm(kw)));
+  return hit ? hit[1] : "";
+}
+
 function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap, counts = {}, loading = false }) {
   const isMobile = useIsMobile();
   const [draft, setDraft] = useState("");
@@ -71,6 +80,15 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
   const provinces = cfg.provinces || [];
   const provAliases = cfg.provinceAliases || {};
   const setGroupProvince = (indices, val) => { const a = [...provArr]; while (a.length < list.length) a.push(""); indices.forEach((i) => { a[i] = val || ""; }); setCfg(provArrKey, a); };
+  // TỈNH CŨ theo Quy chế lương 03/2026 (63 tỉnh trước sáp nhập, Hưng Yên tách chưa/qua trạm) — cũng theo NHÓM ký hiệu
+  // như Tỉnh. Vùng lương suy ra từ tỉnh cũ; dùng cho trợ cấp "Quay đầu tuyến ngoài Hải Phòng" (+ lương chuyến sau này).
+  const zoneArrKey = "warehouseOldProvArr";
+  const zoneArr = cfg[zoneArrKey] || [];
+  const oldProvinces = cfg.oldProvinces || [];
+  const zoneKeywords = cfg.oldProvinceKeywords || [];
+  const zoneOfProv = cfg.oldProvinceZone || {};
+  const zoneOpts = oldProvinces.map((p) => ({ value: p, label: p + (zoneOfProv[p] ? "  ·  " + zoneOfProv[p].split(" · ")[0] : "") }));
+  const setGroupZone = (indices, val) => { const a = [...zoneArr]; while (a.length < list.length) a.push(""); indices.forEach((i) => { a[i] = val || ""; }); setCfg(zoneArrKey, a); };
   const [pickIdx, setPickIdx] = useState(null);   // dòng đang mở MapPicker
   const [focusIdx, setFocusIdx] = useState(null); // dòng vừa thêm → tự focus ô tên
   const mapsKey = (window.__TRK && window.__TRK.boot && window.__TRK.boot.mapsKey) || "";
@@ -112,14 +130,6 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
     if (grp) editGroupCode(grp, codeDrafts[grp.idxs[0]]);
   });
   const hasCodeDraft = Object.keys(codeDrafts).length > 0;
-  // Phí tuyến đường: phát hiện trùng TUYẾN — THEO CHIỀU (Kho1→Kho2 ≠ Kho2→Kho1, giữ thứ tự kho)
-  // Định danh = tuyến TRONG 1 BẢNG phí (bookId) → cùng tuyến ở 2 bảng (2 thời kỳ) không phải trùng.
-  const routeKey = (r) => { const k = ((r && r.route) || "").split(/\s*-\s*/).map((x) => x.trim().toUpperCase()).filter(Boolean).join(" | "); return k ? k + "@" + ((r && r.bookId) ?? "") : ""; };
-  const rfRows = cfg.routeFees || [];
-  const rfCounts = {};
-  if (g && g.routefees) rfRows.forEach((r) => { const k = routeKey(r); if (k) rfCounts[k] = (rfCounts[k] || 0) + 1; });
-  const isDupRoute = (r) => { const k = routeKey(r); return !!k && rfCounts[k] > 1; };
-  const hasDupRoute = !!(g && g.routefees) && Object.values(rfCounts).some((n) => n > 1);
   // Gán xe GPS: 1 xe GPS chỉ được gán cho 1 xe MBF — phát hiện trùng ref.
   const gpsUsedBy = {};   // ref => [plate...] (xe nào đang gán ref này)
   if (g && g.fleet) Object.keys(vehGps).forEach((plate) => { const r = vehGps[plate]; if (r && (vehType[plate] || "MBF") === "MBF") (gpsUsedBy[r] = gpsUsedBy[r] || []).push(plate); });
@@ -128,7 +138,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
   // Lái xe mặc định: 1 người có thể phụ trách nhiều xe (không chặn) — chỉ ghi chú "đang lái xe X" trong dropdown.
   const driverUsedBy = {};   // driverId => [plate...]
   if (g && g.fleet) Object.keys(vehDriver).forEach((plate) => { const d = vehDriver[plate]; if (d && (vehType[plate] || "MBF") === "MBF") (driverUsedBy[d] = driverUsedBy[d] || []).push(plate); });
-  const blockSave = hasDupCode || hasEmptyCode || hasDupRoute || hasDupGps || hasCodeDraft;   // chặn lưu khi còn trùng / thiếu ký hiệu
+  const blockSave = hasDupCode || hasEmptyCode || hasDupGps || hasCodeDraft;   // chặn lưu khi còn trùng / thiếu ký hiệu
   const costColors = cfg.costColors || {};
   const setColor = (name, val) => { const nc = { ...costColors }; if (val) nc[name] = val; else delete nc[name]; setCfg("costColors", nc); };
   const costAuto = cfg.costAuto || {};
@@ -152,6 +162,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
     if (g && g.noted) { const a = [...noteArr]; while (a.length < list.length) a.push(""); a.push(""); setCfg(noteArrKey, a); }
     if (g && g.geo) { const a = [...geoArr]; while (a.length < list.length) a.push(""); a.push(""); setCfg(geoArrKey, a); }
     if (g && g.provinced) { const a = [...provArr]; while (a.length < list.length) a.push(""); a.push(""); setCfg(provArrKey, a); }
+    if (g && g.provinced) { const a = [...zoneArr]; while (a.length < list.length) a.push(""); a.push(""); setCfg(zoneArrKey, a); }
     setDraft("");
   };
   // Thêm 1 dòng đã biết KÝ HIỆU (dùng cho giao diện gom nhóm — Địa điểm): mỗi ký hiệu có thể nhiều tên.
@@ -169,6 +180,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
     if (g && g.geo) setCfg(geoArrKey, insert(geoArr, "", ""));
     // Tỉnh thuộc NHÓM ký hiệu → dòng thêm vào nhóm kế thừa tỉnh của nhóm.
     if (g && g.provinced) { const grpProv = (code || "").trim() ? (list.map((_, j) => (normCode(codeArr[j]) === normCode(code) ? provArr[j] : "")).find(Boolean) || "") : ""; setCfg(provArrKey, insert(provArr, grpProv, "")); }
+    if (g && g.provinced) { const grpZone = (code || "").trim() ? (list.map((_, j) => (normCode(codeArr[j]) === normCode(code) ? zoneArr[j] : "")).find(Boolean) || "") : ""; setCfg(zoneArrKey, insert(zoneArr, grpZone, "")); }
     setFocusIdx(pos);
   };
   // Đổi ký hiệu cho TẤT CẢ dòng trong 1 nhóm (sửa ở header nhóm → áp cho mọi tên cùng nhóm).
@@ -192,13 +204,15 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
     if (g && g.noted) setCfg(noteArrKey, noteArr.filter((_, j) => j !== i));
     if (g && g.geo) setCfg(geoArrKey, geoArr.filter((_, j) => j !== i));
     if (g && g.provinced) setCfg(provArrKey, provArr.filter((_, j) => j !== i));
+    if (g && g.provinced) setCfg(zoneArrKey, zoneArr.filter((_, j) => j !== i));
     const drop = (mapKey, map) => { if (map[old] === undefined) return; const m = { ...map }; delete m[old]; setCfg(mapKey, m); };
     if (g && g.priced)  drop("prices", prices);
     if (g && g.colored) { drop("costColors", costColors); drop("costAuto", costAuto); drop("costVat", costVat); }
     if (g && g.fleet) { drop("vehicleType", vehType); drop("vehicleAxle", vehAxle); drop("vehicleGps", vehGps); drop("vehicleDriverId", vehDriver); }
   };
+  // Cột phải minmax(0,1fr): nội dung rộng (hàng kho nhiều ô) co lại/xuống dòng thay vì kéo cả khung tràn ra ngoài thẻ.
   return (
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "210px 1fr", gap: isMobile ? 12 : 18, padding: "14px 0 4px", minHeight: isMobile ? 0 : 380 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "minmax(0, 1fr)" : "210px minmax(0, 1fr)", gap: isMobile ? 12 : 18, padding: "14px 0 4px", minHeight: isMobile ? 0 : 380 }}>
         {/* group list — dọc/sticky trên desktop; thanh pill cuộn ngang trên mobile */}
         <div style={{ display: "flex", flexDirection: isMobile ? "row" : "column", gap: isMobile ? 7 : 2,
           borderRight: isMobile ? "none" : "1px solid var(--line-2)", borderBottom: isMobile ? "1px solid var(--line-2)" : "none",
@@ -225,7 +239,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
           })}
         </div>
         {/* items editor */}
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div style={{ position: "sticky", top: 0, zIndex: 10, background: "#fff", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "10px 0 8px", marginBottom: 6, borderBottom: "1px solid var(--line-2)" }}>
             <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: "-0.01em" }}>{g.label}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -255,7 +269,6 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
           {hasEmptyCode && <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: "var(--danger)", background: "#fce8e8", border: "1px solid #f3c9c9", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>⚠ Có dòng <b>chưa nhập ký hiệu</b> — ký hiệu là bắt buộc (dùng để tham chiếu). Điền các ô viền đỏ trước khi lưu.</div>}
           {hasDupCode && <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: "var(--danger)", background: "#fce8e8", border: "1px solid #f3c9c9", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>⚠ Có ký hiệu bị trùng — mỗi ký hiệu phải là duy nhất. Sửa các ô viền đỏ trước khi lưu.</div>}
           {hasCodeDraft && <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: "var(--danger)", background: "#fce8e8", border: "1px solid #f3c9c9", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>⚠ Ký hiệu kho bị trùng nhóm khác hoặc để trống — ký hiệu là định danh kho nên mỗi nhóm một ký hiệu riêng. Sửa ô viền đỏ trước khi lưu.</div>}
-          {hasDupRoute && <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: "var(--danger)", background: "#fce8e8", border: "1px solid #f3c9c9", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>⚠ Có tuyến bị trùng — mỗi tuyến (đúng thứ tự kho) phải là duy nhất. Sửa các tuyến viền đỏ trước khi lưu. (Kho1→Kho2 khác Kho2→Kho1.)</div>}
           {hasDupGps && <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: "var(--danger)", background: "#fce8e8", border: "1px solid #f3c9c9", borderRadius: 9, padding: "8px 12px", marginBottom: 10 }}>⚠ Có xe GPS bị gán cho nhiều xe — mỗi xe GPS chỉ gán cho 1 xe. Sửa các ô viền đỏ trước khi lưu.</div>}
           {loading ? (
             <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "30px 4px", color: "var(--ink-4)", fontSize: 13.5 }}>
@@ -267,8 +280,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
           ) : sel === "drivers" ? (
             <DriversManager cfg={cfg} setCfg={setCfg} />
           ) : g.routefees ? (
-            <RouteFees rows={cfg.routeFees || []} onChange={(rows) => setCfg("routeFees", rows)} books={cfg.routeFeeBooks || []} onBooks={(b) => setCfg("routeFeeBooks", b)}
-              warehouses={cfg.warehouses || []} locations={cfg.locations || []} provinces={cfg.provinces || []} isDup={isDupRoute} />
+            <RouteFees books={cfg.routeFeeBooks || []} onBooks={(b) => setCfg("routeFeeBooks", b)} regulationMeta={cfg.regulationMeta || {}} />
           ) : g.fuelprices ? (
             <FuelPrices rows={cfg.fuelPrices || []} onChange={(rows) => setCfg("fuelPrices", rows)} />
           ) : g.general ? (
@@ -383,8 +395,8 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                       const codeErr = draft == null ? "" : !draft.trim() ? "Chưa nhập ký hiệu" : clash ? `Trùng ký hiệu nhóm “${clash.code}”` : "";
                       return (
                       <div key={grp.idxs[0]} style={{ flexShrink: 0, border: "1px solid var(--line)", borderRadius: 11, overflow: "hidden", background: "#fff" }}>
-                        {/* Header nhóm: ký hiệu — sửa ở đây áp cho CẢ nhóm (Địa điểm đã lưu thì khóa) */}
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: noCode ? "var(--line-2)" : "var(--accent-weak)", borderBottom: "1px solid var(--line)" }}>
+                        {/* Header nhóm: ký hiệu — sửa ở đây áp cho CẢ nhóm (Địa điểm đã lưu thì khóa). flexWrap: tỉnh + tỉnh cũ + gợi ý dài thì xuống dòng, không tràn. */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: noCode ? "var(--line-2)" : "var(--accent-weak)", borderBottom: "1px solid var(--line)", flexWrap: "wrap" }}>
                           <i className={"bi " + (codeLock ? "bi-lock-fill" : "bi-tag-fill")} style={{ color: noCode ? "var(--ink-4)" : "var(--accent)", fontSize: 13 }} title={codeLock ? "Ký hiệu đã lưu — không sửa được" : ""} />
                           <input value={draft != null ? draft : grp.code} readOnly={codeLock} onChange={(e) => { if (!codeLock) editGroupCode(grp, e.target.value); }} placeholder="Ký hiệu…"
                             title={codeLock ? "Ký hiệu đã lưu — không sửa để giữ khớp import/bảng giá" : grp.saved ? "Ký hiệu là định danh kho — không được trùng với nhóm khác" : ""}
@@ -402,6 +414,24 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                                 {sug && (
                                   <button type="button" onClick={() => setGroupProvince(grp.idxs, sug)} title={`Đoán từ địa chỉ kho: ${sug} — bấm để điền`}
                                     style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", fontSize: 11.5, fontWeight: 600, cursor: "pointer", borderRadius: 999, border: "1px dashed var(--accent)", background: "#fff", color: "var(--accent)", whiteSpace: "nowrap" }}>
+                                    <i className="bi bi-magic" /> {sug}
+                                  </button>
+                                )}
+                              </>
+                            );
+                          })()}
+                          {/* TỈNH CŨ của NHÓM kho theo Quy chế lương 03/2026 — quyết định "ngoài Hải Phòng" (trợ cấp quay đầu) + vùng lương. */}
+                          {g.provinced && oldProvinces.length > 0 && (() => {
+                            const cur = grp.idxs.map((j) => zoneArr[j] || "").find(Boolean) || "";
+                            const sug = cur ? "" : (grp.idxs.map((j) => guessOldProvince(addrArr[j] || "", zoneKeywords)).find(Boolean) || "");
+                            return (
+                              <>
+                                <span style={{ width: 200, flexShrink: 0 }} title={"Tỉnh CŨ (trước sáp nhập) theo Quy chế lương 03/2026 — Hải Dương là ngoài Hải Phòng; Hưng Yên chọn chưa/qua trạm. Dùng cho trợ cấp “Quay đầu tuyến ngoài Hải Phòng”" + (cur ? "\nVùng lương: " + (zoneOfProv[cur] || "chưa có trong quy chế") : "")}>
+                                  <Combo value={cur} onChange={(v) => setGroupZone(grp.idxs, v)} options={zoneOpts} placeholder="Tỉnh cũ (quy chế)…" small clearable strict />
+                                </span>
+                                {sug && (
+                                  <button type="button" onClick={() => setGroupZone(grp.idxs, sug)} title={`Đoán tỉnh cũ từ địa chỉ kho: ${sug} — bấm để điền`}
+                                    style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", fontSize: 11.5, fontWeight: 600, cursor: "pointer", borderRadius: 999, border: "1px dashed #7c3aed", background: "#fff", color: "#7c3aed", whiteSpace: "nowrap" }}>
                                     <i className="bi bi-magic" /> {sug}
                                   </button>
                                 )}
@@ -427,7 +457,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                             const nameInput = (
                               <input value={list[i]} onChange={(e) => rename(i, e.target.value)} placeholder={(g && g.codeNameLabel) || "Tên địa điểm"}
                                 ref={(el) => { if (el && focusIdx === i) { setFocusIdx(null); el.focus(); el.scrollIntoView({ block: "nearest" }); } }}
-                                style={{ width: "100%", padding: "7px 10px", fontSize: 13.5, border: "1px solid transparent", borderRadius: 8, outline: "none", background: "transparent" }}
+                                style={{ width: "100%", minWidth: 0, padding: "7px 10px", fontSize: 13.5, border: "1px solid transparent", borderRadius: 8, outline: "none", background: "transparent" }}
                                 onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.background = "#fff"; }}
                                 onBlur={(e) => { e.target.style.borderColor = "transparent"; e.target.style.background = "transparent"; }} />
                             );
@@ -441,7 +471,7 @@ function ConfigBody({ cfg, setCfg, sel, setSel, dirty, saving, onSave, dirtyMap,
                               <input value={noteArr[i] || ""} onChange={(e) => setNote(i, e.target.value)}
                                 placeholder="Ghi chú — địa chỉ đóng hàng (xuất Excel)"
                                 title="Ghi chú của kho này — in vào cột “Địa chỉ đóng hàng” khi xuất Excel lô hàng"
-                                style={{ width: "100%", padding: "7px 10px", fontSize: 13, border: "1px solid var(--line)", borderRadius: 8, outline: "none", background: "#fff" }}
+                                style={{ width: "100%", minWidth: 0, padding: "7px 10px", fontSize: 13, border: "1px solid var(--line)", borderRadius: 8, outline: "none", background: "#fff" }}
                                 onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
                             );
                             const geoCell = g.geo && (() => { const pinned = !!parseGeo(geoArr[i]); return (

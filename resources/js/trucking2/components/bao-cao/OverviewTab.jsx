@@ -96,14 +96,14 @@ export function OverviewTab({ rep, prev, prevLabel, isMobile, routes, onGoTab })
       {unmatched > 0 && (
         <div style={{ display: "flex", gap: 10, alignItems: "flex-start", background: "var(--warn-weak)", border: "1px solid #f3d9a4", borderRadius: 10, padding: "10px 14px", fontSize: 12.5, color: "#7c5b16" }}>
           <i className="bi bi-exclamation-triangle-fill" style={{ marginTop: 2, color: "var(--warn)" }} />
-          <div><b>{unmatched}/{conts} lô đã ra trong tháng chưa có doanh thu</b> — khách chưa có bảng giá phủ ngày cont ra (hoặc lô chưa đủ Nơi lấy / Nơi hạ / Kho để khớp). Doanh thu và lợi nhuận bên dưới đang <b>thấp hơn thực tế</b>. Thêm bảng giá ở tab <b>Bảng giá</b> rồi mở lại báo cáo, số sẽ tự cập nhật.</div>
+          <div><b>{unmatched}/{conts} lô đã ra trong tháng chưa có doanh thu</b> — chưa lập bảng kê có giá và khách chưa có bảng giá phủ ngày cont ra (hoặc lô chưa đủ Nơi lấy / Nơi hạ / Kho để khớp). Doanh thu và lợi nhuận bên dưới đang <b>thấp hơn thực tế</b>. Thêm bảng giá ở tab <b>Bảng giá</b> hoặc gõ giá cho lô trên bảng kê rồi mở lại báo cáo, số sẽ tự cập nhật.</div>
         </div>
       )}
 
       {/* 1. KPI P&L + so tháng trước */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         <KPI label="Doanh thu" value={money(rev)} color="var(--accent)" cur={rev} prev={prev ? pv.revenue : null} goodWhen="up"
-          sub={`${per(rev, conts)}/cont${rep.revenueManual ? ` · nhập tay ${fmtShort(rep.revenueManual)}` : ""}${prev ? ` · tháng ${prevLabel}: ${fmtShort(pv.revenue)}` : ""}`} hint="Giá theo bảng giá của lô có Giờ xe ra trong tháng (cước + dầu + sà lan)" />
+          sub={`${per(rev, conts)}/cont${rep.revenueManual ? ` · giá gõ tay ${fmtShort(rep.revenueManual)}` : ""}${prev ? ` · tháng ${prevLabel}: ${fmtShort(pv.revenue)}` : ""}`} hint="Lô có Giờ xe ra trong tháng (cước + dầu + sà lan): đã lập bảng kê → số trên bảng kê (kể cả giá gõ tay); chưa lập → giá theo bảng giá" />
         <KPI label="Tổng chi phí" value={money(cost)} color="#dc2626" cur={cost} prev={prev ? pv.totalCost : null}
           sub={`${per(cost, conts)}/cont · ${per(cost, trips)}/chuyến${prev ? ` · tháng ${prevLabel}: ${fmtShort(pv.totalCost)}` : ""}`} hint="Lương & vận hành lái xe + chi phí xe/tài sản + chi phí lô" />
         <KPI label="Lợi nhuận gộp" value={money(profit)} color={profit >= 0 ? "var(--good)" : "var(--danger)"} cur={profit} prev={prev ? pv.profit : null} goodWhen="up"
@@ -157,7 +157,7 @@ export function OverviewTab({ rep, prev, prevLabel, isMobile, routes, onGoTab })
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {customers.map((c, i) => (
               <div key={i} style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr auto" : "220px 1fr 130px 120px", gap: 10, alignItems: "center", fontSize: 12.5 }}>
-                <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.label}{c.unmatched > 0 && <span title={`${c.unmatched} lô chưa khớp bảng giá`} style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "#7c5b16", background: "#fbf0d3", padding: "0 6px", borderRadius: 999 }}>{c.unmatched} chưa giá</span>}</span>
+                <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.label}{c.unmatched > 0 && <span title={`${c.unmatched} lô chưa có giá (chưa lập bảng kê có giá, chưa khớp bảng giá)`} style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "#7c5b16", background: "#fbf0d3", padding: "0 6px", borderRadius: 999 }}>{c.unmatched} chưa giá</span>}</span>
                 {!isMobile && <div style={{ height: 14, background: "var(--line-2)", borderRadius: 5, overflow: "hidden" }}><div style={{ width: (rev ? c.revenue / rev * 100 : 0) + "%", height: "100%", background: "var(--accent)", minWidth: c.revenue ? 2 : 0 }} /></div>}
                 <span className="tnum" style={{ textAlign: "right", fontWeight: 700 }}>{money(c.revenue)}</span>
                 {!isMobile && <span className="tnum" style={{ textAlign: "right", color: "var(--ink-4)" }}>{c.conts} cont · {c.perCont ? fmtShort(c.perCont) : "—"}/cont</span>}
@@ -168,7 +168,7 @@ export function OverviewTab({ rep, prev, prevLabel, isMobile, routes, onGoTab })
       </div>
 
       <div style={{ fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.6 }}>
-        <i className="bi bi-info-circle" /> <b style={{ color: "var(--ink-3)" }}>Doanh thu</b> = giá theo <b>bảng giá</b> (cước + dầu + sà lan) của lô có Giờ xe ra trong tháng — cùng công thức cột "Thu phí" ở Lô hàng và bảng kê; lô không khớp bảng giá thì lấy doanh thu nhập tay (nếu có). Chi hộ khách không tính.
+        <i className="bi bi-info-circle" /> <b style={{ color: "var(--ink-3)" }}>Doanh thu</b> = cước + dầu + sà lan (chưa VAT) của lô có Giờ xe ra trong tháng: lô <b>đã lập bảng kê</b> lấy số trên bảng kê (kể cả <b>giá gõ tay</b>); lô chưa lập lấy giá theo <b>bảng giá</b> (cùng công thức cột "Thu phí" ở Lô hàng); không khớp bảng giá thì lấy doanh thu nhập tay của lô (nếu có). Chi hộ khách không tính.
         <b style={{ color: "var(--ink-3)" }}> Chi phí</b> gồm 4 nhóm: lương & vận hành lái xe (dầu/cầu đường/trợ cấp/lương theo Lộ trình), chi phí xe và tài sản (phiếu chi theo ngày chi, bỏ phiếu hủy), chi phí lô hàng (số net).
         Lợi nhuận là <b>lợi nhuận gộp vận hành</b>, chưa trừ khấu hao & chi phí văn phòng — xem khấu hao ở Báo cáo tài sản.
       </div>

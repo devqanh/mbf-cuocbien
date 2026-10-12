@@ -154,12 +154,16 @@ trait HandlesStatementPricing
         foreach ($s->costLines as $c) {
             $amt = (int) round((float) $c->amount); $bill = (bool) $c->billable;
             if ($bill) $choHoItems[] = ['item' => $c->item ?: '(khoản)', 'amount' => $amt];
-            $costItems[] = ['item' => $c->item ?: '(khoản)', 'amount' => $amt, 'billable' => $bill, 'src' => $c->src ?? ''];
+            $costItems[] = ['item' => $c->item ?: '(khoản)', 'amount' => $amt, 'billable' => $bill, 'src' => $c->src ?? '',
+                // cước thuê xe ngoài: kèm tên nhà xe để lập bảng kê đầu ra biết chi phí đầu vào của cont
+                'vendor' => ($c->src ?? '') === 'extTruck' ? (string) ($s->ext_vendor ?? '') : ''];
         }
         $chiHo = array_sum(array_column($choHoItems, 'amount'));
         // Tuyến hiển thị: ĐI → NHÀ MÁY → HẠ (theo tên cho rõ; ký hiệu là khóa link)
         $nameOf = function ($v) use ($codeToName) { $v = trim((string) $v); return $codeToName[$v] ?? $v; };
-        $route = $p ? (($nameOf($p['from'] ?? '') ?: '?') . ' → ' . ($nameOf($p['to1'] ?? '') ?: '?') . ' → ' . ($nameOf($p['loc'] ?? '') ?: '?')) : null;
+        $route = $p ? (($nameOf($p['from'] ?? '') ?: '?') . ' → '
+            . (implode(' → ', array_filter(array_map(fn ($k) => $nameOf($p[$k] ?? ''), ['to1', 'to2', 'to3']))) ?: '?')   // đủ các nhà máy của dòng giá
+            . ' → ' . ($nameOf($p['loc'] ?? '') ?: '?')) : null;
         // Tuyến sà lan: nơi hạ cont → nơi hạ sà lan (theo tên cho rõ)
         $bargeRoute = $bp ? (($nameOf($bp['from'] ?? '') ?: '?') . ' → ' . ($nameOf($bp['loc'] ?? '') ?: '?')) : null;
 
@@ -257,16 +261,25 @@ trait HandlesStatementPricing
     {
         $p = null; $fallback = null; $nonMatch = null;
         $nkKinds = (array) $nkKind;   // 1 hoặc nhiều KIND chấp nhận (lô CRU khớp cả Internal lẫn External)
+        // Điểm khớp KHO: số kho trùng (×10) trừ số kho THỪA của dòng giá. Lô nhiều kho ("TS, QV") phải lấy dòng
+        // khớp ĐỦ (HPP → TS → QV) chứ không phải dòng đầu tiên trùng 1 kho (HPP → TS) — trước đây lấy dòng đầu
+        // tiên có ≥ 1 kho trùng nên lô 2 kho bị tính giá 1 kho.
+        $khoScore = function (array $rk) use ($khoCodes) {
+            $hit = 0; foreach ($rk as $k) if (in_array($k, $khoCodes, true)) $hit++;
+            return $hit ? $hit * 10 - (count($rk) - $hit) : null;
+        };
+        $passes = function (array $r) use ($loFrom, $loDrop, $requireKho, $khoCodes, $nkKinds, $khoScore) {
+            if ($loFrom !== '' && $r['rcFrom'] !== '' && $r['rcFrom'] !== $loFrom) return false;
+            if ($loDrop !== '' && $r['rcDrop'] !== '' && $r['rcDrop'] !== $loDrop) return false;
+            if ($requireKho && (empty($khoCodes) || empty($r['rcKho']) || $khoScore($r['rcKho']) === null)) return false;   // kho rỗng = không khớp
+            if ($r['nkKind'] !== '' && ! in_array($r['nkKind'], $nkKinds, true)) return false;
+            return true;
+        };
+        $best = null;
+        if ($requireKho) foreach ($priceList as $r) if ($passes($r)) { $sc = $khoScore($r['rcKho']); if ($best === null || $sc > $best) $best = $sc; }
         foreach ($priceList as $r) {
-            if ($loFrom !== '' && $r['rcFrom'] !== '' && $r['rcFrom'] !== $loFrom) continue;
-            if ($loDrop !== '' && $r['rcDrop'] !== '' && $r['rcDrop'] !== $loDrop) continue;
-            if ($requireKho) {
-                if (empty($khoCodes) || empty($r['rcKho'])) continue;   // kho rỗng = không khớp (giữ semantic cũ)
-                $khoOk = false;
-                foreach ($r['rcKho'] as $k) if (in_array($k, $khoCodes, true)) { $khoOk = true; break; }
-                if (! $khoOk) continue;
-            }
-            if ($r['nkKind'] !== '' && ! in_array($r['nkKind'], $nkKinds, true)) continue;
+            if (! $passes($r)) continue;
+            if ($requireKho && $khoScore($r['rcKho']) !== $best) continue;   // chỉ xét dòng khớp kho TỐT NHẤT
 
             if ($fallback === null) $fallback = $r['row'];   // base match, fallback nếu không có conn khớp
             // "Non" = áp cho MỌI trạng thái — ưu tiên SAU khớp đúng conn (giá cont), hoặc ưu tiên nhất (sà lan).
@@ -371,7 +384,8 @@ trait HandlesStatementPricing
     private function customerPriceBooks(int $customerId): array
     {
         if (isset($this->priceBooksCache[$customerId])) return $this->priceBooksCache[$customerId];
-        $books = TruckingPriceBook::where('customer_id', $customerId)->get(['id', 'label', 'period_from', 'period_to'])
+        // Khách dùng chung bảng giá → lấy các bảng giá theo ngày của khách nguồn.
+        $books = TruckingPriceBook::where('customer_id', $this->priceOwnerId($customerId))->get(['id', 'label', 'period_from', 'period_to'])
             ->map(fn ($b) => [
                 'id'    => (int) $b->id,
                 'label' => $b->label,
@@ -500,6 +514,50 @@ trait HandlesStatementPricing
         return ['candidates' => $out];
     }
 
+    /**
+     * KHÁCH CÓ LÔ TRONG KỲ (trang danh sách Bảng kê): mỗi khách có bao nhiêu lô ra trong [from, to] — cùng mốc
+     * ngày với statementCandidates (Giờ xe ra; HPH fallback ngày tàu) — và bao nhiêu lô đã nằm trong bảng kê nào
+     * đó / còn chưa lập. Để kế toán thấy ngay tháng này cần lập bảng kê cho những khách nào. 3 query, chỉ đọc.
+     *
+     * @return array{from:?string,to:?string,customers:list<array{customer:string,total:int,nhap:int,xuat:int,billed:int,unbilled:int}>}
+     */
+    public function statementCustomersInPeriod(?string $from, ?string $to): array
+    {
+        if (! $from && ! $to) return ['from' => $from, 'to' => $to, 'customers' => []];
+        $lo = $from ? $from . ' 00:00:00' : null; $hi = $to ? $to . ' 23:59:59' : null;
+        $ships = TruckingShipment::where(function ($w) use ($lo, $hi, $from, $to) {
+            $w->where(function ($a) use ($lo, $hi) {
+                $a->whereNotNull('gio_xe_ra');
+                if ($lo) $a->where('gio_xe_ra', '>=', $lo);
+                if ($hi) $a->where('gio_xe_ra', '<=', $hi);
+            })->orWhere(function ($a) use ($from, $to) {
+                $a->where('sheet', 'HPH')->whereNull('gio_xe_ra')->whereNotNull('sail_date');
+                if ($from) $a->whereDate('sail_date', '>=', $from);
+                if ($to) $a->whereDate('sail_date', '<=', $to);
+            });
+        })->get(['id', 'customer_id', 'io']);
+
+        $billed = $ships->isEmpty() ? collect()
+            : \App\Models\TruckingStatementLine::whereIn('shipment_id', $ships->pluck('id'))->distinct()->pluck('shipment_id')->flip();
+        $names = \App\Models\TruckingCustomer::whereIn('id', $ships->pluck('customer_id')->filter()->unique())->pluck('name', 'id');
+
+        $out = [];
+        foreach ($ships->groupBy(fn ($s) => (int) $s->customer_id) as $cid => $g) {
+            $io = fn ($s) => mb_strtolower((string) $s->io);
+            $b  = $g->filter(fn ($s) => isset($billed[$s->id]))->count();
+            $out[] = [
+                'customer' => $cid ? (string) ($names[$cid] ?? '') : '',
+                'total'    => $g->count(),
+                'nhap'     => $g->filter(fn ($s) => str_contains($io($s), 'nh'))->count(),
+                'xuat'     => $g->filter(fn ($s) => str_contains($io($s), 'xu'))->count(),
+                'billed'   => $b,
+                'unbilled' => $g->count() - $b,
+            ];
+        }
+        usort($out, fn ($a, $b) => [$b['unbilled'], $b['total']] <=> [$a['unbilled'], $a['total']]);
+        return ['from' => $from, 'to' => $to, 'customers' => $out];
+    }
+
     /** Shape 1 ứng viên (dùng chung cho candidates). */
     private function candidateRow(TruckingShipment $s, string $sheet, string $date, array $pr): array
     {
@@ -516,6 +574,8 @@ trait HandlesStatementPricing
             'contNo' => $s->cont_no ?? '', 'bks' => $s->bks_vao ?: ($s->bks_ra ?: ''),
             'from' => $s->from_loc ?? '', 'to' => $s->to_loc ?? '', 'kho' => $s->kho ?? '', 'qty' => $s->qty,
             'cru' => (bool) $s->cru, 'date' => $date, 'contLabel' => $contLabel, 'note' => $note, 'thanhLy' => $thanhLy,
+            // "Ghi chú tự do cho lô hàng" (popup Thông tin lô) — hiện ở trang tạo bảng kê như trang xem.
+            'infoNote' => trim((string) $s->info_note),
             'pr' => $pr,
         ];
     }
@@ -524,7 +584,7 @@ trait HandlesStatementPricing
      * Tính lại 1 bảng kê đã lưu: định giá lại các lô (theo id trong snapshot) bằng dữ liệu HIỆN TẠI.
      * Trả về map shipmentId => pr (frontend áp vào dòng tương ứng).
      */
-    public function statementReprice(\App\Models\TruckingStatement $st): array
+    public function statementReprice(\App\Models\TruckingStatement $st, ?string $from = null, ?string $to = null, ?string $scope = null): array
     {
         // Ưu tiên customer_id (bền khi khách đổi tên); name là fallback cho bảng kê cũ.
         $custId   = $st->customer_id ? (int) $st->customer_id : null;
@@ -543,7 +603,25 @@ trait HandlesStatementPricing
             $ctx   = $this->pricingContextForShipment($s, $custId, $custName);   // bảng giá theo NGÀY ĐỊNH GIÁ (08:00) của lô
             $out[(string) $id] = $this->candidateRow($s, $sheet, $date, $this->priceShipment($s, $ctx));
         }
-        return ['repriced' => $out];
+
+        // LÔ MỚI trong kỳ (theo kỳ / phạm vi đang hiện trên trang, có thể vừa sửa chưa lưu) mà bảng kê chưa có —
+        // vd lô nhập thêm hoặc vừa có Giờ xe ra sau khi lập. Bỏ lô đã nằm ở bảng kê KHÁC để không thu trùng.
+        $from = $from ?? $this->outDate($st->period_from);
+        $to   = $to ?? $this->outDate($st->period_to);
+        $scope = in_array($scope, ['nhap', 'xuat'], true) ? $scope : ($st->io_scope ?: 'all');
+        $new = []; $inOther = 0;
+        if (($from || $to) && trim($custName) !== '') {
+            $have  = array_flip(array_map('intval', $ids));
+            $cands = array_values(array_filter($this->statementCandidates($custName, $from ?: null, $to ?: null)['candidates'],
+                fn ($c) => ! isset($have[(int) $c['id']]) && self::ioInScope($c['io'] ?? '', $scope)));
+            $billed = \App\Models\TruckingStatementLine::whereIn('shipment_id', array_column($cands, 'id'))
+                ->where('statement_id', '!=', $st->id)->pluck('shipment_id')->flip();
+            foreach ($cands as $c) {
+                if (isset($billed[$c['id']])) { $inOther++; continue; }
+                $new[] = $c;
+            }
+        }
+        return ['repriced' => $out, 'newCandidates' => $new, 'inOtherStatements' => $inOther];
     }
 
     /**

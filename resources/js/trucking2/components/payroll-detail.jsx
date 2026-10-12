@@ -4,18 +4,20 @@ import { I, Money, DateField, Txt, fmtVND, fmtNum, fmtDate, toNum } from "@trk/l
 // Dầu = CHI PHÍ CÔNG TY, KHÔNG tính vào lương lái → loại khỏi cả 2 rổ (kể cả snapshot CŨ còn dau1/dau2 trong items).
 const isFuel = (it) => it && (it.key === "dau1" || it.key === "dau2" || (it.liters != null && it.unitPrice != null));
 
-/* Gộp khoản phí tuyến + chi khác thủ công của 1 chuyến thành 2 rổ hiển thị cho kế toán. */
+/* Gộp khoản quy chế + chi khác thủ công của 1 chuyến thành 4 rổ cho kế toán:
+   daily = chi theo ngày TÍNH LƯƠNG · choho = chi theo ngày chọn "Chi hộ" (không tính lương) ·
+   khac = chi khác phát sinh chọn "Chi phí khác" (không tính lương, thống kê riêng) · payroll = gom trả kỳ lương. */
 function splitGroup(g) {
   const manual = g.manual || [];
-  const daily = [
+  const dayAll = [
     ...(g.items || []).filter((it) => !isFuel(it)),
-    ...manual.filter((m) => m.perDay !== false).map((m) => ({ label: m.name || "Chi khác", amount: m.amount })),
+    ...manual.filter((m) => m.perDay !== false).map((m) => ({ label: m.name || "Chi khác", amount: m.amount, choHo: !!m.choHo && !m.khac, khac: !!m.khac })),
   ];
   const payroll = [
     ...(g.payrollItems || []).filter((it) => !isFuel(it)),
     ...manual.filter((m) => m.perDay === false).map((m) => ({ label: m.name || "Chi khác", amount: m.amount })),
   ];
-  return { daily, payroll };
+  return { daily: dayAll.filter((it) => !it.choHo && !it.khac), choho: dayAll.filter((it) => it.choHo), khac: dayAll.filter((it) => it.khac), payroll };
 }
 
 const sum = (arr, k) => (arr || []).reduce((s, x) => s + (x[k] || 0), 0);
@@ -65,18 +67,30 @@ export function PayrollDetail({ row }) {
   );
 
   const totDaily = lines.reduce((s, ln) => s + (ln.groups || []).reduce((a, g) => a + sum(splitGroup(g).daily, "amount"), 0), 0);
+  const totChoho = lines.reduce((s, ln) => s + (ln.groups || []).reduce((a, g) => a + sum(splitGroup(g).choho, "amount"), 0), 0);
   const totPayroll = lines.reduce((s, ln) => s + (ln.groups || []).reduce((a, g) => a + sum(splitGroup(g).payroll, "amount"), 0), 0);
+  const totKhac = lines.reduce((s, ln) => s + (ln.groups || []).reduce((a, g) => a + sum(splitGroup(g).khac, "amount"), 0), 0);
 
   return (
     <div style={{ padding: "12px 14px", background: "#fafbfc" }}>
       <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
-        <Col title="Đã chi theo ngày (đã thanh toán)" pick={(g) => splitGroup(g).daily} accent="var(--ink-3)" />
+        <Col title="Đã chi theo ngày · tính lương" pick={(g) => splitGroup(g).daily} accent="var(--ink-3)" />
         <div style={{ width: 1, background: "var(--line)", alignSelf: "stretch" }} />
         <Col title="Lương chưa chi (gom trả đợt)" pick={(g) => splitGroup(g).payroll} accent="var(--accent)" />
+        {totChoho > 0 && <>
+          <div style={{ width: 1, background: "var(--line)", alignSelf: "stretch" }} />
+          <Col title="Chi hộ (không tính lương)" pick={(g) => splitGroup(g).choho} accent="#9a6700" />
+        </>}
+        {totKhac > 0 && <>
+          <div style={{ width: 1, background: "var(--line)", alignSelf: "stretch" }} />
+          <Col title="Chi phí khác (không tính lương)" pick={(g) => splitGroup(g).khac} accent="#6d28d9" />
+        </>}
       </div>
-      <div style={{ display: "flex", gap: 20, marginTop: 8, paddingTop: 8, borderTop: "1px dashed var(--line)", fontSize: 12 }}>
-        <div style={{ flex: 1 }}>Σ đã chi theo ngày: <b className="tnum" style={{ color: "var(--ink-2)" }}>{fmtVND(totDaily)}</b></div>
+      <div style={{ display: "flex", gap: 20, marginTop: 8, paddingTop: 8, borderTop: "1px dashed var(--line)", fontSize: 12, flexWrap: "wrap" }}>
+        <div style={{ flex: 1 }}>Σ đã chi theo ngày (tính lương): <b className="tnum" style={{ color: "var(--ink-2)" }}>{fmtVND(totDaily)}</b></div>
         <div style={{ flex: 1 }}>Σ lương phải trả: <b className="tnum" style={{ color: "var(--accent)" }}>{fmtVND(totPayroll)}</b></div>
+        {totChoho > 0 && <div style={{ flex: 1 }}>Σ chi hộ (không tính lương): <b className="tnum" style={{ color: "#9a6700" }}>{fmtVND(totChoho)}</b></div>}
+        {totKhac > 0 && <div style={{ flex: 1 }}>Σ chi phí khác (không tính lương): <b className="tnum" style={{ color: "#6d28d9" }}>{fmtVND(totKhac)}</b></div>}
       </div>
     </div>
   );

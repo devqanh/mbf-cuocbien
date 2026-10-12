@@ -4,6 +4,7 @@ namespace App\Services\Trucking;
 
 use App\Models\TruckingLocation;
 use App\Models\TruckingWarehouse;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx as XlsxWriter;
@@ -47,6 +48,12 @@ class StatementExcelExporter
 
         $sh->setCellValueExplicit('O18', (string) ($st['no'] ?? ''), DataType::TYPE_STRING);
         $sh->setCellValueExplicit('O19', $dmy($st['date'] ?? null), DataType::TYPE_STRING);
+        // Hạn thanh toán (statementDueDate: info.dueDate, chưa đặt thì ngày lập + Hạn TT của khách) — ô trống ngay dưới Date của mẫu.
+        $due = (string) ($st['dueDate'] ?? '');
+        if ($due !== '') {
+            $sh->setCellValue('N20', 'Due date');
+            $sh->setCellValueExplicit('O20', $dmy($due), DataType::TYPE_STRING);
+        }
 
         // Chỉ lô trong PHẠM VI Nhập/Xuất của bảng kê (ioScope) — lô khác loại không tính, không in ra Excel.
         $scope    = $st['ioScope'] ?? 'all';
@@ -55,6 +62,33 @@ class StatementExcelExporter
         $start    = 22;
         $tplRows  = 46;                         // mẫu có 46 dòng (22..67)
         $delta    = $M - $tplRows;
+
+        // CỘT CHI PHÍ RIÊNG của bảng kê (extraCols [{key,label,vat}], số từng lô ở detail.extras[key]).
+        // Mẫu có sẵn 3 cột phí K "Lưu ca", L "Tờ khai không phơi", M "Phí tái sử dụng container rỗng":
+        // cột riêng TRÙNG TÊN (so khớp chuẩn hóa) điền thẳng vào cột mẫu; cột khác CHÈN THÊM trước
+        // "Tổng tiền" (O) — nhãn ở dòng tiêu đề 21, kiểu kế thừa cột N. Chèn cột TRƯỚC khi giãn/thu dòng.
+        $extraCols = array_values(array_filter($st['extraCols'] ?? [], fn ($c) => is_array($c) && trim((string) ($c['label'] ?? '')) !== ''));
+        $norm   = fn ($s) => mb_strtolower(trim(preg_replace('/\s+/u', ' ', (string) $s)));
+        $tplFee = [];                           // [nhãn chuẩn hóa => cột mẫu]
+        foreach (['K', 'L', 'M'] as $c) { $h = $norm($sh->getCell($c . '21')->getValue()); if ($h !== '') $tplFee[$h] = $c; }
+        $colOf = []; $toInsert = [];            // key cột riêng => chữ cột Excel
+        foreach ($extraCols as $c) {
+            $h = $norm($c['label']);
+            if (isset($tplFee[$h]) && ! in_array($tplFee[$h], $colOf, true)) $colOf[$c['key']] = $tplFee[$h];
+            else $toInsert[] = $c;
+        }
+        $nIns = count($toInsert);
+        if ($nIns > 0) {
+            $sh->insertNewColumnBefore('O', $nIns);
+            foreach ($toInsert as $i => $c) {
+                $letter = Coordinate::stringFromColumnIndex(15 + $i);   // O, P, … (vị trí cũ của O trở đi)
+                $colOf[$c['key']] = $letter;
+                $sh->getColumnDimension($letter)->setWidth($sh->getColumnDimension('N')->getWidth());
+                $sh->setCellValue($letter . '21', $c['label']);
+            }
+        }
+        $colTong = Coordinate::stringFromColumnIndex(15 + $nIns);   // "Tổng tiền" (O khi không chèn)
+        $colNote = Coordinate::stringFromColumnIndex(16 + $nIns);   // "Ghi chú"  (P khi không chèn)
 
         // Map mã/tên → TÊN địa điểm & kho (chỉ là từ điển hiển thị tên, không phải dữ liệu lô)
         $locMap = [];
@@ -75,12 +109,18 @@ class StatementExcelExporter
             $sh->insertNewRowBefore($start + 1, $delta);        // chèn thêm sau dòng 22
             $h = $sh->getRowDimension($start)->getRowHeight();
             for ($r = $start + 1; $r <= $start + $delta; $r++) {
-                $sh->duplicateStyle($sh->getStyle("A{$start}:P{$start}"), "A{$r}:P{$r}");
+                $sh->duplicateStyle($sh->getStyle("A{$start}:{$colNote}{$start}"), "A{$r}:{$colNote}{$r}");
                 $sh->getRowDimension($r)->setRowHeight($h);
             }
         }
+        // Cột chèn thêm: kế thừa kiểu (viền, font, căn, định dạng số) của cột N từ tiêu đề tới dòng Tổng.
+        if ($nIns > 0) {
+            for ($r = 20; $r <= $start + $M; $r++) {
+                for ($i = 0; $i < $nIns; $i++) $sh->duplicateStyle($sh->getStyle("N{$r}"), Coordinate::stringFromColumnIndex(15 + $i) . $r);
+            }
+        }
 
-        $sumCuoc = 0; $sumThanhLy = 0; $sumTong = 0;
+        $sumCuoc = 0; $sumThanhLy = 0; $sumTong = 0; $sumExtra = array_fill_keys(array_keys($colOf), 0);
         foreach ($lines as $i => $l) {
             $r = $start + $i;
 
@@ -89,7 +129,8 @@ class StatementExcelExporter
             $inv      = $l['inv']      ?? '';
             $contNo   = $l['contNo']   ?? '';
             $bks      = $l['bks']      ?? '';
-            $note     = $l['note']     ?? '';
+            // Cột Note: ghi chú người dùng gõ ở bảng kê; chưa gõ thì ghi chú tự sinh như cũ (ghi chú kế toán / tuyến + kết nối).
+            $note     = trim((string) ($l['userNote'] ?? '')) ?: ($l['note'] ?? '');
 
             // Tuyến vận chuyển — lấy từ snapshot (detail.route đã chốt khi lưu)
             $segName = function ($v) use ($locMap, $whMap) {
@@ -110,7 +151,13 @@ class StatementExcelExporter
 
             $thanhLy = (int) ($l['thanhLy'] ?? 0);
             $cuoc    = (int) (($l['cuoc'] ?? 0) ?: ($l['phaiThu'] ?? 0));
-            $tong = $cuoc + $thanhLy;
+            // Phí riêng từng cột của lô (detail.extras[key]) — cộng vào Tổng tiền dòng như phí thanh lý.
+            $extras = []; $extraSum = 0;
+            foreach ($colOf as $key => $letter) {
+                $v = (int) round((float) ($l['detail']['extras'][$key] ?? 0));
+                $extras[$letter] = $v; $extraSum += $v; $sumExtra[$key] += $v;
+            }
+            $tong = $cuoc + $thanhLy + $extraSum;
             $sumCuoc += $cuoc; $sumThanhLy += $thanhLy; $sumTong += $tong;
 
             $sh->setCellValue("A{$r}", $i + 1);
@@ -126,9 +173,10 @@ class StatementExcelExporter
             $sh->setCellValue("K{$r}", 0);
             $sh->setCellValue("L{$r}", 0);
             $sh->setCellValue("M{$r}", 0);
+            foreach ($extras as $letter => $v) $sh->setCellValue("{$letter}{$r}", $v);   // ghi đè K/L/M nếu cột riêng trùng tên
             $sh->setCellValue("N{$r}", $thanhLy);
-            $sh->setCellValue("O{$r}", $tong);          // số cụ thể, không dùng SUM
-            $sh->setCellValue("P{$r}", $note);
+            $sh->setCellValue("{$colTong}{$r}", $tong);          // số cụ thể, không dùng SUM
+            $sh->setCellValue("{$colNote}{$r}", $note);
         }
 
         // Dòng Tổng — điền SỐ CỤ THỂ (không dùng công thức SUM)
@@ -137,8 +185,9 @@ class StatementExcelExporter
         $sh->setCellValue("K{$totalRow}", 0);
         $sh->setCellValue("L{$totalRow}", 0);
         $sh->setCellValue("M{$totalRow}", 0);
+        foreach ($colOf as $key => $letter) $sh->setCellValue("{$letter}{$totalRow}", $sumExtra[$key]);
         $sh->setCellValue("N{$totalRow}", $sumThanhLy);
-        $sh->setCellValue("O{$totalRow}", $sumTong);
+        $sh->setCellValue("{$colTong}{$totalRow}", $sumTong);
 
         // Ngày tháng (J70 đã merge J:P) dời theo delta
         $d = explode('-', (string) ($st['date'] ?? ''));

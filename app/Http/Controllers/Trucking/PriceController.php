@@ -28,6 +28,13 @@ class PriceController extends BaseTruckingController
         return response()->json(['ok' => true, 'books' => $this->svc->priceBooksForCustomer($customerId)]);
     }
 
+    /** Đặt / bỏ dùng chung bảng giá của khách khác (source = tên khách nguồn, trống = bảng giá riêng). */
+    public function setSource(Request $request, int $customer): JsonResponse
+    {
+        $d = $request->validate(['source' => ['nullable', 'string']]);
+        return response()->json($this->svc->setCustomerPriceSource($customer, $d['source'] ?? null));
+    }
+
     /** Tạo bảng giá mới (khoảng ngày) cho 1 khách. */
     public function createBook(Request $request): JsonResponse
     {
