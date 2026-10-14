@@ -199,7 +199,7 @@ function cshtGuideSheet() {
     { "Cột": "Chi hộ (x)", "Ý nghĩa": "Dấu tích “Chi hộ” (thu lại khách) của khoản — giống ô tích CHI HỘ trong popup Chi phí lô hàng. Ghi x = CÓ tích; để TRỐNG = KHÔNG tích (khi khoản đó có số liệu trên dòng). Lô có nhiều dòng cùng khoản mà dòng tích, dòng không thì file để trống và import giữ nguyên." },
     { "Cột": "CHI HỘ LCC", "Ý nghĩa": "Số tiền khoản “Chi hộ LCC” (một khoản chi phí riêng — khác với dấu tích Chi hộ ở từng nhóm)." },
     { "Cột": "NHÃN", "Ý nghĩa": "Nhãn của lô, nhiều nhãn cách nhau bằng dấu phẩy. Ô có giá trị = thay đúng danh sách nhãn của lô; ô trống = không đổi." },
-    { "Cột": "Quy tắc", "Ý nghĩa": "Ô trống = KHÔNG đổi. Giá trị giống hiện tại = bỏ qua. Lô chưa có khoản thì tạo dòng mới (cần Số tiền), có 1 dòng thì sửa các ô có giá trị. Không bao giờ xóa dòng chi phí (muốn xóa thì xóa trong popup)." },
+    { "Cột": "Quy tắc", "Ý nghĩa": "Ô trống = KHÔNG đổi. Giá trị giống hiện tại = bỏ qua. Lô chưa có khoản thì tạo dòng mới (không điền Số tiền thì dòng 0 đ, vd chỉ ghi Số hóa đơn = 0), có 1 dòng thì sửa các ô có giá trị. Không bao giờ xóa dòng chi phí (muốn xóa thì xóa trong popup)." },
     { "Cột": "Không import được", "Ý nghĩa": "Phí mở tờ khai (lấy từ tờ khai) · Cước xe ngoài khi lô chưa chọn Thuê xe ngoài · Khoản có 2 dòng trở lên trong cùng lô mà file đổi giá trị (sửa trong popup). 1 dòng lỗi là không import gì cả." },
   ];
   const wg = XLSX.utils.json_to_sheet(guide, { header: ["Cột", "Ý nghĩa"] });

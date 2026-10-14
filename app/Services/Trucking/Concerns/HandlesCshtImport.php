@@ -20,7 +20,7 @@ use Illuminate\Support\Str;
  *    cho CSHT + Thanh lí (như trước).
  *  - Khớp lô theo ID LÔ; dòng không có ID thì theo SỐ CONT (cont trùng nhiều lô → lỗi).
  *  - Ô trống = KHÔNG đụng; giá trị giống hiện tại = bỏ qua. Không bao giờ xóa dòng chi phí.
- *  - Lô chưa có khoản → tạo dòng (cần Số tiền); có 1 dòng → sửa các ô có giá trị; có nhiều dòng cùng
+ *  - Lô chưa có khoản → tạo dòng (không điền Số tiền thì 0 đ); có 1 dòng → sửa các ô có giá trị; có nhiều dòng cùng
  *    khoản → chỉ nhận khi không đổi gì (không đoán được dòng nào cần sửa).
  *  - Phí mở tờ khai lấy từ tờ khai → không sửa qua đây. Cước xe ngoài chỉ sửa dòng có sẵn.
  *  - NHÃN: ô có giá trị thì nhãn của lô = đúng danh sách trong ô (cách nhau dấu phẩy); ô trống = không đổi.
@@ -210,9 +210,9 @@ trait HandlesCshtImport
                     }
                     if ($lines->isEmpty()) {
                         if ($item->name === self::EXT_TRUCK_ITEM) { $reasons[] = 'Lô chưa có Cước xe ngoài — chọn Thuê xe ngoài ở Thông tin lô trước'; continue; }
-                        if (! isset($fields['amount'])) { $reasons[] = "Lô chưa có khoản {$item->name} — cần Số tiền để tạo"; continue; }
+                        // Chưa điền Số tiền vẫn tạo dòng 0 đ (như thêm dòng trong popup) — vd chỉ ghi Số hóa đơn = 0.
                         $rowOps[] = ['type' => 'create', 'shipment' => $s, 'fields' => $fields + [
-                            'item' => $item->name, 'cost_item_id' => $item->id,
+                            'amount' => 0, 'item' => $item->name, 'cost_item_id' => $item->id,
                             'vat' => $item->vat ?? 0, 'color' => $item->color, 'billable' => false,
                         ]];
                         continue;
