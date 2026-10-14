@@ -503,7 +503,7 @@ trait HandlesStatementPricing
      * Ứng viên cho 1 bảng kê: lô CỦA 1 KHÁCH trong khoảng cont-ra, ĐÃ ĐỊNH GIÁ ở server.
      * Trả về dòng sẵn sàng hiển thị + lưu (kèm pr để hiện trạng thái khớp).
      */
-    public function statementCandidates(string $customer, ?string $from, ?string $to): array
+    public function statementCandidates(string $customer, ?string $from, ?string $to, ?string $fromTime = null, ?string $toTime = null): array
     {
         $cust = trim($customer);
         if ($cust === '') return ['candidates' => []];
@@ -521,7 +521,9 @@ trait HandlesStatementPricing
         // ICD lọc gio_xe_ra trong [from 00:00, to 23:59]; HPH fallback sail_date. Lọc PHP bên dưới giữ làm chốt chặn.
         $q = TruckingShipment::where('customer_id', $custId)->with(['costLines', 'raOther:id,gio_xe_ra']);
         if ($from || $to) {
-            $lo = $from ? $from . ' 00:00:00' : null; $hi = $to ? $to . ' 23:59:59' : null;
+            // GIỜ kỳ (tùy chọn, H:i): từ "ngày giờ" / đến "ngày giờ:59" — trống = cả ngày. HPH (ngày tàu) chỉ xét ngày.
+            $lo = $from ? $from . ' ' . ($fromTime ? $fromTime . ':00' : '00:00:00') : null;
+            $hi = $to ? $to . ' ' . ($toTime ? $toTime . ':59' : '23:59:59') : null;
             $q->where(function ($w) use ($lo, $hi, $from, $to) {
                 $w->where(function ($a) use ($lo, $hi) {
                     $a->whereNotNull('gio_xe_ra');
@@ -544,6 +546,11 @@ trait HandlesStatementPricing
             if (($from || $to) && ! $date) continue;
             if ($from && $date && $date < $from) continue;
             if ($to && $date && $date > $to) continue;
+            if ($s->gio_xe_ra && ($fromTime || $toTime)) {
+                $ra = $s->gio_xe_ra->format('Y-m-d H:i:s');
+                if ($from && $fromTime && $ra < $from . ' ' . $fromTime . ':00') continue;
+                if ($to && $toTime && $ra > $to . ' ' . $toTime . ':59') continue;
+            }
             // Định giá theo BẢNG GIÁ phủ NGÀY ĐỊNH GIÁ của LÔ (ngày vận hành 08:00, pricingDateOf) — per-lô,
             // kỳ vắt qua mốc thì mỗi lô lấy đúng bảng giá.
             $ctx = $this->pricingContextForShipment($s, (int) $custId, $cust);
@@ -623,7 +630,7 @@ trait HandlesStatementPricing
      * Tính lại 1 bảng kê đã lưu: định giá lại các lô (theo id trong snapshot) bằng dữ liệu HIỆN TẠI.
      * Trả về map shipmentId => pr (frontend áp vào dòng tương ứng).
      */
-    public function statementReprice(\App\Models\TruckingStatement $st, ?string $from = null, ?string $to = null, ?string $scope = null): array
+    public function statementReprice(\App\Models\TruckingStatement $st, ?string $from = null, ?string $to = null, ?string $scope = null, ?string $fromTime = null, ?string $toTime = null): array
     {
         // Ưu tiên customer_id (bền khi khách đổi tên); name là fallback cho bảng kê cũ.
         $custId   = $st->customer_id ? (int) $st->customer_id : null;
@@ -645,13 +652,16 @@ trait HandlesStatementPricing
 
         // LÔ MỚI trong kỳ (theo kỳ / phạm vi đang hiện trên trang, có thể vừa sửa chưa lưu) mà bảng kê chưa có —
         // vd lô nhập thêm hoặc vừa có Giờ xe ra sau khi lập. Bỏ lô đã nằm ở bảng kê KHÁC để không thu trùng.
+        $info = is_array($st->info) ? $st->info : [];   // giờ kỳ đã lưu (info.fromTime / toTime) khi không truyền kỳ
+        if ($from === null) $fromTime ??= $info['fromTime'] ?? null;
+        if ($to === null) $toTime ??= $info['toTime'] ?? null;
         $from = $from ?? $this->outDate($st->period_from);
         $to   = $to ?? $this->outDate($st->period_to);
         $scope = in_array($scope, ['nhap', 'xuat'], true) ? $scope : ($st->io_scope ?: 'all');
         $new = []; $inOther = 0;
         if (($from || $to) && trim($custName) !== '') {
             $have  = array_flip(array_map('intval', $ids));
-            $cands = array_values(array_filter($this->statementCandidates($custName, $from ?: null, $to ?: null)['candidates'],
+            $cands = array_values(array_filter($this->statementCandidates($custName, $from ?: null, $to ?: null, $fromTime, $toTime)['candidates'],
                 fn ($c) => ! isset($have[(int) $c['id']]) && self::ioInScope($c['io'] ?? '', $scope)));
             $billed = \App\Models\TruckingStatementLine::whereIn('shipment_id', array_column($cands, 'id'))
                 ->where('statement_id', '!=', $st->id)->pluck('shipment_id')->flip();

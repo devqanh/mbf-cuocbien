@@ -63,7 +63,8 @@ class StatementController extends BaseTruckingController
         $customer = (string) $request->query('customer', '');
         $from = $request->query('from') ?: null;
         $to   = $request->query('to') ?: null;
-        return response()->json(['ok' => true] + $this->svc->statementCandidates($customer, $from, $to));
+        $t = $request->validate(['from_time' => ['nullable', 'date_format:H:i'], 'to_time' => ['nullable', 'date_format:H:i']]);
+        return response()->json(['ok' => true] + $this->svc->statementCandidates($customer, $from, $to, $t['from_time'] ?? null, $t['to_time'] ?? null));
     }
 
     /** Khách có lô ra trong kỳ (from, to = Y-m-d) + số lô đã / chưa vào bảng kê — khung trên trang danh sách. */
@@ -84,9 +85,11 @@ class StatementController extends BaseTruckingController
             'from' => ['nullable', 'date_format:Y-m-d'],
             'to'   => ['nullable', 'date_format:Y-m-d'],
             'io'   => ['nullable', 'in:all,nhap,xuat'],
+            'from_time' => ['nullable', 'date_format:H:i'],   // giờ kỳ (tùy chọn) — trống = cả ngày
+            'to_time'   => ['nullable', 'date_format:H:i'],
         ]);
         $statement->loadMissing(['lines', 'customer']);
-        return response()->json(['ok' => true] + $this->svc->statementReprice($statement, $d['from'] ?? null, $d['to'] ?? null, $d['io'] ?? null));
+        return response()->json(['ok' => true] + $this->svc->statementReprice($statement, $d['from'] ?? null, $d['to'] ?? null, $d['io'] ?? null, $d['from_time'] ?? null, $d['to_time'] ?? null));
     }
 
     /**

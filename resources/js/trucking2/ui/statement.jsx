@@ -1,6 +1,6 @@
 import React from "react";
 const { useState, useMemo, useEffect } = React;
-import { I, fmtVND, fmtNum, fmtShort, fmtDate, calcCost, calcRev, calcVeh, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, Combo, useIsMobile, DateField, statementAmounts, lineAmounts, STATEMENT_VAT_RATES } from "@trk/lib.jsx";
+import { I, fmtVND, fmtNum, fmtShort, fmtDate, calcCost, calcRev, calcVeh, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, Combo, useIsMobile, DateField, TimeField, statementAmounts, lineAmounts, STATEMENT_VAT_RATES } from "@trk/lib.jsx";
 import { CostPopup, RevenuePopup, CostPopupICD, RevenuePopupICD, InfoPopup, ConfigPopup, PriceList, TRACK_COLORS, colorHex } from "@trk/pop.jsx";
 import { SortBtn, CellBtn, Badge, EditCell, TH, TD } from "./primitives.jsx";
 
@@ -135,10 +135,11 @@ const CO_SUB = [CO.website, CO.phone].filter(Boolean).join(" · ") || "http://mb
 
 /* Lọc lô theo NHẬP / XUẤT (io của lô: "Nhập" | "Xuất"). Dùng ở trang tạo (lọc ứng viên) và trang xem (lọc hiển thị). */
 const ioKey = (io) => { const v = String(io || "").toLowerCase(); return /xu/.test(v) ? "xuat" : /nh/.test(v) ? "nhap" : ""; };
-function IoSeg({ value, onChange, counts }) {
+const IO_OPTS = [["all", "Tất cả"], ["nhap", "Nhập"], ["xuat", "Xuất"]];
+function IoSeg({ value, onChange, counts, opts = IO_OPTS }) {
   return (
     <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 9, padding: 3, gap: 1 }}>
-      {[["all", "Tất cả"], ["nhap", "Nhập"], ["xuat", "Xuất"]].map(([k, lb]) => {
+      {opts.map(([k, lb]) => {
         const on = value === k; const n = counts ? counts[k] : null;
         return (
           <button key={k} type="button" onClick={() => onChange(k)} title={k === "all" ? "Mọi lô" : `Chỉ lô hàng ${lb.toLowerCase()}`}
@@ -152,6 +153,12 @@ function IoSeg({ value, onChange, counts }) {
   );
 }
 const ioCounts = (lines) => { const c = { all: 0, nhap: 0, xuat: 0 }; (lines || []).forEach((l) => { c.all++; const k = ioKey(l.io); if (k) c[k]++; }); return c; };
+/* Lọc CONNECT / DISCONNECT (snapshot định giá: detail.conn ở dòng đã lưu, pr.conn ở lô ứng viên). */
+const CONN_OPTS = [["all", "Tất cả"], ["connect", "Connect"], ["disconnect", "Disconnect"]];
+const connKey = (x) => { const v = String((x && ((x.detail && x.detail.conn) || (x.pr && x.pr.conn))) || "").toLowerCase(); return v === "connect" ? "connect" : v === "disconnect" ? "disconnect" : ""; };
+const connCounts = (rows) => { const c = { all: 0, connect: 0, disconnect: 0 }; (rows || []).forEach((x) => { c.all++; const k = connKey(x); if (k) c[k]++; }); return c; };
+/* Kỳ cont ra kèm giờ (info.fromTime / info.toTime) để hiện / in: "05/09/2026 17:00 – 06/09/2026 08:00". */
+const periodText = (from, to, info) => `${fmtDate(from) || "…"}${from && info.fromTime ? " " + info.fromTime : ""} – ${fmtDate(to) || "…"}${to && info.toTime ? " " + info.toTime : ""}`;
 
 /* CỘT CHI PHÍ RIÊNG của bảng kê (extraCols [{key,label,vat}]) — dùng chung trang tạo + trang xem.
    Lưu cùng bảng kê, KHÔNG khai trong Cài đặt; số từng lô ở detail.extras[key]; vat = khoản chịu VAT% của bảng kê. */
@@ -319,6 +326,9 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
   const [cust, setCust] = useState(() => { const c = qs0.get("customer"); return c && customers.includes(c) ? c : (customers[0] || ""); });
   const [from, setFrom] = useState(() => qs0.get("from") || "");
   const [to, setTo] = useState(() => qs0.get("to") || "");
+  // Giờ cont ra (tùy chọn, HH:mm) — trống = cả ngày (từ 00:00 / đến 23:59). Lưu ở info.fromTime / info.toTime.
+  const [fromTime, setFromTime] = useState("");
+  const [toTime, setToTime] = useState("");
   const [picked, setPicked] = useState({}); // id -> bool
   const [vatRate, setVatRate] = useState(0); // % VAT cho bảng kê (mặc định 0)
   const info = (cfg.customerInfo || {})[cust] || {};
@@ -341,12 +351,13 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
   const prevAll = useRef([]);
   useEffect(() => {
     if (!cust || (!from && !to)) { setAll([]); setLoading(false); lastKey.current = ""; prevAll.current = []; setRefreshMsg(""); return; }
-    const key = `${cust}|${from}|${to}`;
+    const key = `${cust}|${from}|${fromTime}|${to}|${toTime}`;
     const isRefresh = key === lastKey.current;
     lastKey.current = key;
     let alive = true; setLoading(true);
     if (!isRefresh) { setPicked({}); setRefreshMsg(""); }
     const p = new URLSearchParams({ customer: cust }); if (from) p.set("from", from); if (to) p.set("to", to);
+    if (from && fromTime) p.set("from_time", fromTime); if (to && toTime) p.set("to_time", toTime);
     window.trkApi("GET", ROUTES.candidates + "?" + p.toString())
       .then((r) => {
         if (!alive) return;
@@ -356,14 +367,16 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
       })
       .catch(() => { if (alive) { setLoading(false); if (!isRefresh) setAll([]); } });
     return () => { alive = false; };
-  }, [cust, from, to, reloadTick]);
+  }, [cust, from, to, fromTime, toTime, reloadTick]);
 
   const [amtOv, setAmtOv] = useState({}); // override NỀN (cước+dầu+sà lan) theo lô
   const [vatOv, setVatOv] = useState({}); // override % VAT riêng theo lô ("" = theo mặc định bảng kê)
   const [noteOv, setNoteOv] = useState({}); // cột Ghi chú theo lô (giữ khi Làm mới)
   // Lọc NHẬP / XUẤT ngay trên danh sách ứng viên (client): bảng kê lưu CHỈ các lô đang hiện (+ đang tích).
   const [io, setIo] = useState("all");
-  const shown = io === "all" ? all : all.filter((x) => ioKey(x.io) === io);
+  const [conn, setConn] = useState("all");   // lọc Connect / Disconnect — bảng kê cũng chỉ lưu lô đang hiện
+  const ioShown = io === "all" ? all : all.filter((x) => ioKey(x.io) === io);
+  const shown = conn === "all" ? ioShown : ioShown.filter((x) => connKey(x) === conn);
   const sel = shown.filter((x) => picked[x.id] !== false); // mặc định chọn hết
   // CỘT CHI PHÍ RIÊNG của bảng kê đang tạo + số từng lô (extraOv[shipmentId][key]) — lưu cùng bảng kê (extraCols / detail.extras).
   const [extraCols, setExtraCols] = useState([]);
@@ -412,7 +425,7 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
       };
     });
     // ioScope = phạm vi Nhập/Xuất đã chọn → lưu cùng bảng kê (backend chỉ tính tiền lô trong phạm vi).
-    const payload = { id: Date.now(), no: keNo, customer: cust, info: dueDate ? { ...info, dueDate } : info, date: today, from, to, ioScope: io, extraCols, lines, vatRate, tongThu, payments: [], createdAt: new Date().toISOString() };
+    const payload = { id: Date.now(), no: keNo, customer: cust, info: { ...info, ...(dueDate ? { dueDate } : {}), ...(from && fromTime ? { fromTime } : {}), ...(to && toTime ? { toTime } : {}) }, date: today, from, to, ioScope: io, extraCols, lines, vatRate, tongThu, payments: [], createdAt: new Date().toISOString() };
     // onSaved có thể async + trả về false để huỷ (vd bấm Huỷ ở confirm) → giữ nguyên trang
     let result;
     try { result = await Promise.resolve(onSaved && onSaved(payload)); }
@@ -443,11 +456,17 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
         </label>
         <div style={{ display: "block" }}>
           <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>Cont ra từ ngày</div>
-          <div style={{ width: 150 }}><DateField value={from} onChange={setFrom} /></div>
+          <div style={{ display: "flex", gap: 4 }}>
+            <div style={{ width: 140 }}><DateField value={from} onChange={setFrom} /></div>
+            <div style={{ width: 84 }} title="Từ giờ (để trống = từ 00:00)"><TimeField value={fromTime} onChange={setFromTime} placeholder="giờ" /></div>
+          </div>
         </div>
         <div style={{ display: "block" }}>
           <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>đến ngày</div>
-          <div style={{ width: 150 }}><DateField value={to} onChange={setTo} /></div>
+          <div style={{ display: "flex", gap: 4 }}>
+            <div style={{ width: 140 }}><DateField value={to} onChange={setTo} /></div>
+            <div style={{ width: 84 }} title="Đến giờ (để trống = hết ngày 23:59)"><TimeField value={toTime} onChange={setToTime} placeholder="giờ" /></div>
+          </div>
         </div>
         <div style={{ display: "block" }}>
           <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>VAT</div>
@@ -460,6 +479,10 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
         <div style={{ display: "block" }}>
           <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>Lô hàng</div>
           <IoSeg value={io} onChange={setIo} counts={ioCounts(all)} />
+        </div>
+        <div style={{ display: "block" }}>
+          <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>Connect</div>
+          <IoSeg value={conn} onChange={setConn} counts={connCounts(ioShown)} opts={CONN_OPTS} />
         </div>
         <button type="button" onClick={() => setReloadTick((t) => t + 1)} disabled={!cust || (!from && !to) || loading}
           title="Tải lại lô + chi hộ mới nhất theo khách và kỳ đang chọn — giữ giá gõ tay, VAT riêng, phí cột riêng và lô đã bỏ tích"
@@ -476,7 +499,8 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
         <i className="bi bi-info-circle" style={{ marginTop: 1 }} />
         <span style={{ flex: "1 1 320px" }}>Lọc theo <b style={{ color: "var(--ink-3)" }}>Giờ xe ra</b> của lô hàng (mốc cont rời đi, nhập ở popup Lô hàng). Lô <b style={{ color: "var(--ink-3)" }}>chưa có giờ ra</b> sẽ không hiện ở đây.</span>
         <span className="tnum" style={{ whiteSpace: "nowrap", fontWeight: 600, color: loading ? "var(--accent)" : "var(--ink-3)" }}>
-          {loading ? "Đang tải lô…" : (io === "all" ? `${all.length} lô có phải thu` : `${shown.length} / ${all.length} lô (${io === "nhap" ? "Nhập" : "Xuất"})`)}
+          {loading ? "Đang tải lô…" : (io === "all" && conn === "all" ? `${all.length} lô có phải thu`
+            : `${shown.length} / ${all.length} lô (${[io !== "all" && (io === "nhap" ? "Nhập" : "Xuất"), conn !== "all" && (conn === "connect" ? "Connect" : "Disconnect")].filter(Boolean).join(" · ")})`)}
           {!loading && refreshMsg ? <span style={{ color: "var(--good)", fontWeight: 600 }}> · {refreshMsg}</span> : null}
         </span>
       </div>
@@ -527,7 +551,7 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
                 : (cust ? "Không có lô nào phù hợp trong kỳ đã chọn." : "Chọn khách hàng để bắt đầu.")}
             </td></tr>}
             {loading && all.length === 0 && <tr><td colSpan={nCols} style={{ padding: "24px", textAlign: "center", color: "var(--ink-4)" }}>Đang tải lô + định giá…</td></tr>}
-            {!loading && all.length > 0 && shown.length === 0 && <tr><td colSpan={nCols} style={{ padding: "24px", textAlign: "center", color: "var(--ink-4)" }}>Không có lô <b>{io === "nhap" ? "Nhập" : "Xuất"}</b> trong kỳ — đổi bộ lọc Lô hàng ở trên.</td></tr>}
+            {!loading && all.length > 0 && shown.length === 0 && <tr><td colSpan={nCols} style={{ padding: "24px", textAlign: "center", color: "var(--ink-4)" }}>Không có lô phù hợp bộ lọc trong kỳ — đổi bộ lọc Lô hàng / Connect ở trên.</td></tr>}
             {shown.map((x, i) => {
               const on = picked[x.id] !== false;
               return (
@@ -726,6 +750,11 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
   const conNo = tongThu - daTT;
   const info = st.info || {};
   const setPeriod = (k, v) => onUpdate && onUpdate({ ...st, [k]: v });   // sửa kỳ cont ra (from/to)
+  // Giờ kỳ (tùy chọn) lưu ở info.fromTime / info.toTime — trống = cả ngày.
+  const setPeriodTime = (k, v) => onUpdate && onUpdate({ ...st, info: { ...info, [k]: v || undefined } });
+  // Lọc CONNECT / DISCONNECT — CHỈ lọc HIỂN THỊ (không lưu, không đổi tổng tiền / bản in).
+  const [conn, setConn] = useState("all");
+  const shownLines = conn === "all" ? scopedLines : scopedLines.filter((l) => connKey(l) === conn);
   const th = (txt, align) => <th style={{ textAlign: align || "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>{txt}</th>;
   return (
       <div className="ke-print" style={{ padding: "16px 4px 4px", background: "#fff" }}>
@@ -733,21 +762,30 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
           <div>
             <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em" }}>BẢNG KÊ CẦN THU</div>
             <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 3 }} className="tnum">Số: {st.no} · Ngày lập: {fmtDate(st.date)}
-              <span className="ke-printonly" style={{ display: "none" }}>{(st.from || st.to) ? ` · Cont ra: ${fmtDate(st.from) || "…"} – ${fmtDate(st.to) || "…"}` : ""}{dueOf(st) ? ` · Hạn TT: ${fmtDate(dueOf(st))}` : ""}</span>
+              <span className="ke-printonly" style={{ display: "none" }}>{(st.from || st.to) ? ` · Cont ra: ${periodText(st.from, st.to, info)}` : ""}{dueOf(st) ? ` · Hạn TT: ${fmtDate(dueOf(st))}` : ""}</span>
             </div>
             {/* Kỳ cont ra — sửa được để tính lại theo khoảng ngày (ẩn khi in, in dùng dòng text trên) */}
             <div className="ke-noprint" style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 7, fontSize: 12.5, color: "var(--ink-3)", flexWrap: "wrap" }}>
               <span style={{ fontWeight: 600 }}>Cont ra từ</span>
               <div style={{ width: 140 }}><DateField value={st.from || ""} onChange={(v) => setPeriod("from", v)} /></div>
+              <div style={{ width: 80 }} title="Từ giờ (để trống = từ 00:00)"><TimeField value={info.fromTime || ""} onChange={(v) => setPeriodTime("fromTime", v)} placeholder="giờ" /></div>
               <span style={{ fontWeight: 600 }}>đến</span>
               <div style={{ width: 140 }}><DateField value={st.to || ""} onChange={(v) => setPeriod("to", v)} /></div>
-              {(st.from || st.to) && <button type="button" onClick={() => onUpdate && onUpdate({ ...st, from: "", to: "" })} title="Xóa khoảng ngày"
+              <div style={{ width: 80 }} title="Đến giờ (để trống = hết ngày 23:59)"><TimeField value={info.toTime || ""} onChange={(v) => setPeriodTime("toTime", v)} placeholder="giờ" /></div>
+              {(st.from || st.to) && <button type="button" onClick={() => onUpdate && onUpdate({ ...st, from: "", to: "", info: { ...info, fromTime: undefined, toTime: undefined } })} title="Xóa khoảng ngày"
                 style={{ border: "none", background: "transparent", color: "var(--ink-4)", cursor: "pointer", fontSize: 12, padding: "2px 4px" }}>✕</button>}
               <span style={{ fontWeight: 600, marginLeft: 6 }}>VAT</span>
               <VatSelect value={vatRate} onChange={setVat} />
               <span style={{ fontWeight: 600, marginLeft: 6 }} title="Phạm vi lô được tính tiền / in / xuất Excel — lưu cùng bảng kê">Phạm vi</span>
               <IoSeg value={scope} onChange={setScope} counts={ioCounts(st.lines)} />
+              <span style={{ fontWeight: 600, marginLeft: 6 }} title="Chỉ lọc danh sách đang xem — không đổi tổng tiền, bản in, Excel">Connect</span>
+              <IoSeg value={conn} onChange={setConn} counts={connCounts(scopedLines)} opts={CONN_OPTS} />
             </div>
+            {conn !== "all" && (
+              <div className="ke-noprint tnum" style={{ marginTop: 6, fontSize: 12, color: "var(--ink-3)", background: "#f4f6f8", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px" }}>
+                Đang xem <b>{shownLines.length}</b> / {scopedLines.length} lô <b>{conn === "connect" ? "Connect" : "Disconnect"}</b> — chỉ lọc hiển thị, <b>tổng tiền / in / Excel vẫn tính cả bảng kê</b>.
+              </div>
+            )}
             {scope !== "all" && (
               <div className="ke-noprint tnum" style={{ marginTop: 6, fontSize: 12, color: "#7a5200", background: "#fff7e6", border: "1px solid #ffe1a8", borderRadius: 8, padding: "6px 10px", lineHeight: 1.5 }}>
                 Bảng kê <b>hàng {scopeLabel.toLowerCase()}</b>: tính tiền <b>{scopedLines.length}</b> lô {scopeLabel}{outCount > 0 ? <> — <b>{outCount}</b> lô khác loại đã ẩn, <b>không tính</b>, không in / xuất Excel (chọn <b>Tất cả</b> để xem lại)</> : null}. Bấm <b>Lưu</b> để chốt phạm vi.
@@ -774,7 +812,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
             {extraCols.map((c) => <React.Fragment key={c.key}>{th(<>{colLabel(c)}{c.vat ? <span style={{ color: "var(--accent)", fontSize: 9.5 }}><br/>+VAT</span> : null}</>, "right")}</React.Fragment>)}
             {th("Chi hộ", "right")}{th("Tổng tiền", "right")}<th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase", minWidth: 190 }}>Ghi chú</th></tr></thead>
           <tbody>
-            {scopedLines.map((l, i) => {
+            {shownLines.map((l, i) => {
               const d = detailById[l.id];
               const sg = suggestById ? suggestById[l.id] : null;   // gợi ý từ Tính lại (nếu có)
               const gone = !!(sg && !sg.found);                      // lô không còn trong hệ thống
@@ -1046,26 +1084,31 @@ function SavedStatementModal({ st, onClose, onDelete, onUpdate, onSave, isDirty 
 function LotPicker({ lots, inOther = 0, width, onAdd, onClose }) {
   const { useState } = React;
   const [sel, setSel] = useState(() => new Set(lots.map((x) => String(x.id))));
-  const all = sel.size === lots.length;
+  const [conn, setConn] = useState("all");   // lọc Connect / Disconnect — chỉ thêm lô ĐANG HIỆN + đang tích
+  const shown = conn === "all" ? lots : lots.filter((x) => connKey(x) === conn);
+  const pick = shown.filter((x) => sel.has(String(x.id))).map((x) => String(x.id));
+  const all = shown.length > 0 && pick.length === shown.length;
   const tog = (id) => setSel((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const togAll = () => setSel((p) => { const n = new Set(p); shown.forEach((x) => (all ? n.delete(String(x.id)) : n.add(String(x.id)))); return n; });
   return (
     <div className="ke-noprint" style={{ maxWidth: width, margin: "0 auto 14px", background: "#fff", border: "1px solid var(--accent)", borderRadius: 12, padding: "12px 14px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
         <b style={{ fontSize: 13.5 }}><I.plus /> Thêm lô vào bảng kê</b>
         <span style={{ fontSize: 12, color: "var(--ink-3)" }}>{lots.length ? `${lots.length} lô trong kỳ chưa có bảng kê` : "Không còn lô nào trong kỳ chưa có bảng kê"}{inOther ? ` · ${inOther} lô đã nằm ở bảng kê khác` : ""}. Đổi “Cont ra từ / đến” ở dưới rồi bấm Thêm lô để tìm kỳ khác.</span>
         <span style={{ flex: 1 }} />
-        {lots.length > 0 && <Btn variant="primary" disabled={!sel.size} onClick={() => onAdd && onAdd([...sel])}>Thêm {sel.size} lô đã chọn</Btn>}
+        {lots.length > 0 && <IoSeg value={conn} onChange={setConn} counts={connCounts(lots)} opts={CONN_OPTS} />}
+        {lots.length > 0 && <Btn variant="primary" disabled={!pick.length} onClick={() => onAdd && onAdd(pick)}>Thêm {pick.length} lô đã chọn</Btn>}
         <Btn onClick={onClose}>Đóng</Btn>
       </div>
       {lots.length > 0 && (
         <div style={{ maxHeight: 280, overflowY: "auto", border: "1px solid var(--line-2)", borderRadius: 8 }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
             <thead><tr style={{ background: "#fafbfc", position: "sticky", top: 0 }}>
-              <th style={{ padding: "6px 8px", width: 30 }}><input type="checkbox" checked={all} onChange={() => setSel(all ? new Set() : new Set(lots.map((x) => String(x.id))))} /></th>
+              <th style={{ padding: "6px 8px", width: 30 }}><input type="checkbox" checked={all} onChange={togAll} /></th>
               {["Lô / Booking", "Tuyến · Cont", "Kéo vào / Ra", "Phải thu"].map((h, i) => <th key={h} style={{ padding: "6px 8px", textAlign: i === 3 ? "right" : "left", fontSize: 11, color: "var(--ink-3)" }}>{h}</th>)}
             </tr></thead>
             <tbody>
-              {lots.map((x) => (
+              {shown.map((x) => (
                 <tr key={x.id} onClick={() => tog(String(x.id))} style={{ cursor: "pointer", borderTop: "1px solid var(--line-2)", background: sel.has(String(x.id)) ? "var(--accent-weak-2)" : "#fff" }}>
                   <td style={{ padding: "6px 8px", textAlign: "center" }}><input type="checkbox" checked={sel.has(String(x.id))} onChange={() => tog(String(x.id))} onClick={(e) => e.stopPropagation()} /></td>
                   <td style={{ padding: "6px 8px" }}><b className="tnum">{x.booking || "—"}</b><div style={{ fontSize: 11, color: "var(--ink-4)" }}>{x.sheet} · {x.io}</div></td>
@@ -1318,7 +1361,7 @@ function KePage({ ke, drift = {}, onNew, onOpen, onSetDue = null, children }) {
                     <span className="tnum" style={{ color: "var(--ink-3)", fontSize: 12.5 }}>{fmtDate(st.date)}</span>
                   </div>
                   <div style={{ fontWeight: 600, fontSize: 14.5, marginTop: 4, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>{st.customer}{driftOf(st) ? <DriftChip n={driftOf(st).changed} /> : null}</div>
-                  <div className="tnum" style={{ color: "var(--ink-4)", fontSize: 12, marginTop: 2 }}>{(st.from || st.to) ? `Cont ra: ${fmtDate(st.from) || "…"} – ${fmtDate(st.to) || "…"}` : "—"}</div>
+                  <div className="tnum" style={{ color: "var(--ink-4)", fontSize: 12, marginTop: 2 }}>{(st.from || st.to) ? `Cont ra: ${periodText(st.from, st.to, st.info || {})}` : "—"}</div>
                   <div className="tnum" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, fontSize: 12.5, color: "var(--ink-3)" }}>Hạn TT: {onSetDue ? <DueEditor st={st} onSet={onSetDue} /> : <b style={{ color: "var(--ink-2)" }}>{st.dueDate ? fmtDate(st.dueDate) : "—"}</b>} <DueChip s={s} /></div>
                   <div style={{ marginTop: 9, paddingTop: 9, borderTop: "1px solid var(--line-2)", fontSize: 12.5, color: "var(--ink-3)", display: "flex", flexWrap: "wrap", gap: "2px 12px" }}>
                     <span>Cước+dầu: <b className="tnum" style={{ color: "var(--ink-2)" }}>{fmtNum(num(st.baseAmount, st.tongThu))}</b></span>
@@ -1362,7 +1405,7 @@ function KePage({ ke, drift = {}, onNew, onOpen, onSetDue = null, children }) {
                 <div>{onSetDue ? <DueEditor st={st} onSet={onSetDue} /> : <span style={{ color: st.dueDate ? "var(--ink-2)" : "var(--ink-4)" }}>{st.dueDate ? fmtDate(st.dueDate) : "—"}</span>}</div>
                 {(st.dueDate || s.key === "paid") && <div style={{ marginTop: 3 }}><DueChip s={s} /></div>}
               </span>
-              <span className="tnum" style={{ color: "var(--ink-3)", fontSize: 12.5, whiteSpace: "nowrap" }}>{(st.from || st.to) ? `${fmtDate(st.from) || "…"} – ${fmtDate(st.to) || "…"}` : "—"}</span>
+              <span className="tnum" style={{ color: "var(--ink-3)", fontSize: 12.5, whiteSpace: "nowrap" }}>{(st.from || st.to) ? periodText(st.from, st.to, st.info || {}) : "—"}</span>
               <span className="tnum" style={{ ...money, color: "var(--ink-2)" }}>{fmtNum(num(st.baseAmount, st.tongThu))}</span>
               <span className="tnum" style={{ ...money, color: (st.vatRate ? "var(--accent)" : "var(--ink-4)") }} title={`VAT ${num(st.vatRate, 0)}%`}>{fmtNum(num(st.vatAmount, 0))}</span>
               <span className="tnum" style={{ ...money, color: "var(--ink-3)" }}>{fmtNum(num(st.chohoAmount, 0))}</span>

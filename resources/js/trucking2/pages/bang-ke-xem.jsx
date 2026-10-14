@@ -24,6 +24,14 @@ function ViewStatementApp() {
     return d;
   }, [st]);
 
+  // Kỳ + giờ + phạm vi ĐANG HIỆN (có thể vừa sửa chưa lưu) → query tìm lô trong kỳ.
+  const periodQs = () => {
+    const q = new URLSearchParams(); const info = (st && st.info) || {};
+    if (st.from) q.set("from", st.from); if (st.to) q.set("to", st.to); if (st.ioScope) q.set("io", st.ioScope);
+    if (st.from && info.fromTime) q.set("from_time", info.fromTime); if (st.to && info.toTime) q.set("to_time", info.toTime);
+    return q.toString();
+  };
+
   if (!st) return <div style={{ display: "grid", placeItems: "center", height: "100%", color: "var(--ink-4)" }}>Không tìm thấy bảng kê.</div>;
 
   const toast = (msg, kind) => window.trkToast && window.trkToast(msg, kind);
@@ -47,8 +55,7 @@ function ViewStatementApp() {
     if (!ok) return;
 
     // Kỳ + phạm vi ĐANG HIỆN (có thể vừa sửa chưa lưu) → backend tìm lô mới trong đúng kỳ đó.
-    const q = new URLSearchParams(); if (st.from) q.set("from", st.from); if (st.to) q.set("to", st.to); if (st.ioScope) q.set("io", st.ioScope);
-    const r = await api("GET", ROUTES.base + (st.hashid || st.id) + "/reprice?" + q.toString()).catch(() => null);
+    const r = await api("GET", ROUTES.base + (st.hashid || st.id) + "/reprice?" + periodQs()).catch(() => null);
     if (!r || !r.ok) { toast("Không tải được dữ liệu để tính lại", "error"); return; }
     const rep = r.repriced || {};   // { shipmentId => { pr, ... } } — đã định giá ở BACKEND
 
@@ -98,8 +105,7 @@ function ViewStatementApp() {
   };
   // Nút "Thêm lô": tìm lô trong kỳ (Cont ra từ / đến đang hiện) chưa nằm ở bảng kê nào — KHÔNG tính lại giá các dòng cũ.
   const onFindLots = async () => {
-    const q = new URLSearchParams(); if (st.from) q.set("from", st.from); if (st.to) q.set("to", st.to); if (st.ioScope) q.set("io", st.ioScope);
-    const r = await api("GET", ROUTES.base + (st.hashid || st.id) + "/reprice?" + q.toString()).catch(() => null);
+    const r = await api("GET", ROUTES.base + (st.hashid || st.id) + "/reprice?" + periodQs()).catch(() => null);
     if (!r || !r.ok) { toast("Không tải được danh sách lô", "error"); return; }
     const have = new Set((st.lines || []).map((l) => String(l.id)));   // lô vừa bỏ (chưa lưu) cũng loại nếu còn trong bảng
     setNewLots((r.newCandidates || []).filter((x) => !have.has(String(x.id)))); setInOther(r.inOtherStatements || 0);

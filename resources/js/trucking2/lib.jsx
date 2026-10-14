@@ -454,6 +454,40 @@ function DateField({ value, onChange }) {
     </div>
   );
 }
+/* Giờ (HH:mm, 24h) — Flatpickr chỉ chọn giờ; để trống = không giới hạn giờ. Fallback input time gốc. */
+function TimeField({ value, onChange, placeholder = "--:--" }) {
+  const hasFp = typeof window !== "undefined" && !!window.flatpickr;
+  const ref = useRef(null);
+  const fp = useRef(null);
+  const cb = useRef(onChange); cb.current = onChange;
+  useEffect(() => {
+    if (!hasFp || !ref.current) return;
+    const inst = window.flatpickr(ref.current, {
+      enableTime: true, noCalendar: true, time_24hr: true, minuteIncrement: 5,
+      dateFormat: "H:i", allowInput: true, disableMobile: true,
+      onChange: (_, str) => cb.current(str),
+      onClose: (_, str) => cb.current(str),
+    });
+    fp.current = inst;
+    if (value) inst.setDate(value, false);
+    return () => { try { inst.destroy(); } catch (e) {} };
+  }, []);
+  useEffect(() => {
+    if (fp.current && (value || "") !== (fp.current.input.value || "")) fp.current.setDate(value || "", false);
+  }, [value]);
+  if (!hasFp) return <input type="time" className="trk-fp" value={value || ""} onChange={(e) => onChange(e.target.value)} style={{ colorScheme: "light" }} />;
+  return (
+    <div style={{ position: "relative", width: "100%" }}>
+      <input ref={ref} type="text" className="trk-fp tnum" placeholder={placeholder} />
+      {value ? (
+        <span role="button" title="Xoá giờ"
+          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          onClick={(e) => { e.stopPropagation(); if (fp.current) fp.current.clear(); onChange(""); }}
+          style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", display: "inline-flex", color: "var(--ink-4)", cursor: "pointer", zIndex: 2 }}><I.x /></span>
+      ) : null}
+    </div>
+  );
+}
 function Num({ value, onChange, suffix, placeholder = "0" }) {
   // Chừa lề phải theo ĐỘ DÀI hậu tố để số không bị đè lên (vd "tháng", "ngày" dài hơn "km"/"₫")
   const padRight = suffix ? Math.max(30, String(suffix).length * 7.5 + 18) : 11;
@@ -682,4 +716,4 @@ const fmtHours = (h) => {
   return (neg ? "-" : "") + (mm ? `${hh}h${String(mm).padStart(2, "0")}` : `${hh}h`);
 };
 
-export { canCol, useState, useRef, useMemo, useEffect, useCallback, useIsMobile, onlyDigits, groupVND, toNum, fmtVND, fmtNum, fmtShort, fmtDate, PAYERS, VAT_RATE, STATEMENT_VAT_RATES, AXLE_OPTS, axleLabel, statementAmounts, lineAmounts, I, Money, Payer, Txt, Combo, MultiCombo, DateField, Num, Line, Section, Modal, Btn, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours };
+export { canCol, useState, useRef, useMemo, useEffect, useCallback, useIsMobile, onlyDigits, groupVND, toNum, fmtVND, fmtNum, fmtShort, fmtDate, PAYERS, VAT_RATE, STATEMENT_VAT_RATES, AXLE_OPTS, axleLabel, statementAmounts, lineAmounts, I, Money, Payer, Txt, Combo, MultiCombo, DateField, TimeField, Num, Line, Section, Modal, Btn, calcCost, calcVeh, calcRev, calcVehICD, calcRevICD, calcFreeTime, fmtHours };
