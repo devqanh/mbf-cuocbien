@@ -72,7 +72,7 @@ trait HandlesShipmentUpdateImport
     }
 
     /** Field ảnh hưởng SỐ TIỀN của bảng kê (đổi khi lô đã lên bảng kê → cảnh báo mạnh). */
-    private const MONEY_FIELDS = ['gioXeRa', 'from', 'to', 'kho', 'contType', 'bargeDrop', 'declarations'];
+    private const MONEY_FIELDS = ['gioXeRa', 'from', 'to', 'kho', 'contType', 'bargeDrop', 'declarations', 'thanhLyFee'];
 
     /** Dry-run: kiểm tra + dựng diff, KHÔNG ghi DB. */
     public function validateShipmentUpdate(string $sheet, array $rows): array
@@ -185,7 +185,7 @@ trait HandlesShipmentUpdateImport
             if (isset($inStatement[$s->id])) {
                 $money = array_intersect(array_column($cells, 'field'), self::MONEY_FIELDS);
                 $warnings[] = ['line' => $line, 'id' => $s->id, 'text' => 'Lô đã nằm trong bảng kê ' . $inStatement[$s->id]
-                    . ($money ? ' — sửa ' . implode(', ', array_map(fn ($f) => $fields[$f][0] ?? 'Tờ khai', $money)) . ' làm lệch số đã chốt, vào Bảng kê bấm Tính lại' : '')];
+                    . ($money ? ' — sửa ' . implode(', ', array_map(fn ($f) => $fields[$f][0] ?? ($f === 'thanhLyFee' ? 'Phí thanh lý' : 'Tờ khai'), $money)) . ' làm lệch số đã chốt, vào Bảng kê bấm Tính lại' : '')];
             }
             if (isset($patch['contNo']) && $this->contNoTakenBy($sheet, $patch['contNo'], $s->id)) {
                 $warnings[] = ['line' => $line, 'id' => $s->id, 'text' => "Số cont “{$patch['contNo']}” đang trùng với lô khác"];
@@ -268,15 +268,32 @@ trait HandlesShipmentUpdateImport
         $vals = $row['values'] ?? [];
         $old  = $this->declListLabel((array) ($s->declarations ?? []));
 
+        // PHÍ THANH LÝ (1 số / lô, thu khách qua Bảng kê): ô trống = giữ nguyên, "--" hoặc 0 = xóa.
+        $rawTl = trim((string) ($vals['thanhLyFee'] ?? ''));
+        if ($rawTl !== '') {
+            $newTl = $rawTl === self::CLEAR_TOKEN ? 0 : (int) preg_replace('/[^\d]/', '', $rawTl);
+            $oldTl = (int) round((float) $s->thanh_ly_fee);
+            if ($newTl !== $oldTl) {
+                $patch['thanhLyFee'] = $newTl;
+                $fmt = fn ($v) => $v > 0 ? number_format($v, 0, ',', '.') . 'đ' : '(trống)';
+                $cells[] = ['field' => 'thanhLyFee', 'label' => 'Phí thanh lý', 'old' => $fmt($oldTl), 'new' => $fmt($newTl)];
+            }
+        }
+
         if (! array_key_exists('declPairs', $vals) || ! is_array($vals['declPairs'])) return;   // file lô hàng không đụng tờ khai
+
+        // Phí đang có theo số tờ khai — ô đơn giá để trống thì giữ phí cũ của tờ khai đó.
+        $oldFee = [];
+        foreach ((array) ($s->declarations ?? []) as $d) $oldFee[mb_strtolower(trim((string) ($d['no'] ?? '')))] = (int) round((float) ($d['fee'] ?? 0));
 
         $list = []; $seen = [];
         foreach ($vals['declPairs'] as $p) {
             $no = trim((string) ($p['no'] ?? ''));
             if ($no === '') continue;
-            if (isset($seen[mb_strtolower($no)])) { $reasons[] = "Số tờ khai “{$no}” bị lặp ở 2 dòng của cùng lô"; return; }
+            if (isset($seen[mb_strtolower($no)])) { $reasons[] = "Số tờ khai “{$no}” bị lặp trong cùng lô"; return; }
             $seen[mb_strtolower($no)] = true;
-            $list[] = ['no' => $no, 'fee' => (int) preg_replace('/[^\d]/', '', (string) ($p['fee'] ?? ''))];
+            $fee = preg_replace('/[^\d]/', '', (string) ($p['fee'] ?? ''));
+            $list[] = ['no' => $no, 'fee' => $fee === '' ? ($oldFee[mb_strtolower($no)] ?? 0) : (int) $fee];
         }
 
         $new = $this->declListLabel($list);

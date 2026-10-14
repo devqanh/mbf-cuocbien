@@ -606,8 +606,12 @@ trait HandlesStatementPricing
     /** Shape 1 ứng viên (dùng chung cho candidates). */
     private function candidateRow(TruckingShipment $s, string $sheet, string $date, array $pr): array
     {
-        $thanhLy = 0;
-        foreach ($s->costLines as $c) if (($c->src ?? '') === 'thanhLyFee') $thanhLy += (int) round((float) $c->amount);
+        // PHÍ TỜ KHAI thu khách (không VAT) = Σ phí mở các tờ khai + phí thanh lý — đi trong snapshot định giá
+        // (detail.declFee / detail.tlFee) để bảng kê cộng vào Tổng tiền và "Tính lại" gợi ý khi số đổi.
+        $pr['declFee'] = array_sum(array_map(fn ($d) => (int) round((float) ($d['fee'] ?? 0)), (array) ($s->declarations ?? [])));
+        $pr['declCount'] = count((array) ($s->declarations ?? []));
+        $pr['tlFee'] = (int) round((float) $s->thanh_ly_fee);
+        $thanhLy = $pr['declFee'] + $pr['tlFee'];
         $contLabel = $sheet === 'HPH'
             ? ($s->qty . ' × ' . $s->cont_type)
             : (($s->cont_no ?: $s->cont_type) . ($s->cont_no ? ' · ' . $s->cont_type : ''));

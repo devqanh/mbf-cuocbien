@@ -99,7 +99,8 @@ trait HandlesStatements
 
     /**
      * NGUỒN CHÂN LÝ DUY NHẤT cho các con số bảng kê (backend).
-     * VAT áp lên NỀN vận chuyển (cước+dầu+sà lan) + các CỘT CHI PHÍ RIÊNG có cờ vat; chi hộ KHÔNG chịu VAT.
+     * VAT áp lên NỀN vận chuyển (cước+dầu+sà lan) + các CỘT CHI PHÍ RIÊNG có cờ vat; chi hộ và PHÍ TỜ KHAI
+     * (phí mở + phí thanh lý, detail.declFee / tlFee) KHÔNG chịu VAT.
      *
      * Thứ tự ưu tiên NỀN dòng (khớp lineAmounts ở frontend):
      *  1. detail.manualBase — GIÁ TÙY CHỈNH người dùng đặt tay; cuoc/dau/sà lan trong detail chỉ là số hệ thống
@@ -116,9 +117,10 @@ trait HandlesStatements
      */
     public static function statementAmounts(iterable $details, float $vatRate, array $extraCols = []): array
     {
-        $base = 0; $choho = 0; $vat = 0; $extra = 0;
+        $base = 0; $choho = 0; $vat = 0; $extra = 0; $tk = 0;
         foreach ($details as $d) {
             $d = is_array($d) ? $d : (array) $d;
+            $tk += self::lineDeclFee($d);
             $lineBase = 0.0; $lineChoho = 0.0; $lineExtra = 0; $lineExtraVat = 0;
             $ex = is_array($d['extras'] ?? null) ? $d['extras'] : [];
             foreach ($extraCols as $c) {
@@ -147,7 +149,13 @@ trait HandlesStatements
             $extra += $lineExtra;
             $vat   += (int) round(($lineBase + $lineExtraVat) * $rate / 100);
         }
-        return ['base' => $base, 'choho' => $choho, 'extra' => $extra, 'vat' => $vat, 'total' => $base + $vat + $choho + $extra];
+        return ['base' => $base, 'choho' => $choho, 'extra' => $extra, 'tk' => $tk, 'vat' => $vat, 'total' => $base + $vat + $choho + $extra + $tk];
+    }
+
+    /** Phí tờ khai 1 dòng (thu khách, KHÔNG VAT) = phí mở các tờ khai + phí thanh lý (detail.declFee + detail.tlFee). */
+    public static function lineDeclFee(array $d): int
+    {
+        return (int) round((float) ($d['declFee'] ?? 0)) + (int) round((float) ($d['tlFee'] ?? 0));
     }
 
     public function statements(): array
@@ -185,6 +193,7 @@ trait HandlesStatements
                     'from'        => $this->outDate($st->period_from),
                     'to'          => $this->outDate($st->period_to),
                     'ioScope'     => self::ioScopeOf($st->io_scope ?? 'all'),
+                    'info'        => array_intersect_key((array) ($st->info ?? []), ['fromTime' => 1, 'toTime' => 1]),   // giờ kỳ cont ra
                     'dueDate'     => $this->statementDueDate($st),   // hạn thanh toán (lọc Quá hạn / Sắp đến hạn)
                     // Các con số bảng kê (nền/VAT/chi hộ/phí riêng/tổng).
                     'vatRate'     => (float) ($st->vat_rate ?? 0),
@@ -352,7 +361,8 @@ trait HandlesStatements
             'vatAmount'   => $amt['vat'],
             'chohoAmount' => $amt['choho'],
             'extraAmount' => $amt['extra'],
-            'tongThu'     => $amt['total'],   // = Tổng tiền (nền + VAT + chi hộ + phí riêng)
+            'tkAmount'    => $amt['tk'],      // phí tờ khai (mở + thanh lý), không VAT
+            'tongThu'     => $amt['total'],   // = Tổng tiền (nền + VAT + chi hộ + phí riêng + phí tờ khai)
             'lines'       => $st->lines->map(fn ($l) => [
                 // Dòng mất liên kết lô: khóa "L{id dòng}" (KHÔNG phải số) để không bị lưu nhầm thành shipment_id / trùng id lô thật.
                 'id'        => $l->shipment_id ?? ('L' . $l->id),
@@ -373,7 +383,8 @@ trait HandlesStatements
                 'contLabel' => $l->cont_label ?? '',
                 'phaiThu'   => (int) round((float) $l->phai_thu),
                 'cuoc'      => (int) round((float) $l->cuoc),
-                'thanhLy'   => (int) round((float) $l->thanh_ly),
+                'thanhLy'   => is_array($l->detail) && (isset($l->detail['declFee']) || isset($l->detail['tlFee']))
+                    ? self::lineDeclFee($l->detail) : (int) round((float) $l->thanh_ly),   // phí tờ khai (mở + thanh lý)
                 'note'      => $l->note ?? '',
                 'userNote'  => $l->user_note ?? '',   // cột Ghi chú của bảng kê (người dùng gõ)
                 'detail'    => $l->detail,
@@ -434,8 +445,9 @@ trait HandlesStatements
                 'extra_cols'    => $cols ?: null,
                 'base_amount'   => $amt['base'],
                 'choho_amount'  => $amt['choho'],
-                'extra_amount'  => $amt['extra'],
-                // total = nền + VAT(nền + phí riêng có vat) + chi hộ + phí riêng — backward-compat: vat=0, không cột riêng → = nền + chi hộ.
+                // Phí tờ khai (không VAT) gộp vào cột dẫn xuất extra_amount: danh sách suy VAT = total − nền − chi hộ − extra.
+                'extra_amount'  => $amt['extra'] + $amt['tk'],
+                // total = nền + VAT(nền + phí riêng có vat) + chi hộ + phí riêng + phí tờ khai — backward-compat: vat=0, không cột riêng → = nền + chi hộ.
                 'total'         => $amt['total'],
             ]);
             $st->save();
@@ -465,7 +477,9 @@ trait HandlesStatements
                     'cont_label'   => $this->str($l['contLabel'] ?? null),
                     'phai_thu'     => $this->inMoney($l['phaiThu'] ?? null) ?? 0,
                     'cuoc'         => $this->inMoney($l['cuoc'] ?? null) ?? 0,
-                    'thanh_ly'     => $this->inMoney($l['thanhLy'] ?? null) ?? 0,
+                    // Phí tờ khai (mở + thanh lý) — snapshot mới lấy từ detail; dòng cũ giữ số đã lưu.
+                    'thanh_ly'     => is_array($detail) && (isset($detail['declFee']) || isset($detail['tlFee']))
+                        ? self::lineDeclFee($detail) : ($this->inMoney($l['thanhLy'] ?? null) ?? 0),
                     'note'         => $this->str($l['note'] ?? null),
                     'user_note'    => $this->str($l['userNote'] ?? null),   // ghi chú người dùng gõ ở cột Ghi chú
                     'detail'       => $detail === null ? null : json_encode($detail, JSON_UNESCAPED_UNICODE),

@@ -13,7 +13,8 @@ class ExtStatementController extends BaseTruckingController
     public function index()
     {
         return view('trucking2.bang-ke-xe-ngoai', $this->pageData([
-            'ke' => $this->svc->extStatementsForList(),
+            'ke'     => $this->svc->extStatementsForList(),
+            'alerts' => $this->svc->extStatementAlerts(),   // cảnh báo cho kế toán (chưa lên bảng kê, trùng, lệch, quá hạn…)
         ], 'extStatements.update', 'extStatements.delete'));
     }
 

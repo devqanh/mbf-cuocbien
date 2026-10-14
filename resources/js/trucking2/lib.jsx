@@ -85,7 +85,9 @@ function lineAmounts(line, vatRate, baseOv, extraCols) {
   // VAT theo DÒNG: ưu tiên override detail.vat (sửa riêng từng dòng), else % mặc định bảng kê.
   const rate = (d && d.vat != null && d.vat !== "") ? (+d.vat || 0) : (+vatRate || 0);
   const vat = Math.round((base + extraVat) * rate / 100);
-  return { base, vat, choho, extra, extras, total: base + vat + choho + extra, rate };
+  // PHÍ TỜ KHAI thu khách (phí mở các tờ khai + phí thanh lý) — KHÔNG chịu VAT, khớp backend lineDeclFee.
+  const tk = d ? Math.round(+d.declFee || 0) + Math.round(+d.tlFee || 0) : 0;
+  return { base, vat, choho, extra, extras, tk, total: base + vat + choho + extra + tk, rate };
 }
 
 /**
@@ -100,16 +102,16 @@ function lineAmounts(line, vatRate, baseOv, extraCols) {
  * @returns {base, choho, extra, extras: {key: Σ cột}, vat, total}
  */
 function statementAmounts(lines, vatRate, baseOvOf, extraCols) {
-  let base = 0, choho = 0, vat = 0, extra = 0;
+  let base = 0, choho = 0, vat = 0, extra = 0, tk = 0;
   const extras = {};
   (extraCols || []).forEach((c) => { extras[c.key] = 0; });
   (lines || []).forEach((l, i) => {
     const ov = baseOvOf ? baseOvOf(l, i) : null;
     const a = lineAmounts(l, vatRate, ov, extraCols);
-    base += a.base; choho += a.choho; vat += a.vat; extra += a.extra;
+    base += a.base; choho += a.choho; vat += a.vat; extra += a.extra; tk += a.tk;
     Object.keys(a.extras).forEach((k) => { extras[k] = (extras[k] || 0) + a.extras[k]; });
   });
-  return { base, choho, extra, extras, vat, total: base + vat + choho + extra };
+  return { base, choho, extra, extras, tk, vat, total: base + vat + choho + extra + tk };
 }
 
 /* ============================ icons ============================ */

@@ -408,20 +408,22 @@ try {
         ])]);
         $ok($r['valid'] && ! $r['changes'] && ! $r['warnings'], 'H11 xuất→nhập lại nguyên vẹn: 0 lỗi, 0 ô đổi, 0 cảnh báo');
 
-        // ---- Tờ khai (luồng riêng): mỗi tờ khai 1 dòng Excel → declPairs; tổng phí sang chi phí ----
-        $declRow = fn (array $pairs) => ['line' => 2, 'id' => (string) $h1->id, 'contNo' => '', 'raws' => [], 'values' => ['declPairs' => $pairs]];
-        $svc->importShipmentUpdate('icd', [$declRow([['no' => '103', 'fee' => '10000'], ['no' => '104', 'fee' => '20000']])]);
+        // ---- Tờ khai (luồng riêng, mỗi lô 1 dòng): declPairs + phí thanh lý — THU KHÁCH, không thành chi phí lô ----
+        $declRow = fn (array $pairs, array $more = []) => ['line' => 2, 'id' => (string) $h1->id, 'contNo' => '', 'raws' => [], 'values' => ['declPairs' => $pairs] + $more];
+        $svc->importShipmentUpdate('icd', [$declRow([['no' => '103', 'fee' => '10000'], ['no' => '104', 'fee' => '20000']], ['thanhLyFee' => '2000000'])]);
         $h1d = TruckingShipment::with('costLines')->find($h1->id);
         $ok(count($h1d->declarations) === 2 && $h1d->declaration_no === '103, 104', 'H12 ghi 2 tờ khai + declaration_no gộp cho tìm kiếm/bảng kê');
-        $ok((int) $h1d->costLines->where('src', 'thanhLyFee')->first()?->amount === 30000, 'H13 tổng phí mở tờ khai → dòng chi phí thanhLyFee');
+        $ok($h1d->costLines->where('src', 'thanhLyFee')->isEmpty() && (int) $h1d->thanh_ly_fee === 2000000, 'H13 phí tờ khai không vào chi phí lô; phí thanh lý ghi thanh_ly_fee');
+        $svc->importShipmentUpdate('icd', [$declRow([['no' => '103', 'fee' => ''], ['no' => '104', 'fee' => '']])]);
+        $ok(array_column(TruckingShipment::find($h1->id)->declarations, 'fee') === [10000, 20000], 'H13b đơn giá trống → giữ phí cũ từng tờ khai');
 
         $r = $svc->validateShipmentUpdate('icd', [$declRow([['no' => '103', 'fee' => '1'], ['no' => '103', 'fee' => '2']])]);
         $ok(! $r['valid'] && str_contains(implode(' ', $r['errors'][0]['reasons']), 'bị lặp'), 'H14 số tờ khai lặp trong cùng lô → chặn');
 
-        $svc->importShipmentUpdate('icd', [$declRow([['no' => 'A1', 'fee' => '1000'], ['no' => 'A2', 'fee' => '2000'], ['no' => 'A3', 'fee' => '3000']])]);
+        $svc->importShipmentUpdate('icd', [$declRow([['no' => 'A1', 'fee' => '1000'], ['no' => 'A2', 'fee' => '1000'], ['no' => 'A3', 'fee' => '1000']])]);
         $h1s = TruckingShipment::with('costLines')->find($h1->id);
         $ok(array_column($h1s->declarations, 'no') === ['A1', 'A2', 'A3'], 'H14b thay cả danh sách tờ khai của lô');
-        $ok((int) $h1s->costLines->where('src', 'thanhLyFee')->first()?->amount === 6000, 'H14c tổng phí mở tờ khai = 6.000');
+        $ok(array_sum(array_column($h1s->declarations, 'fee')) === 3000, 'H14c phí mở = 3 tờ khai × đơn giá 1.000');
 
         // File cập nhật LÔ không còn cột tờ khai → không đụng được tờ khai
         $r = $svc->validateShipmentUpdate('icd', [$rowH($h1->id, ['declNos' => '999', 'declFees' => '999'])]);
@@ -435,7 +437,7 @@ try {
             $svc->importShipmentUpdate('icd', [$rowH($h1->id, ['extVendor' => $vend, 'extFee' => '2000000'])]);
             $h1e = TruckingShipment::with('costLines')->find($h1->id);
             $ok((int) $h1e->ext_fee === 2000000 && $h1e->costLines->where('src', 'extTruck')->count() === 1, 'H16 cước xe ngoài → 1 dòng extTruck + chốt ext_fee');
-            $ok((int) $h1e->costLines->where('src', 'thanhLyFee')->first()?->amount === 6000, 'H17 phí mở tờ khai không bị đụng khi sửa cước xe ngoài');
+            $ok(array_sum(array_column($h1e->declarations, 'fee')) === 3000, 'H17 phí mở tờ khai không bị đụng khi sửa cước xe ngoài');
         }
     } finally {
         foreach ([$h1, $hDup1, $hDup2] as $x) TruckingShipment::find($x->id)?->delete();

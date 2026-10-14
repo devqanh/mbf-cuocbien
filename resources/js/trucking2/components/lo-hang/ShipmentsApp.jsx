@@ -650,7 +650,7 @@ function ShipmentsApp() {
     if (!declWb || !declSheet) return;
     setDeclBusy(true); setDeclMsg(""); setDeclCheck(null);
     const out = parseDeclarationRows(declWb.wb, declSheet); setDeclRows(out);
-    if (!out.length) { setDeclBusy(false); setDeclCheck({ valid: false, total: 0, errors: [{ line: 0, reasons: ["Sheet không có dòng nào có ID LÔ + SỐ TỜ KHAI"] }] }); return; }
+    if (!out.length) { setDeclBusy(false); setDeclCheck({ valid: false, total: 0, errors: [{ line: 0, reasons: ["Sheet không có dòng nào có ID LÔ + SỐ TỜ KHAI / ĐƠN GIÁ / PHÍ THANH LÝ"] }] }); return; }
     try {
       const res = await api("POST", ROUTES.shipUpdateCheck, { sheet, rows: out });
       setDeclBusy(false);
@@ -2164,7 +2164,7 @@ function ShipmentsApp() {
       {showDecl && (() => {
         const changes = (declCheck && declCheck.changes) || [];
         return (
-        <Modal title="Cập nhật tờ khai từ Excel" subtitle="1 lô có thể NHIỀU tờ khai, mỗi tờ khai một phí mở. Mỗi tờ khai là 1 DÒNG (lặp lại ID lô) · thêm dòng = thêm tờ khai, xóa dòng = bỏ tờ khai · xem trước rồi mới ghi" width={860} icon={<I.truck />}
+        <Modal title="Cập nhật tờ khai từ Excel" subtitle="Mỗi lô 1 DÒNG: nhiều số tờ khai trong 1 ô (Alt+Enter hoặc ;) · ĐƠN GIÁ MỞ TỜ KHAI × số tờ khai · PHÍ THANH LÝ 1 số / lô — thu khách qua Bảng kê · xem trước rồi mới ghi" width={860} icon={<I.truck />}
           onClose={() => setShowDecl(false)}
           footer={
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
@@ -2197,8 +2197,8 @@ function ShipmentsApp() {
               {exporting && <span style={{ fontSize: 12, color: "var(--ink-4)" }}>Đang xuất…</span>}
             </div>
             <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginBottom: 14, lineHeight: 1.6 }}>
-              File có sẵn mỗi lô 1 dòng (lô chưa có tờ khai để trống 2 ô cuối). Lô nhiều tờ khai thì <b>lặp lại ID LÔ</b> ở nhiều dòng.
-              Xóa hết tờ khai của 1 lô: để lại 1 dòng và gõ <b>--</b> ở ô Số tờ khai. Tổng phí tự vào chi phí lô ở khoản <b>Phí mở tờ khai</b>.
+              Mỗi lô <b>1 dòng</b>: nhiều tờ khai ghi chung ô Số tờ khai (Alt+Enter hoặc ;). Phí mở = số tờ khai × <b>Đơn giá mở tờ khai</b>; <b>Phí thanh lý</b> 1 số / lô.
+              Ô để trống = giữ nguyên; gõ <b>--</b> ở ô Số tờ khai = xóa hết tờ khai của lô. Phí tờ khai <b>thu khách qua Bảng kê</b> (không VAT), không vào chi phí lô.
             </div>
 
             {declWb && (

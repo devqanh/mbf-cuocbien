@@ -302,11 +302,12 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
   const add = (k, v) => addCfg && addCfg(k, v);
   // Biển số gõ tạo mới ở các ô BKS lô hàng → mặc định "Xe ngoài" (xe thuê ngoài, không lọt đội xe MBF)
   const addVehExt = (v) => addCfg && addCfg("vehicles", v, { external: true });
-  // Tờ khai: 1 lô nhiều tờ khai, mỗi tờ khai 1 phí — [{no, fee}]. Tổng phí tự sang dòng chi phí ở backend.
+  // Tờ khai: 1 lô nhiều tờ khai, mỗi tờ khai 1 phí mở — [{no, fee}]. Phí mở + Phí thanh lý = THU KHÁCH, lên Bảng kê
+  // (cột Phí tờ khai, không VAT) — KHÔNG thành chi phí lô.
   const decls = Array.isArray(ship.declarations) ? ship.declarations : [];
   const setDecls = (arr) => patch({ declarations: arr });
   const declTotal = decls.reduce((a, d) => a + toNum(d.fee), 0);
-  const hqFilled = decls.length + [ship.declNote, ship.thanhLy, ship.cshtNote].filter((v) => (v || "").toString().trim()).length;
+  const hqFilled = decls.length + [ship.declNote, ship.thanhLy, ship.cshtNote].filter((v) => (v || "").toString().trim()).length + (toNum(ship.thanhLyFee) > 0 ? 1 : 0);
   const [hqOpen, setHqOpen] = useState(false);
   // Thuê xe ngoài → 1 dòng chi phí "Cước xe ngoài" (src=extTruck) link sang Chi phí lô hàng
   const cost = ship.cost || {};
@@ -431,9 +432,16 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
         </button>
         {hqOpen && (
           <div style={{ padding: "0 0 14px" }}>
-            {/* Tờ khai: mỗi dòng = 1 số tờ khai + 1 phí mở. Tổng phí tự thành dòng chi phí "Phí mở tờ khai". */}
-            <Field label="Tờ khai" hint="mỗi tờ khai một phí mở · tổng link sang Chi phí">
+            {/* Tờ khai: mỗi dòng = 1 số tờ khai + 1 phí mở. Tổng phí thu khách qua Bảng kê (không vào Chi phí lô). */}
+            <Field label="Tờ khai" hint="mỗi tờ khai một phí mở · tổng thu khách qua Bảng kê">
               <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                {decls.length > 0 && (
+                  <div style={{ display: "flex", gap: 8, fontSize: 11.5, fontWeight: 600, color: "var(--ink-3)" }}>
+                    <div style={{ flex: 1 }}>Số tờ khai</div>
+                    <div style={{ width: 150, textAlign: "right" }}>Đơn giá mở tờ khai</div>
+                    <div style={{ width: 30, flexShrink: 0 }} />
+                  </div>
+                )}
                 {decls.map((d, i) => (
                   <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <div style={{ flex: 1 }}>
@@ -453,7 +461,7 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
                     style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", fontSize: 12.5, fontWeight: 600, border: "1px dashed var(--line)", borderRadius: 8, background: "#fff", color: "var(--accent)", cursor: "pointer" }}>
                     <I.plus /> Thêm tờ khai
                   </button>
-                  {declTotal > 0 && <span className="tnum" style={{ fontSize: 12, color: "var(--ink-3)" }}>Tổng phí: <b>{fmtVND(declTotal)}</b></span>}
+                  {declTotal > 0 && <span className="tnum" style={{ fontSize: 12, color: "var(--ink-3)" }}>Tổng phí mở tờ khai ({decls.length} tờ khai): <b>{fmtVND(declTotal)}</b></span>}
                 </div>
               </div>
             </Field>
@@ -462,6 +470,9 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
             <div style={{ marginTop: 12, display: "flex", alignItems: "flex-end", gap: 14, flexWrap: "wrap" }}>
               <div style={{ maxWidth: 240, flex: "0 0 auto" }}>
                 <Field label="Ngày thanh lý"><DateField value={ship.thanhLy} onChange={(x) => set({ thanhLy: x })} /></Field>
+              </div>
+              <div style={{ width: 210, flex: "0 0 auto" }}>
+                <Field label="Phí thanh lý tờ khai" hint="1 số / lô"><Money value={ship.thanhLyFee || ""} onChange={(x) => set({ thanhLyFee: x })} dim /></Field>
               </div>
               <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: "8px 0",
                 color: String(ship.thanhLy || "").trim() ? "var(--good)" : "var(--ink-3)" }}>

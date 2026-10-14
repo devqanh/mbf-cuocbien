@@ -1367,11 +1367,12 @@ trait HandlesShipments
             'contType'     => $s->cont_type ?? '',
             'contNo'       => $s->cont_no ?? '',
             'declNo'       => $s->declaration_no ?? '',   // chuỗi gộp — giữ cho bảng kê / tìm kiếm
-            // Nguồn chân lý của tờ khai: mỗi tờ khai 1 số + 1 phí.
+            // Nguồn chân lý của tờ khai: mỗi tờ khai 1 số + 1 phí mở. Phí mở + phí thanh lý = THU KHÁCH qua Bảng kê.
             'declarations' => array_map(fn ($d) => [
                 'no'  => (string) ($d['no'] ?? ''),
                 'fee' => $this->outMoney($d['fee'] ?? 0),
             ], (array) ($s->declarations ?? [])),
+            'thanhLyFee'   => $this->outMoney($s->thanh_ly_fee ?? 0),
             'declNote'     => $s->declaration_note ?? '',
             'thanhLy'      => $this->outDate($s->thanh_ly_date),
             'haCont'       => $this->outDate($s->ha_cont_date),   // có ngày = đã hạ cont
@@ -1512,6 +1513,7 @@ trait HandlesShipments
                 'declNo'       => ['declaration_no', $this->str($data['declNo'] ?? null)],
                 'declNote'     => ['declaration_note', $this->str($data['declNote'] ?? null)],
                 'thanhLy'      => ['thanh_ly_date', $this->inDate($data['thanhLy'] ?? null)],
+                'thanhLyFee'   => ['thanh_ly_fee', ($v = (int) round((float) $this->inMoney($data['thanhLyFee'] ?? null))) > 0 ? $v : null],
                 'haCont'       => ['ha_cont_date', $this->inDate($data['haCont'] ?? null)],
                 'cshtNote'     => ['csht_note', $this->str($data['cshtNote'] ?? null)],
                 'kho'          => ['kho', $this->str($data['kho'] ?? null)],
@@ -1553,7 +1555,7 @@ trait HandlesShipments
             }
             // TỜ KHAI — 1 lô nhiều tờ khai, mỗi tờ khai 1 phí: [{no, fee}].
             // `declaration_no` vẫn được sinh ra (danh sách số cách nhau ", ") để tìm kiếm / bảng kê /
-            // xuất Excel dùng như trước. Phí tổng đồng bộ sang dòng chi phí src=thanhLyFee bên dưới.
+            // xuất Excel dùng như trước. Tổng phí mở là khoản THU KHÁCH — lên Bảng kê, KHÔNG thành chi phí lô.
             if ($apply('declarations')) {
                 $s->declarations = $this->normDeclarations($data['declarations'] ?? []);
                 $s->declaration_no = implode(', ', array_column($s->declarations, 'no')) ?: null;
@@ -1665,17 +1667,10 @@ trait HandlesShipments
             }
             }   // end if apply('rev')
 
-            // Phí tờ khai → 1 dòng chi phí src=thanhLyFee = TỔNG phí các tờ khai (giữ nguyên cơ chế
-            // cột "Thanh lí" của bảng kê vẫn cộng theo src này). Chạy SAU khi dòng chi phí đã lưu.
-            if ($apply('declarations')) $this->syncDeclarationFee($s);
-
             $this->recomputeShipmentDerived($s, $only);
             return $s->fresh(['customer', 'costLines', 'revenueLines', 'payments']);
         });
     }
-
-    /** Khoản chi phí cho phí mở tờ khai (đã khai sẵn trong danh mục — xem migration seed). */
-    private const DECL_FEE_ITEM = 'Phí mở tờ khai';
 
     /**
      * Chuẩn hóa danh sách tờ khai → [{no, fee}]: bỏ dòng không có số, gộp khoảng trắng,
@@ -1694,37 +1689,6 @@ trait HandlesShipments
             $out[] = ['no' => $no, 'fee' => max(0, (int) round((float) $this->inMoney($d['fee'] ?? null)))];
         }
         return $out;
-    }
-
-    /**
-     * Đồng bộ TỔNG phí tờ khai sang 1 dòng chi phí src=thanhLyFee (tạo / cập nhật / xóa).
-     * Nguồn chân lý là cột `declarations`; dòng chi phí chỉ là bản chiếu để chi phí, báo cáo
-     * và cột "Thanh lí" của bảng kê hoạt động y như trước (chúng cộng theo src).
-     */
-    private function syncDeclarationFee(TruckingShipment $s): void
-    {
-        $total = 0;
-        foreach ((array) $s->declarations as $d) $total += (int) round((float) ($d['fee'] ?? 0));
-
-        $line = $s->costLines()->where('src', 'thanhLyFee')->orderBy('sort')->first();
-        if ($total <= 0) {
-            if ($line) $line->delete();
-        } elseif ($line) {
-            $line->fill(['amount' => $total])->save();
-        } else {
-            $item = TruckingCostItem::where('name', self::DECL_FEE_ITEM)->first();
-            $s->costLines()->create([
-                'item'         => self::DECL_FEE_ITEM,
-                'amount'       => $total,
-                'src'          => 'thanhLyFee',
-                'vat'          => $item?->vat ?? 0,
-                'color'        => $item?->color,
-                'cost_item_id' => $item?->id,
-                'billable'     => false,
-                'sort'         => (int) $s->costLines()->max('sort') + 1,
-            ]);
-        }
-        $s->unsetRelation('costLines');   // quan hệ đã cũ → để recompute đọc lại số mới
     }
 
     /**
@@ -1904,7 +1868,6 @@ trait HandlesShipments
     {
         // Field nào kéo theo phần recompute nào (giữ đồng bộ với map $cols ở saveShipment).
         $touches = fn (array $keys) => $only === null || array_intersect($keys, $only) !== [];
-        // 'declarations' cũng đụng chi phí: phí tờ khai đồng bộ sang dòng src=thanhLyFee (xem syncDeclarationFee).
         $needTier2   = $touches(['cost', 'rev', 'declarations']);
         $needTotals  = $touches(['cost', 'rev', 'declarations']);
         $needVehicle = $touches(['bksVao']);

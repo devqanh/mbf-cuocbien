@@ -521,34 +521,36 @@ export function parseUpdateRows(wb, sheetName) {
 }
 
 // ===================== CẬP NHẬT TỜ KHAI (luồng riêng) =====================
-// 1 lô nhiều tờ khai, mỗi tờ khai 1 phí mở → mỗi TỜ KHAI là 1 dòng, mỗi ô đúng 1 giá trị.
-// Tách khỏi file cập nhật lô để không phải nhồi danh sách vào 1 ô (dấu phẩy đụng dấu phân cách nghìn).
-export const DECL_COLS = ["ID LÔ", "SỐ CONT (không sửa)", "KHÁCH HÀNG (không sửa)", "SỐ TỜ KHAI", "PHÍ MỞ TỜ KHAI"];
+// MỖI LÔ 1 DÒNG: nhiều số tờ khai trong 1 ô (xuống dòng Alt+Enter, hoặc ; ,) · ĐƠN GIÁ MỞ TỜ KHAI áp cho MỖI
+// tờ khai (phí mở = số tờ khai × đơn giá) · PHÍ THANH LÝ = 1 số / lô. Cả 2 khoản THU KHÁCH qua Bảng kê.
+export const DECL_COLS = ["ID LÔ", "SỐ CONT (không sửa)", "KHÁCH HÀNG (không sửa)", "NHẬP / XUẤT (không sửa)", "SỐ TỜ KHAI", "ĐƠN GIÁ MỞ TỜ KHAI", "PHÍ THANH LÝ"];
+const digits = (v) => String(v == null ? "" : v).replace(/[^\d]/g, "");
 
-// Dựng workbook "Xuất tờ khai": mỗi tờ khai 1 dòng; lô CHƯA có tờ khai vẫn có 1 dòng trống để điền.
+// Dựng workbook "Xuất tờ khai": mỗi lô 1 dòng (lô chưa có tờ khai vẫn có dòng trống để điền).
 export function buildDeclarationWb(list) {
   const rows = [];
   for (const s of (list || [])) {
-    const base = { "ID LÔ": s.id, "SỐ CONT (không sửa)": s.contNo || "", "KHÁCH HÀNG (không sửa)": s.customer || "" };
     const ds = Array.isArray(s.declarations) ? s.declarations : [];
-    if (!ds.length) { rows.push({ ...base, "SỐ TỜ KHAI": "", "PHÍ MỞ TỜ KHAI": "" }); continue; }
-    for (const d of ds) {
-      const fee = String(d.fee || "").replace(/[^\d]/g, "");
-      rows.push({ ...base, "SỐ TỜ KHAI": d.no || "", "PHÍ MỞ TỜ KHAI": fee ? +fee : "" });
-    }
+    const unit = digits((ds.find((d) => +digits(d.fee) > 0) || {}).fee);   // đơn giá = phí tờ khai đầu tiên có phí
+    const tl = digits(s.thanhLyFee);
+    rows.push({
+      "ID LÔ": s.id, "SỐ CONT (không sửa)": s.contNo || "", "KHÁCH HÀNG (không sửa)": s.customer || "", "NHẬP / XUẤT (không sửa)": s.io || "",
+      "SỐ TỜ KHAI": ds.map((d) => d.no || "").filter(Boolean).join("\n"),
+      "ĐƠN GIÁ MỞ TỜ KHAI": unit ? +unit : "", "PHÍ THANH LÝ": +tl > 0 ? +tl : "",
+    });
   }
   const ws = XLSX.utils.json_to_sheet(rows, { header: DECL_COLS });
-  ws["!cols"] = [{ wch: 9 }, { wch: 20 }, { wch: 24 }, { wch: 22 }, { wch: 16 }];
+  ws["!cols"] = [{ wch: 9 }, { wch: 20 }, { wch: 24 }, { wch: 12 }, { wch: 22 }, { wch: 20 }, { wch: 16 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Tờ khai");
   const guide = [
-    { "Quy tắc": "Cột ID LÔ", "Ý nghĩa": "KHÓA khớp lô — đừng sửa. Một lô nhiều tờ khai thì lặp lại ID ở nhiều dòng" },
-    { "Quy tắc": "Thêm tờ khai", "Ý nghĩa": "Chèn dòng mới, điền ID LÔ + SỐ TỜ KHAI + PHÍ MỞ TỜ KHAI" },
-    { "Quy tắc": "Sửa phí", "Ý nghĩa": "Sửa thẳng ô PHÍ MỞ TỜ KHAI của dòng đó (mỗi ô 1 số, gõ 250000 hay 250.000 đều được)" },
-    { "Quy tắc": "Xóa 1 tờ khai", "Ý nghĩa": "Xóa dòng đó đi — các tờ khai còn lại của lô vẫn giữ" },
-    { "Quy tắc": `Xóa HẾT tờ khai của 1 lô`, "Ý nghĩa": `Để lại 1 dòng của lô đó và gõ ${CLEAR_TOKEN} ở ô SỐ TỜ KHAI` },
-    { "Quy tắc": "Lô không đụng tới", "Ý nghĩa": "Giữ nguyên dòng (hoặc xóa khỏi file) — chỉ lô có mặt trong file mới bị ghi" },
-    { "Quy tắc": "Phí mở tờ khai", "Ý nghĩa": "Tổng phí các tờ khai của lô tự vào chi phí lô ở khoản Phí mở tờ khai" },
+    { "Quy tắc": "Cột ID LÔ", "Ý nghĩa": "KHÓA khớp lô — đừng sửa. Mỗi lô đúng 1 dòng" },
+    { "Quy tắc": "SỐ TỜ KHAI", "Ý nghĩa": "Nhiều tờ khai ghi chung 1 ô, mỗi số 1 dòng (Alt+Enter) hoặc cách nhau bằng ; hoặc dấu phẩy. Ô này là DANH SÁCH ĐẦY ĐỦ tờ khai của lô (bỏ số nào = xóa tờ khai đó)" },
+    { "Quy tắc": "ĐƠN GIÁ MỞ TỜ KHAI", "Ý nghĩa": "Phí mở cho MỖI tờ khai — phí mở của lô = số tờ khai × đơn giá. Để trống = giữ phí đang có của từng tờ khai" },
+    { "Quy tắc": "PHÍ THANH LÝ", "Ý nghĩa": `1 số cho cả lô. Để trống = giữ nguyên; gõ ${CLEAR_TOKEN} hoặc 0 = xóa` },
+    { "Quy tắc": `Xóa HẾT tờ khai của 1 lô`, "Ý nghĩa": `Gõ ${CLEAR_TOKEN} ở ô SỐ TỜ KHAI` },
+    { "Quy tắc": "Lô không đụng tới", "Ý nghĩa": "Để trống các ô (hoặc xóa dòng khỏi file) — chỉ ô có nội dung mới được ghi" },
+    { "Quy tắc": "Thu khách", "Ý nghĩa": "Phí mở tờ khai + phí thanh lý lên Bảng kê (cột Phí tờ khai, không VAT) — KHÔNG vào Chi phí lô" },
     { "Quy tắc": "Kiểm tra trước", "Ý nghĩa": "Hệ thống liệt kê từng lô cũ → mới để bạn duyệt; 1 dòng lỗi là KHÔNG ghi gì cả" },
   ];
   const wg = XLSX.utils.json_to_sheet(guide, { header: ["Quy tắc", "Ý nghĩa"] });
@@ -557,32 +559,35 @@ export function buildDeclarationWb(list) {
   return wb;
 }
 
-// Parse sheet tờ khai → gom theo lô: [{ line, id, values: { declPairs: [{no, fee}] } }].
-// Gửi lên CÙNG endpoint cập nhật lô (backend đã hiểu declPairs).
+// Parse sheet tờ khai (mỗi lô 1 dòng) → [{ line, id, values: { declPairs?: [{no, fee}], thanhLyFee? } }].
+// fee "" = giữ phí đang có của tờ khai đó (backend tra theo số). Gửi lên CÙNG endpoint cập nhật lô.
 export function parseDeclarationRows(wb, sheetName) {
   const aoa = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, raw: true, defval: "" });
   let hi = aoa.findIndex((r) => (r || []).some((c) => normH(c).includes("id")));
   if (hi < 0) hi = 0;
   const header = (aoa[hi] || []).map(normH);
   const col = (...kws) => header.findIndex((h) => kws.some((k) => h.includes(k)));
-  const cId = col("id"), cNo = col("số tờ khai", "so to khai", "tờ khai"), cFee = col("phí", "phi");
+  const cId = col("id"), cNo = col("số tờ khai", "so to khai");
+  const cUnit = col("đơn giá", "don gia", "phí mở", "phi mo"), cTl = col("thanh lý", "thanh ly");
 
-  const byId = {}; const lineOf = {};
+  const out = []; const seen = new Set();
   for (let r = hi + 1; r < aoa.length; r++) {
     const row = aoa[r] || [];
     const g = (i) => (i < 0 ? "" : String(row[i] == null ? "" : row[i]).trim());
-    const id = g(cId).replace(/[^\d]/g, "");
-    if (!id) continue;
-    const no = g(cNo);
-    if (lineOf[id] == null) lineOf[id] = r + 1;
-    if (!byId[id]) byId[id] = [];
-    if (no === CLEAR_TOKEN) { byId[id] = "clear"; continue; }      // xóa hết tờ khai của lô
-    if (no === "" || byId[id] === "clear") continue;               // dòng trống = lô chưa có tờ khai
-    byId[id].push({ no, fee: g(cFee).replace(/[^\d]/g, "") });
+    const id = digits(g(cId));
+    if (!id || seen.has(id)) continue;                              // 1 lô 1 dòng — dòng lặp ID: backend báo lỗi theo dòng đầu
+    seen.add(id);
+    const values = {};
+    const noRaw = g(cNo), unit = digits(g(cUnit)), tl = g(cTl);
+    if (noRaw === CLEAR_TOKEN) values.declPairs = [];               // xóa hết tờ khai của lô
+    else if (noRaw !== "") {
+      values.declPairs = noRaw.split(/[\n\r;,]+/).map((x) => x.trim()).filter(Boolean).map((no) => ({ no, fee: unit }));
+    }
+    if (tl !== "") values.thanhLyFee = tl === CLEAR_TOKEN ? CLEAR_TOKEN : digits(tl) || "0";
+    if (!Object.keys(values).length) continue;                      // lô không điền gì → không gửi
+    out.push({ line: r + 1, id, contNo: "", raws: {}, values });
   }
-  return Object.entries(byId)
-    .filter(([, v]) => v === "clear" || v.length)                  // lô không điền gì → không gửi
-    .map(([id, v]) => ({ line: lineOf[id], id, contNo: "", raws: {}, values: { declPairs: v === "clear" ? [] : v } }));
+  return out;
 }
 
 // Đếm dòng có dữ liệu (hiện số trước khi gửi kiểm tra).

@@ -203,11 +203,6 @@ trait HandlesCshtImport
                     if (! $fields) { $stats['same']++; continue; }
                     $diff = $this->cshtDiff($lines, $fields);   // các ô KHÁC hiện tại (nhiều dòng: so tổng tiền / giá trị chung)
 
-                    if ($item->name === self::DECL_FEE_ITEM || $lines->contains(fn ($c) => $c->src === 'thanhLyFee')) {
-                        if ($diff) $reasons[] = "{$item->name} lấy từ tờ khai (Hải quan) — sửa ở popup lô, không import được";
-                        else $stats['same']++;
-                        continue;
-                    }
                     if ($lines->isEmpty()) {
                         if ($item->name === self::EXT_TRUCK_ITEM) { $reasons[] = 'Lô chưa có Cước xe ngoài — chọn Thuê xe ngoài ở Thông tin lô trước'; continue; }
                         // Chưa điền Số tiền vẫn tạo dòng 0 đ (như thêm dòng trong popup) — vd chỉ ghi Số hóa đơn = 0.

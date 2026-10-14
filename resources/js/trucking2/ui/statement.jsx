@@ -32,7 +32,9 @@ const suggestionOf = (l, s, vatRate) => {
   // không so với số gõ tay — nếu không, dòng gõ tay lúc nào cũng "có giá mới".
   const manual = isManualLine(l);
   const curBase = manual ? (sysBaseOf(od) ?? 0) : a.base;
-  const info = ["route", "conn", "kind", "contKey"].some((k) => (s[k] ?? "") !== (od[k] ?? ""));
+  // Phí tờ khai đổi (thêm / sửa tờ khai, phí thanh lý) cũng là gợi ý — Áp dụng thay snapshot nên lấy luôn số mới.
+  const tkNew = Math.round(+s.declFee || 0) + Math.round(+s.tlFee || 0);
+  const info = tkNew !== a.tk || ["route", "conn", "kind", "contKey"].some((k) => (s[k] ?? "") !== (od[k] ?? ""));
   if (base === curBase && choho === a.choho && !info) return null;
   return { pr: s, base, choho, manual, baseDiff: base !== curBase, chohoDiff: choho !== a.choho, infoOnly: base === curBase && choho === a.choho };
 };
@@ -241,6 +243,20 @@ function LotCostLine({ items, block }) {
     : <span style={{ color: "#7c3aed" }}>· {body}</span>;
 }
 
+/* Ô PHÍ TỜ KHAI của 1 lô (thu khách, không VAT): tổng + tách Mở TK (× số tờ khai) / Thanh lý — từ detail.declFee / tlFee. */
+function TkCell({ d }) {
+  const decl = Math.round(+(d && d.declFee) || 0), tl = Math.round(+(d && d.tlFee) || 0), n = +(d && d.declCount) || 0;
+  if (!decl && !tl) return <span style={{ color: "var(--ink-4)" }}>0</span>;
+  const part = (lb, v) => <span style={{ whiteSpace: "nowrap" }}>{lb} <b className="tnum" style={{ fontWeight: 600, color: "var(--ink-2)" }}>{fmtNum(v)}</b></span>;
+  return (<>
+    <div>{fmtNum(decl + tl)}</div>
+    <div style={{ marginTop: 3, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1, fontSize: 10.5, lineHeight: 1.35, fontWeight: 400, color: "var(--ink-3)" }}>
+      {decl > 0 && part(`Mở TK${n > 1 ? ` ×${n}` : ""}`, decl)}
+      {tl > 0 && part("Thanh lý", tl)}
+    </div>
+  </>);
+}
+
 /* Ô CHI HỘ của 1 lô: tổng + TỪNG HẠNG MỤC (snapshot choHoItems = khoản chi phí lô đã tích "chi hộ khách"),
    gộp khoản trùng tên; có in. Bảng kê cũ không có danh sách hạng mục → chỉ hiện tổng. */
 function ChoHoCell({ amount, items }) {
@@ -285,6 +301,7 @@ function AmountSummary({ amt, vatRate, paid, payCount, showDebt, extras = [], ch
       {row("Phải thu (cước + dầu)", amt.base)}
       {row(`VAT (${vatRate || 0}%)`, amt.vat, { valStyle: { color: (vatRate ? "var(--accent)" : "var(--ink-4)") } })}
       {row("Chi hộ (không VAT)", amt.choho)}
+      {amt.tk > 0 && row("Phí tờ khai (không VAT)", amt.tk)}
       {extras.map((c) => <React.Fragment key={c.key}>{row((String(c.label || "").trim() || "Khoản mới") + (c.vat ? " (chịu VAT)" : " (không VAT)"), c.sum)}</React.Fragment>)}
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, paddingTop: 8, marginBottom: showDebt ? 8 : 0, borderTop: "1px solid var(--line)" }}>
         <span style={{ fontWeight: 700 }}>TỔNG TIỀN</span><b className="tnum">{fmtVND(amt.total)}</b>
@@ -389,7 +406,7 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
   };
   const setLineExtra = (id, key, v) => setExtraOv((o) => ({ ...o, [id]: { ...(o[id] || {}), [key]: v } }));
   useEffect(() => { onExtraColsCount && onExtraColsCount(extraCols.length); }, [extraCols.length]);
-  const nCols = 10 + extraCols.length;   // số cột bảng (gồm cột tích chọn + cột Ghi chú) cho colSpan
+  const nCols = 11 + extraCols.length;   // số cột bảng (gồm cột tích chọn + cột Tờ khai + cột Ghi chú) cho colSpan
   // 3 con số/dòng từ NGUỒN CHÂN LÝ chung (nền cước+dầu+sà lan; VAT áp nền + cột riêng có vat; chi hộ không VAT).
   const ovOf = (x) => (amtOv[x.id] != null ? amtOv[x.id] : null);   // null = chưa sửa tay
   const vatOf = (x) => vatOv[x.id];                                 // undefined/"" = theo mặc định
@@ -536,6 +553,7 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
               <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>VAT</th>
               {extraCols.map((c) => <th key={c.key} style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>{colLabel(c)}{c.vat ? <span style={{ color: "var(--accent)", fontSize: 9.5 }}><br/>+VAT</span> : null}</th>)}
               <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Chi hộ</th>
+              <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }} title="Phí mở tờ khai + phí thanh lý (không VAT)">Phí tờ khai</th>
               <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Tổng tiền</th>
               <th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Ghi chú</th>
             </tr>
@@ -594,6 +612,7 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
                     </td>
                   ))}
                   <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: "none", verticalAlign: "top", color: "var(--ink-2)", minWidth: 90 }}><ChoHoCell amount={a.choho} items={x.pr.choHoItems} /></td>
+                  <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: "none", verticalAlign: "top", color: "var(--ink-2)" }}><TkCell d={x.pr} /></td>
                   <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: "none", verticalAlign: "top", fontWeight: 700 }}>{fmtNum(a.total)}</td>
                   <td style={{ padding: "6px 8px", borderBottom: "none", verticalAlign: "top" }}><LineNoteCell value={noteOv[x.id]} onChange={(v) => setNoteOv((o) => ({ ...o, [x.id]: v }))} /></td>
                   </>); })()}
@@ -624,6 +643,7 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
               <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)", color: amt.vat ? "var(--accent)" : "var(--ink-4)" }}>{fmtNum(amt.vat)}</td>
               {extraCols.map((c) => <td key={c.key} className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(amt.extras[c.key] || 0)}</td>)}
               <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(amt.choho)}</td>
+              <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(amt.tk)}</td>
               <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(tongThu)}</td>
               <td style={{ borderTop: "1.5px solid var(--line)" }}></td>
             </tr>
@@ -650,6 +670,11 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
               <td colSpan={nCols - 4} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>Chi hộ (không VAT)</td>
               <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px" }}>{fmtVND(amt.choho)}</td><td></td>
             </tr>
+            {amt.tk > 0 && <tr>
+              <td className="ke-noprint"></td>
+              <td colSpan={nCols - 4} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>Phí tờ khai — mở + thanh lý (không VAT)</td>
+              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px" }}>{fmtVND(amt.tk)}</td><td></td>
+            </tr>}
             <tr style={{ fontWeight: 700 }}>
               <td className="ke-noprint"></td>
               <td colSpan={nCols - 4} style={{ padding: "8px 8px 11px", textAlign: "right" }}>TỔNG TIỀN</td>
@@ -701,7 +726,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
     d.extras = { ...(d.extras || {}), [key]: v };
     return { ...l, detail: d };
   }) });
-  const nCols = 9 + extraCols.length;   // số cột của bảng gồm cột Ghi chú (cho colSpan phần chi tiết + tổng kết)
+  const nCols = 10 + extraCols.length;   // số cột của bảng gồm cột Phí tờ khai + cột Ghi chú (cho colSpan phần chi tiết + tổng kết)
   const setLineNote = (id, v) => onUpdate && onUpdate({ ...st, lines: (st.lines || []).map((l) => (l.id === id ? { ...l, userNote: v } : l)) });
   // BỎ 1 lô khỏi bảng kê (hỏi lại; chỉ chốt khi bấm Lưu) — lô trả về danh sách "lô trong kỳ chưa có bảng kê".
   const delLine = async (l) => {
@@ -807,10 +832,10 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
         </div>
         {/* Nhiều cột chi phí riêng → bảng giữ bề rộng tối thiểu và cuộn ngang trên màn hình (in: .ke-scroll bỏ cuộn + minWidth) */}
         <div className="ke-scroll" style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", minWidth: 1160 + 110 * extraCols.length, borderCollapse: "collapse", fontSize: 12.5 }}>
+        <table style={{ width: "100%", minWidth: 1250 + 110 * extraCols.length, borderCollapse: "collapse", fontSize: 12.5 }}>
           <thead><tr style={{ background: "#fafbfc" }}>{th("#", "center")}{th("Lô / Booking")}{th("Tuyến · Cont")}{th("Kéo vào / Ra")}{th(<>Phải thu<br/>(cước+dầu)</>, "right")}{th("VAT", "right")}
             {extraCols.map((c) => <React.Fragment key={c.key}>{th(<>{colLabel(c)}{c.vat ? <span style={{ color: "var(--accent)", fontSize: 9.5 }}><br/>+VAT</span> : null}</>, "right")}</React.Fragment>)}
-            {th("Chi hộ", "right")}{th("Tổng tiền", "right")}<th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase", minWidth: 190 }}>Ghi chú</th></tr></thead>
+            {th("Chi hộ", "right")}{th("Phí tờ khai", "right")}{th("Tổng tiền", "right")}<th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase", minWidth: 190 }}>Ghi chú</th></tr></thead>
           <tbody>
             {shownLines.map((l, i) => {
               const d = detailById[l.id];
@@ -882,6 +907,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
                   </td>
                 ))}
                 <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top", minWidth: 90 }}><ChoHoCell amount={a.choho} items={l.detail && l.detail.choHoItems} /></td>
+                <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top" }}><TkCell d={l.detail} /></td>
                 <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", fontWeight: 700, verticalAlign: "top" }}>{fmtNum(a.total)}</td>
                 <td style={{ padding: "6px 8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", verticalAlign: "top" }}><LineNoteCell value={l.userNote} onChange={(v) => setLineNote(l.id, v)} /></td>
                 </>); })()}
@@ -955,6 +981,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
               <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)", color: amt.vat ? "var(--accent)" : "var(--ink-4)" }}>{fmtNum(amt.vat)}</td>
               {extraCols.map((c) => <td key={c.key} className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(amt.extras[c.key] || 0)}</td>)}
               <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(amt.choho)}</td>
+              <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(amt.tk)}</td>
               <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(tongThu)}</td>
               <td style={{ borderTop: "1.5px solid var(--line)" }}></td>
             </tr>
@@ -976,6 +1003,10 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
               <td colSpan={nCols - 3} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>Chi hộ (không VAT)</td>
               <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px" }}>{fmtVND(amt.choho)}</td><td></td>
             </tr>
+            {amt.tk > 0 && <tr>
+              <td colSpan={nCols - 3} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>Phí tờ khai — mở + thanh lý (không VAT)</td>
+              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px" }}>{fmtVND(amt.tk)}</td><td></td>
+            </tr>}
             <tr style={{ fontWeight: 700 }}>
               <td colSpan={nCols - 3} style={{ padding: "8px 8px 11px", textAlign: "right" }}>TỔNG TIỀN</td>
               <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "8px 8px 11px" }}>{fmtVND(tongThu)}</td><td></td>

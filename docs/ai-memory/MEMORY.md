@@ -59,4 +59,5 @@
 - [Quyền xem cột Lô hàng](shipment-column-permissions.md) — shipments.view_* theo từng cột; 2 cột tiền cắt ở server, 5 cột kia chỉ ẩn UI
 - [Khớp giá lô CRU](cru-pricing-rule.md) — Internal/External CRU là theo TUYẾN (External = xuất phát HN/BG/HY/RU), KHÔNG suy từ Nhập/Xuất; chặng nhập CRU hạ tại bãi (IM …) khớp dòng CRU có ĐÚNG 1 điểm đến = bãi; free time cần Giờ xe đến thực tế (không phải KH đến)
 - [Quy chế lương chuyến](salary-regulation-engine.md) — book.regulation JSON TÙY CHỈNH (nhóm cảng zone|kcn, vùng tên+tỉnh cũ, KCN, định mức dầu, chặng km+vé trạm); ĐÃ BỎ danh sách tuyến, Lộ trình tính mọi chuyến theo quy chế; khác nhóm: ICD→HP = chuyến HP, HP→ICD/TP tiền đường nhập tay
+- [Phí tờ khai thu khách](declaration-fee-billing.md) — phí mở TK + phí thanh lý (thanh_ly_fee) lên Bảng kê cột Phí tờ khai, không VAT, không còn dòng chi phí thanhLyFee; Excel tờ khai mỗi lô 1 dòng (đơn giá × số TK)
 - [Activity log](activity-log.md) — nhật ký thao tác ĐÃ build; rà lỗi dữ liệu thì tra `php artisan activity:log --subject=...` trước khi đoán (sau db:pull); log model khai ở config/activity.php

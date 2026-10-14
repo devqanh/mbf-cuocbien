@@ -265,6 +265,96 @@ trait HandlesExtStatements
         ];
     }
 
+    /** Bảng kê còn nợ quá số ngày này (kể từ ngày lập) → cảnh báo công nợ quá hạn. */
+    private const EXT_OVERDUE_DAYS = 30;
+
+    /**
+     * Cảnh báo cho kế toán ở trang danh sách Bảng kê xe ngoài — tính từ dữ liệu thật, chỉ đọc:
+     *  - unbilled : lô thuê xe ngoài có tiền phải trả nhưng CHƯA vào bảng kê nào (gom theo nhà xe).
+     *  - missing  : lô có tiền phải trả nhưng thiếu Nhà xe ngoài / Giờ xe đến → không bao giờ lên bảng kê.
+     *  - duplicates: 1 lô nằm trong ≥ 2 bảng kê → nguy cơ trả trùng.
+     *  - drift    : bảng kê có lô mà cước / chi hộ hiện tại khác số đã chốt → cần Làm mới.
+     *  - overdue  : bảng kê còn nợ quá EXT_OVERDUE_DAYS ngày.
+     *  - mismatch : số đã tích chi ≠ tổng đợt thanh toán đã ghi.
+     */
+    public function extStatementAlerts(): array
+    {
+        // Tiền phải trả nhà xe hiện tại của từng lô: cước thuê (ext_fee) + Σ khoản tích "Chi hộ xe ngoài" (làm tròn từng dòng).
+        $extPay = DB::table('trucking_cost_lines')->where('ext_pay', true)
+            ->groupBy('shipment_id')->select('shipment_id', DB::raw('SUM(ROUND(amount)) as choho'));
+        $ships = TruckingShipment::query()
+            ->leftJoinSub($extPay, 'ep', 'ep.shipment_id', '=', 'trucking_shipments.id')
+            ->where(fn ($w) => $w->where('trucking_shipments.ext_fee', '>', 0)->orWhere('ep.choho', '<>', 0))
+            ->get(['trucking_shipments.id', 'trucking_shipments.booking', 'trucking_shipments.ext_vendor',
+                   'trucking_shipments.gio_xe_den', 'trucking_shipments.ext_fee', 'ep.choho'])
+            ->keyBy('id');
+
+        $sts = TruckingExtStatement::with(['lines', 'payments'])->orderByDesc('id')->get();
+        $inSt = [];   // shipment_id => [statement, ...]
+        foreach ($sts as $st) {
+            foreach ($st->lines as $l) if ($l->shipment_id) $inSt[$l->shipment_id][$st->id] = $st;
+        }
+        $ref = fn ($st) => ['hashid' => Hashid::encode($st->id), 'no' => $st->no, 'vendor' => $st->ext_vendor ?? ''];
+
+        // Lô chưa vào bảng kê nào → gom theo nhà xe; thiếu nhà xe / giờ xe đến → nhóm "missing".
+        $unbilled = []; $missing = [];
+        foreach ($ships as $s) {
+            if (isset($inSt[$s->id])) continue;
+            $amt = (int) round((float) $s->ext_fee) + (int) round((float) $s->choho);
+            $vendor = trim((string) $s->ext_vendor);
+            if ($vendor === '' || ! $s->gio_xe_den) {
+                $missing[] = ['booking' => $s->booking ?? '', 'amount' => $amt, 'reason' => $vendor === '' ? 'Chưa chọn nhà xe ngoài' : 'Chưa có Giờ xe đến'];
+                continue;
+            }
+            $d = substr((string) $s->gio_xe_den, 0, 10);
+            $u = $unbilled[$vendor] ?? ['vendor' => $vendor, 'count' => 0, 'amount' => 0, 'from' => $d, 'to' => $d];
+            $u['count']++; $u['amount'] += $amt;
+            $u['from'] = min($u['from'], $d); $u['to'] = max($u['to'], $d);
+            $unbilled[$vendor] = $u;
+        }
+        usort($unbilled, fn ($a, $b) => $b['amount'] <=> $a['amount']);
+
+        // 1 lô ở nhiều bảng kê.
+        $duplicates = [];
+        foreach ($inSt as $sid => $list) {
+            if (count($list) < 2) continue;
+            $first = reset($list);
+            $booking = optional($first->lines->firstWhere('shipment_id', $sid))->booking ?? '';
+            $duplicates[] = ['booking' => $booking, 'statements' => array_values(array_map($ref, $list))];
+        }
+
+        $drift = []; $overdue = []; $mismatch = [];
+        $today = Carbon::today();
+        foreach ($sts as $st) {
+            // Lệch dữ liệu: so cước + chi hộ đã chốt với hiện tại của lô (lô đã xóa / không còn tiền → coi là lệch).
+            $n = 0;
+            foreach ($st->lines as $l) {
+                if (! $l->shipment_id) continue;
+                $s = $ships[$l->shipment_id] ?? null;
+                $nowFee = $s ? (int) round((float) $s->ext_fee) : 0;
+                $nowChoho = $s ? (int) round((float) $s->choho) : 0;
+                if ($nowFee !== (int) round((float) $l->fee) || $nowChoho !== (int) round((float) $l->choho)) $n++;
+            }
+            if ($n) $drift[] = $ref($st) + ['count' => $n];
+
+            $total = (int) round((float) $st->total);
+            $paid  = (int) $st->payments->reduce(fn ($a, $p) => $a + (int) round((float) $p->amount), 0);
+            $con   = $total - $paid;
+            $age   = $st->date ? $st->date->diffInDays($today) : 0;
+            if ($con > 0 && $age > self::EXT_OVERDUE_DAYS) $overdue[] = $ref($st) + ['conNo' => $con, 'days' => (int) $age];
+
+            // Số đã tích chi (theo phần) so với đợt thanh toán đã ghi.
+            $ticked = 0;
+            foreach ($st->lines as $l) {
+                $parts = $this->extLinePartsOf($l);
+                foreach ($this->extLinePaidParts($l) as $k => $_) $ticked += $parts[$k] ?? 0;
+            }
+            if (($ticked > 0 || $paid > 0) && $ticked !== $paid) $mismatch[] = $ref($st) + ['ticked' => $ticked, 'paid' => $paid];
+        }
+
+        return compact('unbilled', 'missing', 'duplicates', 'drift', 'overdue', 'mismatch');
+    }
+
     /**
      * Tích / bỏ tích "đã chi" cho các dòng lô của 1 bảng kê — ghi ngay, không đụng cột khác.
      * $part = null → mọi phần của dòng; 'fee' → cước (+VAT); 'i:<key>' → 1 khoản chi hộ.
