@@ -21,7 +21,7 @@ use Symfony\Component\Process\Process;
 class PullDatabase extends Command
 {
     protected $signature = 'db:pull
-        {--rhost=13.112.124.198 : Host remote}
+        {--rhost=172.104.56.116 : Host remote}
         {--rport=3306 : Port remote}
         {--rdb=cuocbien_dev : Tên database remote}
         {--ruser=cuocbien_dev : User remote}
@@ -137,8 +137,11 @@ class PullDatabase extends Command
         $p->setTimeout(null);
         $p->run(fn ($type, $buffer) => $this->output->write($buffer));
 
-        if (! $p->isSuccessful()) {
-            $this->error(trim($p->getErrorOutput()) ?: 'Lỗi không rõ');
+        // Pipe "mysqldump | gzip" lấy exit code của gzip → lỗi mysqldump bị nuốt,
+        // dump rỗng/dở dang vẫn bị nạp. Bắt thêm lỗi in ra stderr của mysqldump.
+        $err = trim($p->getErrorOutput());
+        if (! $p->isSuccessful() || preg_match('/^mysqldump: (Got error|Couldn\'t|Error)/m', $err)) {
+            $this->error($err ?: 'Lỗi không rõ');
             return false;
         }
         return true;

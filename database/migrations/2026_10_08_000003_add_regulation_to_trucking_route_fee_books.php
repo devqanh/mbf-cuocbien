@@ -14,6 +14,7 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasColumn('trucking_route_fee_books', 'regulation')) return;
         Schema::table('trucking_route_fee_books', function (Blueprint $table) {
             $table->json('regulation')->nullable()->after('from_date');
         });

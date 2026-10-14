@@ -17,24 +17,30 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('trucking_route_fee_books', function (Blueprint $table) {
-            $table->id();
-            $table->string('label')->nullable();
-            $table->date('from_date')->nullable();
-            $table->unsignedInteger('sort')->default(0);
-            $table->timestamps();
-        });
-        Schema::table('trucking_route_fees', function (Blueprint $table) {
-            $table->foreignId('book_id')->nullable()->after('id')
-                  ->constrained('trucking_route_fee_books')->cascadeOnDelete();
-        });
+        // Idempotent: DB kéo từ server có thể đã có bảng/cột này mà bảng migrations chưa ghi nhận.
+        if (! Schema::hasTable('trucking_route_fee_books')) {
+            Schema::create('trucking_route_fee_books', function (Blueprint $table) {
+                $table->id();
+                $table->string('label')->nullable();
+                $table->date('from_date')->nullable();
+                $table->unsignedInteger('sort')->default(0);
+                $table->timestamps();
+            });
+        }
+        if (! Schema::hasColumn('trucking_route_fees', 'book_id')) {
+            Schema::table('trucking_route_fees', function (Blueprint $table) {
+                $table->foreignId('book_id')->nullable()->after('id')
+                      ->constrained('trucking_route_fee_books')->cascadeOnDelete();
+            });
+        }
 
-        if (DB::table('trucking_route_fees')->exists()) {
-            $id = DB::table('trucking_route_fee_books')->insertGetId([
-                'label' => 'Mặc định (mọi thời điểm)', 'from_date' => null, 'sort' => 0,
-                'created_at' => now(), 'updated_at' => now(),
-            ]);
-            DB::table('trucking_route_fees')->update(['book_id' => $id]);
+        if (DB::table('trucking_route_fees')->whereNull('book_id')->exists()) {
+            $id = DB::table('trucking_route_fee_books')->whereNull('from_date')->orderBy('id')->value('id')
+                ?? DB::table('trucking_route_fee_books')->insertGetId([
+                    'label' => 'Mặc định (mọi thời điểm)', 'from_date' => null, 'sort' => 0,
+                    'created_at' => now(), 'updated_at' => now(),
+                ]);
+            DB::table('trucking_route_fees')->whereNull('book_id')->update(['book_id' => $id]);
         }
     }
 
