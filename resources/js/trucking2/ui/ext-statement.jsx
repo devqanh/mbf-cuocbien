@@ -234,7 +234,9 @@ function ExtLinesTable({ vendor, no, date, from, to, lines, footerTotal, onPaid,
               </td>
               <td className="tnum" style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", fontWeight: 600, verticalAlign: "top" }}>
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: paidTone("fee") }}>
-                  {onPaid && ((l.fee || 0) + (l.vat || 0)) !== 0 && <PartChk l={l} k="fee" title="cước" />}{fmtNum(l.fee)}
+                  {(l.fee || 0) + (l.vat || 0) !== 0
+                    ? <>{onPaid && <PartChk l={l} k="fee" title="cước" />}{fmtNum(l.fee)}</>
+                    : <span title="Lô không có cước thuê xe ngoài — chỉ có chi hộ" style={{ color: "var(--ink-4)", fontWeight: 400 }}>—</span>}
                 </span>
               </td>
               {hasVat && <td style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", verticalAlign: "top" }}>
@@ -242,14 +244,21 @@ function ExtLinesTable({ vendor, no, date, from, to, lines, footerTotal, onPaid,
                 {l.vatRate > 0 && <div style={{ fontSize: 10.5, color: "var(--ink-4)" }}>{l.vatRate}%</div>}
               </td>}
               {hasChoho && <td style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", verticalAlign: "top" }}>
-                <div className="tnum" style={{ color: l.choho ? "var(--ink-2)" : "var(--ink-4)" }}>{l.choho ? fmtNum(l.choho) : "—"}</div>
-                {onPaid && items.length > 0
+                {onPaid && items.length === 1
+                  /* 1 khoản: hiện thẳng khoản đó kèm ô tích — không lặp lại số tổng chi hộ. */
+                  ? <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6, color: paidTone("i:" + items[0].key) || "var(--ink-2)" }}>
+                      <span style={{ fontSize: 10.5, color: paidTone("i:" + items[0].key) || "var(--ink-4)" }}>{items[0].item}</span>
+                      <span className="tnum">{fmtNum(items[0].amount)}</span>
+                      <PartChk l={l} k={"i:" + items[0].key} title={items[0].item} />
+                    </div>
+                  : <div className="tnum" style={{ color: l.choho ? "var(--ink-2)" : "var(--ink-4)" }}>{l.choho ? fmtNum(l.choho) : "—"}</div>}
+                {onPaid && items.length > 1
                   ? items.map((it) => (
                       <div key={it.key} style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 5, fontSize: 10.5, color: paidTone("i:" + it.key) || "var(--ink-4)", lineHeight: 1.3, marginTop: 2 }}>
                         <span>{it.item} <span className="tnum">{fmtNum(it.amount)}</span></span>
                         <PartChk l={l} k={"i:" + it.key} title={it.item} />
                       </div>))
-                  : (l.chohoNote && <div style={{ fontSize: 10.5, color: "var(--ink-4)", lineHeight: 1.3, marginTop: 1 }}>{l.chohoNote}</div>)}
+                  : (l.chohoNote && !(onPaid && items.length === 1) && <div style={{ fontSize: 10.5, color: "var(--ink-4)", lineHeight: 1.3, marginTop: 1 }}>{l.chohoNote}</div>)}
               </td>}
               <td className="tnum" style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", fontWeight: 700, verticalAlign: "top" }}>
                 {fmtNum(lineSum(l))}
