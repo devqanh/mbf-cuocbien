@@ -5,11 +5,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/** Một khoản chi phí của lô — số tiền, người chi, tích chi hộ, màu theo dõi. */
+/** Một khoản chi phí của lô — số tiền, người chi, tích chi hộ, tích chi cho xe ngoài (ext_pay → Bảng kê xe ngoài), màu theo dõi. */
 class TruckingCostLine extends Model
 {
     protected $fillable = [
-        'shipment_id', 'item', 'cost_item_id', 'amount', 'vat', 'invoice_no', 'payer', 'payer_id', 'date', 'billable', 'color', 'src', 'note', 'sort',
+        'shipment_id', 'item', 'cost_item_id', 'amount', 'vat', 'invoice_no', 'payer', 'payer_id', 'date', 'billable', 'ext_pay', 'color', 'src', 'note', 'sort',
     ];
 
     protected $casts = [
@@ -17,6 +17,7 @@ class TruckingCostLine extends Model
         'vat'      => 'decimal:2',
         'date'     => 'date',
         'billable' => 'boolean',
+        'ext_pay'  => 'boolean',
         'sort'     => 'integer',
     ];
 

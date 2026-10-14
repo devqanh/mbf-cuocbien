@@ -262,7 +262,7 @@ function FlagPicker({ value, missing, onChange }) {
   );
 }
 
-function CostLineRows({ rows = [], onChange, options = [], onCreate, payers = [], onCreatePayer, prices = {}, costColors = {}, costVat = {} }) {
+function CostLineRows({ rows = [], onChange, options = [], onCreate, payers = [], onCreatePayer, prices = {}, costColors = {}, costVat = {}, showExtPay = false, extVendor = "" }) {
   const isMobile = useIsMobile();
   const set = (id, np) => onChange(rows.map((e) => (e.id === id ? { ...e, ...np } : e)));
   // Chọn khoản → tự fill đơn giá (nếu trống) + VAT% mặc định (nếu chưa nhập); vẫn sửa lại được.
@@ -271,16 +271,19 @@ function CostLineRows({ rows = [], onChange, options = [], onCreate, payers = []
     amount: toNum(e.amount) ? e.amount : (prices[item] || ""),
     vat: (e.vat === undefined || e.vat === null || e.vat === "") ? (costVat[item] ?? "") : e.vat,
   });
-  const add = () => onChange([...rows, { id: Date.now() + Math.random(), item: "", amount: "", vat: "", invoiceNo: "", payer: "", date: "", note: "", billable: false }]);
+  const add = () => onChange([...rows, { id: Date.now() + Math.random(), item: "", amount: "", vat: "", invoiceNo: "", payer: "", date: "", note: "", billable: false, extPay: false }]);
   const del = (id) => onChange(rows.filter((e) => e.id !== id));
-  const cols = "1fr 116px 64px 124px 116px 118px 130px 80px 44px 28px";
+  // Cột "Xe ngoài" (tích = kéo khoản vào Bảng kê xe ngoài) chỉ hiện với lô thuê xe ngoài.
+  const cols = showExtPay ? "1fr 112px 60px 116px 112px 118px 116px 58px 78px 44px 28px" : "1fr 116px 64px 124px 116px 118px 130px 80px 44px 28px";
+  const heads = ["Khoản chi phí", "Số tiền", "VAT %", "Số hóa đơn", "Người chi", "Ngày hóa đơn", "Ghi chú", "Chi hộ", ...(showExtPay ? ["Chi hộ xe ngoài"] : []), "Theo dõi", ""];
   return (
     <div style={{ padding: "4px 0 0" }}>
       <div style={{ overflowX: isMobile ? "auto" : "visible", WebkitOverflowScrolling: "touch" }}>
       <div style={{ minWidth: isMobile ? 990 : undefined }}>
       <div style={{ display: "grid", gridTemplateColumns: cols, gap: 9, padding: "8px 0 5px" }}>
-        {["Khoản chi phí", "Số tiền", "VAT %", "Số hóa đơn", "Người chi", "Ngày hóa đơn", "Ghi chú", "Chi hộ", "Theo dõi", ""].map((h, i) => (
-          <div key={i} style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-4)", textTransform: "uppercase", letterSpacing: "0.04em", textAlign: i === 1 ? "right" : (i === 2 || i === 7 || i === 8) ? "center" : "left" }}>{h}</div>
+        {heads.map((h, i) => (
+          <div key={i} title={h === "Chi hộ xe ngoài" ? "Tích = khoản này chi cho / qua xe ngoài → tự vào Bảng kê xe ngoài của nhà xe" : undefined}
+            style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-4)", textTransform: "uppercase", letterSpacing: "0.04em", textAlign: i === 1 ? "right" : (i === 2 || (i >= 7 && i < heads.length - 1)) ? "center" : "left" }}>{h}</div>
         ))}
       </div>
       {rows.map((e) => {
@@ -309,6 +312,11 @@ function CostLineRows({ rows = [], onChange, options = [], onCreate, payers = []
           <DateField value={e.date} onChange={(x) => set(e.id, { date: x })} />
           <Txt value={e.note} onChange={(x) => set(e.id, { note: x })} placeholder="Ghi chú…" />
           <div style={{ display: "flex", justifyContent: "center" }}><ChkBox checked={!!e.billable} onChange={(v) => set(e.id, { billable: v })} /></div>
+          {showExtPay && <div style={{ display: "flex", justifyContent: "center" }}
+            title={locked ? "Cước xe ngoài đã tự vào Bảng kê xe ngoài" : (e.extPay ? "Đang kéo vào Bảng kê xe ngoài" : "Tích để kéo khoản này vào Bảng kê xe ngoài")}>
+            {locked ? <span style={{ fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>Cước</span>
+              : <ChkBox checked={!!e.extPay} onChange={(v) => set(e.id, { extPay: v })} />}
+          </div>}
           <div style={{ display: "flex", justifyContent: "center" }}
             title={hex ? ("Màu theo dõi gắn cho khoản này ở Cài đặt" + (missing ? " · chưa có số hóa đơn → hiện nhắc ngoài bảng" : " · đã có số HĐ")) : "Khoản này chưa gắn màu theo dõi (chỉnh ở Cài đặt → Khoản chi phí)"}>
             <span style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 7px", border: "1px solid var(--line)", borderRadius: 999, background: hex ? "#fff" : "var(--line-2)" }}>
@@ -329,6 +337,8 @@ function CostLineRows({ rows = [], onChange, options = [], onCreate, payers = []
       {!rows.length && <div style={{ fontSize: 13, color: "var(--ink-4)", padding: "10px 0" }}>Chưa có khoản chi phí nào.</div>}
       </div>
       </div>
+      {showExtPay && !String(extVendor || "").trim() && rows.some((e) => e.extPay) && <div style={{ fontSize: 12, color: "var(--warn)", fontWeight: 600, padding: "4px 0 2px" }}>⚠ Lô này chưa chọn Nhà xe ngoài (ở Thông tin lô → Thuê xe ngoài) nên khoản tích “Chi hộ xe ngoài” chưa vào được Bảng kê xe ngoài.</div>}
+      {showExtPay && <div style={{ fontSize: 11.5, color: "var(--ink-4)", padding: "2px 0 2px" }}>Tích <b style={{ color: "var(--ink-3)" }}>Chi hộ xe ngoài</b> cho khoản do nhà xe ngoài chi (hoặc phải trả nhà xe) → khoản đó tự vào <b style={{ color: "var(--ink-3)" }}>Bảng kê xe ngoài</b> (cột Chi hộ) của nhà xe.</div>}
       <div style={{ fontSize: 11.5, color: "var(--ink-4)", padding: "2px 0 0" }}>Màu <b style={{ color: "var(--ink-3)" }}>Theo dõi</b> được gắn sẵn cho từng khoản tại <b style={{ color: "var(--ink-3)" }}>Cài đặt → Khoản chi phí</b>. Khoản có gắn màu mà <b style={{ color: "var(--ink-3)" }}>chưa điền số hóa đơn</b> sẽ hiện nhắc ngoài bảng lô; điền rồi thì ẩn.</div>
       <button type="button" onClick={add}
         style={{ display: "inline-flex", alignItems: "center", gap: 7, margin: "8px 0 2px", padding: "6px 10px 6px 7px", background: "transparent", border: "none", cursor: "pointer", color: "var(--accent)", fontSize: 13, fontWeight: 600, borderRadius: 8 }}

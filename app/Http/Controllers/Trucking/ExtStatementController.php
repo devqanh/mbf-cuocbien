@@ -68,6 +68,18 @@ class ExtStatementController extends BaseTruckingController
         return response()->json(['ok' => true, 'statement' => $this->svc->extStatementToArray($st)]);
     }
 
+    /** Tích / bỏ tích "đã chi tiền" cho các dòng lô ngay trên trang xem. */
+    public function setLinesPaid(Request $request, TruckingExtStatement $extStatement): JsonResponse
+    {
+        $d = $request->validate([
+            'lineIds'   => ['required', 'array'],
+            'lineIds.*' => ['integer'],
+            'paid'      => ['required', 'boolean'],
+            'date'      => ['nullable', 'date_format:Y-m-d'],
+        ]);
+        return response()->json(['ok' => true, 'paid' => $this->svc->setExtStatementLinesPaid($extStatement, $d['lineIds'], (bool) $d['paid'], $d['date'] ?? null)]);
+    }
+
     public function destroy(TruckingExtStatement $extStatement): JsonResponse
     {
         $extStatement->delete();

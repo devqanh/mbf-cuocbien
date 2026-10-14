@@ -107,7 +107,8 @@ function CostPopup({ ship, patch, onSave, isDirty, onClose, cfg = {}, addCfg, ta
       </div>
 
       <CostLineRows rows={displayItems} onChange={setItems} options={costOpts} onCreate={addCostItem}
-        payers={payerOpts} onCreatePayer={addPayer} prices={prices} costColors={cfg.costColors || {}} costVat={cfg.costVat || {}} />
+        payers={payerOpts} onCreatePayer={addPayer} prices={prices} costColors={cfg.costColors || {}} costVat={cfg.costVat || {}}
+        showExtPay extVendor={ship.extVendor || ""} />
     </Modal>
   );
 }

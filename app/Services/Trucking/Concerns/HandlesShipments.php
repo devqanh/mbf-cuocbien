@@ -1431,6 +1431,7 @@ trait HandlesShipments
                     'payer'    => $c->payer ?? '',
                     'date'     => $this->outDate($c->date),
                     'billable' => (bool) $c->billable,
+                    'extPay'   => (bool) $c->ext_pay,
                     'color'    => $c->color ?? '',
                     'src'      => $c->src ?? '',
                     'note'     => $c->note ?? '',
@@ -1629,6 +1630,8 @@ trait HandlesShipments
                     'note'     => $this->str($c['note'] ?? null),
                     'sort'     => $i,
                 ];
+                // Cờ "Chi cho xe ngoài" chỉ ghi khi client gửi key — client/import cũ không gửi thì giữ nguyên.
+                if (array_key_exists('extPay', $c)) $attrs['ext_pay'] = ! empty($c['extPay']);
                 if ($row) { $row->fill($attrs)->save(); $sentIds[] = $row->id; }
                 else       { $sentIds[] = $s->costLines()->create($attrs)->id; }
             }

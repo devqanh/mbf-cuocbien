@@ -21,9 +21,9 @@ trait HandlesExtStatements
 {
     /**
      * Ứng viên cho 1 bảng kê xe ngoài: lô của 1 NHÀ XE trong khoảng GIỜ XE ĐẾN.
-     * Lấy lô có cước thuê (ext_fee > 0) HOẶC có chi hộ (cost_billable > 0 — khoản
-     * "Chi hộ khách" ở Chi phí lô hàng). Đẩy lọc vào SQL theo index (ext_vendor,
-     * gio_xe_den) — không kéo toàn bộ lô. Eager-load costLines để cộng chi hộ (gross).
+     * Lấy lô có cước thuê (ext_fee > 0) HOẶC có khoản tích "Chi cho xe ngoài" (ext_pay)
+     * ở Chi phí lô hàng. Đẩy lọc vào SQL theo index (ext_vendor, gio_xe_den) — không kéo
+     * toàn bộ lô. Eager-load costLines để cộng các khoản chi cho xe ngoài (gross).
      */
     public function extStatementCandidates(string $vendor, ?string $from, ?string $to): array
     {
@@ -34,7 +34,7 @@ trait HandlesExtStatements
             ->where('ext_vendor', $v)
             ->whereNotNull('gio_xe_den')
             ->where(function ($w) {
-                $w->where('ext_fee', '>', 0)->orWhere('cost_billable', '>', 0);
+                $w->where('ext_fee', '>', 0)->orWhereHas('costLines', fn ($c) => $c->where('ext_pay', true));
             });
         if ($from) $q->where('gio_xe_den', '>=', $from . ' 00:00:00');
         if ($to)   $q->where('gio_xe_den', '<=', $to . ' 23:59:59');
@@ -47,9 +47,9 @@ trait HandlesExtStatements
                 ? ($s->qty . ' × ' . $s->cont_type)
                 : (($s->cont_no ?: $s->cont_type) . ($s->cont_no ? ' · ' . $s->cont_type : ''));
             $fee   = (int) round((float) $s->ext_fee);
-            // Chi hộ = các khoản "Chi hộ khách" (billable) ở Chi phí lô hàng — gross (như bảng kê khách).
+            // Chi hộ = các khoản tích "Chi cho xe ngoài" (ext_pay) ở Chi phí lô hàng — gross (như bảng kê khách).
             $chohoItems = []; $choho = 0;
-            foreach ($s->costLines->where('billable', true) as $c) {
+            foreach ($s->costLines->where('ext_pay', true) as $c) {
                 $amt = (int) round((float) $c->amount);
                 $choho += $amt;
                 $chohoItems[] = ['item' => $c->item ?: '(khoản)', 'amount' => $amt];
@@ -134,6 +134,7 @@ trait HandlesExtStatements
                     'choho_note'       => $this->str($l['chohoNote'] ?? null),
                     'vat_rate'         => (float) ($l['vatRate'] ?? 0),
                     'note'             => $this->str($l['note'] ?? null),
+                    'paid_at'          => $this->inDate($l['paidAt'] ?? null),   // giữ dấu "đã chi" khi lưu lại
                     'sort'             => $i,
                     'created_at'       => $now,
                     'updated_at'       => $now,
@@ -180,6 +181,7 @@ trait HandlesExtStatements
               ->orWhere(function ($a) use ($filters) { $a->whereNull('period_to')->where('date', '<=', $filters['to']); });
         });
 
+        $q->withCount(['lines', 'lines as paid_count' => fn ($l) => $l->whereNotNull('paid_at')]);
         return $q->orderByDesc('id')->get()->map(function ($st) {
             $total = (int) round((float) $st->total);
             $paid  = (int) $st->payments->reduce(fn ($a, $p) => $a + (int) round((float) $p->amount), 0);
@@ -194,7 +196,8 @@ trait HandlesExtStatements
                 'total'  => $total,
                 'paid'   => $paid,
                 'conNo'  => $total - $paid,
-                'count'  => $st->lines()->count(),
+                'count'     => (int) $st->lines_count,
+                'paidCount' => (int) $st->paid_count,   // số lô đã tích "đã chi"
             ];
         })->all();
     }
@@ -221,6 +224,7 @@ trait HandlesExtStatements
                 $rate = (float) $l->vat_rate;
                 return [
                     'id'        => $l->shipment_id ?? $l->id,
+                    'lineId'    => $l->id,
                     'booking'   => $l->booking ?? '',
                     'customer'  => $l->customer ?? '',
                     'io'        => $l->io ?? '',
@@ -236,6 +240,7 @@ trait HandlesExtStatements
                     'vatRate'   => $rate,
                     'vat'       => (int) round($fee * $rate / 100),   // VAT chỉ trên cước
                     'note'      => $l->note ?? '',
+                    'paidAt'    => $this->outDate($l->paid_at),   // '' = chưa chi
                 ];
             })->all(),
             'payments' => $st->payments->map(fn ($p) => [
@@ -245,5 +250,22 @@ trait HandlesExtStatements
                 'note'   => $p->note ?? '',
             ])->all(),
         ];
+    }
+
+    /**
+     * Tích / bỏ tích "đã chi tiền" cho các dòng lô (theo id dòng) của 1 bảng kê — ghi ngay,
+     * không đụng các cột khác. Trả map {lineId: paidAt|''} sau khi cập nhật.
+     */
+    public function setExtStatementLinesPaid(TruckingExtStatement $st, array $lineIds, bool $paid, ?string $date = null): array
+    {
+        $ids = array_values(array_filter(array_map('intval', $lineIds)));
+        if ($ids) {
+            $st->lines()->whereIn('id', $ids)->update([
+                'paid_at'    => $paid ? ($date ?: Carbon::today()->toDateString()) : null,
+                'updated_at' => Carbon::now(),
+            ]);
+        }
+        return $st->lines()->whereIn('id', $ids)->get(['id', 'paid_at'])
+            ->mapWithKeys(fn ($l) => [$l->id => $this->outDate($l->paid_at)])->all();
     }
 }

@@ -276,6 +276,7 @@ Route::middleware(['auth', RestrictSpendOnlySession::class])->group(function () 
         });
         Route::middleware('permission:extStatements.update')->group(function () {
             Route::put('/ext-statements/{extStatement}', [ExtStatementController::class, 'update'])->name('extStatements.update');
+            Route::patch('/ext-statements/{extStatement}/paid', [ExtStatementController::class, 'setLinesPaid'])->name('extStatements.paid');   // tích "đã chi" từng lô
         });
         Route::middleware('permission:extStatements.delete')->group(function () {
             Route::delete('/ext-statements/{extStatement}', [ExtStatementController::class, 'destroy'])->name('extStatements.destroy');

@@ -16,6 +16,56 @@ function IoBadge({ io }) {
   return <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 999, color: tone[0], background: tone[1], whiteSpace: "nowrap" }}>{io}</span>;
 }
 
+/* Tiến độ "đã chi" của 1 bảng kê: x/y lô (xanh khi đủ, hổ phách khi dở dang). */
+function PaidProgress({ n, total }) {
+  n = n || 0;
+  if (!total) return null;
+  const tone = n >= total ? "var(--good)" : n > 0 ? "var(--warn)" : "var(--ink-4)";
+  return <span className="tnum" style={{ color: tone, fontWeight: 600 }}>{n >= total ? "Đã chi đủ" : `Đã chi ${n}/${total}`}</span>;
+}
+
+const lineSum = (l) => (l.fee || 0) + (l.vat || 0) + (l.choho || 0);
+
+/* Bộ lọc Tất cả / Chưa chi / Đã chi — mỗi nút kèm số lô + số tiền để biết ngay còn bao nhiêu chưa chi. */
+function PaidFilter({ lines, value, onChange, payTotal }) {
+  const paid = lines.filter((l) => l.paidAt);
+  const unpaid = lines.filter((l) => !l.paidAt);
+  const sum = (arr) => arr.reduce((a, l) => a + lineSum(l), 0);
+  const opts = [
+    ["all", "Tất cả", lines, "var(--ink-2)"],
+    ["unpaid", "Chưa chi", unpaid, "var(--warn)"],
+    ["paid", "Đã chi", paid, "var(--good)"],
+  ];
+  const paidSum = sum(paid);
+  const diff = payTotal - paidSum;   // đợt thanh toán đã nhập so với tổng các lô đã tích
+  return (
+    <div className="ke-noprint" style={{ marginBottom: 12 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {opts.map(([k, label, arr, tone]) => {
+          const on = value === k;
+          return (
+            <button key={k} type="button" onClick={() => onChange(k)}
+              style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-start", gap: 1, padding: "7px 13px", minWidth: 130, cursor: "pointer", textAlign: "left",
+                border: "1px solid " + (on ? tone : "var(--line)"), borderRadius: 9, background: on ? "var(--accent-weak-2)" : "#fff", boxShadow: on ? "inset 0 0 0 1px " + tone : "none" }}>
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: tone }}>{label} <span className="tnum" style={{ fontWeight: 600, color: "var(--ink-3)" }}>({arr.length})</span></span>
+              <span className="tnum" style={{ fontSize: 12, color: "var(--ink-2)", fontWeight: 600 }}>{fmtVND(sum(arr))}</span>
+            </button>
+          );
+        })}
+      </div>
+      {lines.length > 0 && (paid.length > 0 || payTotal > 0) && diff !== 0 && (
+        <div style={{ marginTop: 8, fontSize: 12, color: "var(--ink-3)", display: "flex", alignItems: "flex-start", gap: 6, lineHeight: 1.5 }}>
+          <i className="bi bi-lightbulb" style={{ color: "var(--warn)", marginTop: 1 }} />
+          <span>
+            Các đợt thanh toán đã nhập <b className="tnum">{fmtVND(payTotal)}</b> {diff > 0 ? "nhiều hơn" : "ít hơn"} tổng các lô đã tích chi <b className="tnum">{fmtVND(paidSum)}</b> là <b className="tnum" style={{ color: "var(--warn)" }}>{fmtVND(Math.abs(diff))}</b>
+            {diff > 0 ? " — có thể còn lô đã trả nhưng chưa tích." : " — có lô đã tích nhưng chưa nhập đợt thanh toán."}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ============================================================
  * Danh sách bảng kê xe ngoài (theo nhà xe) — Tổng / Đã trả / Còn nợ.
  * ============================================================ */
@@ -49,7 +99,7 @@ function ExtKePage({ ke, onNew, onOpen }) {
                     <span className="tnum" style={{ color: "var(--ink-3)", fontSize: 12.5 }}>{fmtDate(st.date)}</span>
                   </div>
                   <div style={{ fontWeight: 600, fontSize: 14.5, marginTop: 4 }}>{st.vendor}</div>
-                  <div className="tnum" style={{ color: "var(--ink-4)", fontSize: 12, marginTop: 2 }}>{(st.from || st.to) ? `Giờ xe đến: ${fmtDate(st.from) || "…"} – ${fmtDate(st.to) || "…"}` : "—"} · {st.count} lô</div>
+                  <div className="tnum" style={{ color: "var(--ink-4)", fontSize: 12, marginTop: 2 }}>{(st.from || st.to) ? `Giờ xe đến: ${fmtDate(st.from) || "…"} – ${fmtDate(st.to) || "…"}` : "—"} · {st.count} lô · <PaidProgress n={st.paidCount} total={st.count} /></div>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 9, paddingTop: 9, borderTop: "1px solid var(--line-2)" }}>
                     <span style={{ fontSize: 13, color: "var(--ink-3)" }}>Tổng: <b className="tnum" style={{ color: "var(--ink)" }}>{fmtVND(st.total)}</b></span>
                     <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Đã trả: <b className="tnum" style={{ color: "var(--good)" }}>{fmtVND(st.paid)}</b></span>
@@ -79,7 +129,7 @@ function ExtKePage({ ke, onNew, onOpen }) {
               <span style={{ fontWeight: 500 }}>{st.vendor}</span>
               <span className="tnum" style={{ color: "var(--ink-2)" }}>{fmtDate(st.date)}</span>
               <span className="tnum" style={{ color: "var(--ink-3)", fontSize: 12.5 }}>{(st.from || st.to) ? `${fmtDate(st.from) || "…"} – ${fmtDate(st.to) || "…"}` : "—"}</span>
-              <span className="tnum" style={{ textAlign: "right", color: "var(--ink-3)" }}>{st.count}</span>
+              <span className="tnum" style={{ textAlign: "right", color: "var(--ink-3)" }}>{st.count}<div style={{ fontSize: 11 }}><PaidProgress n={st.paidCount} total={st.count} /></div></span>
               <span className="tnum" style={{ textAlign: "right", fontWeight: 700 }}>{fmtVND(st.total)}</span>
               <span className="tnum" style={{ textAlign: "right", color: "var(--good)" }}>{fmtVND(st.paid)}</span>
               <span className="tnum" style={{ textAlign: "right", fontWeight: 700, color: con > 0 ? "var(--warn)" : "var(--good)" }}>{fmtVND(Math.max(0, con))}</span>
@@ -93,14 +143,16 @@ function ExtKePage({ ke, onNew, onOpen }) {
 }
 
 /* Header + bảng dòng (in được) — dùng chung cho tạo + xem. */
-function ExtLinesTable({ vendor, no, date, from, to, lines, footerTotal }) {
+function ExtLinesTable({ vendor, no, date, from, to, lines, footerTotal, onPaid, busy }) {
   const th = (txt, align, w) => <th style={{ textAlign: align || "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase", width: w }}>{txt}</th>;
   const sumFee = lines.reduce((a, l) => a + (l.fee || 0), 0);
   const sumVat = lines.reduce((a, l) => a + (l.vat || 0), 0);
   const sumChoho = lines.reduce((a, l) => a + (l.choho || 0), 0);
   const hasChoho = sumChoho > 0;
   const hasVat = sumVat > 0;
-  const nCols = 5 + (hasVat ? 1 : 0) + (hasChoho ? 1 : 0);   // #, Lô, Cước, [VAT], [Chi hộ], Tổng
+  const nCols = 5 + (hasVat ? 1 : 0) + (hasChoho ? 1 : 0) + (onPaid ? 1 : 0);   // [Đã chi], #, Lô, Cước, [VAT], [Chi hộ], Tổng
+  const allPaid = lines.length > 0 && lines.every((l) => l.paidAt);
+  const chk = { width: 16, height: 16, accentColor: "var(--good)", cursor: busy ? "wait" : "pointer" };
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 20, marginBottom: 14 }}>
@@ -117,15 +169,25 @@ function ExtLinesTable({ vendor, no, date, from, to, lines, footerTotal }) {
         <div style={{ fontWeight: 700, fontSize: 14 }}>Nhà xe: {vendor || "—"}</div>
       </div>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
-        <thead><tr style={{ background: "#fafbfc" }}>{th("#", "center", 30)}{th("Lô / Khách hàng")}{th("Cước", "right")}{hasVat && th("VAT", "right")}{hasChoho && th("Chi hộ", "right")}{th("Tổng", "right")}</tr></thead>
+        <thead><tr style={{ background: "#fafbfc" }}>
+          {onPaid && <th className="ke-noprint" title="Tích / bỏ tích đã chi cho tất cả lô đang hiện" style={{ width: 62, padding: "9px 6px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>
+            <label style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 3, cursor: "pointer" }}>
+              <input type="checkbox" checked={allPaid} disabled={busy || !lines.length} onChange={(e) => onPaid(lines, e.target.checked)} style={chk} />Đã chi
+            </label>
+          </th>}
+          {th("#", "center", 30)}{th("Lô / Khách hàng")}{th("Cước", "right")}{hasVat && th("VAT", "right")}{hasChoho && th("Chi hộ", "right")}{th("Tổng", "right")}</tr></thead>
         <tbody>
           {lines.length === 0 && <tr><td colSpan={nCols} style={{ padding: "20px", textAlign: "center", color: "var(--ink-4)" }}>Chưa có dòng nào.</td></tr>}
           {lines.map((l, i) => {
             const route = [l.from, l.to].filter(Boolean).join(" → ");
             const meta = [l.sheet, l.contLabel, l.bks].filter(Boolean).join(" · ");
             return (
-            <tr key={l.id}>
-              <td className="tnum" style={{ textAlign: "center", padding: "8px 6px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-4)", verticalAlign: "top" }}>{i + 1}</td>
+            <tr key={l.lineId || l.id} style={{ background: onPaid && l.paidAt ? "#f3faf6" : undefined }}>
+              {onPaid && <td className="ke-noprint" style={{ textAlign: "center", padding: "8px 6px", borderBottom: "1px solid var(--line-2)", verticalAlign: "top" }}>
+                <input type="checkbox" checked={!!l.paidAt} disabled={busy} onChange={(e) => onPaid([l], e.target.checked)} title={l.paidAt ? "Bỏ đánh dấu đã chi" : "Đánh dấu đã chi tiền cho lô này"} style={{ ...chk, marginTop: 2 }} />
+                {l.paidAt && <div className="tnum" style={{ fontSize: 10, color: "var(--good)", marginTop: 2 }}>{fmtDate(l.paidAt)}</div>}
+              </td>}
+              <td className="tnum" style={{ textAlign: "center", padding: "8px 6px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-4)", verticalAlign: "top" }}>{l._n || i + 1}</td>
               <td style={{ padding: "8px", borderBottom: "1px solid var(--line-2)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   <span style={{ fontWeight: 700 }} className="tnum">{l.booking || "—"}</span>
@@ -150,6 +212,7 @@ function ExtLinesTable({ vendor, no, date, from, to, lines, footerTotal }) {
         </tbody>
         <tfoot>
           <tr style={{ fontWeight: 700 }}>
+            {onPaid && <td className="ke-noprint" style={{ borderTop: "1.5px solid var(--line)" }}></td>}
             <td colSpan={2} style={{ padding: "9px 8px", borderTop: "1.5px solid var(--line)", textAlign: "right", color: "var(--ink-3)" }}>TỔNG</td>
             <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(sumFee)}</td>
             {hasVat && <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(sumVat)}</td>}
@@ -244,7 +307,7 @@ function ExtStatementForm({ cfg, onCancel, onSaved }) {
 
       <div className="ke-noprint" style={{ fontSize: 11.5, color: "var(--ink-4)", padding: "8px 0 0", display: "flex", alignItems: "flex-start", gap: 6, lineHeight: 1.5 }}>
         <i className="bi bi-info-circle" style={{ marginTop: 1 }} />
-        <span>Lọc theo <b style={{ color: "var(--ink-3)" }}>Giờ xe đến</b>. Hiện lô có <b style={{ color: "var(--ink-3)" }}>cước thuê xe ngoài</b> hoặc <b style={{ color: "var(--ink-3)" }}>chi hộ</b>. <b style={{ color: "var(--ink-3)" }}>VAT</b> chỉ áp lên cước (chi hộ không VAT); chọn VAT mặc định ở trên hoặc sửa từng lô. Tổng = cước + VAT + chi hộ.</span>
+        <span>Lọc theo <b style={{ color: "var(--ink-3)" }}>Giờ xe đến</b>. Hiện lô có <b style={{ color: "var(--ink-3)" }}>cước thuê xe ngoài</b> hoặc khoản chi phí tích <b style={{ color: "var(--ink-3)" }}>Chi hộ xe ngoài</b> (cột Chi hộ). <b style={{ color: "var(--ink-3)" }}>VAT</b> chỉ áp lên cước (chi hộ không VAT); chọn VAT mặc định ở trên hoặc sửa từng lô. Tổng = cước + VAT + chi hộ.</span>
       </div>
 
       {/* printable statement */}
@@ -352,7 +415,9 @@ function ExtStatementForm({ cfg, onCancel, onSaved }) {
 /* ============================================================
  * Trang xem bảng kê xe ngoài đã lưu: dòng + thanh toán + công nợ.
  * ============================================================ */
-function SavedExtStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUrl }) {
+function SavedExtStatementPage({ st, onUpdate, onSave, onDelete, onLinesPaid, isDirty, backUrl }) {
+  const [paidFilter, setPaidFilter] = useState("all");
+  const [paidBusy, setPaidBusy] = useState(false);
   const [payments, setPayments] = useState(st.payments || []);
   const sync = (arr) => { setPayments(arr); onUpdate && onUpdate({ ...st, payments: arr }); };
   const setP = (id, np) => sync(payments.map((p) => (p.id === id ? { ...p, ...np } : p)));
@@ -379,6 +444,16 @@ function SavedExtStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUr
   };
   const th = (txt, align) => <th style={{ textAlign: align || "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>{txt}</th>;
 
+  const allLines = (st.lines || []).map((l, i) => ({ ...l, _n: i + 1 }));
+  const shown = allLines.filter((l) => paidFilter === "all" || (paidFilter === "paid" ? !!l.paidAt : !l.paidAt));
+  const shownTotal = paidFilter === "all" ? total : shown.reduce((a, l) => a + lineSum(l), 0);
+  const togglePaid = (ls, on) => {
+    const ids = ls.filter((l) => !!l.paidAt !== on).map((l) => l.lineId).filter(Boolean);
+    if (!ids.length || paidBusy || !onLinesPaid) return;
+    setPaidBusy(true);
+    Promise.resolve(onLinesPaid(ids, on)).finally(() => setPaidBusy(false));
+  };
+
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
       <div className="ke-noprint trk-head" style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 22px", background: "#fff", borderBottom: "1px solid var(--line)" }}>
@@ -396,7 +471,9 @@ function SavedExtStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUr
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "22px" }}>
         <div style={{ maxWidth: 940, margin: "0 auto", background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "8px 22px 18px" }}>
           <div className="ke-print" style={{ padding: "16px 4px 4px", background: "#fff" }}>
-            <ExtLinesTable vendor={st.vendor} no={st.no} date={st.date} from={st.from} to={st.to} lines={st.lines || []} footerTotal={total} />
+            <PaidFilter lines={allLines} value={paidFilter} onChange={setPaidFilter} payTotal={paid} />
+            <ExtLinesTable vendor={st.vendor} no={st.no} date={st.date} from={st.from} to={st.to} lines={shown} footerTotal={shownTotal}
+              onPaid={onLinesPaid ? togglePaid : null} busy={paidBusy} />
 
             {/* payments / công nợ */}
             <div style={{ marginTop: 18 }}>

@@ -10,11 +10,12 @@ class TruckingExtStatementLine extends Model
 {
     protected $fillable = [
         'ext_statement_id', 'shipment_id', 'booking', 'customer', 'io', 'sheet', 'bks',
-        'from_loc', 'to_loc', 'cont_label', 'date', 'fee', 'choho', 'choho_note', 'vat_rate', 'note', 'sort',
+        'from_loc', 'to_loc', 'cont_label', 'date', 'fee', 'choho', 'choho_note', 'vat_rate', 'note', 'paid_at', 'sort',
     ];
 
     protected $casts = [
         'date'     => 'date',
+        'paid_at'  => 'date',
         'fee'      => 'decimal:2',
         'choho'    => 'decimal:2',
         'vat_rate' => 'decimal:2',

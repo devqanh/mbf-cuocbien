@@ -28,8 +28,17 @@ function ViewExtStatementApp() {
     })
     .catch(() => { window.trkToast && window.trkToast("Lỗi kết nối khi lưu", "error"); return false; });
   const onDelete = () => api("DELETE", ROUTES.extStatement + (st.hashid || st.id));
+  // Tích "đã chi" ghi ngay (PATCH) — chỉ cập nhật paidAt các dòng, không đánh dấu thay đổi chưa lưu.
+  const onLinesPaid = (lineIds, paid) => api("PATCH", ROUTES.extStatement + (st.hashid || st.id) + "/paid", { lineIds, paid })
+    .then((r) => {
+      if (!r || !r.ok) { window.trkToast && window.trkToast("Không cập nhật được trạng thái đã chi", "error"); return; }
+      const m = r.paid || {};
+      setSt((cur) => ({ ...cur, lines: (cur.lines || []).map((l) => (l.lineId in m ? { ...l, paidAt: m[l.lineId] } : l)) }));
+      window.trkToast && window.trkToast(paid ? `Đã đánh dấu chi ${lineIds.length} lô` : `Đã bỏ đánh dấu ${lineIds.length} lô`);
+    })
+    .catch(() => { window.trkToast && window.trkToast("Lỗi kết nối", "error"); });
 
-  return <SavedExtStatementPage st={st} onUpdate={onUpdate} onSave={onSave} onDelete={onDelete} isDirty={isDirty} backUrl={ROUTES.list} />;
+  return <SavedExtStatementPage st={st} onUpdate={onUpdate} onSave={onSave} onDelete={onDelete} onLinesPaid={onLinesPaid} isDirty={isDirty} backUrl={ROUTES.list} />;
 }
 
 createRoot(document.getElementById("trk-root")).render(<ViewExtStatementApp />);
