@@ -52,7 +52,7 @@ trait HandlesExtStatements
             foreach ($s->costLines->where('ext_pay', true) as $c) {
                 $amt = (int) round((float) $c->amount);
                 $choho += $amt;
-                $chohoItems[] = ['item' => $c->item ?: '(khoản)', 'amount' => $amt];
+                $chohoItems[] = ['key' => (string) $c->id, 'item' => $c->item ?: '(khoản)', 'amount' => $amt];
             }
             if ($fee <= 0 && $choho <= 0) continue;   // không có gì để trả nhà xe
             $out[] = [
@@ -117,6 +117,14 @@ trait HandlesExtStatements
             $st->lines()->delete();
             $linesBatch = [];
             foreach (($data['lines'] ?? []) as $i => $l) {
+                $fee   = $this->inMoney($l['fee'] ?? null) ?? 0;
+                $items = $this->extChohoItems($l['chohoItems'] ?? null, (int) ($this->inMoney($l['choho'] ?? null) ?? 0), $l['chohoNote'] ?? '');
+                $parts = $this->extLineParts((int) round($fee), (int) round($fee * (float) ($l['vatRate'] ?? 0) / 100), $items);
+                // Dấu đã chi theo phần; payload cũ chỉ có paidAt (đã chi đủ) → coi mọi phần đã chi ngày đó.
+                $pp    = $l['paidParts'] ?? null;
+                $paid  = (is_array($pp) || is_object($pp)) ? (array) $pp
+                    : (! empty($l['paidAt']) ? array_fill_keys(array_keys($parts), $l['paidAt']) : []);
+                $paid  = $this->extCleanPaid($paid, $parts);
                 $linesBatch[] = [
                     'ext_statement_id' => $st->id,
                     'shipment_id'      => $l['id'] ?? null,
@@ -132,9 +140,11 @@ trait HandlesExtStatements
                     'fee'              => $this->inMoney($l['fee'] ?? null) ?? 0,
                     'choho'            => $this->inMoney($l['choho'] ?? null) ?? 0,
                     'choho_note'       => $this->str($l['chohoNote'] ?? null),
+                    'choho_items'      => $items ? json_encode($items, JSON_UNESCAPED_UNICODE) : null,
                     'vat_rate'         => (float) ($l['vatRate'] ?? 0),
                     'note'             => $this->str($l['note'] ?? null),
-                    'paid_at'          => $this->inDate($l['paidAt'] ?? null),   // giữ dấu "đã chi" khi lưu lại
+                    'paid_at'          => $this->extLinePaidAt($parts, $paid),   // đã chi ĐỦ = mọi phần đã tích
+                    'paid_parts'       => $paid ? json_encode($paid) : null,
                     'sort'             => $i,
                     'created_at'       => $now,
                     'updated_at'       => $now,
@@ -240,7 +250,9 @@ trait HandlesExtStatements
                     'vatRate'   => $rate,
                     'vat'       => (int) round($fee * $rate / 100),   // VAT chỉ trên cước
                     'note'      => $l->note ?? '',
-                    'paidAt'    => $this->outDate($l->paid_at),   // '' = chưa chi
+                    'paidAt'    => $this->outDate($l->paid_at),   // '' = chưa chi đủ
+                    'chohoItems' => $this->extChohoItems($l->choho_items, (int) round((float) $l->choho), $l->choho_note ?? ''),
+                    'paidParts'  => (object) $this->extLinePaidParts($l),
                 ];
             })->all(),
             'payments' => $st->payments->map(fn ($p) => [
@@ -253,19 +265,87 @@ trait HandlesExtStatements
     }
 
     /**
-     * Tích / bỏ tích "đã chi tiền" cho các dòng lô (theo id dòng) của 1 bảng kê — ghi ngay,
-     * không đụng các cột khác. Trả map {lineId: paidAt|''} sau khi cập nhật.
+     * Tích / bỏ tích "đã chi" cho các dòng lô của 1 bảng kê — ghi ngay, không đụng cột khác.
+     * $part = null → mọi phần của dòng; 'fee' → cước (+VAT); 'i:<key>' → 1 khoản chi hộ.
+     * Trả map {lineId: {paidAt, paidParts}} sau khi cập nhật.
      */
-    public function setExtStatementLinesPaid(TruckingExtStatement $st, array $lineIds, bool $paid, ?string $date = null): array
+    public function setExtStatementLinesPaid(TruckingExtStatement $st, array $lineIds, bool $paid, ?string $date = null, ?string $part = null): array
     {
-        $ids = array_values(array_filter(array_map('intval', $lineIds)));
-        if ($ids) {
-            $st->lines()->whereIn('id', $ids)->update([
-                'paid_at'    => $paid ? ($date ?: Carbon::today()->toDateString()) : null,
-                'updated_at' => Carbon::now(),
-            ]);
+        $ids  = array_values(array_filter(array_map('intval', $lineIds)));
+        $date = $date ?: Carbon::today()->toDateString();
+        $out  = [];
+        foreach ($st->lines()->whereIn('id', $ids)->get() as $l) {
+            $parts = $this->extLinePartsOf($l);
+            $cur   = $this->extLinePaidParts($l);
+            foreach ($part !== null ? array_intersect([$part], array_keys($parts)) : array_keys($parts) as $k) {
+                if ($paid) $cur[$k] ??= $date; else unset($cur[$k]);
+            }
+            $l->paid_parts = $cur ?: null;
+            $l->paid_at    = $this->extLinePaidAt($parts, $cur);
+            $l->save();
+            $out[$l->id] = ['paidAt' => $this->outDate($l->paid_at), 'paidParts' => (object) $cur];
         }
-        return $st->lines()->whereIn('id', $ids)->get(['id', 'paid_at'])
-            ->mapWithKeys(fn ($l) => [$l->id => $this->outDate($l->paid_at)])->all();
+        return $out;
+    }
+
+    /**
+     * Các khoản chi hộ của 1 dòng [{key, item, amount}]. Dòng cũ chưa lưu chi tiết → gộp 1 khoản
+     * "Chi hộ" (key 'choho') để vẫn tích chi được.
+     */
+    private function extChohoItems($items, int $choho, string $note): array
+    {
+        if (is_string($items)) $items = json_decode($items, true);
+        if (is_array($items) && $items) {
+            return array_values(array_map(fn ($it, $i) => [
+                'key'    => (string) ($it['key'] ?? $i),
+                'item'   => (string) ($it['item'] ?? ''),
+                'amount' => (int) round((float) ($it['amount'] ?? 0)),
+            ], $items, array_keys($items)));
+        }
+        return $choho ? [['key' => 'choho', 'item' => trim($note) !== '' ? $note : 'Chi hộ', 'amount' => $choho]] : [];
+    }
+
+    /** Các phần tiền tích chi riêng được: 'fee' => cước+VAT, 'i:<key>' => 1 khoản chi hộ (bỏ phần 0đ). */
+    private function extLineParts(int $fee, int $vat, array $items): array
+    {
+        $parts = [];
+        if ($fee + $vat !== 0) $parts['fee'] = $fee + $vat;
+        foreach ($items as $it) {
+            if ((int) $it['amount'] !== 0) $parts['i:' . $it['key']] = (int) $it['amount'];
+        }
+        return $parts;
+    }
+
+    private function extLinePartsOf(TruckingExtStatementLine $l): array
+    {
+        $fee = (int) round((float) $l->fee);
+        return $this->extLineParts($fee, (int) round($fee * (float) $l->vat_rate / 100),
+            $this->extChohoItems($l->choho_items, (int) round((float) $l->choho), $l->choho_note ?? ''));
+    }
+
+    /** Dấu đã chi theo phần của dòng; dòng chỉ có paid_at (đã chi đủ, trước khi tách phần) → mọi phần. */
+    private function extLinePaidParts(TruckingExtStatementLine $l): array
+    {
+        $parts = $this->extLinePartsOf($l);
+        if (is_array($l->paid_parts)) return $this->extCleanPaid($l->paid_parts, $parts);
+        return $l->paid_at ? array_fill_keys(array_keys($parts), $l->paid_at->toDateString()) : [];
+    }
+
+    /** Chỉ giữ dấu của phần còn tồn tại, ngày hợp lệ Y-m-d. */
+    private function extCleanPaid(array $paid, array $parts): array
+    {
+        $out = [];
+        foreach ($paid as $k => $d) {
+            if (isset($parts[$k]) && is_string($d) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $d)) $out[$k] = $d;
+        }
+        return $out;
+    }
+
+    /** Đã chi ĐỦ khi mọi phần đã tích → ngày chi muộn nhất; còn phần chưa tích → null. */
+    private function extLinePaidAt(array $parts, array $paid): ?string
+    {
+        if (! $parts) return null;
+        foreach (array_keys($parts) as $k) if (empty($paid[$k])) return null;
+        return max(array_intersect_key($paid, $parts));
     }
 }

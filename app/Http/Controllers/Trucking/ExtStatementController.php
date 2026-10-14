@@ -76,8 +76,9 @@ class ExtStatementController extends BaseTruckingController
             'lineIds.*' => ['integer'],
             'paid'      => ['required', 'boolean'],
             'date'      => ['nullable', 'date_format:Y-m-d'],
+            'part'      => ['nullable', 'string', 'max:64'],   // null = cả dòng; 'fee' | 'i:<key>' = 1 phần
         ]);
-        return response()->json(['ok' => true, 'paid' => $this->svc->setExtStatementLinesPaid($extStatement, $d['lineIds'], (bool) $d['paid'], $d['date'] ?? null)]);
+        return response()->json(['ok' => true, 'paid' => $this->svc->setExtStatementLinesPaid($extStatement, $d['lineIds'], (bool) $d['paid'], $d['date'] ?? null, $d['part'] ?? null)]);
     }
 
     public function destroy(TruckingExtStatement $extStatement): JsonResponse

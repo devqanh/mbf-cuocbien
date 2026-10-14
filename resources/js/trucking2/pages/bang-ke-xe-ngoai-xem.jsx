@@ -29,12 +29,12 @@ function ViewExtStatementApp() {
     .catch(() => { window.trkToast && window.trkToast("Lỗi kết nối khi lưu", "error"); return false; });
   const onDelete = () => api("DELETE", ROUTES.extStatement + (st.hashid || st.id));
   // Tích "đã chi" ghi ngay (PATCH) — chỉ cập nhật paidAt các dòng, không đánh dấu thay đổi chưa lưu.
-  const onLinesPaid = (lineIds, paid) => api("PATCH", ROUTES.extStatement + (st.hashid || st.id) + "/paid", { lineIds, paid })
+  const onLinesPaid = (lineIds, paid, part) => api("PATCH", ROUTES.extStatement + (st.hashid || st.id) + "/paid", { lineIds, paid, part: part || null })
     .then((r) => {
       if (!r || !r.ok) { window.trkToast && window.trkToast("Không cập nhật được trạng thái đã chi", "error"); return; }
       const m = r.paid || {};
-      setSt((cur) => ({ ...cur, lines: (cur.lines || []).map((l) => (l.lineId in m ? { ...l, paidAt: m[l.lineId] } : l)) }));
-      window.trkToast && window.trkToast(paid ? `Đã đánh dấu chi ${lineIds.length} lô` : `Đã bỏ đánh dấu ${lineIds.length} lô`);
+      setSt((cur) => ({ ...cur, lines: (cur.lines || []).map((l) => (l.lineId in m ? { ...l, paidAt: m[l.lineId].paidAt, paidParts: m[l.lineId].paidParts || {} } : l)) }));
+      window.trkToast && window.trkToast(part ? (paid ? "Đã tích chi khoản này" : "Đã bỏ tích khoản này") : (paid ? `Đã đánh dấu chi ${lineIds.length} lô` : `Đã bỏ đánh dấu ${lineIds.length} lô`));
     })
     .catch(() => { window.trkToast && window.trkToast("Lỗi kết nối", "error"); });
 

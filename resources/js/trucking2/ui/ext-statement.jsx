@@ -26,39 +26,62 @@ function PaidProgress({ n, total }) {
 
 const lineSum = (l) => (l.fee || 0) + (l.vat || 0) + (l.choho || 0);
 
+/* Các phần của 1 dòng tích chi RIÊNG được: "fee" = cước (+VAT), "i:<key>" = từng khoản chi hộ. */
+const partsOf = (l) => {
+  const out = [];
+  const fee = (l.fee || 0) + (l.vat || 0);
+  if (fee) out.push({ k: "fee", amt: fee, label: "Cước" });
+  (l.chohoItems || []).forEach((it) => { const a = Math.round(it.amount || 0); if (a) out.push({ k: "i:" + it.key, amt: a, label: it.item }); });
+  return out;
+};
+const paidOf = (l) => l.paidParts || {};
+const isFull = (l) => { const p = partsOf(l); return p.length > 0 && p.every((x) => paidOf(l)[x.k]); };
+const paidAmtOf = (l) => partsOf(l).reduce((a, x) => a + (paidOf(l)[x.k] ? x.amt : 0), 0);
+const todayStr = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+/* Tích / bỏ tích 1 phần (part) hoặc cả dòng (part = null) — tính lại paidAt (đã chi đủ). */
+const withPaid = (l, on, part) => {
+  const pp = { ...paidOf(l) };
+  (part ? [part] : partsOf(l).map((x) => x.k)).forEach((k) => { if (on) pp[k] = pp[k] || todayStr(); else delete pp[k]; });
+  const ps = partsOf(l);
+  const full = ps.length > 0 && ps.every((x) => pp[x.k]);
+  return { ...l, paidParts: pp, paidAt: full ? ps.map((x) => pp[x.k]).sort().pop() : "" };
+};
+const lineKey = (l) => (l.lineId ? "l" + l.lineId : "s" + l.id);
+
 /* Bộ lọc Tất cả / Chưa chi / Đã chi — mỗi nút kèm số lô + số tiền để biết ngay còn bao nhiêu chưa chi. */
 function PaidFilter({ lines, value, onChange, payTotal }) {
-  const paid = lines.filter((l) => l.paidAt);
-  const unpaid = lines.filter((l) => !l.paidAt);
-  const sum = (arr) => arr.reduce((a, l) => a + lineSum(l), 0);
+  // Đếm lô: Đã chi = chi ĐỦ mọi phần; Chưa chi = còn ít nhất 1 phần chưa tích. Tiền tính theo từng phần đã/chưa tích.
+  const paid = lines.filter(isFull);
+  const unpaid = lines.filter((l) => !isFull(l));
+  const paidSum = lines.reduce((a, l) => a + paidAmtOf(l), 0);
+  const allSum = lines.reduce((a, l) => a + lineSum(l), 0);
   const opts = [
-    ["all", "Tất cả", lines, "var(--ink-2)"],
-    ["unpaid", "Chưa chi", unpaid, "var(--warn)"],
-    ["paid", "Đã chi", paid, "var(--good)"],
+    ["all", "Tất cả", lines, "var(--ink-2)", allSum],
+    ["unpaid", "Chưa chi", unpaid, "var(--warn)", allSum - paidSum],
+    ["paid", "Đã chi", paid, "var(--good)", paidSum],
   ];
-  const paidSum = sum(paid);
   const diff = payTotal - paidSum;   // đợt thanh toán đã nhập so với tổng các lô đã tích
   return (
     <div className="ke-noprint" style={{ marginBottom: 12 }}>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {opts.map(([k, label, arr, tone]) => {
+        {opts.map(([k, label, arr, tone, amt]) => {
           const on = value === k;
           return (
             <button key={k} type="button" onClick={() => onChange(k)}
               style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-start", gap: 1, padding: "7px 13px", minWidth: 130, cursor: "pointer", textAlign: "left",
                 border: "1px solid " + (on ? tone : "var(--line)"), borderRadius: 9, background: on ? "var(--accent-weak-2)" : "#fff", boxShadow: on ? "inset 0 0 0 1px " + tone : "none" }}>
               <span style={{ fontSize: 12.5, fontWeight: 700, color: tone }}>{label} <span className="tnum" style={{ fontWeight: 600, color: "var(--ink-3)" }}>({arr.length})</span></span>
-              <span className="tnum" style={{ fontSize: 12, color: "var(--ink-2)", fontWeight: 600 }}>{fmtVND(sum(arr))}</span>
+              <span className="tnum" style={{ fontSize: 12, color: "var(--ink-2)", fontWeight: 600 }}>{fmtVND(amt)}</span>
             </button>
           );
         })}
       </div>
-      {lines.length > 0 && (paid.length > 0 || payTotal > 0) && diff !== 0 && (
+      {lines.length > 0 && (paidSum > 0 || payTotal > 0) && diff !== 0 && (
         <div style={{ marginTop: 8, fontSize: 12, color: "var(--ink-3)", display: "flex", alignItems: "flex-start", gap: 6, lineHeight: 1.5 }}>
           <i className="bi bi-lightbulb" style={{ color: "var(--warn)", marginTop: 1 }} />
           <span>
-            Các đợt thanh toán đã nhập <b className="tnum">{fmtVND(payTotal)}</b> {diff > 0 ? "nhiều hơn" : "ít hơn"} tổng các lô đã tích chi <b className="tnum">{fmtVND(paidSum)}</b> là <b className="tnum" style={{ color: "var(--warn)" }}>{fmtVND(Math.abs(diff))}</b>
-            {diff > 0 ? " — có thể còn lô đã trả nhưng chưa tích." : " — có lô đã tích nhưng chưa nhập đợt thanh toán."}
+            Các đợt thanh toán đã nhập <b className="tnum">{fmtVND(payTotal)}</b> {diff > 0 ? "nhiều hơn" : "ít hơn"} tổng các khoản đã tích chi <b className="tnum">{fmtVND(paidSum)}</b> là <b className="tnum" style={{ color: "var(--warn)" }}>{fmtVND(Math.abs(diff))}</b>
+            {diff > 0 ? " — có thể còn khoản đã trả nhưng chưa tích." : " — có khoản đã tích nhưng chưa nhập đợt thanh toán."}
           </span>
         </div>
       )}
@@ -151,8 +174,14 @@ function ExtLinesTable({ vendor, no, date, from, to, lines, footerTotal, onPaid,
   const hasChoho = sumChoho > 0;
   const hasVat = sumVat > 0;
   const nCols = 5 + (hasVat ? 1 : 0) + (hasChoho ? 1 : 0) + (onPaid ? 1 : 0);   // [Đã chi], #, Lô, Cước, [VAT], [Chi hộ], Tổng
-  const allPaid = lines.length > 0 && lines.every((l) => l.paidAt);
+  const allPaid = lines.length > 0 && lines.every(isFull);
   const chk = { width: 16, height: 16, accentColor: "var(--good)", cursor: busy ? "wait" : "pointer" };
+  const chkSm = { width: 14, height: 14, accentColor: "var(--good)", cursor: busy ? "wait" : "pointer", margin: 0, flexShrink: 0 };
+  /* Ô tích 1 phần (cước / 1 khoản chi hộ) — chỉ hiện trên màn hình, không in. */
+  const PartChk = ({ l, k, title }) => (
+    <input type="checkbox" className="ke-noprint" checked={!!paidOf(l)[k]} disabled={busy} title={(paidOf(l)[k] ? "Đã chi " + fmtDate(paidOf(l)[k]) + " — bấm để bỏ" : "Tích đã chi: ") + (paidOf(l)[k] ? "" : title)}
+      onChange={(e) => onPaid([l], e.target.checked, k)} style={chkSm} />
+  );
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 20, marginBottom: 14 }}>
@@ -181,11 +210,17 @@ function ExtLinesTable({ vendor, no, date, from, to, lines, footerTotal, onPaid,
           {lines.map((l, i) => {
             const route = [l.from, l.to].filter(Boolean).join(" → ");
             const meta = [l.sheet, l.contLabel, l.bks].filter(Boolean).join(" · ");
+            const ps = partsOf(l), nParts = ps.length, nPaid = ps.filter((x) => paidOf(l)[x.k]).length;
+            const full = nParts > 0 && nPaid === nParts, partial = nPaid > 0 && !full;
+            const paidTone = (k) => (onPaid && paidOf(l)[k] ? "var(--good)" : undefined);
+            const items = (l.chohoItems || []).filter((it) => Math.round(it.amount || 0));
             return (
-            <tr key={l.lineId || l.id} style={{ background: onPaid && l.paidAt ? "#f3faf6" : undefined }}>
+            <tr key={lineKey(l)} style={{ background: onPaid && full ? "#f3faf6" : undefined }}>
               {onPaid && <td className="ke-noprint" style={{ textAlign: "center", padding: "8px 6px", borderBottom: "1px solid var(--line-2)", verticalAlign: "top" }}>
-                <input type="checkbox" checked={!!l.paidAt} disabled={busy} onChange={(e) => onPaid([l], e.target.checked)} title={l.paidAt ? "Bỏ đánh dấu đã chi" : "Đánh dấu đã chi tiền cho lô này"} style={{ ...chk, marginTop: 2 }} />
-                {l.paidAt && <div className="tnum" style={{ fontSize: 10, color: "var(--good)", marginTop: 2 }}>{fmtDate(l.paidAt)}</div>}
+                <input type="checkbox" checked={full} ref={(el) => { if (el) el.indeterminate = partial; }} disabled={busy || !nParts}
+                  onChange={(e) => onPaid([l], e.target.checked, null)} title={full ? "Bỏ đánh dấu đã chi cả lô" : "Tích đã chi tất cả khoản của lô"} style={{ ...chk, marginTop: 2 }} />
+                {full && <div className="tnum" style={{ fontSize: 10, color: "var(--good)", marginTop: 2 }}>{fmtDate(l.paidAt)}</div>}
+                {partial && <div className="tnum" style={{ fontSize: 10, color: "var(--warn)", marginTop: 2, whiteSpace: "nowrap" }}>{nPaid}/{nParts} khoản</div>}
               </td>}
               <td className="tnum" style={{ textAlign: "center", padding: "8px 6px", borderBottom: "1px solid var(--line-2)", color: "var(--ink-4)", verticalAlign: "top" }}>{l._n || i + 1}</td>
               <td style={{ padding: "8px", borderBottom: "1px solid var(--line-2)" }}>
@@ -197,16 +232,29 @@ function ExtLinesTable({ vendor, no, date, from, to, lines, footerTotal, onPaid,
                 {meta && <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 1 }}>{meta}</div>}
                 <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 1 }}>{fmtDate(l.date) || "—"}{route ? " · " + route : ""}</div>
               </td>
-              <td className="tnum" style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", fontWeight: 600, verticalAlign: "top" }}>{fmtNum(l.fee)}</td>
+              <td className="tnum" style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", fontWeight: 600, verticalAlign: "top" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: paidTone("fee") }}>
+                  {onPaid && ((l.fee || 0) + (l.vat || 0)) !== 0 && <PartChk l={l} k="fee" title="cước" />}{fmtNum(l.fee)}
+                </span>
+              </td>
               {hasVat && <td style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", verticalAlign: "top" }}>
                 <div className="tnum" style={{ color: l.vat ? "var(--ink-2)" : "var(--ink-4)" }}>{l.vat ? fmtNum(l.vat) : "—"}</div>
                 {l.vatRate > 0 && <div style={{ fontSize: 10.5, color: "var(--ink-4)" }}>{l.vatRate}%</div>}
               </td>}
               {hasChoho && <td style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", verticalAlign: "top" }}>
                 <div className="tnum" style={{ color: l.choho ? "var(--ink-2)" : "var(--ink-4)" }}>{l.choho ? fmtNum(l.choho) : "—"}</div>
-                {l.chohoNote && <div style={{ fontSize: 10.5, color: "var(--ink-4)", lineHeight: 1.3, marginTop: 1 }}>{l.chohoNote}</div>}
+                {onPaid && items.length > 0
+                  ? items.map((it) => (
+                      <div key={it.key} style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 5, fontSize: 10.5, color: paidTone("i:" + it.key) || "var(--ink-4)", lineHeight: 1.3, marginTop: 2 }}>
+                        <span>{it.item} <span className="tnum">{fmtNum(it.amount)}</span></span>
+                        <PartChk l={l} k={"i:" + it.key} title={it.item} />
+                      </div>))
+                  : (l.chohoNote && <div style={{ fontSize: 10.5, color: "var(--ink-4)", lineHeight: 1.3, marginTop: 1 }}>{l.chohoNote}</div>)}
               </td>}
-              <td className="tnum" style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", fontWeight: 700, verticalAlign: "top" }}>{fmtNum((l.fee || 0) + (l.vat || 0) + (l.choho || 0))}</td>
+              <td className="tnum" style={{ textAlign: "right", padding: "8px", borderBottom: "1px solid var(--line-2)", fontWeight: 700, verticalAlign: "top" }}>
+                {fmtNum(lineSum(l))}
+                {onPaid && partial && <div className="ke-noprint" style={{ fontSize: 10.5, fontWeight: 600, color: "var(--warn)", marginTop: 2 }}>còn {fmtNum(lineSum(l) - paidAmtOf(l))}</div>}
+              </td>
             </tr>
           );})}
         </tbody>
@@ -267,7 +315,7 @@ function ExtStatementForm({ cfg, onCancel, onSaved }) {
     setSaving(true);
     const lines = sel.map((x) => ({
       id: x.id, booking: x.booking, customer: x.customer, io: x.io, sheet: x.sheet, bks: x.bks,
-      from: x.from, to: x.to, contLabel: x.contLabel, date: x.date, fee: x.fee, choho: x.choho, chohoNote: x.chohoNote, vatRate: rateOf(x), note: x.note,
+      from: x.from, to: x.to, contLabel: x.contLabel, date: x.date, fee: x.fee, choho: x.choho, chohoNote: x.chohoNote, chohoItems: x.chohoItems, vatRate: rateOf(x), note: x.note,
     }));
     const payload = { id: Date.now(), no: keNo, vendor, date: today, from, to, lines, payments: [] };
     let result;
@@ -418,6 +466,9 @@ function ExtStatementForm({ cfg, onCancel, onSaved }) {
 function SavedExtStatementPage({ st, onUpdate, onSave, onDelete, onLinesPaid, isDirty, backUrl }) {
   const [paidFilter, setPaidFilter] = useState("all");
   const [paidBusy, setPaidBusy] = useState(false);
+  const [rFrom, setRFrom] = useState(st.from || "");
+  const [rTo, setRTo] = useState(st.to || "");
+  const [refreshing, setRefreshing] = useState(false);
   const [payments, setPayments] = useState(st.payments || []);
   const sync = (arr) => { setPayments(arr); onUpdate && onUpdate({ ...st, payments: arr }); };
   const setP = (id, np) => sync(payments.map((p) => (p.id === id ? { ...p, ...np } : p)));
@@ -425,7 +476,7 @@ function SavedExtStatementPage({ st, onUpdate, onSave, onDelete, onLinesPaid, is
   const delP = (id) => sync(payments.filter((p) => p.id !== id));
   const grp = (d) => { d = (d || "").toString().replace(/[^\d]/g, ""); return d ? d.replace(/\B(?=(\d{3})+(?!\d))/g, ".") : ""; };
 
-  const total = st.total || 0;
+  const total = (st.lines || []).reduce((a, l) => a + lineSum(l), 0);   // = tổng server; tính lại sau Làm mới
   const paid = payments.reduce((a, p) => a + toNum(p.amount), 0);
   const conNo = total - paid;
   const dirty = !!(isDirty && isDirty(st.id));
@@ -445,13 +496,69 @@ function SavedExtStatementPage({ st, onUpdate, onSave, onDelete, onLinesPaid, is
   const th = (txt, align) => <th style={{ textAlign: align || "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>{txt}</th>;
 
   const allLines = (st.lines || []).map((l, i) => ({ ...l, _n: i + 1 }));
-  const shown = allLines.filter((l) => paidFilter === "all" || (paidFilter === "paid" ? !!l.paidAt : !l.paidAt));
+  const shown = allLines.filter((l) => paidFilter === "all" || (paidFilter === "paid" ? isFull(l) : !isFull(l)));
   const shownTotal = paidFilter === "all" ? total : shown.reduce((a, l) => a + lineSum(l), 0);
-  const togglePaid = (ls, on) => {
-    const ids = ls.filter((l) => !!l.paidAt !== on).map((l) => l.lineId).filter(Boolean);
-    if (!ids.length || paidBusy || !onLinesPaid) return;
+  // Tích chi: bảng kê đang có thay đổi chưa lưu (vd. vừa Làm mới) → sửa tại chỗ, lưu cùng nút Lưu; còn lại ghi ngay (PATCH).
+  const togglePaid = (ls, on, part) => {
+    const targets = part ? ls : ls.filter((l) => isFull(l) !== on);
+    if (!targets.length || paidBusy) return;
+    if (dirty || !onLinesPaid || targets.some((l) => !l.lineId)) {
+      const keys = new Set(targets.map(lineKey));
+      onUpdate && onUpdate({ ...st, payments, lines: (st.lines || []).map((l) => (keys.has(lineKey(l)) ? withPaid(l, on, part) : l)) });
+      return;
+    }
     setPaidBusy(true);
-    Promise.resolve(onLinesPaid(ids, on)).finally(() => setPaidBusy(false));
+    Promise.resolve(onLinesPaid(targets.map((l) => l.lineId), on, part)).finally(() => setPaidBusy(false));
+  };
+
+  // Làm mới: lấy lại lô + chi phí mới nhất của nhà xe trong khoảng ngày (có thể sửa), giữ VAT/ghi chú/dấu đã chi của lô cũ.
+  const refresh = async () => {
+    if (refreshing) return;
+    if (!rFrom && !rTo) { window.trkToast && window.trkToast("Chọn khoảng Giờ xe đến trước khi làm mới", "error"); return; }
+    setRefreshing(true);
+    let cands = null;
+    try {
+      const q = new URLSearchParams({ vendor: st.vendor || "" }); if (rFrom) q.set("from", rFrom); if (rTo) q.set("to", rTo);
+      const r = await window.trkApi("GET", ROUTES_TRK.extStatementCandidates + "?" + q.toString());
+      if (r && r.ok) cands = r.candidates || [];
+    } catch (e) { /* báo lỗi dưới */ }
+    setRefreshing(false);
+    if (!cands) { window.trkToast && window.trkToast("Không tải được dữ liệu lô", "error"); return; }
+
+    const oldLines = st.lines || [];
+    const old = new Map(oldLines.map((l) => [String(l.id), l]));
+    const cnt = {}; oldLines.forEach((l) => { const r = l.vatRate || 0; cnt[r] = (cnt[r] || 0) + 1; });
+    const rateDef = Number(Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0] || 0);   // VAT hay dùng nhất cho lô mới
+    let added = 0, changed = 0;
+    const next = cands.map((c) => {
+      const o = old.get(String(c.id));
+      const rate = o ? (o.vatRate || 0) : rateDef;
+      const ln = { ...c, lineId: o ? o.lineId : undefined, vatRate: rate, vat: Math.round((c.fee || 0) * rate / 100), note: (o && o.note) || c.note || "", paidParts: {}, paidAt: "" };
+      if (!o) { added++; return ln; }
+      if (lineSum(o) !== lineSum(ln) || (o.chohoItems || []).length !== (ln.chohoItems || []).length) changed++;
+      // Giữ dấu đã chi theo phần còn tồn tại; dòng cũ chỉ có 1 khoản "Chi hộ" gộp → áp cho mọi khoản chi hộ mới.
+      const po = paidOf(o), pp = {};
+      partsOf(ln).forEach((x) => { const d = po[x.k] || (x.k !== "fee" && po["i:choho"]); if (d) pp[x.k] = d; });
+      const ps = partsOf(ln);
+      return { ...ln, paidParts: pp, paidAt: ps.length && ps.every((x) => pp[x.k]) ? ps.map((x) => pp[x.k]).sort().pop() : "" };
+    });
+    const ids = new Set(cands.map((c) => String(c.id)));
+    const removed = oldLines.filter((l) => !ids.has(String(l.id)));
+    const removedPaid = removed.filter((l) => paidAmtOf(l) > 0).length;
+    const newTotal = next.reduce((a, l) => a + lineSum(l), 0);
+    if (!added && !changed && !removed.length && rFrom === (st.from || "") && rTo === (st.to || "")) {
+      window.trkToast && window.trkToast("Dữ liệu đã là mới nhất"); return;
+    }
+    const ok = await window.confirmAction({
+      title: "Cập nhật dữ liệu bảng kê?",
+      text: `Giờ xe đến <b>${esc(fmtDate(rFrom) || "…")} – ${esc(fmtDate(rTo) || "…")}</b>: ${next.length} lô.<br>`
+        + `Thêm <b>${added}</b> lô · Thay đổi số tiền <b>${changed}</b> lô · Bỏ <b>${removed.length}</b> lô`
+        + (removedPaid ? ` <b style="color:#b9750a">(${removedPaid} lô bỏ đi đã có tích chi)</b>` : "")
+        + `.<br>Tổng mới: <b>${esc(fmtVND(newTotal))}</b> (cũ ${esc(fmtVND(total))}). Bấm <b>Lưu</b> sau đó để ghi lại.`,
+      confirmText: "Cập nhật",
+    });
+    if (!ok) return;
+    onUpdate && onUpdate({ ...st, payments, from: rFrom, to: rTo, lines: next });
   };
 
   return (
@@ -471,6 +578,18 @@ function SavedExtStatementPage({ st, onUpdate, onSave, onDelete, onLinesPaid, is
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "22px" }}>
         <div style={{ maxWidth: 940, margin: "0 auto", background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "8px 22px 18px" }}>
           <div className="ke-print" style={{ padding: "16px 4px 4px", background: "#fff" }}>
+            <div className="ke-noprint" style={{ display: "flex", alignItems: "flex-end", gap: 10, flexWrap: "wrap", marginBottom: 12, padding: "10px 12px", background: "#fafbfc", border: "1px solid var(--line)", borderRadius: 10 }}>
+              <div>
+                <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>Giờ xe đến từ ngày</div>
+                <div style={{ width: 150 }}><DateField value={rFrom} onChange={setRFrom} /></div>
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>đến ngày</div>
+                <div style={{ width: 150 }}><DateField value={rTo} onChange={setRTo} /></div>
+              </div>
+              <Btn onClick={refresh} disabled={refreshing}><i className="bi bi-arrow-clockwise" /> {refreshing ? "Đang tải…" : "Làm mới dữ liệu"}</Btn>
+              <div style={{ flex: "1 1 220px", fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.45 }}>Lấy lại lô, cước và chi hộ mới nhất của nhà xe trong khoảng ngày; giữ VAT, ghi chú và dấu đã chi của lô cũ. Bấm <b style={{ color: "var(--ink-3)" }}>Lưu</b> để ghi.</div>
+            </div>
             <PaidFilter lines={allLines} value={paidFilter} onChange={setPaidFilter} payTotal={paid} />
             <ExtLinesTable vendor={st.vendor} no={st.no} date={st.date} from={st.from} to={st.to} lines={shown} footerTotal={shownTotal}
               onPaid={onLinesPaid ? togglePaid : null} busy={paidBusy} />
