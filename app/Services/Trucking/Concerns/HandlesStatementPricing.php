@@ -609,7 +609,7 @@ trait HandlesStatementPricing
         return [
             'id' => $s->id, 'booking' => $s->booking ?? '', 'io' => $s->io ?? '', 'sheet' => $sheet,
             'declNo' => $s->declaration_no ?? '', 'contType' => $s->cont_type ?? '', 'inv' => $s->inv ?? '',
-            'contNo' => $s->cont_no ?? '', 'bks' => $s->bks_vao ?: ($s->bks_ra ?: ''),
+            'contNo' => $s->cont_no ?? '', 'bks' => self::statementPlate($s->io, $s->bks_vao, $s->bks_ra),
             'from' => $s->from_loc ?? '', 'to' => $s->to_loc ?? '', 'kho' => $s->kho ?? '', 'qty' => $s->qty,
             'cru' => (bool) $s->cru, 'date' => $date, 'contLabel' => $contLabel, 'note' => $note, 'thanhLy' => $thanhLy,
             // "Ghi chú tự do cho lô hàng" (popup Thông tin lô) — hiện ở trang tạo bảng kê như trang xem.

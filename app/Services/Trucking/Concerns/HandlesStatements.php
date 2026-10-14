@@ -58,6 +58,16 @@ trait HandlesStatements
         return $scope === 'xuat' ? str_contains($v, 'xu') : str_contains($v, 'nh');
     }
 
+    /**
+     * Biển kiểm soát in ở bảng kê: cont XUẤT lấy BKS xe ra (xe ra trống / trùng xe vào thì là xe vào);
+     * cont nhập lấy BKS xe vào (trống thì xe ra).
+     */
+    public static function statementPlate(?string $io, ?string $bksVao, ?string $bksRa): string
+    {
+        $vao = trim((string) $bksVao); $ra = trim((string) $bksRa);
+        return str_contains(mb_strtolower((string) $io), 'xu') ? ($ra ?: $vao) : ($vao ?: $ra);
+    }
+
     /** Chuẩn hóa giá trị phạm vi từ client / DB. */
     private static function ioScopeOf($v): string
     {

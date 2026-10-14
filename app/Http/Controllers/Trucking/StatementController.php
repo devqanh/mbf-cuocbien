@@ -132,7 +132,15 @@ class StatementController extends BaseTruckingController
     public function export(TruckingStatement $statement, StatementExcelExporter $exporter): StreamedResponse
     {
         $statement->loadMissing(['lines', 'payments', 'customer']);
-        return $exporter->download($this->svc->statementToArray($statement), $this->svc->sellerInfo());
+        $st = $this->svc->statementToArray($statement);
+        // Biển kiểm soát lấy theo lô hiện tại (cont xuất → xe ra) — snapshot cũ chỉ lưu xe vào.
+        $plates = \App\Models\TruckingShipment::whereIn('id', $statement->lines->pluck('shipment_id')->filter()->all())
+            ->get(['id', 'io', 'bks_vao', 'bks_ra'])->keyBy('id');
+        foreach ($statement->lines->values() as $i => $line) {
+            $s = $line->shipment_id ? $plates->get((int) $line->shipment_id) : null;
+            if ($s) $st['lines'][$i]['bks'] = $this->svc::statementPlate($s->io ?: $line->io, $s->bks_vao, $s->bks_ra) ?: $st['lines'][$i]['bks'];
+        }
+        return $exporter->download($st, $this->svc->sellerInfo());
     }
 
     public function store(Request $request): JsonResponse
