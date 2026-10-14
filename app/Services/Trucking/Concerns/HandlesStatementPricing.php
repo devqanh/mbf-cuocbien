@@ -115,11 +115,30 @@ trait HandlesStatementPricing
         // dòng CRU, không phụ thuộc cờ CRU của lô (chặng nhập thường không tích).
         // Chỉ xét dòng có ĐÚNG 1 điểm đến (to1 = bãi, không có cột cảng to4) — dòng chặng xuất (to1 = nhà máy,
         // to4 = cảng) bị loại để lô hạ cảng nhưng sai kho không "lọt" sang giá CRU.
-        $yardLeg = false;
+        $yardLeg = false; $chainDrop = null;
         if (! $p && $loDrop !== '') {
             $yardRows = array_values(array_filter($priceList, fn ($r) => count($r['rcKho']) === 1 && $r['rcKho'][0] === $loDrop));
-            $p = $yardRows ? $this->matchPriceRow($yardRows, $loFrom, '', [$loDrop], $nkCru, $conn, true, false) : null;
-            $yardLeg = (bool) $p;
+            // Dòng giá ghi bãi hạ ở CỘT CẢNG (vd LHP → QV → [to4] QV(IM HPP)): Nơi hạ của lô = 1 điểm đến của dòng →
+            // coi điểm đó là nơi hạ, khớp nhà máy của lô với CÁC ĐIỂM ĐẾN CÒN LẠI.
+            $dropRows = [];
+            foreach ($priceList as $r) {
+                if (count($r['rcKho']) < 2 || ! in_array($loDrop, $r['rcKho'], true)) continue;
+                $r['rcKho'] = array_values(array_filter($r['rcKho'], fn ($k) => $k !== $loDrop));
+                $dropRows[] = $r;
+            }
+            // GIÁ CHẶNG NHẬP PHỤ THUỘC CHẶNG XUẤT (kế toán 12/10/2026): cột hạ (loc) của dòng chặng nhập = CẢNG CUỐI mà
+            // lô xuất CÙNG CONT (đi từ chính bãi này) trả cont về. VD HPP → QV(IM HPP): xuất về HPH → 3.180.892, xuất
+            // về ICDQV → dòng loc ICD QV 4.814.634. Tìm được lô xuất → ưu tiên dòng có loc = cảng đó; không có thì
+            // khớp như cũ (bỏ ràng buộc loc).
+            $chainDrop = $this->cruChainDrop($s, $loDrop, $rc);
+            // Hạ tại BÃI "(IM …)" = chặng nhập CRU (thường KHÔNG tích CRU) → dòng bãi-ở-cột-cảng xét cả loại CRU.
+            $dropKinds = str_contains($loDrop, '(IM') ? array_values(array_unique(array_merge($nkKinds, $nkCru))) : $nkKinds;
+            foreach (array_values(array_unique([$chainDrop ?? '', ''])) as $locReq) {
+                $p = $yardRows ? $this->matchPriceRow($yardRows, $loFrom, $locReq, [$loDrop], $nkCru, $conn, true, false) : null;
+                if ($p) { $yardLeg = true; break; }
+                $p = $dropRows ? $this->matchPriceRow($dropRows, $loFrom, $locReq, $khoCodes, $dropKinds, $conn, true, false) : null;
+                if ($p) break;
+            }
         }
         if ($p && ! empty($p['kind'])) $kind = (string) $p['kind'];
 
@@ -162,7 +181,7 @@ trait HandlesStatementPricing
         // Tuyến hiển thị: ĐI → NHÀ MÁY → HẠ (theo tên cho rõ; ký hiệu là khóa link)
         $nameOf = function ($v) use ($codeToName) { $v = trim((string) $v); return $codeToName[$v] ?? $v; };
         $route = $p ? (($nameOf($p['from'] ?? '') ?: '?') . ' → '
-            . (implode(' → ', array_filter(array_map(fn ($k) => $nameOf($p[$k] ?? ''), ['to1', 'to2', 'to3']))) ?: '?')   // đủ các nhà máy của dòng giá
+            . (implode(' → ', array_filter(array_map(fn ($k) => $nameOf($p[$k] ?? ''), ['to1', 'to2', 'to3', 'to4']))) ?: '?')   // đủ các điểm đến của dòng giá (kể cả bãi ở cột to4)
             . ' → ' . ($nameOf($p['loc'] ?? '') ?: '?')) : null;
         // Tuyến sà lan: nơi hạ cont → nơi hạ sà lan (theo tên cho rõ)
         $bargeRoute = $bp ? (($nameOf($bp['from'] ?? '') ?: '?') . ' → ' . ($nameOf($bp['loc'] ?? '') ?: '?')) : null;
@@ -288,6 +307,25 @@ trait HandlesStatementPricing
         }
         if (! $p) $p = $nonMatch ?? $fallback;   // ưu tiên Non rồi mới base
         return $p;
+    }
+
+    /**
+     * Cảng cuối của CHUỖI CRU cho lô CHẶNG NHẬP hạ tại bãi $yard: lô XUẤT cùng số cont, đi từ chính bãi đó, giờ xe ra
+     * gần nhất (±30 ngày) → ký hiệu Nơi hạ của lô xuất (vd ICDQV). null = không tìm thấy.
+     */
+    private function cruChainDrop(TruckingShipment $s, string $yard, callable $rc): ?string
+    {
+        $cont = trim((string) $s->cont_no);
+        if ($cont === '') return null;
+        $ref = $s->gio_xe_ra ?? $s->gio_xe_den;
+        $best = null; $bestGap = null;
+        foreach (TruckingShipment::where('cont_no', $cont)->where('id', '!=', $s->id)->get(['id', 'from_loc', 'to_loc', 'gio_xe_ra']) as $o) {
+            if ($rc($o->from_loc) !== $yard || trim((string) $o->to_loc) === '') continue;
+            $gap = ($ref && $o->gio_xe_ra) ? abs($o->gio_xe_ra->getTimestamp() - $ref->getTimestamp()) : PHP_INT_MAX - 1;
+            if ($gap > 30 * 86400 && $gap !== PHP_INT_MAX - 1) continue;
+            if ($bestGap === null || $gap < $bestGap) { $best = $o; $bestGap = $gap; }
+        }
+        return $best ? ($rc($best->to_loc) ?: null) : null;
     }
 
     /** [tên địa điểm => ký hiệu] cho codeOf. Memoize per-request. */

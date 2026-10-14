@@ -21,6 +21,18 @@ metadata:
 
 **Cách verify (đọc thuần):** `statementCandidates(tên khách, from, to)` trả `pr{matched,kind,conn,cuoc,diag}`; quét toàn bộ khách 1 kỳ → JSON trước/sau → diff (kịch bản `match-scan.php`/`match-diff.php` trong scratchpad, 311 lô 08–09/2026: 200 → 203 khớp). Thử tier bằng `DB::beginTransaction()` sửa gio_xe_den rồi `rollBack()`.
 
-**Dữ liệu còn lệch (không phải code):** 542 (LẠCH HUYỆN → QV → QV(IM HPP)) — bảng giá Canon không có dòng nhập CRU từ LHP (chỉ HPP/ICDQV/ICDTP); 644/645/657/658 Msk RU→TL→HATECO chưa tích CRU nên không khớp External CRU; 456 Msk HN→TL→HATECO: book Msk chỉ có External từ RU; 568 QV(IM HPP)→kho 2→ICD Quế Võ không có dòng (bãi IM HPP chỉ xuất về HPP/LHP).
+**Bước khớp thứ 3 (2026-10-12):** kế toán tự điền dòng nhập CRU kiểu `from LHP → to1 QV → to4 QV(IM HPP)`, loc HAI PHONG, tức bãi hạ nằm ở CỘT CẢNG. Lô 542 (LẠCH HUYỆN → QV → hạ QV(IM HPP)) vẫn không khớp vì khớp thường so hạ ≠ loc, còn bước chặng nhập đòi đúng 1 điểm đến.
+- Cách xử lý: thêm bước "Nơi hạ của lô ∈ điểm đến của dòng (≥ 2 điểm)". Bỏ điểm đó khỏi rcKho, bỏ ràng buộc loc, rồi khớp nhà máy với các điểm còn lại.
+- Dùng kind của LÔ (`$nkKinds`), KHÔNG ép CRU, để không tái diễn lỗi lọt giá RU.
+- Lô 542 giờ ra 3.595.476.
+- Nhãn tuyến hiện đủ to1..to4. Lô nhiều kho khớp dòng ĐỦ kho nhất (`khoScore` trong `matchPriceRow`).
+
+**Giá chặng nhập phụ thuộc chặng xuất (kế toán 12/10/2026):** cột loc của dòng chặng nhập = CẢNG CUỐI mà lô XUẤT cùng cont (đi từ chính bãi đó) trả cont về. Như vậy ý "loc không đổi giá" ở trên là SAI. VD HPP → QV(IM HPP): xuất về HPH thì 3.180.892; xuất về ICDQV thì dòng `HPP → QV → [to4] QV(IM HPP)` loc ICD QV, 4.814.634.
+- `cruChainDrop()` tìm lô xuất cùng cont_no, from = bãi, giờ xe ra gần nhất ±30 ngày, lấy ký hiệu Nơi hạ.
+- Bước bãi (đúng 1 điểm đến) và bước bãi-ở-cột-cảng thử TRƯỚC với loc = cảng cuối đó, không có mới bỏ ràng buộc loc.
+- Hạ "(IM …)" thì bước bãi-ở-cột-cảng xét cả kind CRU (chặng nhập thường không tích CRU).
+- Lô 438 ONEU1879930 giờ ra 4.814.634.
+
+**Dữ liệu còn lệch (không phải code):** 644/645/657/658 Msk RU→TL→HATECO chưa tích CRU nên không khớp External CRU; 456 Msk HN→TL→HATECO: book Msk chỉ có External từ RU; 568 QV(IM HPP)→kho 2→ICD Quế Võ không có dòng (bãi IM HPP chỉ xuất về HPP/LHP).
 
 Liên quan [[price-books-by-date]] [[price-by-cont-type]] [[location-value-is-name]].
