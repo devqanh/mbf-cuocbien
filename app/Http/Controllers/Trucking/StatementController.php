@@ -48,7 +48,7 @@ class StatementController extends BaseTruckingController
     {
         $statement->loadMissing(['lines', 'payments', 'customer']);
         $st  = $this->svc->statementToArray($statement);
-        $ids = array_filter(array_map(fn ($l) => $l['id'] ?? null, $st['lines'] ?? []));
+        $ids = array_values($this->svc->existingShipmentIds(array_column($st['lines'] ?? [], 'id')));
 
         return response()->json([
             'ok'    => true,

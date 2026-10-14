@@ -612,6 +612,7 @@ trait HandlesStatementPricing
             'contNo' => $s->cont_no ?? '', 'bks' => self::statementPlate($s->io, $s->bks_vao, $s->bks_ra),
             'from' => $s->from_loc ?? '', 'to' => $s->to_loc ?? '', 'kho' => $s->kho ?? '', 'qty' => $s->qty,
             'cru' => (bool) $s->cru, 'date' => $date, 'contLabel' => $contLabel, 'note' => $note, 'thanhLy' => $thanhLy,
+            'gioVao' => $this->outDateTime($s->gio_xe_den), 'gioRa' => $this->outDateTime($s->gio_xe_ra),   // ngày + giờ kéo vào / cont ra
             // "Ghi chú tự do cho lô hàng" (popup Thông tin lô) — hiện ở trang tạo bảng kê như trang xem.
             'infoNote' => trim((string) $s->info_note),
             'pr' => $pr,

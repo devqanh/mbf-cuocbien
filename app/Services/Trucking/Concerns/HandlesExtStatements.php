@@ -116,6 +116,7 @@ trait HandlesExtStatements
             $now = Carbon::now();
             $st->lines()->delete();
             $linesBatch = [];
+            $shipIds = $this->existingShipmentIds(array_column($data['lines'] ?? [], 'id'));
             foreach (($data['lines'] ?? []) as $i => $l) {
                 $fee   = $this->inMoney($l['fee'] ?? null) ?? 0;
                 $items = $this->extChohoItems($l['chohoItems'] ?? null, (int) ($this->inMoney($l['choho'] ?? null) ?? 0), $l['chohoNote'] ?? '');
@@ -127,7 +128,7 @@ trait HandlesExtStatements
                 $paid  = $this->extCleanPaid($paid, $parts);
                 $linesBatch[] = [
                     'ext_statement_id' => $st->id,
-                    'shipment_id'      => $l['id'] ?? null,
+                    'shipment_id'      => $shipIds[(string) ($l['id'] ?? '')] ?? null,
                     'booking'          => $this->str($l['booking'] ?? null),
                     'customer'         => $this->str($l['customer'] ?? null),
                     'io'               => $this->str($l['io'] ?? null),
@@ -233,7 +234,7 @@ trait HandlesExtStatements
                 $fee  = (int) round((float) $l->fee);
                 $rate = (float) $l->vat_rate;
                 return [
-                    'id'        => $l->shipment_id ?? $l->id,
+                    'id'        => $l->shipment_id ?? ('L' . $l->id),   // mất liên kết lô → khóa không phải số, không lưu nhầm thành shipment_id
                     'lineId'    => $l->id,
                     'booking'   => $l->booking ?? '',
                     'customer'  => $l->customer ?? '',

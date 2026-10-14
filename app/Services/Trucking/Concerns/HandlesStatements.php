@@ -290,16 +290,40 @@ trait HandlesStatements
         return $q;
     }
 
+    /**
+     * id lô hợp lệ trong payload dòng → map "id" => id lô CÒN TỒN TẠI.
+     * Bỏ khóa không phải số ("L…" = dòng mất liên kết) và lô đã xóa → shipment_id null thay vì lỗi khóa ngoại.
+     */
+    public function existingShipmentIds(array $ids): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map(
+            fn ($v) => is_int($v) || (is_string($v) && ctype_digit($v)) ? (int) $v : 0, $ids))));
+        if (! $ids) return [];
+        return \App\Models\TruckingShipment::whereIn('id', $ids)->pluck('id')
+            ->mapWithKeys(fn ($id) => [(string) $id => (int) $id])->all();
+    }
+
     public function statementToArray(TruckingStatement $st): array
     {
         // "Ghi chú tự do cho lô hàng" (info_note — ô Ghi chú ở popup Thông tin lô hàng) lấy TRỰC TIẾP từ lô:
         // sửa ở popup là bảng kê hiện theo. KHÁC ghi_chu ("Ghi chú kế toán" ở popup Doanh thu).
         // (Cột note của dòng là snapshot "ghi chú kế toán, trống thì tuyến + kết nối" nên không dùng được.)
         // Đã eager-load lines.shipment thì dùng luôn, không thì 1 query cho cả bảng kê.
-        $infoNote = $st->lines->every(fn ($l) => $l->relationLoaded('shipment'))
-            ? $st->lines->mapWithKeys(fn ($l) => [(int) $l->shipment_id => $l->shipment?->info_note])->all()
+        // Cùng query: GIỜ KÉO VÀO (giờ xe đến) + GIỜ CONT RA thực tế của lô để bảng kê hiện ngày + giờ (lấy hiện tại).
+        $ships = $st->lines->every(fn ($l) => $l->relationLoaded('shipment'))
+            ? $st->lines->mapWithKeys(fn ($l) => [(int) $l->shipment_id => $l->shipment])->filter()->all()
             : \App\Models\TruckingShipment::whereIn('id', $st->lines->pluck('shipment_id')->filter()->unique()->values())
-                ->pluck('info_note', 'id')->all();
+                ->get(['id', 'info_note', 'gio_xe_den', 'gio_xe_ra'])->keyBy('id')->all();
+        $infoNote = array_map(fn ($s) => $s->info_note, $ships);
+        // Dòng MẤT liên kết lô (lô bị xóa / nhập lại → shipment_id null): dò theo SỐ CONT + NGÀY cont ra để vẫn hiện giờ.
+        $byContDate = [];
+        $orphan = $st->lines->filter(fn ($l) => ! $l->shipment_id && trim((string) $l->cont_no) !== '');
+        if ($orphan->isNotEmpty()) {
+            foreach (\App\Models\TruckingShipment::whereIn('cont_no', $orphan->pluck('cont_no')->unique()->values())->get(['cont_no', 'gio_xe_den', 'gio_xe_ra']) as $s) {
+                if ($s->gio_xe_ra) $byContDate[$s->cont_no . '|' . $s->gio_xe_ra->format('Y-m-d')] = $s;
+            }
+        }
+        $shipOf = fn ($l) => $l->shipment_id ? ($ships[(int) $l->shipment_id] ?? null) : ($byContDate[$l->cont_no . '|' . ($l->date?->format('Y-m-d') ?? '')] ?? null);
         // Các con số tính TỪ detail từng dòng (chân lý, đúng cả bảng kê cũ) + vat_rate đã lưu — CHỈ lô trong phạm vi io_scope.
         $rate  = (float) ($st->vat_rate ?? 0);
         $scope = self::ioScopeOf($st->io_scope ?? 'all');
@@ -330,7 +354,8 @@ trait HandlesStatements
             'extraAmount' => $amt['extra'],
             'tongThu'     => $amt['total'],   // = Tổng tiền (nền + VAT + chi hộ + phí riêng)
             'lines'       => $st->lines->map(fn ($l) => [
-                'id'        => $l->shipment_id ?? $l->id,
+                // Dòng mất liên kết lô: khóa "L{id dòng}" (KHÔNG phải số) để không bị lưu nhầm thành shipment_id / trùng id lô thật.
+                'id'        => $l->shipment_id ?? ('L' . $l->id),
                 'infoNote'  => trim((string) ($infoNote[(int) $l->shipment_id] ?? '')),
                 'booking'   => $l->booking ?? '',
                 'sheet'     => $l->sheet ?? '',
@@ -343,6 +368,8 @@ trait HandlesStatements
                 'from'      => $l->from_loc ?? '',
                 'to'        => $l->to_loc ?? '',
                 'date'      => $this->outDate($l->date),
+                'gioVao'    => $this->outDateTime($shipOf($l)?->gio_xe_den),   // kéo vào (giờ xe đến)
+                'gioRa'     => $this->outDateTime($shipOf($l)?->gio_xe_ra),    // cont ra
                 'contLabel' => $l->cont_label ?? '',
                 'phaiThu'   => (int) round((float) $l->phai_thu),
                 'cuoc'      => (int) round((float) $l->cuoc),
@@ -418,11 +445,12 @@ trait HandlesStatements
             $now = Carbon::now();
             $st->lines()->delete();
             $linesBatch = [];
+            $shipIds = $this->existingShipmentIds(array_column($data['lines'] ?? [], 'id'));
             foreach (($data['lines'] ?? []) as $i => $l) {
                 $detail = is_array($l['detail'] ?? null) ? $cleanDetail($l['detail']) : null;
                 $linesBatch[] = [
                     'statement_id' => $st->id,
-                    'shipment_id'  => $l['id'] ?? null,
+                    'shipment_id'  => $shipIds[(string) ($l['id'] ?? '')] ?? null,
                     'booking'      => $this->str($l['booking'] ?? null),
                     'sheet'        => $this->str($l['sheet'] ?? null),
                     'io'           => $this->str($l['io'] ?? null),

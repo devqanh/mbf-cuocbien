@@ -54,7 +54,7 @@ const candidateToLine = (x) => {
   return {
     id: x.id, booking: x.booking, sheet: x.sheet, io: x.io,
     declNo: x.declNo || "", contType: x.contType || "", inv: x.inv || "", contNo: x.contNo || "", bks: x.bks || "",
-    from: x.from, to: x.to, date: x.date, contLabel: x.contLabel,
+    from: x.from, to: x.to, date: x.date, gioVao: x.gioVao || "", gioRa: x.gioRa || "", contLabel: x.contLabel,
     phaiThu: base, cuoc: base, thanhLy: x.thanhLy || 0, note: x.note, infoNote: x.infoNote || "",
     detail: { ...x.pr },
   };
@@ -198,12 +198,28 @@ function ExtraCell({ col, value, onChange }) {
 /* Ô GHI CHÚ của 1 lô trong bảng kê (người dùng gõ) — lưu line.userNote; in ra chữ; Excel cột Note
    (trống thì Excel dùng ghi chú tự sinh như cũ). */
 function LineNoteCell({ value, onChange }) {
+  // Tự CAO theo nội dung (không bị che chữ), rộng theo cột (tối thiểu 170)
+  const fit = (el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + 2 + "px"; } };
   return (<>
-    <textarea className="ke-noprint" rows={1} value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder="Ghi chú…"
-      style={{ display: "block", width: 170, minHeight: 32, padding: "6px 8px", fontSize: 12.5, lineHeight: 1.4, fontFamily: "inherit", border: "1px solid var(--line)", borderRadius: 7, background: "#fff", outline: "none", resize: "vertical" }}
+    <textarea className="ke-noprint" rows={1} ref={fit} value={value || ""} onChange={(e) => { onChange(e.target.value); fit(e.target); }} placeholder="Ghi chú…"
+      style={{ display: "block", width: "100%", minWidth: 170, minHeight: 32, padding: "6px 8px", fontSize: 12.5, lineHeight: 1.4, fontFamily: "inherit", border: "1px solid var(--line)", borderRadius: 7, background: "#fff", outline: "none", resize: "vertical", overflow: "hidden" }}
       onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
     <span style={{ display: "none", whiteSpace: "pre-wrap" }} className="ke-printonly">{value || ""}</span>
   </>);
+}
+
+/* NGÀY + GIỜ kéo vào (giờ xe đến) / cont ra của lô — gioVao / gioRa dạng "Y-m-dTH:i"; thiếu giờ ra thì dùng ngày đã lưu. */
+const dtLabel = (v) => { const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/.exec(v || ""); return m ? `${m[3]}/${m[2]}${m[4] ? " " + m[4] + ":" + m[5] : ""}` : ""; };
+function VaoRaCell({ vao, ra, date }) {
+  const r = dtLabel(ra) || (date ? fmtDate(date) : "");
+  // Dòng không còn lô gốc (bảng kê cũ / lô đã xóa) → không có giờ: chỉ hiện ngày đã lưu như trước.
+  if (!vao && !ra) return <span className="tnum" title="Lô gốc không còn trong dữ liệu — chỉ có ngày đã lưu">{r || "—"}</span>;
+  return (
+    <div className="tnum" style={{ lineHeight: 1.5, whiteSpace: "nowrap" }}>
+      <div title="Giờ kéo cont vào (giờ xe đến)"><span style={{ fontSize: 10.5, color: "var(--ink-4)" }}>Vào </span>{dtLabel(vao) || "—"}</div>
+      <div title="Giờ cont ra"><span style={{ fontSize: 10.5, color: "var(--ink-4)" }}>Ra </span>{r || "—"}</div>
+    </div>
+  );
 }
 
 /* CHI PHÍ CÔNG TY của 1 lô (khoản không tích "chi hộ khách" — vd cước thuê xe ngoài kèm tên nhà xe) để người lập
@@ -388,7 +404,7 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
       return {
         id: x.id, booking: x.booking, sheet: x.sheet, io: x.io,
         declNo: x.declNo || "", contType: x.contType || "", inv: x.inv || "", contNo: x.contNo || "", bks: x.bks || "",
-        from: x.from, to: x.to, date: x.date, contLabel: x.contLabel,
+        from: x.from, to: x.to, date: x.date, gioVao: x.gioVao || "", gioRa: x.gioRa || "", contLabel: x.contLabel,
         // phaiThu/cuoc = NỀN dòng (cước+dầu) — giữ cho exporter; tổng có VAT tính ở cấp bảng kê.
         phaiThu: a.base, cuoc: a.base, thanhLy: x.thanhLy || 0, note: x.note, userNote: (noteOv[x.id] || "").trim(),
         // snapshot định giá (backend) để hiển thị đối soát TĨNH (không query lại khi xem)
@@ -491,7 +507,7 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
               <th style={{ width: 34, textAlign: "center", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)" }}>#</th>
               <th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Lô / Booking</th>
               <th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Tuyến · Cont</th>
-              <th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Cont ra</th>
+              <th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Kéo vào / Ra</th>
               <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Phải thu<br/>(cước+dầu)</th>
               <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>VAT</th>
               {extraCols.map((c) => <th key={c.key} style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>{colLabel(c)}{c.vat ? <span style={{ color: "var(--accent)", fontSize: 9.5 }}><br/>+VAT</span> : null}</th>)}
@@ -528,7 +544,7 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
                   <td style={{ padding: "8px", borderBottom: "none", verticalAlign: "top", color: "var(--ink-2)" }}>
                     {x.from} → {x.to}<div style={{ fontSize: 11, color: "var(--ink-4)" }} className="tnum">{x.contLabel}</div>
                   </td>
-                  <td className="tnum" style={{ padding: "8px", borderBottom: "none", verticalAlign: "top", color: "var(--ink-2)" }}>{fmtDate(x.date) || "—"}</td>
+                  <td className="tnum" style={{ padding: "8px", borderBottom: "none", verticalAlign: "top", color: "var(--ink-2)" }}><VaoRaCell vao={x.gioVao} ra={x.gioRa} date={x.date} /></td>
                   {(() => { const a = lineAmt(x); return (<>
                   <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: "none", verticalAlign: "top", fontWeight: 600 }}>
                     <div style={{ position: "relative", width: 130, marginLeft: "auto" }}>
@@ -663,6 +679,11 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
   }) });
   const nCols = 9 + extraCols.length;   // số cột của bảng gồm cột Ghi chú (cho colSpan phần chi tiết + tổng kết)
   const setLineNote = (id, v) => onUpdate && onUpdate({ ...st, lines: (st.lines || []).map((l) => (l.id === id ? { ...l, userNote: v } : l)) });
+  // BỎ 1 lô khỏi bảng kê (hỏi lại; chỉ chốt khi bấm Lưu) — lô trả về danh sách "lô trong kỳ chưa có bảng kê".
+  const delLine = async (l) => {
+    if (window.confirmAction && !(await window.confirmAction({ title: "Bỏ lô khỏi bảng kê?", text: `Bỏ lô <b>${[l.booking && "Booking " + l.booking, l.contNo && "cont " + l.contNo].filter(Boolean).join(" · ")}</b> khỏi bảng kê này. Số tiền tính lại ngay; bấm <b>Lưu</b> để chốt.`, confirmText: "Bỏ lô", danger: true }))) return;
+    onUpdate && onUpdate({ ...st, lines: (st.lines || []).filter((x) => x.id !== l.id) });
+  };
   // NỀN dòng = cước+dầu+sà lan (từ detail) — NGUỒN CHÂN LÝ khớp backend. VAT áp nền (+ phí riêng có vat); chi hộ không VAT.
   const lineAmt = (l) => lineAmounts(l, vatRate, null, extraCols);   // {base,vat,choho,extra,extras,total} từ detail
   // Sửa tay NỀN dòng → GIÁ TÙY CHỈNH: detail.manualBase + phaiThu = nền; snapshot cuoc/dau/sà lan giữ nguyên để đối chiếu.
@@ -748,10 +769,10 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
         </div>
         {/* Nhiều cột chi phí riêng → bảng giữ bề rộng tối thiểu và cuộn ngang trên màn hình (in: .ke-scroll bỏ cuộn + minWidth) */}
         <div className="ke-scroll" style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", minWidth: 1060 + 110 * extraCols.length, borderCollapse: "collapse", fontSize: 12.5 }}>
-          <thead><tr style={{ background: "#fafbfc" }}>{th("#", "center")}{th("Lô / Booking")}{th("Tuyến · Cont")}{th("Cont ra")}{th(<>Phải thu<br/>(cước+dầu)</>, "right")}{th("VAT", "right")}
+        <table style={{ width: "100%", minWidth: 1160 + 110 * extraCols.length, borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead><tr style={{ background: "#fafbfc" }}>{th("#", "center")}{th("Lô / Booking")}{th("Tuyến · Cont")}{th("Kéo vào / Ra")}{th(<>Phải thu<br/>(cước+dầu)</>, "right")}{th("VAT", "right")}
             {extraCols.map((c) => <React.Fragment key={c.key}>{th(<>{colLabel(c)}{c.vat ? <span style={{ color: "var(--accent)", fontSize: 9.5 }}><br/>+VAT</span> : null}</>, "right")}</React.Fragment>)}
-            {th("Chi hộ", "right")}{th("Tổng tiền", "right")}{th("Ghi chú")}</tr></thead>
+            {th("Chi hộ", "right")}{th("Tổng tiền", "right")}<th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase", minWidth: 190 }}>Ghi chú</th></tr></thead>
           <tbody>
             {scopedLines.map((l, i) => {
               const d = detailById[l.id];
@@ -766,12 +787,17 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
               return (
               <React.Fragment key={l.id}>
               <tr className={(i % 2 ? "ke-zebra " : "") +(d || noteOnly ? "" : "ke-lo-end")}>
-                <td className="tnum" style={{ textAlign: "center", padding: "8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", color: "var(--ink-4)", verticalAlign: "top" }}>{i + 1}</td>
+                <td className="tnum" style={{ textAlign: "center", padding: "8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", color: "var(--ink-4)", verticalAlign: "top" }}>{i + 1}
+                  {onUpdate && <button type="button" className="ke-noprint" onClick={() => delLine(l)} title="Bỏ lô này khỏi bảng kê"
+                    style={{ display: "block", margin: "4px auto 0", width: 22, height: 22, borderRadius: 6, border: "1px solid var(--line)", background: "#fff", color: "var(--ink-4)", cursor: "pointer", fontSize: 11, lineHeight: 1 }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = "var(--danger)"; e.currentTarget.style.borderColor = "var(--danger)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = "var(--ink-4)"; e.currentTarget.style.borderColor = "var(--line)"; }}>✕</button>}
+                </td>
                 <td style={{ padding: "8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", verticalAlign: "top" }}><div style={{ fontWeight: 600 }} className="tnum">{l.booking || "—"}</div><div style={{ fontSize: 11, color: "var(--ink-4)" }}>{l.sheet} · {l.io}</div></td>
                 <td style={{ padding: "8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top" }}>{l.from} → {l.to}<div style={{ fontSize: 11, color: "var(--ink-4)" }} className="tnum">{(ROUTES_TRK.loHang && l.contNo)
                   ? <a className="ke-noprint" href={ROUTES_TRK.loHang + "?q=" + encodeURIComponent(l.contNo) + "&open=1"} target="_blank" rel="noopener" title="Mở lô hàng (tab mới, lọc đúng cont này)" style={{ color: "var(--accent)", textDecoration: "none" }}>{l.contLabel}</a>
                   : l.contLabel}<span style={{ display: "none" }} className="ke-printonly">{l.contLabel}</span></div></td>
-                <td className="tnum" style={{ padding: "8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top" }}>{fmtDate(l.date) || "—"}</td>
+                <td className="tnum" style={{ padding: "8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top" }}><VaoRaCell vao={l.gioVao} ra={l.gioRa} date={l.date} /></td>
                 {(() => { const a = lineAmt(l); return (<>
                 <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", fontWeight: 600, verticalAlign: "top" }}>
                   <span className="ke-noprint"><span style={{ position: "relative", display: "inline-block", width: 130 }}>
@@ -1016,7 +1042,47 @@ function SavedStatementModal({ st, onClose, onDelete, onUpdate, onSave, isDirty 
 
 /* Trang xem bảng kê đã lưu (route riêng) — chi tiết đầy đủ như lúc tạo.
    suggestById = kết quả "Tính lại" (gợi ý); onApplyLine/onApplyAll áp gợi ý vào dòng; onClearSuggest ẩn gợi ý. */
-function SavedStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUrl, onExcel, onRecalc, detailById, suggestById = null, onApplyLine, onApplyAll, onClearSuggest, newLots = null, inOtherStatements = 0, onAddNewLots }) {
+/* CHỌN LÔ thêm vào bảng kê đã lập: lô trong kỳ chưa nằm ở bảng kê nào — tích từng lô (mặc định chọn hết). */
+function LotPicker({ lots, inOther = 0, width, onAdd, onClose }) {
+  const { useState } = React;
+  const [sel, setSel] = useState(() => new Set(lots.map((x) => String(x.id))));
+  const all = sel.size === lots.length;
+  const tog = (id) => setSel((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  return (
+    <div className="ke-noprint" style={{ maxWidth: width, margin: "0 auto 14px", background: "#fff", border: "1px solid var(--accent)", borderRadius: 12, padding: "12px 14px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+        <b style={{ fontSize: 13.5 }}><I.plus /> Thêm lô vào bảng kê</b>
+        <span style={{ fontSize: 12, color: "var(--ink-3)" }}>{lots.length ? `${lots.length} lô trong kỳ chưa có bảng kê` : "Không còn lô nào trong kỳ chưa có bảng kê"}{inOther ? ` · ${inOther} lô đã nằm ở bảng kê khác` : ""}. Đổi “Cont ra từ / đến” ở dưới rồi bấm Thêm lô để tìm kỳ khác.</span>
+        <span style={{ flex: 1 }} />
+        {lots.length > 0 && <Btn variant="primary" disabled={!sel.size} onClick={() => onAdd && onAdd([...sel])}>Thêm {sel.size} lô đã chọn</Btn>}
+        <Btn onClick={onClose}>Đóng</Btn>
+      </div>
+      {lots.length > 0 && (
+        <div style={{ maxHeight: 280, overflowY: "auto", border: "1px solid var(--line-2)", borderRadius: 8 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+            <thead><tr style={{ background: "#fafbfc", position: "sticky", top: 0 }}>
+              <th style={{ padding: "6px 8px", width: 30 }}><input type="checkbox" checked={all} onChange={() => setSel(all ? new Set() : new Set(lots.map((x) => String(x.id))))} /></th>
+              {["Lô / Booking", "Tuyến · Cont", "Kéo vào / Ra", "Phải thu"].map((h, i) => <th key={h} style={{ padding: "6px 8px", textAlign: i === 3 ? "right" : "left", fontSize: 11, color: "var(--ink-3)" }}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {lots.map((x) => (
+                <tr key={x.id} onClick={() => tog(String(x.id))} style={{ cursor: "pointer", borderTop: "1px solid var(--line-2)", background: sel.has(String(x.id)) ? "var(--accent-weak-2)" : "#fff" }}>
+                  <td style={{ padding: "6px 8px", textAlign: "center" }}><input type="checkbox" checked={sel.has(String(x.id))} onChange={() => tog(String(x.id))} onClick={(e) => e.stopPropagation()} /></td>
+                  <td style={{ padding: "6px 8px" }}><b className="tnum">{x.booking || "—"}</b><div style={{ fontSize: 11, color: "var(--ink-4)" }}>{x.sheet} · {x.io}</div></td>
+                  <td style={{ padding: "6px 8px" }}>{x.from} → {x.to}<div className="tnum" style={{ fontSize: 11, color: "var(--ink-4)" }}>{x.contLabel}</div></td>
+                  <td style={{ padding: "6px 8px" }}><VaoRaCell vao={x.gioVao} ra={x.gioRa} date={x.date} /></td>
+                  <td className="tnum" style={{ padding: "6px 8px", textAlign: "right", fontWeight: 600 }}>{x.pr && x.pr.matched ? fmtNum(x.pr.phaiThu) : <span style={{ color: "var(--warn)" }}>chưa khớp giá</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SavedStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUrl, onExcel, onRecalc, detailById, suggestById = null, onApplyLine, onApplyAll, onClearSuggest, newLots = null, inOtherStatements = 0, onAddNewLots, onFindLots, onCloseLots }) {
   // Tổng kết gợi ý: dòng có giá/chi hộ mới (dòng giá tùy chỉnh: Áp dụng giữ giá gõ tay), lô đã mất, lô mới trong kỳ.
   const vr = +st.vatRate || 0;
   let nNew = 0, nManualKept = 0, nApplicable = 0, nGone = 0;
@@ -1043,6 +1109,10 @@ function SavedStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUrl, 
             <div className="tnum" style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{st.no} · {st.customer}</div>
           </div>
         </div>
+        {onFindLots && <button type="button" onClick={onFindLots} title="Tìm lô trong kỳ của bảng kê chưa nằm ở bảng kê nào để thêm vào"
+          style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 15px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent)", borderRadius: 9 }}>
+          <I.plus /> Thêm lô
+        </button>}
         {onRecalc && <button type="button" onClick={onRecalc} title="Tính lại theo lô hàng + bảng giá hiện tại — chỉ GỢI Ý, không đổi số đã lưu; giá tùy chỉnh giữ nguyên"
           style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 15px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", color: recalcDiff ? "#fff" : "var(--ink-2)", background: recalcDiff ? "var(--warn)" : "#fff", border: recalcDiff ? "none" : "1px solid var(--line)", borderRadius: 9 }}>
           <I.fx /> Tính lại{recalcDiff ? ` (${[nNew && `${nNew} dòng có giá mới`, nAdd && `${nAdd} lô mới`].filter(Boolean).join(", ")})` : ""}
@@ -1072,11 +1142,11 @@ function SavedStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUrl, 
               {nAdd ? <> · <b>{nAdd}</b> lô mới trong kỳ chưa có trong bảng kê.</> : null}
               {inOtherStatements ? <> · {inOtherStatements} lô trong kỳ đã nằm ở bảng kê khác (không thêm).</> : null}
             </div>
-            {nAdd > 0 && onAddNewLots && <Btn variant="primary" onClick={onAddNewLots} title={(newLots || []).map((x) => `${x.contNo || x.booking} · ${x.date || ""}`).join("\n")}>Thêm {nAdd} lô mới</Btn>}
             {nApplicable > 0 && onApplyAll && <Btn variant="primary" onClick={onApplyAll} title="Áp cho mọi dòng có gợi ý — dòng giá tùy chỉnh giữ giá gõ tay, chỉ cập nhật chi hộ">Áp dụng {nApplicable} dòng</Btn>}
             {onClearSuggest && <Btn onClick={onClearSuggest}>Ẩn gợi ý</Btn>}
           </div>
         )}
+        {newLots && <LotPicker lots={newLots} inOther={inOtherStatements} width={wide} onAdd={onAddNewLots} onClose={onCloseLots} />}
         <div style={{ maxWidth: wide, margin: "0 auto", background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "8px 22px 18px" }}>
           <StatementDetailBody st={st} onUpdate={onUpdate} detailById={detailById || {}} suggestById={suggestById} onApplyLine={onApplyLine} />
           <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--line)" }}>

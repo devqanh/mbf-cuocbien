@@ -85,20 +85,29 @@ function ViewStatementApp() {
     onUpdate({ ...st, lines });
     toast(`Đã áp dụng ${n} dòng${m ? ` (${m} dòng giữ giá gõ tay)` : ""} — bấm Lưu để chốt`);
   };
-  // Thêm lô mới trong kỳ vào cuối bảng kê (giá hệ thống; gõ tay lại được) → bấm Lưu để chốt.
-  const onAddNewLots = () => {
+  // Thêm các lô ĐÃ CHỌN (ids; bỏ trống = tất cả) vào cuối bảng kê (giá hệ thống; gõ tay lại được) → bấm Lưu để chốt.
+  const onAddNewLots = (ids) => {
     if (!newLots || !newLots.length) return;
+    const pick = ids ? new Set(ids.map(String)) : null;
     const have = new Set((st.lines || []).map((l) => String(l.id)));
-    const add = newLots.filter((x) => !have.has(String(x.id))).map(candidateToLine);
-    if (!add.length) { setNewLots([]); return; }
+    const add = newLots.filter((x) => !have.has(String(x.id)) && (!pick || pick.has(String(x.id)))).map(candidateToLine);
+    if (!add.length) return;
     onUpdate({ ...st, lines: [...(st.lines || []), ...add] });
-    setNewLots([]);
+    setNewLots(newLots.filter((x) => !add.some((a) => String(a.id) === String(x.id))));
     toast(`Đã thêm ${add.length} lô — kiểm tra giá rồi bấm Lưu`);
+  };
+  // Nút "Thêm lô": tìm lô trong kỳ (Cont ra từ / đến đang hiện) chưa nằm ở bảng kê nào — KHÔNG tính lại giá các dòng cũ.
+  const onFindLots = async () => {
+    const q = new URLSearchParams(); if (st.from) q.set("from", st.from); if (st.to) q.set("to", st.to); if (st.ioScope) q.set("io", st.ioScope);
+    const r = await api("GET", ROUTES.base + (st.hashid || st.id) + "/reprice?" + q.toString()).catch(() => null);
+    if (!r || !r.ok) { toast("Không tải được danh sách lô", "error"); return; }
+    const have = new Set((st.lines || []).map((l) => String(l.id)));   // lô vừa bỏ (chưa lưu) cũng loại nếu còn trong bảng
+    setNewLots((r.newCandidates || []).filter((x) => !have.has(String(x.id)))); setInOther(r.inOtherStatements || 0);
   };
 
   return <SavedStatementPage st={st} onUpdate={onUpdate} onSave={onSave} onDelete={onDelete} isDirty={isDirty} backUrl={ROUTES.list} onExcel={onExcel} onRecalc={onRecalc}
     detailById={snapDetail} suggestById={suggestById} onApplyLine={onApplyLine} onApplyAll={onApplyAll} onClearSuggest={() => { setSuggestById(null); setNewLots(null); setInOther(0); }}
-    newLots={newLots} inOtherStatements={inOther} onAddNewLots={onAddNewLots} />;
+    newLots={newLots} inOtherStatements={inOther} onAddNewLots={onAddNewLots} onFindLots={onFindLots} onCloseLots={() => setNewLots(null)} />;
 }
 
 createRoot(document.getElementById("trk-root")).render(<ViewStatementApp />);
