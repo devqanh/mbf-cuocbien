@@ -120,7 +120,7 @@ function CreatePayrollApp() {
                         <TD right><span className="tnum" style={{ color: "var(--ink-4)" }}>{fmtVND(r.paidDaily)}</span></TD>
                         <TD right><span className="tnum" style={{ fontWeight: 700, color: "var(--accent)" }}>{fmtVND(r.total)}</span></TD>
                       </tr>
-                      {open[r.bks] && <tr><td colSpan={6} style={{ padding: 0, borderBottom: "1px solid var(--line-2)" }}><PayrollDetail row={r} /></td></tr>}
+                      {open[r.bks] && <tr><td colSpan={6} style={{ padding: 0, borderBottom: "1px solid var(--line-2)" }}><PayrollDetail row={r} loTrinhUrl={ROUTES.loTrinh} /></td></tr>}
                       </React.Fragment>
                     ))}
                   </tbody>

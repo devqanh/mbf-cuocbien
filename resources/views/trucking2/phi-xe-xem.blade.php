@@ -17,6 +17,7 @@ window.__TRK = {
     update: '{{ url("trucking-v2/trip-costs") }}/',
     destroy: '{{ url("trucking-v2/trip-costs") }}/',
     recompute: '{{ url("trucking-v2/phi-xe") }}/',
+    loTrinh: '{{ route("trucking2.loTrinh") }}',
   },
   boot: @json($boot),
 };
@@ -24,5 +25,6 @@ window.__TRK = {
 @endsection
 
 @push('scripts')
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 @vite('resources/js/trucking2/pages/phi-xe-xem.jsx')
 @endpush

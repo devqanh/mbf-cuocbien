@@ -17,6 +17,7 @@ window.__TRK = {
     compute: '{{ route("trucking2.tripCost.compute") }}',
     store: '{{ route("trucking2.tripCost.store") }}',
     view: '{{ url("trucking-v2/phi-xe") }}/',
+    loTrinh: '{{ route("trucking2.loTrinh") }}',
   },
   boot: @json($boot),
 };

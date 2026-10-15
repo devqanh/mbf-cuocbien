@@ -1310,7 +1310,8 @@ trait HandlesTripAndDrivers
             foreach ($day['trucks'] as $t) {
                 $bks = $t['bks'];
                 foreach ($t['payGroups'] as $g) {
-                    $totalTrips++; $byPlate[$bks] ??= ['cost' => 0, 'trips' => 0]; $byPlate[$bks]['trips']++;
+                    $byPlate[$bks] ??= ['cost' => 0, 'trips' => 0];
+                    if (empty($g['orphan'])) { $totalTrips++; $byPlate[$bks]['trips']++; }   // nhóm chi khác chưa gắn chuyến không tính là chuyến
                     foreach (array_merge($g['items'] ?? [], $g['payrollItems'] ?? []) as $it) {
                         $label = $catMap[$it['key'] ?? ''] ?? 'Phát sinh chuyến';
                         $addCat($label, $it['amount'] ?? 0, 'driver'); $addPlate($bks, $it['amount'] ?? 0);

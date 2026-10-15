@@ -571,16 +571,38 @@ trait HandlesShipments
         $turnaroundAllowance = (int) ($dayReg['allowances']['turnaround'] ?? TruckingSetting::get('turnaround_allowance', '100000'));
         $thirdTripAllowance  = (int) ($dayReg['allowances']['thirdTrip'] ?? 100000);
 
+        // Gắn chi khác phát sinh THỦ CÔNG vào 1 nhóm chuyến — perDay→chi theo ngày, không→gom lương; choHo→chi hộ;
+        // khac→CHI PHÍ KHÁC (chi phí công ty lái chi giúp: sửa xe, rửa xe, gửi xe… — đưa lái hôm nay, KHÔNG tính lương,
+        // thống kê riêng với chi hộ).
+        $addManual = function (array &$g, array $ms): void {
+            $g['manual'] = [];
+            foreach ($ms as $m) {
+                $amt = (int) round((float) ($m['amount'] ?? 0));
+                $perDay = ! isset($m['perDay']) || ! empty($m['perDay']);
+                $khac = $perDay && ! empty($m['khac']);
+                $choHo = $perDay && ! $khac && ! empty($m['choHo']);
+                $g['manual'][] = ['name' => (string) ($m['name'] ?? ''), 'amount' => $amt, 'perDay' => $perDay, 'choHo' => $choHo, 'khac' => $khac];
+                if ($amt <= 0) continue;
+                if ($perDay) $g['sub'] += $amt; else $g['payrollSub'] += $amt;
+                if ($choHo) $g['chohoSub'] += $amt;
+                if ($khac) $g['khacSub'] += $amt;
+            }
+        };
+
         $byBks = [];
         foreach ($legs as $l) { $byBks[$l['bks']][] = $l; }
         $plannedByBks = [];
         foreach ($planned as $l) { $plannedByBks[$l['bks']][] = $l; $byBks[$l['bks']] ??= []; }   // kể cả xe chỉ có chuyến chưa xong
+        // Xe có chi khác đã lưu cho ngày nhưng không còn chuyến nào (lô bị sửa sau khi nhập) — vẫn hiện để tiền không bị rơi.
+        foreach ($paysByBks as $pb => $pay) { if (! empty($pay->extra_items)) $byBks[(string) $pb] ??= []; }
         $trucks = [];
         foreach ($byBks as $bks => $ls) {
+            $bks = (string) $bks;
             usort($ls, fn ($a, $b) => $a['sortTs'] <=> $b['sortTs']);
             $pl = $plannedByBks[$bks] ?? [];
             usort($pl, fn ($a, $b) => $a['sortTs'] <=> $b['sortTs']);
-            $vid = ($ls[0] ?? $pl[0])['vehicleId'] ?? null;
+            $vid = ($ls[0] ?? $pl[0] ?? [])['vehicleId'] ?? null;
+            if (! $ls && ! $pl && ! $vehByPlate->has($bks) && ($v = TruckingVehicle::where('plate', $bks)->first(['plate', 'type', 'axle']))) $vehByPlate[$bks] = $v;
             if ($vid && $vehById->has($vid)) {
                 $type = $vehById[$vid]->type ?? null;
                 $axle = $vehById[$vid]->axle ?? null;
@@ -648,22 +670,9 @@ trait HandlesShipments
                     if ($it['choHo']) $g['chohoSub'] += (int) $it['amount'];
                 }
                 unset($it);
-                // Gắn chi khác phát sinh của chuyến (theo cont) — perDay→chi theo ngày, không→gom lương; choHo→chi hộ;
-                // khac→CHI PHÍ KHÁC (chi phí công ty lái chi giúp: sửa xe, rửa xe, gửi xe… — đưa lái hôm nay, KHÔNG tính lương,
-                // thống kê riêng với chi hộ).
-                $manual = []; $g['khacSub'] = 0;
-                foreach ($manualByCont[(string) $g['cont']] ?? [] as $m) {
-                    $amt = (int) round((float) ($m['amount'] ?? 0));
-                    $perDay = ! isset($m['perDay']) || ! empty($m['perDay']);
-                    $khac = $perDay && ! empty($m['khac']);
-                    $choHo = $perDay && ! $khac && ! empty($m['choHo']);
-                    $manual[] = ['name' => (string) ($m['name'] ?? ''), 'amount' => $amt, 'perDay' => $perDay, 'choHo' => $choHo, 'khac' => $khac];
-                    if ($amt <= 0) continue;
-                    if ($perDay) $g['sub'] += $amt; else $g['payrollSub'] += $amt;
-                    if ($choHo) $g['chohoSub'] += $amt;
-                    if ($khac) $g['khacSub'] += $amt;
-                }
-                $g['manual'] = $manual;
+                // Gắn chi khác phát sinh của chuyến (theo cont).
+                $g['khacSub'] = 0;
+                $addManual($g, $manualByCont[(string) $g['cont']] ?? []);
                 // có tiền (kể cả thủ công) → hết cảnh báo; trừ khoản còn chờ NHẬP TAY (vd tiền đường khác nhóm cảng)
                 if ($g['sub'] > 0 && $g['note'] !== '' && empty($g['needInput'])) $g['note'] = '';
                 // TRỢ CẤP THEO NGÀY (quy chế; kế toán chốt 09/10/2026) — chi trong ngày, tính lương. Thêm sau dòng xóa cảnh báo
@@ -687,6 +696,21 @@ trait HandlesShipments
                 $payTotal += $g['sub'];
                 $payrollTotal += $g['payrollSub'];
                 if ($g['note'] !== '') $payWarn++;   // chuyến chưa ra tiền (không khớp / chưa tick / =0)
+            }
+            // Chi khác đã lưu nhưng cont KHÔNG còn khớp chuyến nào trong ngày (lô bị sửa cont/xe/giờ sau khi nhập) →
+            // KHÔNG bỏ rơi tiền: gom thành nhóm "chưa gắn chuyến" (orphan, không tính là chuyến) + cảnh báo để kế toán xử lý.
+            $seenConts = array_flip(array_map(fn ($g) => (string) $g['cont'], $payGroups));
+            foreach ($manualByCont as $cont => $ms) {
+                if (isset($seenConts[(string) $cont])) continue;
+                $g = ['route' => 'Chi khác chưa gắn chuyến', 'cont' => (string) $cont, 'mode' => '', 'orphan' => true,
+                      'items' => [], 'sub' => 0, 'payrollItems' => [], 'payrollSub' => 0, 'chohoSub' => 0, 'khacSub' => 0, 'fuel' => null,
+                      'matched' => false, 'note' => 'Cont ' . ($cont !== '' ? $cont : '(trống)') . ' không còn là chuyến của xe trong ngày — kiểm tra lại lô hoặc chi khác',
+                      'issues' => []];
+                $addManual($g, $ms);
+                $payGroups[] = $g;
+                $payTotal += $g['sub'];
+                $payrollTotal += $g['payrollSub'];
+                $payWarn++;
             }
             // ĐÓNG BĂNG (chốt): nếu xe/ngày đã chốt → dùng số ĐÃ CHỐT (không đổi dù sửa quy chế).
             $frozen = (bool) ($pay?->frozen);
@@ -1203,7 +1227,7 @@ trait HandlesShipments
                         'drivers' => [], 'days' => 0, 'trips' => 0, 'paidDaily' => 0, 'chiHo' => 0, 'chiKhac' => 0, 'payroll' => 0, 'lines' => []];
                 }
                 $byBks[$bks]['days']++;
-                $byBks[$bks]['trips']     += count($t['payGroups']);
+                $byBks[$bks]['trips']     += count(array_filter($t['payGroups'], fn ($g) => empty($g['orphan'])));
                 $ch = (int) ($t['chohoTotal'] ?? 0);
                 $kh = (int) ($t['khacTotal'] ?? 0);
                 $byBks[$bks]['paidDaily'] += $t['payTotal'] - $ch - $kh;

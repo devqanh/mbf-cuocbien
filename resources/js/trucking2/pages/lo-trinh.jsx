@@ -611,9 +611,12 @@ function LoTrinhApp() {
   const api = (m, u) => window.trkApi(m, u);
   const drivers = B.drivers || [];
 
-  const [date, setDate] = useState(toYmd(new Date()));
+  // Mở từ Kỳ lương (?date=YYYY-MM-DD&bks=…) → vào đúng ngày + cuộn tới xe để đối soát.
+  const urlQ = useRef(new URLSearchParams(window.location.search)).current;
+  const focusBks = useRef(urlQ.get("bks") || "");
+  const [date, setDate] = useState(() => (/^\d{4}-\d{2}-\d{2}$/.test(urlQ.get("date") || "") ? urlQ.get("date") : toYmd(new Date())));
   const [data, setData] = useState(null);   // null = đang tải
-  const [showExt, setShowExt] = useState(false);   // mặc định CHỈ xe MBF; bật để xem xe ngoài chạy
+  const [showExt, setShowExt] = useState(() => !!urlQ.get("bks"));   // mặc định CHỈ xe MBF; bật để xem xe ngoài chạy
   const [payTruck, setPayTruck] = useState(null);   // xe đang mở popup "chi cho lái"
   const [freezing, setFreezing] = useState(false);
   // Khung "Kiểm tra dữ liệu" bật/tắt — nhớ theo trình duyệt
@@ -632,6 +635,11 @@ function LoTrinhApp() {
     }).catch(() => { if (my === reqId.current) setData({ trucks: [], totalLegs: 0 }); });
   };
   useEffect(() => { load(); }, [date]);
+  useEffect(() => {
+    if (!data || !focusBks.current) return;
+    const b = focusBks.current; focusBks.current = "";
+    setTimeout(() => scrollToTruck(b), 150);
+  }, [data]);
 
   const shiftDay = (n) => { const d = new Date(date + "T12:00:00"); d.setDate(d.getDate() + n); setDate(toYmd(d)); };
   // Sửa lít dầu 1 chuyến (theo cont) → lưu rồi tải lại ngày (tiền dầu, tổng xe, báo cáo đều tính lại ở backend).
@@ -659,7 +667,7 @@ function LoTrinhApp() {
   const visLegs = trucks.reduce((a, t) => a + t.legs.length, 0);
   const visPlanned = trucks.reduce((a, t) => a + (t.planned || []).length, 0);   // chuyến đã gán xe, chưa ra
   // Chốt ngày chỉ xét xe CÓ chuyến hoàn thành — xe chỉ có chuyến chưa xong thì chưa có số tiền để chốt.
-  const payTrucks = allTrucks.filter((t) => t.legs.length > 0);
+  const payTrucks = allTrucks.filter((t) => t.legs.length > 0 || (t.payGroups || []).length > 0);
   const allFrozen = payTrucks.length > 0 && payTrucks.every((t) => t.frozen);
   // Lỗi dữ liệu của các xe đang xem (gom theo loại) + số chuyến/xe vướng để hiện trên nút
   const issueList = collectIssues(trucks);
@@ -772,7 +780,7 @@ function LoTrinhApp() {
                       </span>
                     )}
                     {/* Chi cho lái: tổng các khoản "chi theo ngày" + lái nhận — chỉ hiện khi có quyền driverPay.manage (T.canEdit) */}
-                    {T.canEdit && tr.legs.length > 0 && <button type="button" onClick={() => setPayTruck(tr)} title="Chi cho lái xe (theo quy chế lương chuyến)"
+                    {T.canEdit && (tr.legs.length > 0 || (tr.payGroups || []).length > 0) && <button type="button" onClick={() => setPayTruck(tr)} title="Chi cho lái xe (theo quy chế lương chuyến)"
                       style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 11px", fontSize: 12.5, fontWeight: 700, borderRadius: 999, cursor: "pointer", whiteSpace: "nowrap",
                         border: "1px solid " + (tr.paid ? "var(--good)" : (tr.payTotal > 0 ? "var(--accent)" : "var(--line)")),
                         background: tr.paid ? "var(--good-weak)" : (tr.payTotal > 0 ? "var(--accent-weak)" : "#fff"),
