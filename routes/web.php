@@ -14,6 +14,7 @@ use App\Http\Controllers\Trucking\AttachmentController;
 use App\Http\Controllers\Trucking\CatalogController;
 use App\Http\Controllers\Trucking\DriverController;
 use App\Http\Controllers\Trucking\FleetController;
+use App\Http\Controllers\Trucking\FuelLogController;
 use App\Http\Controllers\Trucking\LoTrinhController;
 use App\Http\Controllers\Trucking\PlanLinkController;
 use App\Http\Controllers\Trucking\PriceController;
@@ -141,6 +142,13 @@ Route::middleware(['auth', RestrictSpendOnlySession::class])->group(function () 
             Route::get('/config',         [TruckingShipmentController::class, 'configData'])->name('configData');
             Route::get('/bootstrap',      [TruckingShipmentController::class, 'bootstrap'])->name('bootstrap');
             Route::get('/ke-hoach',                [PlanLinkController::class, 'index'])->name('plan');   // quản lý link kế hoạch
+            // Nhật ký đổ dầu xe MBF (menu Lô hàng) — ghi/xóa cần shipments.update (nhóm bên dưới)
+            Route::get('/nhat-ky-do-dau',          [FuelLogController::class, 'index'])->name('fuelLog');
+            Route::get('/nhat-ky-do-dau/data',     [FuelLogController::class, 'data'])->name('fuelLog.data');
+        });
+        Route::middleware('permission:shipments.update')->group(function () {
+            Route::post('/nhat-ky-do-dau',             [FuelLogController::class, 'save'])->name('fuelLog.save');
+            Route::delete('/nhat-ky-do-dau/{refill}',  [FuelLogController::class, 'destroy'])->name('fuelLog.destroy')->whereNumber('refill');
         });
         // --- Lộ trình lái xe: xem = quyền Lô hàng HOẶC quyền chi cho lái; chi / chốt ngày = driverPay.manage ---
         Route::middleware('permission:shipments.view|driverPay.manage')->group(function () {

@@ -53,6 +53,7 @@ class TruckingV2Service
     use \App\Services\Trucking\Concerns\HandlesPlanLinks;
     use \App\Services\Trucking\Concerns\HandlesSpendRequests;
     use \App\Services\Trucking\Concerns\HandlesVehicleDetail;
+    use \App\Services\Trucking\Concerns\HandlesFuelLog;
     use \App\Services\Trucking\Concerns\HandlesTripAndDrivers;
     use \App\Services\Trucking\Concerns\HandlesPricingAndImport;
     use \App\Services\Trucking\Concerns\HandlesCshtImport;

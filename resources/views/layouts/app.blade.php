@@ -42,7 +42,7 @@
                 <ul class="navbar-nav me-auto">
                     {{-- Lô hàng = dropdown gom: Lô hàng · Lộ trình · Bảng kê (rút gọn menu chính) --}}
                     @canany(['shipments.view', 'driverPay.manage', 'statements.view', 'extStatements.view'])
-                    @php $loActive = request()->routeIs('trucking2.shipments') || request()->routeIs('trucking2.loTrinh') || request()->routeIs('trucking2.statements') || request()->routeIs('trucking2.extStatements'); @endphp
+                    @php $loActive = request()->routeIs('trucking2.shipments') || request()->routeIs('trucking2.loTrinh') || request()->routeIs('trucking2.fuelLog') || request()->routeIs('trucking2.statements') || request()->routeIs('trucking2.extStatements'); @endphp
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle {{ $loActive ? 'active' : '' }}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                             <i class="bi bi-box-seam"></i> Lô hàng
@@ -54,6 +54,9 @@
                             @canany(['shipments.view', 'driverPay.manage'])
                             <li><a class="dropdown-item {{ request()->routeIs('trucking2.loTrinh') ? 'active' : '' }}" href="{{ route('trucking2.loTrinh') }}"><i class="bi bi-signpost-split me-2"></i> Lộ trình</a></li>
                             @endcanany
+                            @can('shipments.view')
+                            <li><a class="dropdown-item {{ request()->routeIs('trucking2.fuelLog') ? 'active' : '' }}" href="{{ route('trucking2.fuelLog') }}"><i class="bi bi-fuel-pump me-2"></i> Nhật ký đổ dầu</a></li>
+                            @endcan
                             @can('statements.view')
                             <li><a class="dropdown-item {{ request()->routeIs('trucking2.statements') ? 'active' : '' }}" href="{{ route('trucking2.statements') }}"><i class="bi bi-receipt me-2"></i> Bảng kê</a></li>
                             @endcan
