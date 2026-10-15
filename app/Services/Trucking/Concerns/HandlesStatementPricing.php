@@ -172,8 +172,9 @@ trait HandlesStatementPricing
         $choHoItems = []; $costItems = [];
         foreach ($s->costLines as $c) {
             $amt = (int) round((float) $c->amount); $bill = (bool) $c->billable;
-            if ($bill) $choHoItems[] = ['item' => $c->item ?: '(khoản)', 'amount' => $amt];
-            $costItems[] = ['item' => $c->item ?: '(khoản)', 'amount' => $amt, 'billable' => $bill, 'src' => $c->src ?? '',
+            $note = trim((string) $c->note);   // Ghi chú của khoản ở popup Chi phí lô hàng
+            if ($bill) $choHoItems[] = ['item' => $c->item ?: '(khoản)', 'amount' => $amt, 'note' => $note];
+            $costItems[] = ['item' => $c->item ?: '(khoản)', 'amount' => $amt, 'billable' => $bill, 'src' => $c->src ?? '', 'note' => $note,
                 // cước thuê xe ngoài: kèm tên nhà xe để lập bảng kê đầu ra biết chi phí đầu vào của cont
                 'vendor' => ($c->src ?? '') === 'extTruck' ? (string) ($s->ext_vendor ?? '') : ''];
         }

@@ -31,7 +31,7 @@ trait HandlesCshtImport
     private const CSHT_ITEM = 'CSHT';
     private const THANHLY_ITEM = 'Thanh lí';
     private const EXT_TRUCK_ITEM = 'Cước xe ngoài';
-    private const CSHT_FIELD_LABELS = ['amount' => 'Số tiền', 'vat' => 'Vat', 'invoice_no' => 'Số HĐ', 'payer' => 'Người chi', 'date' => 'Ngày HĐ', 'note' => 'Ghi chú', 'billable' => 'Chi hộ'];
+    private const CSHT_FIELD_LABELS = ['amount' => 'Số tiền', 'vat' => 'Vat', 'invoice_no' => 'Số HĐ', 'payer' => 'Người chi', 'date' => 'Ngày HĐ', 'note' => 'Ghi chú', 'billable' => 'Chi hộ', 'ext_pay' => 'Chi hộ xe ngoài'];
 
     /** Dry-run: chỉ kiểm tra + thống kê sẽ tạo / sửa / giữ nguyên, không ghi DB. */
     public function validateCshtImport(string $sheet, array $rows): array
@@ -199,7 +199,8 @@ trait HandlesCshtImport
                         || $this->cshtNorm((string) $c->item) === $this->cshtNorm($item->name))->values();
                     // Chi hộ để trống trên lô nhiều dòng tích lẫn lộn = giữ nguyên (file xuất không ghi được trạng thái đó).
                     if (! empty($fields['_billableBlank']) && $lines->pluck('billable')->map(fn ($b) => (bool) $b)->unique()->count() > 1) unset($fields['billable']);
-                    unset($fields['_billableBlank']);
+                    if (! empty($fields['_ext_payBlank']) && $lines->pluck('ext_pay')->map(fn ($b) => (bool) $b)->unique()->count() > 1) unset($fields['ext_pay']);
+                    unset($fields['_billableBlank'], $fields['_ext_payBlank']);
                     if (! $fields) { $stats['same']++; continue; }
                     $diff = $this->cshtDiff($lines, $fields);   // các ô KHÁC hiện tại (nhiều dòng: so tổng tiền / giá trị chung)
 
@@ -208,7 +209,7 @@ trait HandlesCshtImport
                         // Chưa điền Số tiền vẫn tạo dòng 0 đ (như thêm dòng trong popup) — vd chỉ ghi Số hóa đơn = 0.
                         $rowOps[] = ['type' => 'create', 'shipment' => $s, 'fields' => $fields + [
                             'amount' => 0, 'item' => $item->name, 'cost_item_id' => $item->id,
-                            'vat' => $item->vat ?? 0, 'color' => $item->color, 'billable' => false,
+                            'vat' => $item->vat ?? 0, 'color' => $item->color, 'billable' => false, 'ext_pay' => false,
                         ]];
                         continue;
                     }
@@ -295,12 +296,15 @@ trait HandlesCshtImport
         }
         // Chi hộ (x): chỉ khi file có ô này. x = tích; trống = không tích nhưng chỉ khi nhóm có số liệu khác
         // (nhóm trống hoàn toàn = lô không đụng khoản này).
-        if (array_key_exists('billable', $f)) {
-            $b = $this->cshtBillable($f['billable']);
-            if ($b === null) $reasons[] = "Chi hộ {$itemName} “" . trim((string) $f['billable']) . '” không hiểu — ghi x nếu có tích, để trống nếu không';
-            elseif ($b !== '' || $out) {
-                $out['billable'] = $b !== '' && $b;
-                if ($b === '') $out['_billableBlank'] = true;
+        // Chi hộ xe ngoài (x): cùng quy tắc → cột ext_pay (khoản tích vào Bảng kê xe ngoài).
+        $hasData = (bool) $out;
+        foreach (['billable' => ['billable', 'Chi hộ'], 'extPay' => ['ext_pay', 'Chi hộ xe ngoài']] as $k => [$col, $label]) {
+            if (! array_key_exists($k, $f)) continue;
+            $b = $this->cshtBillable($f[$k]);
+            if ($b === null) $reasons[] = "{$label} {$itemName} “" . trim((string) $f[$k]) . '” không hiểu — ghi x nếu có tích, để trống nếu không';
+            elseif ($b !== '' || $hasData) {
+                $out[$col] = $b !== '' && $b;
+                if ($b === '') $out["_{$col}Blank"] = true;
             }
         }
         return $out;
@@ -308,7 +312,7 @@ trait HandlesCshtImport
 
     private function cshtGroupHasValue(array $f): bool
     {
-        foreach (['amount', 'vat', 'invoiceNo', 'payer', 'date', 'dateRaw', 'note', 'billable'] as $k) if (trim((string) ($f[$k] ?? '')) !== '') return true;
+        foreach (['amount', 'vat', 'invoiceNo', 'payer', 'date', 'dateRaw', 'note', 'billable', 'extPay'] as $k) if (trim((string) ($f[$k] ?? '')) !== '') return true;
         return false;
     }
 
@@ -340,10 +344,10 @@ trait HandlesCshtImport
             $vals = $lines->map(function ($c) use ($k) {
                 if ($k === 'date') return $this->outDate($c->date);
                 if ($k === 'vat') return (string) round((float) $c->vat, 2);
-                if ($k === 'billable') return $c->billable ? '1' : '0';
+                if ($k === 'billable' || $k === 'ext_pay') return $c->{$k} ? '1' : '0';
                 return trim((string) ($c->{$k} ?? ''));
             })->unique()->values();
-            $want = $k === 'vat' ? (string) round((float) $v, 2) : ($k === 'billable' ? ($v ? '1' : '0') : (string) $v);
+            $want = $k === 'vat' ? (string) round((float) $v, 2) : (in_array($k, ['billable', 'ext_pay'], true) ? ($v ? '1' : '0') : (string) $v);
             if ($vals->count() !== 1 || (string) $vals->first() !== $want) $diff[$k] = $v;
         }
         return $diff;

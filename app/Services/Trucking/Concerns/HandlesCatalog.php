@@ -319,8 +319,9 @@ trait HandlesCatalog
                         ->map(fn ($l) => ['value' => $l->name, 'label' => $l->name . ($l->code && $l->code !== $l->name ? ' — ' . $l->code : '')])->values()->all(),
                     'khoOptions' => TruckingWarehouse::orderBy('sort')->orderBy('name')->get(['name', 'code'])->filter(fn ($w) => trim((string) $w->name) !== '')
                         ->map(fn ($w) => ['value' => $w->name, 'label' => $w->name . ($w->code && $w->code !== $w->name ? ' — ' . $w->code : '')])->values()->all(),
-                    'locCodes' => TruckingLocation::whereNotNull('code')->where('code', '!=', '')->distinct()->orderBy('code')->pluck('code')->all(),
-                    'khoCodes' => TruckingWarehouse::whereNotNull('code')->where('code', '!=', '')->distinct()->orderBy('code')->pluck('code')->all(),
+                    // Ký hiệu VIẾT HOA + bỏ trùng hoa-thường — khớp quy chế (luôn lưu chữ hoa), không hiện 2 mã NAKAWA / NAKaWA.
+                    'locCodes' => TruckingLocation::whereNotNull('code')->where('code', '!=', '')->pluck('code')->map(fn ($c) => mb_strtoupper(trim($c)))->unique()->sort()->values()->all(),
+                    'khoCodes' => TruckingWarehouse::whereNotNull('code')->where('code', '!=', '')->pluck('code')->map(fn ($c) => mb_strtoupper(trim($c)))->unique()->sort()->values()->all(),
                 ],
             ];
         }

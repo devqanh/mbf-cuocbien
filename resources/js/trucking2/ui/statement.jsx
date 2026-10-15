@@ -233,11 +233,25 @@ function VaoRaCell({ vao, ra, date }) {
 
 /* CHI PHÍ CÔNG TY của 1 lô (khoản không tích "chi hộ khách" — vd cước thuê xe ngoài kèm tên nhà xe) để người lập
    bảng kê đầu ra thấy chi phí đầu vào của cont. Không in. block = hiện thành 1 dòng riêng (trang tạo). */
-function LotCostLine({ items, block }) {
+/* GHI CHÚ từng khoản ở popup Chi phí lô hàng → Map tên khoản → [ghi chú]. Bảng kê đã lưu: lines[].costNotes lấy TRỰC TIẾP
+   từ lô (sửa ở lô là hiện theo, bảng kê cũ cũng có); trang tạo: note trong snapshot định giá (pr.costItems). */
+function costNoteMap(list) {
+  const m = new Map();
+  (Array.isArray(list) ? list : []).forEach((c) => {
+    const n = String((c && c.note) || "").trim(); if (!n) return;
+    const k = String(c.item || "").trim() || "(khoản)";
+    const arr = m.get(k) || []; if (!arr.includes(n)) arr.push(n); m.set(k, arr);
+  });
+  return m;
+}
+const noteOfItem = (notes, item) => ((notes && notes.get(String(item || "").trim() || "(khoản)")) || []).join("; ");
+const NoteTxt = ({ text }) => (text ? <span style={{ fontStyle: "italic", color: "var(--ink-4)", fontWeight: 400 }}> ({text})</span> : null);
+
+function LotCostLine({ items, block, notes }) {
   const list = (items || []).filter((c) => !c.billable && +c.amount);
   if (!list.length) return null;
   const total = list.reduce((s, c) => s + (+c.amount || 0), 0);
-  const body = <>Chi phí công ty (không thu khách): {list.map((c, j) => <React.Fragment key={j}>{j ? " · " : ""}{c.item}{c.vendor ? <b> ({c.vendor})</b> : null} <b className="tnum">{fmtNum(c.amount)}</b></React.Fragment>)}{list.length > 1 ? <> = <b className="tnum">{fmtNum(total)}</b></> : null}</>;
+  const body = <>Chi phí công ty (không thu khách): {list.map((c, j) => <React.Fragment key={j}>{j ? " · " : ""}{c.item}{c.vendor ? <b> ({c.vendor})</b> : null} <b className="tnum">{fmtNum(c.amount)}</b><NoteTxt text={noteOfItem(notes, c.item)} /></React.Fragment>)}{list.length > 1 ? <> = <b className="tnum">{fmtNum(total)}</b></> : null}</>;
   return block
     ? <div style={{ color: "#7c3aed" }}><i className="bi bi-receipt" /> {body}</div>
     : <span style={{ color: "#7c3aed" }}>· {body}</span>;
@@ -259,7 +273,7 @@ function TkCell({ d }) {
 
 /* Ô CHI HỘ của 1 lô: tổng + TỪNG HẠNG MỤC (snapshot choHoItems = khoản chi phí lô đã tích "chi hộ khách"),
    gộp khoản trùng tên; có in. Bảng kê cũ không có danh sách hạng mục → chỉ hiện tổng. */
-function ChoHoCell({ amount, items }) {
+function ChoHoCell({ amount, items, notes }) {
   const byName = new Map();
   (Array.isArray(items) ? items : []).forEach((c) => {
     const amt = Math.round(+c.amount || 0); if (!amt) return;
@@ -270,7 +284,15 @@ function ChoHoCell({ amount, items }) {
     <div>{fmtNum(amount)}</div>
     {byName.size > 0 && (
       <div style={{ marginTop: 3, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1, fontSize: 10.5, lineHeight: 1.35, fontWeight: 400, color: "var(--ink-3)" }}>
-        {[...byName].map(([k, v]) => <span key={k} title={`${k}: ${fmtNum(v)}`} style={{ whiteSpace: "nowrap" }}>{k} <b className="tnum" style={{ fontWeight: 600, color: "var(--ink-2)" }}>{fmtNum(v)}</b></span>)}
+        {[...byName].map(([k, v]) => {
+          const nt = noteOfItem(notes, k);
+          return (
+            <span key={k} title={`${k}: ${fmtNum(v)}${nt ? " — " + nt : ""}`} style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+              <span style={{ whiteSpace: "nowrap" }}>{k} <b className="tnum" style={{ fontWeight: 600, color: "var(--ink-2)" }}>{fmtNum(v)}</b></span>
+              {nt && <span style={{ fontStyle: "italic", color: "var(--ink-4)", maxWidth: 180, textAlign: "right", whiteSpace: "normal" }}>{nt}</span>}
+            </span>
+          );
+        })}
       </div>
     )}
   </>);
@@ -611,7 +633,7 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
                       <ExtraCell col={c} value={a.extras[c.key] || 0} onChange={(v) => setLineExtra(x.id, c.key, v)} />
                     </td>
                   ))}
-                  <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: "none", verticalAlign: "top", color: "var(--ink-2)", minWidth: 90 }}><ChoHoCell amount={a.choho} items={x.pr.choHoItems} /></td>
+                  <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: "none", verticalAlign: "top", color: "var(--ink-2)", minWidth: 90 }}><ChoHoCell amount={a.choho} items={x.pr.choHoItems} notes={costNoteMap(x.pr.costItems)} /></td>
                   <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: "none", verticalAlign: "top", color: "var(--ink-2)" }}><TkCell d={x.pr} /></td>
                   <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: "none", verticalAlign: "top", fontWeight: 700 }}>{fmtNum(a.total)}</td>
                   <td style={{ padding: "6px 8px", borderBottom: "none", verticalAlign: "top" }}><LineNoteCell value={noteOv[x.id]} onChange={(v) => setNoteOv((o) => ({ ...o, [x.id]: v }))} /></td>
@@ -623,7 +645,7 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
                   <td colSpan={nCols - 2} style={{ padding: "0 8px", borderBottom: "1px solid var(--line-2)" }}>
                     <LotNote text={x.infoNote} />
                     <div className="ke-noprint" style={{ fontSize: 11, lineHeight: 1.55, padding: "0 0 8px" }}>
-                      <LotCostLine items={x.pr.costItems} block />
+                      <LotCostLine items={x.pr.costItems} block notes={costNoteMap(x.pr.costItems)} />
                       {x.pr.matched
                         ? <span style={{ color: "var(--good)" }}>✓ Bảng giá · {x.cru ? (/xu/i.test(x.io || "") ? "CRU ngoại" : "CRU nội") : "1 chiều"} · {x.pr.conn || "—"} · {contColLabel(x.pr)}{x.pr.priceBook ? <span style={{ color: "var(--accent)" }}> · 📅 {bookLabel(x.pr.priceBook)}</span> : null} · <span className="tnum">{x.pr.route}</span>{x.pr.noDrop ? <span style={{ color: "var(--warn)" }}> (lô chưa có Nơi hạ — khớp theo FROM)</span> : null} — <span className="tnum">{x.pr.dau > 0 ? `Cước ${fmtNum(x.pr.cuoc)} + Dầu ${fmtNum(x.pr.dau)}` : `Cước+dầu ${fmtNum(x.pr.cuoc)}`}{(x.pr.bargeCuoc || x.pr.bargeDau) ? " + Sà lan " + fmtNum((x.pr.bargeCuoc || 0) + (x.pr.bargeDau || 0)) : ""}{x.pr.chiHo ? " + Chi hộ " + fmtNum(x.pr.chiHo) : ""} = {fmtNum(x.pr.phaiThu)} ₫</span>{x.pr.isBarge && !x.pr.bargeMatched ? <span style={{ color: "var(--warn)" }}> · ⚠ sà lan chưa khớp giá</span> : null}</span>
                         : <span style={{ color: "var(--warn)" }}>⚠ Chưa khớp bảng giá{!x.pr.priceBook ? " (ngày cont ra ngoài mọi bảng giá)" : (x.pr.routeMatched ? ` (tuyến có giá nhưng thiếu cột loại cont ${x.pr.contType || "?"})` : "")}{x.pr.chiHo ? " · mới có Chi hộ " + fmtShort(x.pr.chiHo) : " · phải thu 0"}</span>}
@@ -844,6 +866,8 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
               const sug = suggestionOf(l, sg, vatRate);
               const manual = isManualLine(l);
               const sysB = sysBaseOf(l.detail);
+              // Ghi chú các khoản Chi phí lô hàng: trực tiếp từ lô (costNotes); bảng kê không có thì lấy snapshot.
+              const lineNotes = costNoteMap(Array.isArray(l.costNotes) ? l.costNotes : (l.detail && l.detail.costItems));
               const note = String(l.infoNote || "").trim();   // "Ghi chú tự do cho lô hàng" (popup Thông tin lô, lấy trực tiếp từ lô)
               const noteOnly = !!note && !(d && d.found) && !gone;   // có ghi chú nhưng không có dòng chi tiết → dòng riêng
               const noteEl = <LotNote text={note} />;
@@ -906,7 +930,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
                     <ExtraCell col={c} value={a.extras[c.key] || 0} onChange={(v) => setLineExtra(l.id, c.key, v)} />
                   </td>
                 ))}
-                <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top", minWidth: 90 }}><ChoHoCell amount={a.choho} items={l.detail && l.detail.choHoItems} /></td>
+                <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top", minWidth: 90 }}><ChoHoCell amount={a.choho} items={l.detail && l.detail.choHoItems} notes={lineNotes} /></td>
                 <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top" }}><TkCell d={l.detail} /></td>
                 <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", fontWeight: 700, verticalAlign: "top" }}>{fmtNum(a.total)}</td>
                 <td style={{ padding: "6px 8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", verticalAlign: "top" }}><LineNoteCell value={l.userNote} onChange={(v) => setLineNote(l.id, v)} /></td>
@@ -956,10 +980,10 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
                           {!d.bargeMatched && <span style={{ color: "var(--warn)", fontWeight: 700 }}> ⚠ chưa khớp{d.bargeDrop ? "" : " (thiếu nơi hạ sà lan)"}</span>}
                         </span>
                       )}
-                      {d.choHoItems.map((c, j) => <span key={"h" + j} style={{ color: "var(--good)" }}>+ Chi hộ · {c.item} <b className="tnum">{fmtNum(c.amount)}</b></span>)}
+                      {d.choHoItems.map((c, j) => <span key={"h" + j} style={{ color: "var(--good)" }}>+ Chi hộ · {c.item} <b className="tnum">{fmtNum(c.amount)}</b><NoteTxt text={noteOfItem(lineNotes, c.item)} /></span>)}
                       <span style={{ fontWeight: 700 }}>= <b className="tnum" style={{ color: "var(--accent)" }}>{fmtNum(d.phaiThu)} ₫</b></span>
                       {manual && <span style={{ color: "#9a6700", fontWeight: 600 }}>· đang thu theo giá tùy chỉnh <b className="tnum">{fmtNum(lineAmt(l).base)}</b></span>}
-                      <LotCostLine items={d.costItems} />
+                      <LotCostLine items={d.costItems} notes={lineNotes} />
                     </div>
                   </td>
                 </tr>

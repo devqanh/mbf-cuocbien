@@ -557,6 +557,8 @@ trait HandlesPricingAndImport
         if ($coded) {
             $rawNames = $cfg[$key] ?? [];
             $codeArr  = $cfg[$coded . 'Arr'] ?? null;        // mảng mã theo chỉ số dòng (mô hình mới)
+            // Ký hiệu luôn VIẾT HOA (quy chế lương / bảng giá so theo chữ hoa) — "NAKaWA" và "NAKAWA" không thành 2 mã.
+            if (is_array($codeArr)) $codeArr = array_map(fn ($c) => mb_strtoupper(trim((string) $c)), $codeArr);
             $idArr    = $cfg[$key . 'IdArr'] ?? null;        // mảng id theo chỉ số dòng → KHỚP THEO ID để giữ id khi đổi mã
             $nameMap  = $cfg[$coded] ?? [];                  // map tên→mã (tương thích bản cũ)
             $addrArr  = $key === 'warehouses' ? ($cfg['warehouseAddrArr'] ?? null) : null;   // Kho có thêm Địa chỉ
@@ -576,7 +578,7 @@ trait HandlesPricingAndImport
             foreach ($rawNames as $i => $rawName) {
                 $name = trim((string) $rawName);
                 if ($name === '') continue;
-                $code = $codeArr !== null ? trim((string) ($codeArr[$i] ?? '')) : trim((string) ($nameMap[$name] ?? ''));
+                $code = $codeArr !== null ? trim((string) ($codeArr[$i] ?? '')) : mb_strtoupper(trim((string) ($nameMap[$name] ?? '')));
                 $attrs = ['name' => $name, 'code' => ($code !== '' ? $code : null), 'sort' => $sort];
                 if ($addrArr !== null) $attrs['address'] = (trim((string) ($addrArr[$i] ?? '')) ?: null);
                 if ($geoArr !== null) { [$lat, $lng] = $this->parseLatLng($geoArr[$i] ?? ''); $attrs['lat'] = $lat; $attrs['lng'] = $lng; }

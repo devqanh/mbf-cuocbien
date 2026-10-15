@@ -1538,6 +1538,7 @@ trait HandlesShipments
             foreach ($cols as $key => [$col, $val]) {
                 if ($apply($key)) $s->{$col} = $val;
             }
+            if ($apply('kho')) $s->kho = $this->canonKhoNames($s->kho);
             // SÀ LAN: CÓ Nơi hạ sà lan = đi sà lan; loại DRY/NOR SUY TỪ Loại cont (reefer RF/RHC→NOR, còn lại→DRY).
             // Không còn cờ "Đi sà lan" / chọn DRur/NOR thủ công — derive khi sửa bargeDrop hoặc contType.
             if ($apply('bargeDrop') || $apply('contType')) {
@@ -1670,6 +1671,20 @@ trait HandlesShipments
             $this->recomputeShipmentDerived($s, $only);
             return $s->fresh(['customer', 'costLines', 'revenueLines', 'payments']);
         });
+    }
+
+    /**
+     * Ô Kho (danh sách TÊN kho, ", ") → đúng chữ hoa-thường của tên trong danh mục: gõ / import "ts", "Nakawa"
+     * thành "TS", "NAKAWA" để mọi chỗ so theo tên (phí tuyến theo kho, báo cáo) không coi là kho khác. Đoạn không
+     * khớp tên nào giữ nguyên.
+     */
+    public function canonKhoNames(?string $kho): ?string
+    {
+        if ($kho === null || trim($kho) === '') return $kho;
+        $byUp = [];
+        foreach (TruckingWarehouse::pluck('name') as $n) if (trim((string) $n) !== '') $byUp[mb_strtoupper(trim($n))] ??= trim($n);
+        $segs = array_map(fn ($p) => $byUp[mb_strtoupper(trim($p))] ?? trim($p), preg_split('/\s*,\s*/u', trim($kho)));
+        return implode(', ', array_filter($segs, fn ($p) => $p !== ''));
     }
 
     /**

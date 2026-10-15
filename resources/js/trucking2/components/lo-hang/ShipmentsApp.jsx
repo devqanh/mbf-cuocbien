@@ -1908,7 +1908,7 @@ function ShipmentsApp() {
               };
               const cellText = (c) => {
                 if (!c) return "—";
-                const extra = [c.vat !== undefined && c.vat !== "" ? `VAT ${c.vat}%` : "", c.invoiceNo ? `HĐ ${c.invoiceNo}` : "", c.dateRaw || (c.date ? fmtDT(c.date) : ""), c.payer || "", c.note || "", /^(x|v|1|có|co|yes|true|chi hộ|✓|✔|☑)$/i.test(String(c.billable || "").trim()) ? "☑ Chi hộ" : ""].filter(Boolean);
+                const extra = [c.vat !== undefined && c.vat !== "" ? `VAT ${c.vat}%` : "", c.invoiceNo ? `HĐ ${c.invoiceNo}` : "", c.dateRaw || (c.date ? fmtDT(c.date) : ""), c.payer || "", c.note || "", /^(x|v|1|có|co|yes|true|chi hộ|✓|✔|☑)$/i.test(String(c.billable || "").trim()) ? "☑ Chi hộ" : "", /^(x|v|1|có|co|yes|true|✓|✔|☑)$/i.test(String(c.extPay || "").trim()) ? "☑ Chi hộ xe ngoài" : ""].filter(Boolean);
                 return (<>{amt(c.amount) || (extra.length ? "" : "—")}{extra.length ? <div style={{ fontSize: 10.5, color: "var(--ink-4)", whiteSpace: "normal" }}>{extra.join(" · ")}</div> : null}</>);
               };
               const st = cshtCheck.stats || {};
