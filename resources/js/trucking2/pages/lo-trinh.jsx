@@ -360,7 +360,7 @@ function AmountChip({ it, payroll, hint, canEdit, frozen, onSave }) {
   );
 }
 
-/* DẦU 1 chuyến (chi phí công ty): lít × giá dầu theo ngày. Sửa được SỐ LÍT (vd 12 → 12,4) — lưu theo cont của chuyến,
+/* DẦU 1 chuyến (chi phí công ty): lít × giá dầu theo ngày. Sửa được SỐ LÍT (số nguyên — backend làm tròn, không lẻ phẩy) — lưu theo cont của chuyến,
    ghi đè định mức quy chế; "Về định mức" = bỏ sửa tay. Ngày đã chốt thì khóa. */
 function FuelChip({ fuel, canEdit, frozen, onSave }) {
   const [edit, setEdit] = useState(false);

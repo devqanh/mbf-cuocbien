@@ -606,10 +606,11 @@ trait HandlesShipments
             $tripNo = 0;          // số thứ tự chuyến KÉO CONT của xe trong ngày vận hành (08:00 → 08:00)
             foreach ($ls as $l) {
                 $g = $this->legPayGroup($l, $axle, $fuels, $dateStr);
-                // Lít dầu sửa tay (vd 12 → 12,4) ghi đè định mức quy chế của chuyến; tiền = lít × giá dầu theo ngày.
+                // Lít dầu sửa tay ghi đè định mức quy chế của chuyến (làm tròn số nguyên); tiền = lít × giá dầu theo ngày.
                 $ov = is_array($tripOv[(string) $g['cont']] ?? null) ? $tripOv[(string) $g['cont']] : [];
                 $fl = $ov['liters'] ?? null;
                 if ($fl !== null && $fl !== '') {
+                    $fl = round((float) $fl);
                     $unit = $g['fuel']['unitPrice'] ?? (int) round((float) $this->fuelPriceForDate($fuels, $dateStr));
                     $g['fuel'] = ['axle' => $g['fuel']['axle'] ?? ($axle === '2' ? 2 : 1), 'liters' => (float) $fl, 'unitPrice' => $unit,
                         'amount' => (int) round((float) $fl * $unit), 'baseLiters' => $g['fuel']['liters'] ?? null, 'edited' => true];
@@ -837,7 +838,7 @@ trait HandlesShipments
         $hh = (! empty($leg['loadIn']) && ! empty($leg['loadOut'])) || ! empty($leg['ketHop']);
         $rate = (float) ($reg['fuel'][$is2 ? 'axle2' : 'axle1'][$hh ? 'hh' : 'hr'] ?? 0);
         if ($km && $rate > 0) {
-            $liters = round($km * $rate / 100, 2);
+            $liters = round($km * $rate / 100);   // lít dầu làm tròn số nguyên (không lẻ phẩy) — tiền dầu tính theo số lít đã tròn
             $unit = (float) $this->fuelPriceForDate($fuels, $date);   // đơn giá dầu theo NGÀY của chuyến
             $g['fuel'] = ['axle' => $is2 ? 2 : 1, 'liters' => $liters, 'unitPrice' => (int) round($unit), 'amount' => (int) round($liters * $unit),
                 'km' => $km, 'kmSrc' => $kmSrc, 'rate' => $rate, 'load' => $hh ? 'Hàng–Hàng' : 'Hàng–Rỗng'];
@@ -1107,7 +1108,7 @@ trait HandlesShipments
         if ($row->frozen) return ['ok' => false, 'message' => 'Ngày đã chốt — bỏ chốt ngày để sửa lít dầu'];
         $map = is_array($row->trip_overrides) ? $row->trip_overrides : [];
         $cur = is_array($map[$cont] ?? null) ? $map[$cont] : [];
-        if ($liters === null || $liters < 0) unset($cur['liters']); else $cur['liters'] = round($liters, 2);
+        if ($liters === null || $liters < 0) unset($cur['liters']); else $cur['liters'] = round($liters);   // lít nguyên, không lẻ
         if ($cur) $map[$cont] = $cur; else unset($map[$cont]);
         $row->trip_overrides = $map ?: null;
         if (! $row->vehicle_id) $row->vehicle_id = TruckingVehicle::where('plate', $bks)->value('id');
