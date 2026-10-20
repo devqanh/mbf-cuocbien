@@ -741,7 +741,7 @@ trait HandlesShipments
                 'payGroups' => $payGroups, 'payTotal' => $payTotal, 'payrollTotal' => $payrollTotal, 'payWarn' => $payWarn, 'chohoTotal' => $chohoTotal, 'khacTotal' => $khacTotal,
                 'fuelTotal' => $fuelTotal, 'fuelLiters' => round($fuelLiters, 1),
                 'frozen' => $frozen,
-                'payDriver' => $pay?->driver ?? '', 'paid' => (bool) ($pay?->paid ?? false), 'paidDate' => $pay ? $this->outDate($pay->paid_date) : ''];
+                'payDriver' => $pay?->driver ?? '', 'payNote' => $pay?->note ?? '', 'paid' => (bool) ($pay?->paid ?? false), 'paidDate' => $pay ? $this->outDate($pay->paid_date) : ''];
         }
         usort($trucks, fn ($a, $b) => count($b['legs']) + count($b['planned']) <=> count($a['legs']) + count($a['planned']) ?: strcmp($a['bks'], $b['bks']));
         $frozenCount = count(array_filter($trucks, fn ($t) => $t['frozen']));

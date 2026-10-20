@@ -47,6 +47,7 @@ function PayBankBox({ banks, amount, addInfo }) {
 function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
   const [driver, setDriver] = useState(truck.payDriver || "");
   const [paid, setPaid] = useState(!!truck.paid);
+  const [note, setNote] = useState(truck.payNote || "");   // ghi chú chung cho lần chi của xe trong ngày
   const [saving, setSaving] = useState(false);
   // Mỗi CHUYẾN = 1 nhóm (backend đã gom, kể cả chuyến chưa tính được theo quy chế → có note cảnh báo).
   const groups = truck.payGroups || [];
@@ -140,8 +141,8 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
     const chohoItems = groups.map((g, gi) => ({ cont: g.cont || "", keys: [...(chSel[gi] || [])] }));
     // Số tiền nhập tay (gửi đủ mọi khoản editable — xóa trắng = bỏ nhập tay)
     const amountItems = groups.flatMap((g, gi) => editables(g).map((it) => ({ cont: g.cont || "", key: it.key, amount: (amt[gi] || {})[it.key] ?? "" })));
-    window.trkApi("POST", (window.__TRK.routes || {}).savePay, { date, bks: truck.bks, driver, paid, extraItems, chohoItems, amountItems })
-      .then((r) => { if (r && r.ok) { window.trkToast && window.trkToast("Đã lưu chi cho lái"); onSaved({ payDriver: driver, paid }); onClose(); } else { window.trkToast && window.trkToast("Lưu thất bại", "error"); setSaving(false); } })
+    window.trkApi("POST", (window.__TRK.routes || {}).savePay, { date, bks: truck.bks, driver, paid, note, extraItems, chohoItems, amountItems })
+      .then((r) => { if (r && r.ok) { window.trkToast && window.trkToast("Đã lưu chi cho lái"); onSaved({ payDriver: driver, paid, payNote: note }); onClose(); } else { window.trkToast && window.trkToast("Lưu thất bại", "error"); setSaving(false); } })
       .catch(() => { window.trkToast && window.trkToast("Lỗi kết nối", "error"); setSaving(false); });
   };
   const footer = (
@@ -258,6 +259,13 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
               </div>
               );
             })}
+            {/* Ghi chú chung cho lần chi cho lái của xe trong ngày */}
+            <div>
+              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}><i className="bi bi-sticky" /> Ghi chú</div>
+              <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={1000}
+                placeholder="Ghi chú cho lần chi này (vd: đã ứng trước, chi bù hôm qua…)"
+                style={{ width: "100%", boxSizing: "border-box", padding: "7px 9px", fontSize: 13, fontFamily: "inherit", border: "1px solid var(--line)", borderRadius: 8, outline: "none", resize: "vertical" }} />
+            </div>
             <div style={{ display: "flex", alignItems: "center", padding: "10px 12px", border: "1.5px solid var(--accent)", borderRadius: 10, background: "var(--accent-weak)" }}>
               <span style={{ fontWeight: 700 }}>Tổng chi cho lái <span style={{ fontWeight: 400, fontSize: 12, color: "var(--ink-4)" }}>({groups.length} chuyến{warnCount > 0 ? ", " + warnCount + " chưa ra tiền" : ""})</span></span><span style={{ flex: 1 }} />
               <span className="tnum" style={{ fontWeight: 800, fontSize: 16, color: "var(--accent)" }}>{fmtVND(total)}</span>
@@ -798,7 +806,7 @@ function LoTrinhApp() {
                       </span>
                     )}
                     {/* Chi cho lái: tổng các khoản "chi theo ngày" + lái nhận — chỉ hiện khi có quyền driverPay.manage (T.canEdit) */}
-                    {T.canEdit && (tr.legs.length > 0 || (tr.payGroups || []).length > 0) && <button type="button" onClick={() => setPayTruck(tr)} title="Chi cho lái xe (theo quy chế lương chuyến)"
+                    {T.canEdit && (tr.legs.length > 0 || (tr.payGroups || []).length > 0) && <button type="button" onClick={() => setPayTruck(tr)} title={"Chi cho lái xe (theo quy chế lương chuyến)" + (tr.payNote ? " · Ghi chú: " + tr.payNote : "")}
                       style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 11px", fontSize: 12.5, fontWeight: 700, borderRadius: 999, cursor: "pointer", whiteSpace: "nowrap",
                         border: "1px solid " + (tr.paid ? "var(--good)" : (tr.payTotal > 0 ? "var(--accent)" : "var(--line)")),
                         background: tr.paid ? "var(--good-weak)" : (tr.payTotal > 0 ? "var(--accent-weak)" : "#fff"),
@@ -806,6 +814,7 @@ function LoTrinhApp() {
                       <i className={"bi " + (tr.paid ? "bi-cash-coin" : "bi-cash")} /> Chi lái: <span className="tnum">{fmtVND(tr.payTotal || 0)}</span>
                       {tr.payDriver ? <span style={{ fontWeight: 500 }}>· {tr.payDriver}</span> : null}
                       {tr.paid ? <span title="Đã chi">✓</span> : null}
+                      {tr.payNote ? <i className="bi bi-sticky" title={"Ghi chú: " + tr.payNote} /> : null}
                       {tr.payWarn > 0 ? <i className="bi bi-exclamation-triangle-fill" title={tr.payWarn + " chuyến chưa ra tiền (xem lý do trong popup Chi lái)"} style={{ color: "#c9820f" }} /> : null}
                     </button>}
                     </div>
