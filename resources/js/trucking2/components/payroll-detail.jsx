@@ -11,7 +11,7 @@ function splitGroup(g) {
   const manual = g.manual || [];
   const dayAll = [
     ...(g.items || []).filter((it) => !isFuel(it)),
-    ...manual.filter((m) => m.perDay !== false).map((m) => ({ label: m.name || "Chi khác", amount: m.amount, choHo: !!m.choHo && !m.khac, khac: !!m.khac })),
+    ...manual.filter((m) => m.perDay !== false).map((m) => ({ label: (m.name || "Chi khác") + (m.khac && m.note ? " (" + m.note + ")" : ""), amount: m.amount, choHo: !!m.choHo && !m.khac, khac: !!m.khac })),
   ];
   const payroll = [
     ...(g.payrollItems || []).filter((it) => !isFuel(it)),

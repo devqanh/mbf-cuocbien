@@ -46,6 +46,7 @@ class LoTrinhController extends BaseTruckingController
             'extraItems.*.perDay'   => ['nullable', 'boolean'],
             'extraItems.*.choHo'    => ['nullable', 'boolean'],
             'extraItems.*.khac'     => ['nullable', 'boolean'],   // chi phí khác (không tính lương, thống kê riêng)
+            'extraItems.*.note'     => ['nullable', 'string', 'max:500'],   // ghi chú chi phí khác
             'chohoItems'            => ['nullable', 'array'],    // khoản phí tuyến chọn "Chi hộ" theo chuyến: [{cont, keys[]}]
             'chohoItems.*.cont'     => ['nullable', 'string'],
             'chohoItems.*.keys'     => ['nullable', 'array'],

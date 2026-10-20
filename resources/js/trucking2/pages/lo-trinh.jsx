@@ -90,7 +90,8 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
     );
   };
   const computedSub = (g, gi) => (g.items || []).reduce((s, it) => s + amtOf(gi, it), 0);
-  const manualSub = (gi) => (extras[gi] || []).reduce((s, m) => s + (m.perDay !== false ? toNum(m.amount) : 0), 0);
+  // Chi phí khác = chi phí CÔNG TY → không cộng vào chi cho lái
+  const manualSub = (gi) => (extras[gi] || []).reduce((s, m) => s + (m.perDay !== false && !m.khac ? toNum(m.amount) : 0), 0);
   const chohoSub = (g, gi) => (g.items || []).reduce((s, it) => s + ((chSel[gi] || new Set()).has(ckOf(it)) ? amtOf(gi, it) : 0), 0)
     + (extras[gi] || []).reduce((s, m) => s + (m.perDay !== false && m.choHo ? toNum(m.amount) : 0), 0);
   const groupTotal = (g, gi) => computedSub(g, gi) + manualSub(gi);
@@ -98,7 +99,7 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
   const isWarn = (g, gi) => (g.needInput ? pendingInput(g, gi) : (!!g.note && manualSub(gi) <= 0));
   const total = groups.reduce((s, g, gi) => s + groupTotal(g, gi), 0);
   const chohoTotal = groups.reduce((s, g, gi) => s + chohoSub(g, gi), 0);
-  // CHI PHÍ KHÁC (chi khác phát sinh chọn "Chi phí khác"): đưa lái hôm nay, KHÔNG tính lương, thống kê riêng với chi hộ
+  // CHI PHÍ KHÁC (chi khác phát sinh chọn "Chi phí khác"): chi phí công ty — KHÔNG tính lương, KHÔNG nằm trong tổng chi cho lái
   const khacTotal = extras.reduce((s, arr) => s + (arr || []).reduce((a, m) => a + (m.perDay !== false && m.khac ? toNum(m.amount) : 0), 0), 0);
   // Ô loại cho CHI KHÁC PHÁT SINH: 3 loại (khoản theo quy chế đã khóa loại nên chỉ dòng thủ công mới chọn)
   const exTypeSel = (m, onChange) => {
@@ -106,7 +107,7 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
     const tone = v === "choho" ? ["#f0c36d", "#fff7e6", "#9a6700"] : v === "khac" ? ["#c4b5fd", "#f5f3ff", "#6d28d9"] : ["var(--line)", "#fff", "var(--ink-3)"];
     return (
       <select value={v} disabled={frozen} onChange={(e) => onChange({ choHo: e.target.value === "choho", khac: e.target.value === "khac" })}
-        title={frozen ? "Ngày đã chốt — bỏ chốt để đổi" : "Tính lương: cộng vào lương cuối tháng · Chi hộ: tiền đưa lái chi hộ (vé, đường…) · Chi phí khác: chi phí công ty lái chi giúp (sửa xe, rửa xe, gửi xe…) — 2 loại sau KHÔNG tính lương"}
+        title={frozen ? "Ngày đã chốt — bỏ chốt để đổi" : "Tính lương: cộng vào lương cuối tháng · Chi hộ: tiền đưa lái chi hộ (vé, đường…) · Chi phí khác: chi phí công ty (VETC, sửa xe, rửa xe, gửi xe…) — KHÔNG tính lương, KHÔNG cộng vào chi cho lái"}
         style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 600, padding: "3px 4px", borderRadius: 6, cursor: frozen ? "default" : "pointer", border: "1px solid " + tone[0], background: tone[1], color: tone[2] }}>
         <option value="luong">Tính lương</option>
         <option value="choho">Chi hộ</option>
@@ -133,7 +134,7 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
     const extraItems = [];
     groups.forEach((g, gi) => (extras[gi] || []).forEach((m) => {
       if (!(m.name || "").trim() && !toNum(m.amount)) return;   // bỏ dòng rỗng
-      extraItems.push({ cont: g.cont || "", name: m.name || "", amount: m.amount, perDay: m.perDay !== false, choHo: !m.khac && !!m.choHo, khac: !!m.khac });
+      extraItems.push({ cont: g.cont || "", name: m.name || "", amount: m.amount, perDay: m.perDay !== false, choHo: !m.khac && !!m.choHo, khac: !!m.khac, note: m.khac ? (m.note || "") : "" });
     }));
     // Khoản phí tuyến chọn Chi hộ theo từng chuyến (gửi đủ mọi chuyến để bỏ chọn cũng được lưu)
     const chohoItems = groups.map((g, gi) => ({ cont: g.cont || "", keys: [...(chSel[gi] || [])] }));
@@ -149,15 +150,25 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
       <div style={{ display: "flex", gap: 8 }}><Btn onClick={onClose}>Đóng</Btn><Btn variant="primary" onClick={save} disabled={saving}>{saving ? "Đang lưu…" : "Lưu"}</Btn></div>
     </div>
   );
-  // Hàng nhập 1 khoản chi khác thủ công (tên + tiền + xóa)
+  // Hàng nhập 1 khoản chi khác thủ công (tên + tiền + xóa); loại "Chi phí khác" có thêm ô ghi chú bên dưới
   const exRow = (gi, m, k) => (
-    <div key={"m" + k} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderTop: "1px solid var(--line-2)", background: "#fcfdff" }}>
+    <div key={"m" + k} style={{ borderTop: "1px solid var(--line-2)", background: "#fcfdff" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px" }}>
       <i className="bi bi-plus-circle" style={{ color: "var(--accent)", fontSize: 12 }} />
       <input value={m.name || ""} onChange={(e) => updEx(gi, k, { name: e.target.value })} placeholder="Tên khoản phát sinh"
         style={{ flex: 1, minWidth: 0, padding: "5px 8px", fontSize: 12.5, border: "1px solid var(--line)", borderRadius: 7, outline: "none" }} />
       {exTypeSel(m, (np) => updEx(gi, k, np))}
       <div style={{ width: 130 }}><Money value={m.amount} onChange={(x) => updEx(gi, k, { amount: x })} dim /></div>
       <button type="button" onClick={() => delEx(gi, k)} title="Xóa khoản" style={{ flexShrink: 0, width: 26, height: 26, display: "grid", placeItems: "center", border: "1px solid var(--line)", borderRadius: 7, background: "#fff", color: "var(--ink-4)", cursor: "pointer" }}><I.x /></button>
+    </div>
+    {m.khac && (
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 12px 7px 32px" }}>
+        <i className="bi bi-sticky" style={{ color: "#6d28d9", fontSize: 12 }} />
+        <input value={m.note || ""} onChange={(e) => updEx(gi, k, { note: e.target.value })} disabled={frozen} maxLength={500}
+          placeholder="Ghi chú chi phí (vd: nạp VETC tuyến…, sửa lốp…, rửa xe…)"
+          style={{ flex: 1, minWidth: 0, padding: "5px 8px", fontSize: 12, border: "1px solid #ddd6fe", borderRadius: 7, outline: "none", background: "#faf8ff" }} />
+      </div>
+    )}
     </div>
   );
   return (
@@ -169,7 +180,7 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "9px 12px", fontSize: 12.5, lineHeight: 1.5, color: "#1f4f9e", background: "#eff5ff", border: "1px solid #cfe0fb", borderRadius: 10 }}>
               <i className="bi bi-info-circle-fill" style={{ marginTop: 2 }} />
-              <span>Mỗi khoản thuộc 1 loại. <b>Tính lương</b> = cộng vào <b>lương cuối tháng</b> của lái (kỳ lương). <b style={{ color: "#9a6700" }}>Chi hộ</b> = tiền đưa lái để chi hộ (vé, đường…). <b style={{ color: "#6d28d9" }}>Chi phí khác</b> = chi phí công ty lái chi giúp (sửa xe, rửa xe, gửi xe…). Chi hộ và chi phí khác vẫn nằm trong <b>tổng chi hôm nay</b> nhưng <b>KHÔNG tính vào lương cuối tháng</b>. Dòng vàng “kỳ lương” là khoản không chi trong ngày, trả vào kỳ lương.{frozen ? <> <b>Ngày đã chốt</b> — bỏ chốt để đổi loại khoản.</> : null}</span>
+              <span>Mỗi khoản thuộc 1 loại. <b>Tính lương</b> = cộng vào <b>lương cuối tháng</b> của lái (kỳ lương). <b style={{ color: "#9a6700" }}>Chi hộ</b> = tiền đưa lái để chi hộ (vé, đường…). <b style={{ color: "#6d28d9" }}>Chi phí khác</b> = chi phí công ty (VETC, sửa xe, rửa xe, gửi xe…) — như dầu: <b>KHÔNG tính lương</b> và <b>KHÔNG cộng vào tổng chi cho lái</b>. Chi hộ vẫn nằm trong <b>tổng chi hôm nay</b> nhưng <b>KHÔNG tính vào lương cuối tháng</b>. Dòng vàng “kỳ lương” là khoản không chi trong ngày, trả vào kỳ lương.{frozen ? <> <b>Ngày đã chốt</b> — bỏ chốt để đổi loại khoản.</> : null}</span>
             </div>
             {warnCount > 0 && (
               <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "9px 12px", fontSize: 12.5, color: "#a05a00", background: "#fff7e9", border: "1px solid #f1d59a", borderRadius: 10 }}>
@@ -253,9 +264,9 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
             </div>
             {(chohoTotal > 0 || khacTotal > 0) && (
               <div className="tnum" style={{ display: "flex", gap: 14, flexWrap: "wrap", justifyContent: "flex-end", marginTop: -4, fontSize: 12.5, color: "var(--ink-3)" }}>
-                <span>Tính lương: <b style={{ color: "var(--ink)" }}>{fmtVND(total - chohoTotal - khacTotal)}</b></span>
+                <span>Tính lương: <b style={{ color: "var(--ink)" }}>{fmtVND(total - chohoTotal)}</b></span>
                 {chohoTotal > 0 && <span>Chi hộ (không tính lương): <b style={{ color: "#9a6700" }}>{fmtVND(chohoTotal)}</b></span>}
-                {khacTotal > 0 && <span>Chi phí khác (không tính lương): <b style={{ color: "#6d28d9" }}>{fmtVND(khacTotal)}</b></span>}
+                {khacTotal > 0 && <span title="Chi phí công ty — không nằm trong tổng chi cho lái">Chi phí khác (công ty, ngoài chi lái): <b style={{ color: "#6d28d9" }}>{fmtVND(khacTotal)}</b></span>}
               </div>
             )}
           </div>
@@ -483,11 +494,11 @@ function TripNode({ l, isFirst, isLast, bks, href, g, canEdit, frozen, onFuel, o
             {(g.manual || []).filter((m) => +m.amount).map((m, k) => {
               const later = m.perDay === false;
               return (
-                <span key={"m" + k} title={later ? "Chi khác phát sinh — gom trả vào kỳ lương" : m.khac ? "Chi phí khác — chi hôm nay, KHÔNG tính lương (thống kê riêng)" : m.choHo ? "Chi khác phát sinh · Chi hộ — chi hôm nay, KHÔNG tính lương" : "Chi khác phát sinh · Tính lương — chi hôm nay"}
+                <span key={"m" + k} title={later ? "Chi khác phát sinh — gom trả vào kỳ lương" : m.khac ? "Chi phí khác — chi phí công ty, KHÔNG tính lương, KHÔNG cộng vào Chi lái" + (m.note ? " · Ghi chú: " + m.note : "") : m.choHo ? "Chi khác phát sinh · Chi hộ — chi hôm nay, KHÔNG tính lương" : "Chi khác phát sinh · Tính lương — chi hôm nay"}
                   style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "1px 8px", fontSize: 11, fontWeight: 600, borderRadius: 999,
                     background: later ? "#fbf0d3" : m.khac ? "#f5f3ff" : "var(--accent-weak)", color: later ? "#7c5b16" : m.khac ? "#6d28d9" : "var(--accent)" }}>
                   <i className="bi bi-plus-circle" style={{ fontSize: 9 }} /> {m.name || "Chi khác"} <b className="tnum">{fmtVND(m.amount)}</b>
-                  {later ? " · kỳ lương" : m.khac ? " · chi phí khác" : m.choHo ? <span style={{ color: "#9a6700" }}> · chi hộ</span> : null}
+                  {later ? " · kỳ lương" : m.khac ? <>{" · chi phí khác (cty)"}{m.note ? <span style={{ fontWeight: 500 }}> · {m.note}</span> : null}</> : m.choHo ? <span style={{ color: "#9a6700" }}> · chi hộ</span> : null}
                 </span>
               );
             })}
@@ -772,9 +783,16 @@ function LoTrinhApp() {
                         <i className="bi bi-fuel-pump-fill" /> Dầu (cty): {tr.fuelTotal > 0 ? <span className="tnum">{fmtVND(tr.fuelTotal)}</span> : null}<span style={{ fontWeight: tr.fuelTotal > 0 ? 500 : 700 }}>{tr.fuelTotal > 0 ? "· " : ""}{fmtNum(tr.fuelLiters)} lít</span>
                       </span>
                     )}
+                    {/* Chi phí khác = chi phí công ty (VETC, sửa xe…) — như dầu, không nằm trong Chi lái */}
+                    {tr.khacTotal > 0 && (
+                      <span title="Chi phí khác của công ty (chọn loại “Chi phí khác” ở popup Chi lái) — không tính lương, không cộng vào Chi lái"
+                        style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", fontSize: 12, fontWeight: 700, borderRadius: 999, border: "1px solid #c4b5fd", background: "#f5f3ff", color: "#6d28d9", whiteSpace: "nowrap" }}>
+                        <i className="bi bi-building" /> Chi phí khác (cty): <span className="tnum">{fmtVND(tr.khacTotal)}</span>
+                      </span>
+                    )}
                     {/* Lương chuyến trong ngày (không chi hôm nay — gom vào kỳ lương); tooltip = thu nhập tính lương cả ngày */}
                     {tr.payrollTotal > 0 && (
-                      <span title={"Thu nhập tính lương ngày này = chi trong ngày tính lương " + fmtVND((tr.payTotal || 0) - (tr.chohoTotal || 0) - (tr.khacTotal || 0)) + " + lương chuyến " + fmtVND(tr.payrollTotal) + " = " + fmtVND((tr.payTotal || 0) - (tr.chohoTotal || 0) - (tr.khacTotal || 0) + tr.payrollTotal) + (tr.chohoTotal ? " (chi hộ " + fmtVND(tr.chohoTotal) + " không tính lương)" : "") + (tr.khacTotal ? " (chi phí khác " + fmtVND(tr.khacTotal) + " không tính lương)" : "")}
+                      <span title={"Thu nhập tính lương ngày này = chi trong ngày tính lương " + fmtVND((tr.payTotal || 0) - (tr.chohoTotal || 0)) + " + lương chuyến " + fmtVND(tr.payrollTotal) + " = " + fmtVND((tr.payTotal || 0) - (tr.chohoTotal || 0) + tr.payrollTotal) + (tr.chohoTotal ? " (chi hộ " + fmtVND(tr.chohoTotal) + " không tính lương)" : "")}
                         style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", fontSize: 12, fontWeight: 700, borderRadius: 999, border: "1px solid #ecd9a3", background: "#fbf0d3", color: "#7c5b16", whiteSpace: "nowrap" }}>
                         <i className="bi bi-wallet2" /> Lương chuyến: <span className="tnum">{fmtVND(tr.payrollTotal)}</span><span style={{ fontWeight: 500 }}>· kỳ lương</span>
                       </span>

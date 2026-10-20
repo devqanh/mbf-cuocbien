@@ -572,8 +572,8 @@ trait HandlesShipments
         $thirdTripAllowance  = (int) ($dayReg['allowances']['thirdTrip'] ?? 100000);
 
         // Gắn chi khác phát sinh THỦ CÔNG vào 1 nhóm chuyến — perDay→chi theo ngày, không→gom lương; choHo→chi hộ;
-        // khac→CHI PHÍ KHÁC (chi phí công ty lái chi giúp: sửa xe, rửa xe, gửi xe… — đưa lái hôm nay, KHÔNG tính lương,
-        // thống kê riêng với chi hộ).
+        // khac→CHI PHÍ KHÁC = chi phí CÔNG TY (VETC, sửa xe, rửa xe, gửi xe…) — như dầu: KHÔNG tính lương và KHÔNG cộng
+        // vào chi cho lái (sub/payTotal); chỉ ghi khacSub để thống kê + báo cáo chi phí.
         $addManual = function (array &$g, array $ms): void {
             $g['manual'] = [];
             foreach ($ms as $m) {
@@ -581,11 +581,12 @@ trait HandlesShipments
                 $perDay = ! isset($m['perDay']) || ! empty($m['perDay']);
                 $khac = $perDay && ! empty($m['khac']);
                 $choHo = $perDay && ! $khac && ! empty($m['choHo']);
-                $g['manual'][] = ['name' => (string) ($m['name'] ?? ''), 'amount' => $amt, 'perDay' => $perDay, 'choHo' => $choHo, 'khac' => $khac];
+                $g['manual'][] = ['name' => (string) ($m['name'] ?? ''), 'amount' => $amt, 'perDay' => $perDay, 'choHo' => $choHo, 'khac' => $khac,
+                    'note' => $khac ? (string) ($m['note'] ?? '') : ''];
                 if ($amt <= 0) continue;
+                if ($khac) { $g['khacSub'] += $amt; continue; }
                 if ($perDay) $g['sub'] += $amt; else $g['payrollSub'] += $amt;
                 if ($choHo) $g['chohoSub'] += $amt;
-                if ($khac) $g['khacSub'] += $amt;
             }
         };
 
@@ -720,6 +721,14 @@ trait HandlesShipments
                 $payTotal     = $fd['payTotal'] ?? $payTotal;
                 $payrollTotal = $fd['payrollTotal'] ?? $payrollTotal;
                 $payWarn      = $fd['payWarn'] ?? $payWarn;
+                // Snapshot chốt TRƯỚC khi tách chi phí khác khỏi chi lái (chưa có cờ khacOut) → trừ khacSub ra khỏi sub/payTotal.
+                if (empty($fd['khacOut'])) {
+                    foreach ($payGroups as &$fg) {
+                        $k = (int) ($fg['khacSub'] ?? 0);
+                        if ($k > 0) { $fg['sub'] = (int) ($fg['sub'] ?? 0) - $k; $payTotal -= $k; }
+                    }
+                    unset($fg);
+                }
             }
             // Dầu = chi phí CÔNG TY (tách khỏi tiền lái) — tổng lít + tiền theo các chuyến trong ngày.
             $fuelTotal = 0; $fuelLiters = 0.0; $chohoTotal = 0; $khacTotal = 0;
@@ -1077,6 +1086,7 @@ trait HandlesShipments
                 'perDay' => ! isset($m['perDay']) || ! empty($m['perDay']),   // mặc định chi theo ngày
                 'choHo'  => empty($m['khac']) && ! empty($m['choHo']),       // chi hộ — không tính lương
                 'khac'   => ! empty($m['khac']),                              // chi phí khác — không tính lương, thống kê riêng
+                'note'   => ! empty($m['khac']) ? ($this->str($m['note'] ?? null) ?? '') : '',   // ghi chú chi phí khác (để biết chi gì)
             ];
         }
         // Khoản phí tuyến chọn "Chi hộ" theo từng chuyến: chỉ ghi đè choho của các cont có trong payload, giữ lít dầu sửa tay.
@@ -1194,6 +1204,7 @@ trait HandlesShipments
                 'payTotal'     => $t['payTotal'],
                 'payrollTotal' => $t['payrollTotal'],
                 'payWarn'      => $t['payWarn'],
+                'khacOut'      => true,   // chi phí khác đã tách khỏi sub/payTotal (snapshot cũ không có cờ → đọc sẽ tự trừ)
             ];
             $row->updated_by = auth()->id();
             $row->save();
@@ -1230,13 +1241,13 @@ trait HandlesShipments
                 $byBks[$bks]['trips']     += count(array_filter($t['payGroups'], fn ($g) => empty($g['orphan'])));
                 $ch = (int) ($t['chohoTotal'] ?? 0);
                 $kh = (int) ($t['khacTotal'] ?? 0);
-                $byBks[$bks]['paidDaily'] += $t['payTotal'] - $ch - $kh;
+                $byBks[$bks]['paidDaily'] += $t['payTotal'] - $ch;   // payTotal đã không gồm chi phí khác (chi phí công ty)
                 $byBks[$bks]['chiHo']     += $ch;
                 $byBks[$bks]['chiKhac']   += $kh;
                 $byBks[$bks]['payroll']   += $t['payrollTotal'];
                 if (! empty($t['payDriver'])) $byBks[$bks]['drivers'][$t['payDriver']] = true;
                 $byBks[$bks]['lines'][] = ['date' => $ds, 'driver' => $t['payDriver'] ?? '',
-                    'paidDaily' => $t['payTotal'] - $ch - $kh, 'chiHo' => $ch, 'chiKhac' => $kh, 'payroll' => $t['payrollTotal'], 'groups' => $t['payGroups']];
+                    'paidDaily' => $t['payTotal'] - $ch, 'chiHo' => $ch, 'chiKhac' => $kh, 'payroll' => $t['payrollTotal'], 'groups' => $t['payGroups']];
             }
         }
 
