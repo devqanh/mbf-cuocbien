@@ -844,13 +844,14 @@ trait HandlesShipments
         // giữ cảnh báo (needInput) tới khi nhập (routeTripByDate áp trip_overrides[cont].amounts).
         $cross = $q['cross'] ?? '';
         $items = array_values(array_filter([
-            $item('veTram', 'Vé trạm', $walk['toll'], ['fixed' => 'choho']),
+            // Vé trạm (chi hộ) sửa tay được từng chuyến khi thực tế khác vé cộng chặng (base = mức quy chế).
+            $item('veTram', 'Vé trạm', $walk['toll'], ['fixed' => 'choho', 'editable' => true, 'base' => (int) $walk['toll']]),
             // Phụ cấp đi đường + lương chuyến: kế toán SỬA TAY được từng chuyến khi cần (base = mức quy chế; trống = theo quy chế).
             // required = BẮT BUỘC nhập (quy chế không có định mức) → giữ cảnh báo tới khi nhập.
             $cross
                 ? $item('tienDuong', 'Phụ cấp đi đường', 0, ['fixed' => 'luong', 'editable' => true, 'required' => true, 'suggest' => (int) $q['phuCap']])
                 : $item('tienDuong', 'Phụ cấp đi đường', $q['phuCap'], ['fixed' => 'luong', 'editable' => true, 'base' => (int) $q['phuCap']]),
-        ], fn ($x) => $x['amount'] > 0 || ! empty($x['editable'])));
+        ], fn ($x) => $x['amount'] > 0 || $x['key'] === 'tienDuong'));   // phụ cấp luôn hiện (để nhập tay); vé trạm chỉ khi chặng có vé
         if ($cross) {
             $g['cross'] = $cross;
             $g['needInput'] = true;
@@ -1159,7 +1160,7 @@ trait HandlesShipments
     {
         $bks = trim($bks); $date = trim($date);
         if ($bks === '' || $date === '') return ['ok' => false, 'message' => 'Thiếu ngày/biển số'];
-        if (! in_array($key, ['tienDuong', 'luong'], true)) return ['ok' => false, 'message' => 'Khoản không cho sửa'];
+        if (! in_array($key, ['tienDuong', 'luong', 'veTram'], true)) return ['ok' => false, 'message' => 'Khoản không cho sửa'];
         $row = \App\Models\TruckingRoutePay::whereDate('work_date', $date)->where('bks', $bks)->first()
             ?? new \App\Models\TruckingRoutePay(['work_date' => $date, 'bks' => $bks]);
         if ($row->frozen) return ['ok' => false, 'message' => 'Ngày đã chốt — bỏ chốt ngày để sửa'];
