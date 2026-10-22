@@ -72,14 +72,14 @@ class LoTrinhController extends BaseTruckingController
         return response()->json($this->svc->saveRouteFuel($d['date'], $d['bks'], (string) ($d['cont'] ?? ''), $raw === '' ? null : (float) $raw));
     }
 
-    /** Sửa tay phụ cấp đi đường / lương chuyến của 1 chuyến ngay trên Lộ trình (amount trống = về mức quy chế). */
+    /** Sửa tay phụ cấp đi đường / lương chuyến / vé trạm của 1 chuyến ngay trên Lộ trình (amount trống = về mức quy chế). */
     public function saveAmount(Request $request): JsonResponse
     {
         $d = $request->validate([
             'date'   => ['required', 'string'],
             'bks'    => ['required', 'string'],
             'cont'   => ['nullable', 'string'],
-            'key'    => ['required', 'string', 'in:tienDuong,luong'],
+            'key'    => ['required', 'string', 'in:tienDuong,luong,veTram'],
             'amount' => ['nullable'],
         ]);
         $raw = preg_replace('/\D/', '', (string) ($d['amount'] ?? ''));
