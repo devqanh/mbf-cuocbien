@@ -64,13 +64,16 @@ class ShipmentController extends BaseTruckingController
         return response()->json(['ok' => true]);
     }
 
-    /** Cập nhật hàng loạt các lô đã chọn (hiện: Nơi hạ + Nơi hạ sà lan). */
+    /** Cập nhật hàng loạt các lô đã chọn (booking, nơi lấy/hạ, KH đến, cắt máng, thanh lý, hạ cont…). */
     public function bulkUpdate(Request $request): JsonResponse
     {
         $data = $request->validate([
             'ids'             => ['required', 'array', 'min:1'],
             'ids.*'           => ['integer'],
             'ship'            => ['required', 'array'],
+            'ship.booking'    => ['nullable', 'string', 'max:255'],
+            'ship.from'       => ['nullable', 'string'],
+            'ship.gioDenDuKien' => ['nullable', 'string', 'max:40'],   // giờ KH đến (DTField "YYYY-MM-DDTHH:MM")
             'ship.to'         => ['nullable', 'string'],
             'ship.bargeDrop'  => ['nullable', 'string'],
             'ship.cutOff'     => ['nullable', 'string', 'max:40'],   // giờ cắt máng (DTField "YYYY-MM-DDTHH:MM")

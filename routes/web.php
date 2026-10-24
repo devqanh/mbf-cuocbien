@@ -252,6 +252,7 @@ Route::middleware(['auth', RestrictSpendOnlySession::class])->group(function () 
             Route::get('/bang-ke',                     [StatementController::class, 'index'])->name('statements');
             Route::get('/bang-ke/tao',                 [StatementController::class, 'create'])->name('statements.create');
             Route::get('/statement-candidates',        [StatementController::class, 'candidates'])->name('statements.candidates');   // lô đã định giá ở backend cho bảng kê mới
+            Route::get('/statement-pending-lots',      [StatementController::class, 'pendingLots'])->name('statements.pendingLots');   // lô chưa ra + chưa có bảng kê (thêm tay để thu trước)
             Route::get('/statement-drift',             [StatementController::class, 'drift'])->name('statements.drift');   // đối soát cả danh sách → cảnh báo cần tính lại
             Route::get('/statement-list',              [StatementController::class, 'list'])->name('statements.list');   // paginate + filter (load-more cho data lớn)
             Route::get('/statement-customers',         [StatementController::class, 'customersInPeriod'])->name('statements.customers');   // khách có lô ra trong kỳ + đã/chưa lập bảng kê

@@ -333,13 +333,28 @@ trait HandlesStatements
             }
         }
         $shipOf = fn ($l) => $l->shipment_id ? ($ships[(int) $l->shipment_id] ?? null) : ($byContDate[$l->cont_no . '|' . ($l->date?->format('Y-m-d') ?? '')] ?? null);
-        // GHI CHÚ từng khoản ở popup Chi phí lô hàng — lấy TRỰC TIẾP từ lô (snapshot cũ không có; sửa ở lô là bảng kê hiện theo).
-        // Chỉ chữ, không đụng tiền. 1 query cho cả bảng kê, chỉ dòng có ghi chú.
-        $costNotes = \App\Models\TruckingCostLine::whereIn('shipment_id', $st->lines->pluck('shipment_id')->filter()->unique()->values())
-            ->whereNotNull('note')->where('note', '<>', '')->orderBy('sort')
-            ->get(['shipment_id', 'item', 'note', 'billable'])->groupBy('shipment_id')
-            ->map(fn ($g) => $g->map(fn ($c) => ['item' => $c->item ?: '(khoản)', 'note' => trim((string) $c->note), 'billable' => (bool) $c->billable])->values()->all())
-            ->all();
+        // DANH SÁCH Chi phí lô hàng — lấy TRỰC TIẾP từ lô (sửa ở lô là bảng kê hiện theo) để xem/đối chiếu (toggle "Chi phí" từng lô).
+        // Chỉ hiển thị, không đụng tiền bảng kê (tiền vẫn theo detail đã chốt). 1 query cho cả bảng kê.
+        $costRows = \App\Models\TruckingCostLine::whereIn('shipment_id', $st->lines->pluck('shipment_id')->filter()->unique()->values())
+            ->orderBy('sort')->orderBy('id')
+            ->get(['shipment_id', 'item', 'amount', 'vat', 'invoice_no', 'payer', 'date', 'billable', 'ext_pay', 'note'])
+            ->groupBy('shipment_id');
+        $costLines = $costRows->map(fn ($g) => $g->map(fn ($c) => [
+            'item'      => $c->item ?: '(khoản)',
+            'amount'    => (int) round((float) $c->amount),
+            'vat'       => (float) $c->vat,
+            'invoiceNo' => (string) ($c->invoice_no ?? ''),
+            'payer'     => (string) ($c->payer ?? ''),
+            'date'      => $this->outDate($c->date),
+            'billable'  => (bool) $c->billable,
+            'extPay'    => (bool) $c->ext_pay,
+            'note'      => trim((string) $c->note),
+        ])->values()->all())->all();
+        // GHI CHÚ từng khoản (chỉ dòng có ghi chú) — giữ khóa cũ cho ô Chi hộ / dòng chi phí công ty.
+        $costNotes = array_map(fn ($list) => array_values(array_map(
+            fn ($c) => ['item' => $c['item'], 'note' => $c['note'], 'billable' => $c['billable']],
+            array_filter($list, fn ($c) => $c['note'] !== '')
+        )), $costLines);
         // Các con số tính TỪ detail từng dòng (chân lý, đúng cả bảng kê cũ) + vat_rate đã lưu — CHỈ lô trong phạm vi io_scope.
         $rate  = (float) ($st->vat_rate ?? 0);
         $scope = self::ioScopeOf($st->io_scope ?? 'all');
@@ -395,6 +410,7 @@ trait HandlesStatements
                 'note'      => $l->note ?? '',
                 'userNote'  => $l->user_note ?? '',   // cột Ghi chú của bảng kê (người dùng gõ)
                 'costNotes' => $costNotes[(int) $l->shipment_id] ?? [],   // ghi chú các khoản Chi phí lô hàng (trực tiếp từ lô)
+                'costLines' => $costLines[(int) $l->shipment_id] ?? [],   // toàn bộ khoản Chi phí lô hàng (trực tiếp từ lô, chỉ để xem)
                 'detail'    => $l->detail,
             ])->all(),
             'payments'  => $st->payments->map(fn ($p) => [

@@ -71,6 +71,9 @@ function ShipmentsApp() {
   const [perPage, setPerPage] = useState(pf.perPage || P0.perPage || 20);   // số lô / trang (chọn được)
   const [selIds, setSelIds] = useState(() => new Set());      // lô đang tích (thao tác hàng loạt)
   const [showBulk, setShowBulk] = useState(false);            // popup sửa hàng loạt
+  const [bulkBooking, setBulkBooking] = useState("");         // Số booking áp hàng loạt
+  const [bulkFrom, setBulkFrom] = useState("");               // Nơi lấy áp hàng loạt
+  const [bulkGioDen, setBulkGioDen] = useState("");           // Giờ KH đến (gioDenDuKien) áp hàng loạt
   const [bulkTo, setBulkTo] = useState("");                   // Nơi hạ (cảng) áp hàng loạt
   const [bulkBargeDrop, setBulkBargeDrop] = useState("");     // Nơi hạ sà lan áp hàng loạt
   const [bulkCutOff, setBulkCutOff] = useState("");           // Cắt máng (ngày giờ) áp hàng loạt
@@ -790,16 +793,19 @@ function ShipmentsApp() {
   const allPageSel = () => { const ids = pageIds(); return ids.length > 0 && ids.every((id) => selIds.has(id)); };
   const toggleSelAllPage = () => setSelIds((p) => { const ids = pageIds(); const n = new Set(p); ids.every((id) => n.has(id)) ? ids.forEach((id) => n.delete(id)) : ids.forEach((id) => n.add(id)); return n; });
   const clearSel = () => setSelIds(new Set());
-  const openBulk = () => { ensureCfg(); setBulkTo(""); setBulkBargeDrop(""); setBulkCutOff(""); setBulkTl(""); setBulkHc(""); setShowBulk(true); };
+  const openBulk = () => { ensureCfg(); setBulkBooking(""); setBulkFrom(""); setBulkGioDen(""); setBulkTo(""); setBulkBargeDrop(""); setBulkCutOff(""); setBulkTl(""); setBulkHc(""); setShowBulk(true); };
   const doBulk = async () => {
     const ids = [...selIds];
     const ship = {};
+    if (bulkBooking.trim()) ship.booking = bulkBooking.trim();
+    if (bulkFrom) ship.from = bulkFrom;
+    if (bulkGioDen) ship.gioDenDuKien = bulkGioDen;
     if (bulkTo) ship.to = bulkTo;
     if (bulkBargeDrop) ship.bargeDrop = bulkBargeDrop;
     if (bulkCutOff) ship.cutOff = bulkCutOff;
     if (bulkTl) ship.thanhLy = bulkTl === "set" ? todayISO() : null;   // null = bỏ đánh dấu (khóa CÓ MẶT mới được áp)
     if (bulkHc) ship.haCont = bulkHc === "set" ? todayISO() : null;
-    if (!ids.length || (!ship.to && !ship.bargeDrop && !ship.cutOff && !bulkTl && !bulkHc) || bulkBusy) return;
+    if (!ids.length || !Object.keys(ship).length || bulkBusy) return;
     setBulkBusy(true);
     try {
       const res = await api("POST", ROUTES.shipmentBulk, { ids, ship });
@@ -1634,9 +1640,9 @@ function ShipmentsApp() {
         </Modal>
       )}
 
-      {/* Popup THAO TÁC HÀNG LOẠT — tạm thời chỉ Nơi hạ (cảng) + Nơi hạ sà lan */}
+      {/* Popup THAO TÁC HÀNG LOẠT — lưới 2 cột (điện thoại: 1 cột) */}
       {showBulk && (
-        <Modal title={`Thao tác hàng loạt · ${selIds.size} lô`} subtitle="Để trống ô nào thì giữ nguyên ô đó. Bấm Lưu để áp cho tất cả lô đang chọn." width={460} icon={<I.truck />}
+        <Modal title={`Thao tác hàng loạt · ${selIds.size} lô`} subtitle="Để trống ô nào thì giữ nguyên ô đó. Bấm Lưu để áp cho tất cả lô đang chọn." width={820} icon={<I.truck />}
           onClose={() => setShowBulk(false)}
           footer={
             <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10 }}>
@@ -1644,7 +1650,21 @@ function ShipmentsApp() {
               <Btn variant="primary" onClick={doBulk}>{bulkBusy ? "Đang lưu…" : `Lưu ${selIds.size} lô`}</Btn>
             </div>
           }>
-          <div style={{ padding: "14px 0 6px", display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ padding: "14px 0 6px", display: "grid", gridTemplateColumns: isMobile ? "minmax(0,1fr)" : "repeat(2, minmax(0,1fr))", gap: "14px 18px", alignItems: "start" }}>
+            <label style={{ display: "block" }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-3)", marginBottom: 5 }}><i className="bi bi-hash" /> Số booking</div>
+              <input value={bulkBooking} onChange={(e) => setBulkBooking(e.target.value)} placeholder="— Giữ nguyên —"
+                style={{ width: "100%", boxSizing: "border-box", padding: "8px 11px", fontSize: 13.5, border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--ink-2)" }} />
+            </label>
+            <label style={{ display: "block" }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-3)", marginBottom: 5 }}><i className="bi bi-box-arrow-up-right" /> Nơi lấy</div>
+              <Combo value={bulkFrom} onChange={setBulkFrom} options={locOptions(cfg)} placeholder="— Giữ nguyên — (gõ tên hoặc ký hiệu)" clearable strict />
+            </label>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-3)", marginBottom: 5 }}><i className="bi bi-calendar-check" /> KH đến <span style={{ fontWeight: 400, color: "var(--ink-4)" }}>· ngày giờ kế hoạch</span></div>
+              <DTField value={bulkGioDen} onChange={setBulkGioDen} />
+              <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 5, lineHeight: 1.5 }}>Để trống = giữ nguyên giờ đến kế hoạch từng lô.</div>
+            </div>
             <label style={{ display: "block" }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-3)", marginBottom: 5 }}><i className="bi bi-geo-alt-fill" /> Nơi hạ (cảng)</div>
               {/* Giống popup từng lô: hiện MỌI địa điểm "Tên — Ký hiệu", lưu TÊN (nhiều địa điểm chung 1 ký hiệu) */}

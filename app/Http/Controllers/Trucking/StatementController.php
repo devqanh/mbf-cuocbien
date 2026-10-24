@@ -67,6 +67,13 @@ class StatementController extends BaseTruckingController
         return response()->json(['ok' => true] + $this->svc->statementCandidates($customer, $from, $to, $t['from_time'] ?? null, $t['to_time'] ?? null));
     }
 
+    /** Lô CHƯA RA + chưa có bảng kê của 1 khách — trang Tạo bảng kê thêm tay để thu trước. */
+    public function pendingLots(Request $request): JsonResponse
+    {
+        $d = $request->validate(['customer' => ['required', 'string', 'max:255'], 'q' => ['nullable', 'string', 'max:100']]);
+        return response()->json(['ok' => true] + $this->svc->statementPendingLots($d['customer'], $d['q'] ?? null));
+    }
+
     /** Khách có lô ra trong kỳ (from, to = Y-m-d) + số lô đã / chưa vào bảng kê — khung trên trang danh sách. */
     public function customersInPeriod(Request $request): JsonResponse
     {

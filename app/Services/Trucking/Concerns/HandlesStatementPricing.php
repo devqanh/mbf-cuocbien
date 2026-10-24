@@ -9,6 +9,7 @@ use App\Models\TruckingSetting;
 use App\Models\TruckingShipment;
 use App\Models\TruckingStatement;
 use App\Models\TruckingWarehouse;
+use App\Support\Hashid;
 use Carbon\Carbon;
 use Illuminate\Support\Str;
 
@@ -557,7 +558,46 @@ trait HandlesStatementPricing
             $ctx = $this->pricingContextForShipment($s, (int) $custId, $cust);
             $out[] = $this->candidateRow($s, $sheet, $date, $this->priceShipment($s, $ctx));
         }
+        // LÔ ĐÃ THU ở bảng kê trước: kèm số bảng kê để trang tạo làm mờ + bỏ tích sẵn (tránh thu trùng). 1 query.
+        if ($out) {
+            $billedIn = \App\Models\TruckingStatementLine::whereIn('shipment_id', array_column($out, 'id'))
+                ->with('statement:id,no,date')->get(['shipment_id', 'statement_id'])
+                ->filter(fn ($l) => $l->statement)->groupBy('shipment_id')
+                ->map(fn ($g) => $g->unique('statement_id')->map(fn ($l) => [
+                    'no' => (string) $l->statement->no, 'hashid' => Hashid::encode($l->statement->id), 'date' => $this->outDate($l->statement->date),
+                ])->values()->all());
+            foreach ($out as &$row) $row['billedIn'] = $billedIn[$row['id']] ?? [];
+            unset($row);
+        }
         return ['candidates' => $out];
+    }
+
+    /**
+     * LÔ CHƯA RA của 1 khách (chưa có Giờ xe ra; HPH chưa có ngày tàu) và CHƯA nằm trong bảng kê nào — trang Tạo bảng kê
+     * thêm tay vào để THU TRƯỚC; lưu xong lô đã có bảng kê nên lần tạo sau tự bỏ tích (billedIn).
+     * Chưa có ngày định giá (giờ xe ra) → định giá theo ngày vận hành của Giờ xe đến, không có thì hôm nay.
+     * Mới nhất trước, tối đa $limit lô; $q lọc số cont / booking.
+     */
+    public function statementPendingLots(string $customer, ?string $q = null, int $limit = 100): array
+    {
+        $cust = trim($customer);
+        $custId = $cust !== '' ? $this->customerIdByName($cust) : null;
+        if (! $custId) return ['lots' => []];
+        $query = TruckingShipment::where('customer_id', $custId)->whereNull('gio_xe_ra')
+            ->where(fn ($w) => $w->where('sheet', '!=', 'HPH')->orWhereNull('sail_date'))
+            ->whereNotIn('id', \App\Models\TruckingStatementLine::whereNotNull('shipment_id')->select('shipment_id'))
+            ->with(['costLines', 'raOther:id,gio_xe_ra']);
+        $q = trim((string) $q);
+        if ($q !== '') $query->where(fn ($w) => $w->where('cont_no', 'like', "%{$q}%")->orWhere('booking', 'like', "%{$q}%"));
+        $rows = $query->orderByDesc('gio_xe_den')->orderByDesc('id')->limit($limit)->get();
+        $out = [];
+        foreach ($rows as $s) {
+            $den = $s->gio_xe_den ? ($s->gio_xe_den instanceof Carbon ? $s->gio_xe_den->copy() : Carbon::parse((string) $s->gio_xe_den)) : null;
+            if ($den && $den->hour < self::OPS_DAY_START_HOUR) $den->subDay();
+            $ctx = $this->pricingContextForDate((int) $custId, $cust, $den ? $den->format('Y-m-d') : now()->format('Y-m-d'));
+            $out[] = $this->candidateRow($s, strtoupper((string) $s->sheet), '', $this->priceShipment($s, $ctx)) + ['billedIn' => []];
+        }
+        return ['lots' => $out];
     }
 
     /**

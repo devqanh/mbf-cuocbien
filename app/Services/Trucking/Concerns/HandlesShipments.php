@@ -1800,7 +1800,7 @@ trait HandlesShipments
     }
 
     /**
-     * Cập nhật HÀNG LOẠT các lô đã chọn — hiện chỉ Nơi hạ (to) + Nơi hạ sà lan (bargeDrop).
+     * Cập nhật HÀNG LOẠT các lô đã chọn — booking, Nơi lấy/hạ, KH đến, Nơi hạ sà lan, cắt máng, thanh lý, hạ cont.
      * Tái dùng saveShipment với $only = các field CÓ giá trị (bỏ trống = KHÔNG đụng field đó),
      * nhờ vậy hưởng cùng logic: đăng ký ký hiệu địa điểm, suy is_barge/barge_cont, recompute.
      * @return int số lô đã cập nhật
@@ -1812,6 +1812,9 @@ trait HandlesShipments
 
         // Chỉ áp field NGƯỜI DÙNG nhập (khác rỗng) → tránh xóa nhầm dữ liệu lô đang chọn.
         $only = [];
+        if (isset($data['booking']) && trim((string) $data['booking']) !== '')      $only[] = 'booking';
+        if (isset($data['from']) && trim((string) $data['from']) !== '')            $only[] = 'from';
+        if (isset($data['gioDenDuKien']) && trim((string) $data['gioDenDuKien']) !== '') $only[] = 'gioDenDuKien';
         if (isset($data['to']) && trim((string) $data['to']) !== '')               $only[] = 'to';
         if (isset($data['bargeDrop']) && trim((string) $data['bargeDrop']) !== '')  $only[] = 'bargeDrop';
         if (isset($data['cutOff']) && trim((string) $data['cutOff']) !== '')        $only[] = 'cutOff';

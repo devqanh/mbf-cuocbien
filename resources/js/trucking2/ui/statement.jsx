@@ -257,6 +257,52 @@ function LotCostLine({ items, block, notes }) {
     : <span style={{ color: "#7c3aed" }}>· {body}</span>;
 }
 
+/* DANH SÁCH CHI PHÍ LÔ HÀNG (toggle "Chi phí" từng lô ở trang xem bảng kê) — lines[].costLines lấy TRỰC TIẾP từ lô
+   (popup Chi phí lô hàng), chỉ để xem/đối chiếu; tiền bảng kê vẫn theo detail đã chốt. Chi hộ lô ≠ chi hộ đã chốt → nhắc Tính lại. */
+function LotCostsPanel({ items, choho, editUrl }) {
+  const list = Array.isArray(items) ? items : [];
+  const sum = (f) => list.filter(f).reduce((s, c) => s + (+c.amount || 0), 0);
+  const total = sum(() => true), bill = sum((c) => c.billable), comp = total - bill;
+  const drift = Math.round(bill) !== Math.round(+choho || 0);
+  const th = { padding: "5px 8px", fontSize: 10.5, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", borderBottom: "1px solid var(--line)", whiteSpace: "nowrap", textAlign: "left" };
+  const td = { padding: "5px 8px", borderBottom: "1px solid var(--line-2)", verticalAlign: "top" };
+  const tag = (c) => c.billable
+    ? <span style={{ color: "var(--good)", fontWeight: 600 }}>Chi hộ khách</span>
+    : <span style={{ color: "#7c3aed", fontWeight: 600 }}>Công ty{c.extPay ? " · xe ngoài" : ""}</span>;
+  return (
+    <div className="ke-noprint" style={{ margin: "6px 0 2px", border: "1px solid var(--line)", borderRadius: 9, background: "#fff", overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+        <thead><tr style={{ background: "#fafbfc" }}>
+          <th style={th}>Khoản</th><th style={{ ...th, textAlign: "right" }}>Số tiền</th><th style={{ ...th, textAlign: "right" }}>VAT</th>
+          <th style={th}>Số HĐ</th><th style={th}>Người chi</th><th style={th}>Ngày</th><th style={th}>Loại</th><th style={th}>Ghi chú</th>
+        </tr></thead>
+        <tbody>
+          {list.map((c, j) => (
+            <tr key={j}>
+              <td style={{ ...td, fontWeight: 600 }}>{c.item}</td>
+              <td className="tnum" style={{ ...td, textAlign: "right", fontWeight: 600 }}>{fmtNum(c.amount)}</td>
+              <td className="tnum" style={{ ...td, textAlign: "right", color: "var(--ink-3)" }}>{+c.vat ? `${+c.vat}%` : "—"}</td>
+              <td className="tnum" style={{ ...td, color: c.invoiceNo ? "var(--ink-2)" : "var(--ink-4)" }}>{c.invoiceNo || "—"}</td>
+              <td style={{ ...td, color: "var(--ink-2)" }}>{c.payer || "—"}</td>
+              <td className="tnum" style={{ ...td, color: "var(--ink-3)", whiteSpace: "nowrap" }}>{c.date ? fmtDate(c.date) : "—"}</td>
+              <td style={{ ...td, whiteSpace: "nowrap" }}>{tag(c)}</td>
+              <td style={{ ...td, fontStyle: c.note ? "italic" : "normal", color: c.note ? "var(--ink-3)" : "var(--ink-4)" }}>{c.note || "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="tnum" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 14px", padding: "6px 8px", fontSize: 11.5, color: "var(--ink-3)", background: "#fafbfc" }}>
+        <span>Tổng <b style={{ color: "var(--ink)" }}>{fmtNum(total)}</b></span>
+        <span style={{ color: "var(--good)" }}>Chi hộ khách <b>{fmtNum(bill)}</b></span>
+        <span style={{ color: "#7c3aed" }}>Công ty <b>{fmtNum(comp)}</b></span>
+        {drift && <span style={{ color: "var(--warn)", fontWeight: 600 }} title="Chi phí ở lô đã đổi sau khi lập bảng kê">⚠ Chi hộ trên bảng kê đang là {fmtNum(choho)} — bấm Tính lại để cập nhật</span>}
+        <div style={{ flex: 1 }} />
+        {editUrl && <a href={editUrl} target="_blank" rel="noopener" style={{ color: "var(--accent)", textDecoration: "none", fontWeight: 600 }}><i className="bi bi-box-arrow-up-right" /> Sửa ở Lô hàng</a>}
+      </div>
+    </div>
+  );
+}
+
 /* Ô PHÍ TỜ KHAI của 1 lô (thu khách, không VAT): tổng + tách Mở TK (× số tờ khai) / Thanh lý — từ detail.declFee / tlFee. */
 function TkCell({ d }) {
   const decl = Math.round(+(d && d.declFee) || 0), tl = Math.round(+(d && d.tlFee) || 0), n = +(d && d.declCount) || 0;
@@ -356,6 +402,80 @@ function refreshSummary(prev, next) {
   return parts.length ? `Đã làm mới: ${parts.join(" · ")}` : "Đã làm mới — không có gì thay đổi";
 }
 
+/* THU TRƯỚC LÔ CHƯA RA — khung toggle dưới danh sách ở trang Tạo bảng kê: lô của khách CHƯA có Giờ xe ra và chưa
+   nằm trong bảng kê nào (backend pendingLots, định giá tạm theo Giờ xe đến). Thêm vào → lô vào bảng kê này;
+   lưu xong lô đã có bảng kê nên lần tạo bảng kê sau (khi lô ra) tự bỏ tích / ẩn. */
+function PendingLotsBox({ cust, url, addedIds, onAdd }) {
+  const { useState, useEffect } = React;
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [lots, setLots] = useState(null);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => { setLots(null); }, [cust]);
+  useEffect(() => {
+    if (!open || !cust || !url) return;
+    let alive = true;
+    const t = setTimeout(() => {
+      setLoading(true);
+      const p = new URLSearchParams({ customer: cust }); if (q.trim()) p.set("q", q.trim());
+      window.trkApi("GET", url + "?" + p.toString())
+        .then((r) => { if (alive) { setLots(r && r.ok ? r.lots || [] : []); setLoading(false); } })
+        .catch(() => { if (alive) { setLots([]); setLoading(false); } });
+    }, q ? 300 : 0);
+    return () => { alive = false; clearTimeout(t); };
+  }, [open, cust, q]);
+  if (!cust || !url) return null;
+  const rows = lots || [];
+  const td = { padding: "6px 8px", borderBottom: "1px solid var(--line-2)", verticalAlign: "top" };
+  return (
+    <div className="ke-noprint" style={{ marginTop: 12, border: "1px solid var(--line)", borderRadius: 10, background: "#fff", overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", flexWrap: "wrap", borderBottom: open ? "1px solid var(--line-2)" : "none" }}>
+        <button type="button" onClick={() => setOpen((v) => !v)} style={{ display: "inline-flex", alignItems: "center", gap: 7, border: "none", background: "transparent", cursor: "pointer", padding: 0, fontSize: 13.5, fontWeight: 700, color: "var(--ink)" }}>
+          <i className={"bi " + (open ? "bi-chevron-down" : "bi-chevron-right")} style={{ fontSize: 12, color: "var(--ink-4)" }} />
+          <i className="bi bi-hourglass-split" style={{ color: "var(--accent)" }} /> Thu trước lô chưa ra
+        </button>
+        <span style={{ fontSize: 12, color: "var(--ink-4)" }}>Lô của {cust} chưa có Giờ xe ra, chưa vào bảng kê nào — thêm vào để thu luôn; lần tạo bảng kê sau lô này tự bị loại ra.</span>
+        {open && (
+          <>
+            <div style={{ flex: 1 }} />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm số cont / booking…"
+              style={{ width: 220, padding: "6px 10px", fontSize: 12.5, border: "1px solid var(--line)", borderRadius: 8, outline: "none" }} />
+          </>
+        )}
+      </div>
+      {open && (
+        <div style={{ maxHeight: 320, overflow: "auto", opacity: loading && lots ? 0.55 : 1 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+            <tbody>
+              {loading && !lots && <tr><td style={{ padding: 18, textAlign: "center", color: "var(--ink-4)" }}>Đang tải…</td></tr>}
+              {lots && !rows.length && !loading && <tr><td style={{ padding: 18, textAlign: "center", color: "var(--ink-4)" }}>{q ? "Không tìm thấy lô chưa ra phù hợp." : "Khách không có lô chưa ra nào chưa lập bảng kê."}</td></tr>}
+              {rows.map((x) => {
+                const added = addedIds.has(String(x.id));
+                return (
+                  <tr key={x.id} style={{ color: added ? "var(--ink-4)" : "var(--ink-2)" }}>
+                    <td style={td}><div style={{ fontWeight: 600 }} className="tnum">{x.booking || "—"}</div><div style={{ fontSize: 11, color: "var(--ink-4)" }}>{x.sheet} · {x.io}</div></td>
+                    <td style={td}>{x.from} → {x.to}<div style={{ fontSize: 11, color: "var(--ink-4)" }} className="tnum">{x.contLabel}</div></td>
+                    <td className="tnum" style={td}><VaoRaCell vao={x.gioVao} ra={x.gioRa} date={x.date} /></td>
+                    <td className="tnum" style={{ ...td, textAlign: "right", fontWeight: 600 }}>
+                      {fmtNum(x.pr.phaiThu)}
+                      {!x.pr.matched && <div style={{ fontSize: 10.5, fontWeight: 600, color: "var(--warn)" }}>⚠ chưa khớp giá — gõ tay sau khi thêm</div>}
+                    </td>
+                    <td style={{ ...td, textAlign: "right", width: 1, whiteSpace: "nowrap" }}>
+                      {added
+                        ? <span style={{ fontSize: 12, fontWeight: 600, color: "var(--good)" }}><i className="bi bi-check2" /> Đã thêm</span>
+                        : <button type="button" onClick={() => onAdd(x)} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", fontSize: 12, fontWeight: 600, border: "1px solid var(--accent)", borderRadius: 8, background: "var(--accent-weak-2)", color: "var(--accent)", cursor: "pointer" }}><I.plus /> Thêm vào bảng kê</button>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
   const { useState, useEffect, useRef } = React;
   const T = window.__TRK || {}; const ROUTES = T.routes || {};
@@ -378,7 +498,14 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
   useEffect(() => { if (!dueTouched.current) setDueDate(defaultDue(today, (cfg.customerInfo || {})[cust] || {})); }, [cust]);
 
   // ----- Lô + ĐỊNH GIÁ lấy TỪ BACKEND (nguồn chân lý duy nhất) theo khách + kỳ -----
-  const [all, setAll] = useState([]);   // [{id,booking,io,sheet,from,to,contType,contNo,qty,cru,date,contLabel,note,thanhLy,pr}]
+  const [fetched, setAll] = useState([]);   // [{id,booking,io,sheet,from,to,contType,contNo,qty,cru,date,contLabel,note,thanhLy,pr}]
+  // Lô CHƯA RA thêm tay ở khung "Thu trước lô chưa ra" (early) — gộp sau lô trong kỳ; lô đã có trong kỳ thì lấy bản trong kỳ.
+  const [early, setEarly] = useState([]);
+  const fetchedIds = new Set(fetched.map((x) => String(x.id)));
+  const all = [...fetched, ...early.filter((x) => !fetchedIds.has(String(x.id))).map((x) => ({ ...x, early: true }))];
+  const addEarly = (x) => { setEarly((a) => (a.some((y) => y.id === x.id) ? a : [...a, x])); setPicked((p) => ({ ...p, [x.id]: true })); };
+  const removeEarly = (id) => setEarly((a) => a.filter((y) => y.id !== id));
+  useEffect(() => { setEarly([]); }, [cust]);
   const [loading, setLoading] = useState(false);
   // Chưa chọn KỲ (ngày ra) → KHÔNG tải lô (tránh kéo toàn bộ + ép người dùng chọn kỳ trước).
   const needDate = !!cust && !from && !to;
@@ -414,9 +541,17 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
   // Lọc NHẬP / XUẤT ngay trên danh sách ứng viên (client): bảng kê lưu CHỈ các lô đang hiện (+ đang tích).
   const [io, setIo] = useState("all");
   const [conn, setConn] = useState("all");   // lọc Connect / Disconnect — bảng kê cũng chỉ lưu lô đang hiện
+  // LÔ ĐÃ THU ở bảng kê trước (billedIn từ backend): mặc định BỎ TÍCH + làm mờ + ghi số bảng kê; có thể ẩn hẳn.
+  // Vẫn cho tích lại khi cần thu bổ sung (người dùng tự quyết).
+  const billedOf = (x) => (Array.isArray(x.billedIn) ? x.billedIn : []);
+  const [hideBilled, setHideBilled] = useState(() => { try { return localStorage.getItem(HIDE_BILLED_KEY) === "1"; } catch (e) { return false; } });
+  useEffect(() => { try { localStorage.setItem(HIDE_BILLED_KEY, hideBilled ? "1" : "0"); } catch (e) {} }, [hideBilled]);
   const ioShown = io === "all" ? all : all.filter((x) => ioKey(x.io) === io);
-  const shown = conn === "all" ? ioShown : ioShown.filter((x) => connKey(x) === conn);
-  const sel = shown.filter((x) => picked[x.id] !== false); // mặc định chọn hết
+  const connShown = conn === "all" ? ioShown : ioShown.filter((x) => connKey(x) === conn);
+  const billedCount = connShown.filter((x) => billedOf(x).length).length;
+  const shown = hideBilled ? connShown.filter((x) => !billedOf(x).length) : connShown;
+  const isOn = (x) => (picked[x.id] != null ? picked[x.id] : !billedOf(x).length);   // mặc định chọn hết, trừ lô đã có bảng kê
+  const sel = shown.filter(isOn);
   // CỘT CHI PHÍ RIÊNG của bảng kê đang tạo + số từng lô (extraOv[shipmentId][key]) — lưu cùng bảng kê (extraCols / detail.extras).
   const [extraCols, setExtraCols] = useState([]);
   const [extraOv, setExtraOv] = useState({});
@@ -542,6 +677,13 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
             : `${shown.length} / ${all.length} lô (${[io !== "all" && (io === "nhap" ? "Nhập" : "Xuất"), conn !== "all" && (conn === "connect" ? "Connect" : "Disconnect")].filter(Boolean).join(" · ")})`)}
           {!loading && refreshMsg ? <span style={{ color: "var(--good)", fontWeight: 600 }}> · {refreshMsg}</span> : null}
         </span>
+        {!loading && billedCount > 0 && (
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap", fontWeight: 600, color: "#9a6700", background: "#fff7e6", border: "1px solid #ffe1a8", borderRadius: 999, padding: "2px 10px", cursor: "pointer" }}
+            title="Lô đã nằm trong bảng kê trước: mặc định bỏ tích (mờ) để không thu trùng">
+            <span className="tnum">{billedCount} lô đã thu ở bảng kê trước</span>
+            <input type="checkbox" checked={hideBilled} onChange={(e) => setHideBilled(e.target.checked)} style={{ accentColor: "#9a6700", cursor: "pointer" }} /> Ẩn
+          </label>
+        )}
       </div>
 
       {/* printable statement */}
@@ -593,7 +735,8 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
             {loading && all.length === 0 && <tr><td colSpan={nCols} style={{ padding: "24px", textAlign: "center", color: "var(--ink-4)" }}>Đang tải lô + định giá…</td></tr>}
             {!loading && all.length > 0 && shown.length === 0 && <tr><td colSpan={nCols} style={{ padding: "24px", textAlign: "center", color: "var(--ink-4)" }}>Không có lô phù hợp bộ lọc trong kỳ — đổi bộ lọc Lô hàng / Connect ở trên.</td></tr>}
             {shown.map((x, i) => {
-              const on = picked[x.id] !== false;
+              const on = isOn(x);
+              const billed = billedOf(x);
               return (
                 <React.Fragment key={x.id}>
                 <tr className={i % 2 ? "ke-zebra" : ""} style={{ opacity: on ? 1 : 0.4 }}>
@@ -604,6 +747,25 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
                   <td style={{ padding: "8px", borderBottom: "none", verticalAlign: "top" }}>
                     <div style={{ fontWeight: 600 }} className="tnum">{x.booking || "—"}</div>
                     <div style={{ fontSize: 11, color: "var(--ink-4)" }}>{x.sheet} · {x.io}</div>
+                    {billed.length > 0 && (
+                      <div className="ke-noprint" style={{ marginTop: 4, display: "inline-flex", flexWrap: "wrap", alignItems: "center", gap: 4, fontSize: 10.5, fontWeight: 700, color: "#9a6700", background: "#fff7e6", border: "1px solid #ffe1a8", borderRadius: 999, padding: "1px 8px" }}
+                        title="Lô này đã nằm trong bảng kê trước — bỏ tích sẵn để tránh thu trùng. Tích lại nếu cần thu bổ sung.">
+                        <i className="bi bi-check2-circle" /> Đã thu ở
+                        {billed.map((b, j) => (
+                          <React.Fragment key={b.hashid || j}>{j ? "," : ""}
+                            <a href={ROUTES.statements + "/" + b.hashid} target="_blank" rel="noopener" className="tnum" style={{ color: "#9a6700" }}>{b.no || "(chưa có số)"}</a>
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    )}
+                    {x.early && (
+                      <div className="ke-noprint" style={{ marginTop: 4, display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", borderRadius: 999, padding: "1px 8px" }}
+                        title="Lô chưa ra, thêm tay để thu trước — lần tạo bảng kê sau lô này tự bị loại ra">
+                        <i className="bi bi-hourglass-split" /> Thu trước · chưa ra
+                        <button type="button" onClick={() => removeEarly(x.id)} title="Bỏ lô này khỏi bảng kê đang tạo"
+                          style={{ border: "none", background: "transparent", color: "var(--ink-4)", cursor: "pointer", padding: 0, fontSize: 11, lineHeight: 1 }}>✕</button>
+                      </div>
+                    )}
                   </td>
                   <td style={{ padding: "8px", borderBottom: "none", verticalAlign: "top", color: "var(--ink-2)" }}>
                     {x.from} → {x.to}<div style={{ fontSize: 11, color: "var(--ink-4)" }} className="tnum">{x.contLabel}</div>
@@ -708,6 +870,7 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
 
         <div className="ke-noprint" style={{ marginTop: 14, fontSize: 12.5, color: "var(--ink-4)" }}>Sau khi lưu, mở bảng kê để nhập các đợt khách thanh toán và theo dõi công nợ.</div>
       </div>
+      <PendingLotsBox cust={cust} url={ROUTES.pendingLots} addedIds={new Set(all.map((x) => String(x.id)))} onAdd={addEarly} />
       {footer}
     </div>
   );
@@ -802,6 +965,12 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
   // Lọc CONNECT / DISCONNECT — CHỈ lọc HIỂN THỊ (không lưu, không đổi tổng tiền / bản in).
   const [conn, setConn] = useState("all");
   const shownLines = conn === "all" ? scopedLines : scopedLines.filter((l) => connKey(l) === conn);
+  // TOGGLE "Chi phí" từng lô (mặc định thu gọn cho đỡ rối) + nút mở/thu tất cả. Chỉ hiển thị, không lưu.
+  const [costOpen, setCostOpen] = useState({});
+  const costsOf = (l) => (Array.isArray(l.costLines) ? l.costLines : []);
+  const withCosts = shownLines.filter((l) => costsOf(l).length);
+  const allCostOpen = withCosts.length > 0 && withCosts.every((l) => costOpen[l.id]);
+  const toggleAllCosts = () => setCostOpen(allCostOpen ? {} : Object.fromEntries(withCosts.map((l) => [l.id, true])));
   const th = (txt, align) => <th style={{ textAlign: align || "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>{txt}</th>;
   return (
       <div className="ke-print" style={{ padding: "16px 4px 4px", background: "#fff" }}>
@@ -827,6 +996,12 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
               <IoSeg value={scope} onChange={setScope} counts={ioCounts(st.lines)} />
               <span style={{ fontWeight: 600, marginLeft: 6 }} title="Chỉ lọc danh sách đang xem — không đổi tổng tiền, bản in, Excel">Connect</span>
               <IoSeg value={conn} onChange={setConn} counts={connCounts(scopedLines)} opts={CONN_OPTS} />
+              {withCosts.length > 0 && (
+                <button type="button" onClick={toggleAllCosts} title="Mở / thu gọn danh sách Chi phí lô hàng của mọi lô đang xem"
+                  style={{ marginLeft: 6, display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", fontSize: 12, fontWeight: 600, borderRadius: 7, cursor: "pointer", border: "1px solid " + (allCostOpen ? "var(--accent)" : "var(--line)"), background: allCostOpen ? "var(--accent-weak-2)" : "#fff", color: allCostOpen ? "var(--accent)" : "var(--ink-3)" }}>
+                  <i className="bi bi-receipt" /> {allCostOpen ? "Thu gọn chi phí" : "Xem chi phí tất cả lô"}
+                </button>
+              )}
             </div>
             {conn !== "all" && (
               <div className="ke-noprint tnum" style={{ marginTop: 6, fontSize: 12, color: "var(--ink-3)", background: "#f4f6f8", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px" }}>
@@ -869,8 +1044,13 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
               // Ghi chú các khoản Chi phí lô hàng: trực tiếp từ lô (costNotes); bảng kê không có thì lấy snapshot.
               const lineNotes = costNoteMap(Array.isArray(l.costNotes) ? l.costNotes : (l.detail && l.detail.costItems));
               const note = String(l.infoNote || "").trim();   // "Ghi chú tự do cho lô hàng" (popup Thông tin lô, lấy trực tiếp từ lô)
-              const noteOnly = !!note && !(d && d.found) && !gone;   // có ghi chú nhưng không có dòng chi tiết → dòng riêng
+              const costs = costsOf(l);
+              const costShown = !!costOpen[l.id] && costs.length > 0;
+              // có ghi chú / đang mở chi phí nhưng không có dòng chi tiết → dòng riêng
+              const noteOnly = (!!note || costShown) && !(d && d.found) && !gone;
               const noteEl = <LotNote text={note} />;
+              const costPanel = costShown && <LotCostsPanel items={costs} choho={lineAmt(l).choho}
+                editUrl={ROUTES_TRK.loHang && l.contNo ? ROUTES_TRK.loHang + "?q=" + encodeURIComponent(l.contNo) + "&open=1" : null} />;
               return (
               <React.Fragment key={l.id}>
               <tr className={(i % 2 ? "ke-zebra " : "") +(d || noteOnly ? "" : "ke-lo-end")}>
@@ -880,7 +1060,15 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
                     onMouseEnter={(e) => { e.currentTarget.style.color = "var(--danger)"; e.currentTarget.style.borderColor = "var(--danger)"; }}
                     onMouseLeave={(e) => { e.currentTarget.style.color = "var(--ink-4)"; e.currentTarget.style.borderColor = "var(--line)"; }}>✕</button>}
                 </td>
-                <td style={{ padding: "8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", verticalAlign: "top" }}><div style={{ fontWeight: 600 }} className="tnum">{l.booking || "—"}</div><div style={{ fontSize: 11, color: "var(--ink-4)" }}>{l.sheet} · {l.io}</div></td>
+                <td style={{ padding: "8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", verticalAlign: "top" }}><div style={{ fontWeight: 600 }} className="tnum">{l.booking || "—"}</div><div style={{ fontSize: 11, color: "var(--ink-4)" }}>{l.sheet} · {l.io}</div>
+                  {costs.length > 0 && (
+                    <button type="button" className="ke-noprint" onClick={() => setCostOpen((o) => ({ ...o, [l.id]: !o[l.id] }))}
+                      title={costShown ? "Thu gọn danh sách Chi phí lô hàng" : "Xem danh sách Chi phí lô hàng (lấy trực tiếp từ lô)"}
+                      style={{ marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", fontSize: 11, fontWeight: 600, borderRadius: 999, cursor: "pointer", whiteSpace: "nowrap",
+                        border: "1px solid " + (costShown ? "var(--accent)" : "var(--line)"), background: costShown ? "var(--accent-weak-2)" : "#fff", color: costShown ? "var(--accent)" : "var(--ink-3)" }}>
+                      <i className={"bi " + (costShown ? "bi-chevron-down" : "bi-chevron-right")} style={{ fontSize: 9 }} /> Chi phí <span className="tnum">({costs.length})</span>
+                    </button>
+                  )}</td>
                 <td style={{ padding: "8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top" }}>{l.from} → {l.to}<div style={{ fontSize: 11, color: "var(--ink-4)" }} className="tnum">{(ROUTES_TRK.loHang && l.contNo)
                   ? <a className="ke-noprint" href={ROUTES_TRK.loHang + "?q=" + encodeURIComponent(l.contNo) + "&open=1"} target="_blank" rel="noopener" title="Mở lô hàng (tab mới, lọc đúng cont này)" style={{ color: "var(--accent)", textDecoration: "none" }}>{l.contLabel}</a>
                   : l.contLabel}<span style={{ display: "none" }} className="ke-printonly">{l.contLabel}</span></div></td>
@@ -983,13 +1171,15 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
                       {d.choHoItems.map((c, j) => <span key={"h" + j} style={{ color: "var(--good)" }}>+ Chi hộ · {c.item} <b className="tnum">{fmtNum(c.amount)}</b><NoteTxt text={noteOfItem(lineNotes, c.item)} /></span>)}
                       <span style={{ fontWeight: 700 }}>= <b className="tnum" style={{ color: "var(--accent)" }}>{fmtNum(d.phaiThu)} ₫</b></span>
                       {manual && <span style={{ color: "#9a6700", fontWeight: 600 }}>· đang thu theo giá tùy chỉnh <b className="tnum">{fmtNum(lineAmt(l).base)}</b></span>}
-                      <LotCostLine items={d.costItems} notes={lineNotes} />
+                      {/* Chi phí công ty: màn hình xem qua toggle "Chi phí" (dữ liệu trực tiếp từ lô); bản in giữ như cũ */}
+                      {costs.length ? <span className="ke-printonly" style={{ display: "none" }}><LotCostLine items={d.costItems} notes={lineNotes} /></span> : <LotCostLine items={d.costItems} notes={lineNotes} />}
                     </div>
+                    {costPanel}
                   </td>
                 </tr>
               )}
               {noteOnly && (
-                <tr className={(i % 2 ? "ke-zebra " : "") +"ke-lo-end"}><td style={{ borderBottom: "1px solid var(--line-2)" }}></td><td colSpan={nCols - 1} style={{ padding: "0 8px 7px", borderBottom: "1px solid var(--line-2)" }}>{noteEl}</td></tr>
+                <tr className={(i % 2 ? "ke-zebra " : "") +"ke-lo-end"}><td style={{ borderBottom: "1px solid var(--line-2)" }}></td><td colSpan={nCols - 1} style={{ padding: "0 8px 7px", borderBottom: "1px solid var(--line-2)" }}>{noteEl}{costPanel}</td></tr>
               )}
               {gone && (
                 <tr className={(i % 2 ? "ke-zebra " : "") +"ke-lo-end"}><td style={{ borderBottom: "1px solid var(--line-2)" }}></td><td colSpan={nCols - 1} style={{ padding: "0 8px 9px", borderBottom: "1px solid var(--line-2)", fontSize: 11.5, color: "var(--ink-4)" }}>Lô không còn trong hệ thống — giữ số đã lưu, không tính lại được.</td></tr>
@@ -1296,6 +1486,8 @@ const DUE_TONE = {
   paid:    { c: "var(--good)", bg: "var(--good-weak)", bd: "#bfe3cf" },
 };
 const DUE_FILTER_KEY = "trk:bangke:dueFilter";
+const CUST_FILTER_KEY = "trk:bangke:custFilter";
+const HIDE_BILLED_KEY = "trk:bangke:hideBilled";   // trang tạo: ẩn lô đã thu ở bảng kê trước
 function DueChip({ s }) {
   const t = DUE_TONE[s.key] || DUE_TONE.none;
   return <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, color: t.c, background: t.bg, border: "1px solid " + t.bd, padding: "1px 8px", borderRadius: 999, whiteSpace: "nowrap" }}>{s.label}</span>;
@@ -1356,14 +1548,19 @@ function KePage({ ke, drift = {}, onNew, onOpen, onSetDue = null, children }) {
   // LỌC THEO HẠN THANH TOÁN (nhớ lựa chọn trên máy): Quá hạn / Đến hạn trong 7 ngày / Chưa đến hạn / Chưa đặt hạn / Đã thu đủ.
   const [fk, setFk] = useState(() => { try { return localStorage.getItem(DUE_FILTER_KEY) || "all"; } catch (e) { return "all"; } });
   useEffect(() => { try { localStorage.setItem(DUE_FILTER_KEY, fk); } catch (e) {} }, [fk]);
+  // LỌC THEO KHÁCH (ô chọn có tìm kiếm): nhớ trong phiên tab để mở bảng kê rồi quay lại vẫn giữ.
+  const [cust, setCust] = useState(() => { try { return sessionStorage.getItem(CUST_FILTER_KEY) || ""; } catch (e) { return ""; } });
+  useEffect(() => { try { sessionStorage.setItem(CUST_FILTER_KEY, cust); } catch (e) {} }, [cust]);
+  const custOpts = [...new Set(ke.map((st) => st.customer).filter(Boolean))].sort((a, b) => a.localeCompare(b, "vi"));
+  const custOn = !!cust && custOpts.includes(cust);   // khách đã nhớ mà không còn bảng kê → coi như Tất cả
   const today = localTodayIso();
-  const rows = ke.slice().reverse().map((st) => ({ st, s: dueStatus(st, today) }));
+  const rows = ke.slice().reverse().filter((st) => !custOn || st.customer === cust).map((st) => ({ st, s: dueStatus(st, today) }));
   const counts = {}; rows.forEach((r) => { counts[r.s.key] = (counts[r.s.key] || 0) + 1; });
   let shown = fk === "all" ? rows : rows.filter((r) => r.s.key === fk);
   // Lọc theo hạn → xếp hạn gần nhất (quá hạn lâu nhất) lên đầu; Tất cả giữ mới tạo trước.
   if (fk === "overdue" || fk === "soon" || fk === "later") shown = shown.slice().sort((a, b) => (a.st.dueDate < b.st.dueDate ? -1 : a.st.dueDate > b.st.dueDate ? 1 : 0));
   const conSum = shown.reduce((a, r) => a + Math.max(0, r.s.con), 0);
-  const emptyText = ke.length ? "Không có bảng kê nào ở mục này." : "Chưa có bảng kê nào. Bấm “Tạo bảng kê mới” để bắt đầu.";
+  const emptyText = ke.length ? (custOn ? `Không có bảng kê nào của ${cust} ở mục này.` : "Không có bảng kê nào ở mục này.") : "Chưa có bảng kê nào. Bấm “Tạo bảng kê mới” để bắt đầu.";
   const chip = (on, key, n) => {
     const t = key !== "all" ? DUE_TONE[key] : null;
     return { display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 11px", fontSize: 12.5, fontWeight: 600, borderRadius: 8, cursor: "pointer", whiteSpace: "nowrap",
@@ -1393,14 +1590,18 @@ function KePage({ ke, drift = {}, onNew, onOpen, onSetDue = null, children }) {
         {/* ===== Lọc theo hạn thanh toán ===== */}
         {ke.length > 0 && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--ink-3)", display: "inline-flex", alignItems: "center", gap: 6 }}><i className="bi bi-alarm" /> Hạn thanh toán</span>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--ink-3)", display: "inline-flex", alignItems: "center", gap: 6 }}><i className="bi bi-person" /> Khách hàng</span>
+            <div style={{ width: isMobile ? "100%" : 240 }}>
+              <Combo value={custOn ? cust : ""} onChange={setCust} options={custOpts} placeholder="Tất cả khách hàng" small clearable strict />
+            </div>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--ink-3)", display: "inline-flex", alignItems: "center", gap: 6, marginLeft: isMobile ? 0 : 6 }}><i className="bi bi-alarm" /> Hạn thanh toán</span>
             {DUE_FILTERS.map((f) => {
               const n = f.key === "all" ? rows.length : (counts[f.key] || 0);
               return <button key={f.key} type="button" onClick={() => setFk(f.key)} style={chip(fk === f.key, f.key, n)}>{f.label} <b className="tnum">{n}</b></button>;
             })}
             <div style={{ flex: 1 }} />
             <span className="tnum" style={{ fontSize: 12.5, color: "var(--ink-3)", whiteSpace: "nowrap" }}>
-              Còn phải thu{fk !== "all" ? ` (${shown.length} bảng kê)` : ""}: <b style={{ color: conSum ? "var(--warn)" : "var(--good)" }}>{fmtVND(conSum)}</b>
+              Còn phải thu{fk !== "all" || custOn ? ` (${shown.length} bảng kê)` : ""}: <b style={{ color: conSum ? "var(--warn)" : "var(--good)" }}>{fmtVND(conSum)}</b>
             </span>
           </div>
         )}

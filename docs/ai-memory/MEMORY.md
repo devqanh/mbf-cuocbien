@@ -1,3 +1,4 @@
+- [Trả lời tiếng Việt](reply-in-vietnamese.md) — luôn trả lời user bằng tiếng Việt
 - [Trucking redesign](trucking-redesign.md) — chuyển Trucking từ Luckysheet sang mô hình record+popup; chuẩn hóa quan hệ, khởi tạo mới, cả HPH+ICD
 - [No seed demo](no-seed-demo.md) — đừng tự seed demo Trucking; user tự test thủ công
 - [Trucking clear scope](trucking-clear-scope.md) — trucking:clear CHỈ xóa nghiệp vụ (lô/bảng kê/phí xe), GIỮ danh mục+cấu hình+bảng giá

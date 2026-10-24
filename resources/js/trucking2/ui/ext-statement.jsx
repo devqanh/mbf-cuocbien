@@ -1,6 +1,7 @@
 import React from "react";
 const { useState, useEffect } = React;
 import { I, fmtVND, fmtNum, fmtDate, toNum, Combo, Btn, DateField, useIsMobile } from "@trk/lib.jsx";
+import { PaidSnapshotModal } from "@trk/ui/ext-paid-snapshot.jsx";
 
 /* Thông tin công ty cho header bảng kê (màn hình + bản in). */
 const CO = (window.__TRK && window.__TRK.boot && window.__TRK.boot.company) || {};
@@ -680,6 +681,7 @@ function ExtStatementForm({ cfg, onCancel, onSaved }) {
 function SavedExtStatementPage({ st, onUpdate, onSave, onDelete, onLinesPaid, isDirty, backUrl }) {
   const [paidFilter, setPaidFilter] = useState("all");
   const [paidBusy, setPaidBusy] = useState(false);
+  const [snap, setSnap] = useState(false);
   const [rFrom, setRFrom] = useState(st.from || "");
   const [rTo, setRTo] = useState(st.to || "");
   const [refreshing, setRefreshing] = useState(false);
@@ -712,6 +714,9 @@ function SavedExtStatementPage({ st, onUpdate, onSave, onDelete, onLinesPaid, is
   const allLines = (st.lines || []).map((l, i) => ({ ...l, _n: i + 1 }));
   const shown = allLines.filter((l) => paidFilter === "all" || (paidFilter === "paid" ? isFull(l) : !isFull(l)));
   const shownTotal = paidFilter === "all" ? total : shown.reduce((a, l) => a + lineSum(l), 0);
+  // Các phần đã tích chi (kèm ngày chi) — nguồn cho ảnh gửi kế toán.
+  const paidEntries = allLines.map((l) => ({ l, n: l._n, parts: partsOf(l).filter((x) => paidOf(l)[x.k]).map((x) => ({ ...x, date: paidOf(l)[x.k] })) }))
+    .filter((e) => e.parts.length);
   // Tích chi: bảng kê đang có thay đổi chưa lưu (vd. vừa Làm mới) → sửa tại chỗ, lưu cùng nút Lưu; còn lại ghi ngay (PATCH).
   const togglePaid = (ls, on, part) => {
     const targets = part ? ls : ls.filter((l) => isFull(l) !== on);
@@ -788,7 +793,9 @@ function SavedExtStatementPage({ st, onUpdate, onSave, onDelete, onLinesPaid, is
             <div className="tnum" style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{st.no} · {st.vendor}</div>
           </div>
         </div>
+        <Btn onClick={() => setSnap(true)}><i className="bi bi-camera" /> Chụp ảnh đã chi</Btn>
       </div>
+      {snap && <PaidSnapshotModal st={st} entries={paidEntries} onClose={() => setSnap(false)} />}
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "22px" }}>
         <div style={{ maxWidth: 940, margin: "0 auto", background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "8px 22px 18px" }}>
           <div className="ke-print" style={{ padding: "16px 4px 4px", background: "#fff" }}>
