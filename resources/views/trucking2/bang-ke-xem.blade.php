@@ -17,6 +17,7 @@ window.__TRK = {
     statement: '{{ url("trucking-v2/statements") }}/',
     base: '{{ url("trucking-v2/bang-ke") }}/',
     loHang: '{{ url("trucking-v2/lo-hang") }}',
+    pendingLots: '{{ route("trucking2.statements.pendingLots") }}',   // lô chưa ra trong kỳ + chưa có bảng kê (thêm tay để thu trước)
   },
   boot: @json($boot),
 };

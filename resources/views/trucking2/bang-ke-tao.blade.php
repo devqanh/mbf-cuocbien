@@ -16,7 +16,8 @@ window.__TRK = {
     statementStore: '{{ route("trucking2.statements.store") }}',
     statements: '{{ route("trucking2.statements") }}',
     candidates: '{{ route("trucking2.statements.candidates") }}',   // lô đã định giá ở backend
-    pendingLots: '{{ route("trucking2.statements.pendingLots") }}',   // lô chưa ra + chưa có bảng kê (thêm tay để thu trước)
+    pendingLots: '{{ route("trucking2.statements.pendingLots") }}',   // lô chưa ra trong kỳ + chưa có bảng kê (thêm tay để thu trước)
+    loHang: '{{ url("trucking-v2/lo-hang") }}',   // link "Sửa ở Lô hàng" trong toggle Chi phí
   },
   boot: @json($boot),
 };

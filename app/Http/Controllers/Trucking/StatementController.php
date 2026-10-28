@@ -67,11 +67,16 @@ class StatementController extends BaseTruckingController
         return response()->json(['ok' => true] + $this->svc->statementCandidates($customer, $from, $to, $t['from_time'] ?? null, $t['to_time'] ?? null));
     }
 
-    /** Lô CHƯA RA + chưa có bảng kê của 1 khách — trang Tạo bảng kê thêm tay để thu trước. */
+    /** Lô CHƯA RA TRONG KỲ (chưa ra / ra sau cuối kỳ) + chưa có bảng kê của 1 khách — trang Tạo / Xem bảng kê thêm tay để thu trước. */
     public function pendingLots(Request $request): JsonResponse
     {
-        $d = $request->validate(['customer' => ['required', 'string', 'max:255'], 'q' => ['nullable', 'string', 'max:100']]);
-        return response()->json(['ok' => true] + $this->svc->statementPendingLots($d['customer'], $d['q'] ?? null));
+        $d = $request->validate([
+            'customer' => ['required', 'string', 'max:255'],
+            'q'        => ['nullable', 'string', 'max:100'],
+            'to'       => ['nullable', 'date_format:Y-m-d'],
+            'to_time'  => ['nullable', 'date_format:H:i'],
+        ]);
+        return response()->json(['ok' => true] + $this->svc->statementPendingLots($d['customer'], $d['q'] ?? null, $d['to'] ?? null, $d['to_time'] ?? null));
     }
 
     /** Khách có lô ra trong kỳ (from, to = Y-m-d) + số lô đã / chưa vào bảng kê — khung trên trang danh sách. */

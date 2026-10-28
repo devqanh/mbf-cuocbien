@@ -58,6 +58,7 @@ const candidateToLine = (x) => {
     declNo: x.declNo || "", contType: x.contType || "", inv: x.inv || "", contNo: x.contNo || "", bks: x.bks || "",
     from: x.from, to: x.to, date: x.date, gioVao: x.gioVao || "", gioRa: x.gioRa || "", contLabel: x.contLabel,
     phaiThu: base, cuoc: base, thanhLy: x.thanhLy || 0, note: x.note, infoNote: x.infoNote || "",
+    costLines: x.costLines || [],   // toggle "Chi phí" hiện ngay khi vừa thêm (chưa lưu)
     detail: { ...x.pr },
   };
 };
@@ -402,28 +403,29 @@ function refreshSummary(prev, next) {
   return parts.length ? `Đã làm mới: ${parts.join(" · ")}` : "Đã làm mới — không có gì thay đổi";
 }
 
-/* THU TRƯỚC LÔ CHƯA RA — khung toggle dưới danh sách ở trang Tạo bảng kê: lô của khách CHƯA có Giờ xe ra và chưa
-   nằm trong bảng kê nào (backend pendingLots, định giá tạm theo Giờ xe đến). Thêm vào → lô vào bảng kê này;
-   lưu xong lô đã có bảng kê nên lần tạo bảng kê sau (khi lô ra) tự bỏ tích / ẩn. */
-function PendingLotsBox({ cust, url, addedIds, onAdd }) {
+/* THU TRƯỚC LÔ CHƯA RA TRONG KỲ — khung toggle dưới danh sách ở trang Tạo + Xem bảng kê: lô của khách CHƯA RA trong kỳ
+   (chưa có Giờ xe ra, hoặc ra SAU cuối kỳ `to`/`toTime`; kéo vào không sau cuối kỳ) và chưa nằm trong bảng kê nào
+   (backend pendingLots). Thêm vào → lô vào bảng kê này; lưu xong lô đã có bảng kê nên lần tạo bảng kê sau tự bỏ tích / ẩn. */
+function PendingLotsBox({ cust, url, to, toTime, addedIds, onAdd }) {
   const { useState, useEffect } = React;
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [lots, setLots] = useState(null);
   const [loading, setLoading] = useState(false);
-  useEffect(() => { setLots(null); }, [cust]);
+  useEffect(() => { setLots(null); }, [cust, to, toTime]);
   useEffect(() => {
     if (!open || !cust || !url) return;
     let alive = true;
     const t = setTimeout(() => {
       setLoading(true);
       const p = new URLSearchParams({ customer: cust }); if (q.trim()) p.set("q", q.trim());
+      if (to) { p.set("to", to); if (toTime) p.set("to_time", toTime); }
       window.trkApi("GET", url + "?" + p.toString())
         .then((r) => { if (alive) { setLots(r && r.ok ? r.lots || [] : []); setLoading(false); } })
         .catch(() => { if (alive) { setLots([]); setLoading(false); } });
     }, q ? 300 : 0);
     return () => { alive = false; clearTimeout(t); };
-  }, [open, cust, q]);
+  }, [open, cust, q, to, toTime]);
   if (!cust || !url) return null;
   const rows = lots || [];
   const td = { padding: "6px 8px", borderBottom: "1px solid var(--line-2)", verticalAlign: "top" };
@@ -432,9 +434,9 @@ function PendingLotsBox({ cust, url, addedIds, onAdd }) {
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", flexWrap: "wrap", borderBottom: open ? "1px solid var(--line-2)" : "none" }}>
         <button type="button" onClick={() => setOpen((v) => !v)} style={{ display: "inline-flex", alignItems: "center", gap: 7, border: "none", background: "transparent", cursor: "pointer", padding: 0, fontSize: 13.5, fontWeight: 700, color: "var(--ink)" }}>
           <i className={"bi " + (open ? "bi-chevron-down" : "bi-chevron-right")} style={{ fontSize: 12, color: "var(--ink-4)" }} />
-          <i className="bi bi-hourglass-split" style={{ color: "var(--accent)" }} /> Thu trước lô chưa ra
+          <i className="bi bi-hourglass-split" style={{ color: "var(--accent)" }} /> Thu trước lô chưa ra trong kỳ
         </button>
-        <span style={{ fontSize: 12, color: "var(--ink-4)" }}>Lô của {cust} chưa có Giờ xe ra, chưa vào bảng kê nào — thêm vào để thu luôn; lần tạo bảng kê sau lô này tự bị loại ra.</span>
+        <span style={{ fontSize: 12, color: "var(--ink-4)" }}>Lô của {cust} {to ? <>kéo vào đến hết kỳ nhưng <b>chưa ra</b> hoặc <b>ra sau {fmtDate(to)}{toTime ? " " + toTime : ""}</b></> : <><b>chưa có Giờ xe ra</b></>}, chưa vào bảng kê nào — thêm vào để thu luôn; lần tạo bảng kê sau lô này tự bị loại ra.</span>
         {open && (
           <>
             <div style={{ flex: 1 }} />
@@ -448,7 +450,7 @@ function PendingLotsBox({ cust, url, addedIds, onAdd }) {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
             <tbody>
               {loading && !lots && <tr><td style={{ padding: 18, textAlign: "center", color: "var(--ink-4)" }}>Đang tải…</td></tr>}
-              {lots && !rows.length && !loading && <tr><td style={{ padding: 18, textAlign: "center", color: "var(--ink-4)" }}>{q ? "Không tìm thấy lô chưa ra phù hợp." : "Khách không có lô chưa ra nào chưa lập bảng kê."}</td></tr>}
+              {lots && !rows.length && !loading && <tr><td style={{ padding: 18, textAlign: "center", color: "var(--ink-4)" }}>{q ? "Không tìm thấy lô phù hợp." : "Khách không có lô chưa ra trong kỳ nào chưa lập bảng kê."}</td></tr>}
               {rows.map((x) => {
                 const added = addedIds.has(String(x.id));
                 return (
@@ -552,6 +554,12 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
   const shown = hideBilled ? connShown.filter((x) => !billedOf(x).length) : connShown;
   const isOn = (x) => (picked[x.id] != null ? picked[x.id] : !billedOf(x).length);   // mặc định chọn hết, trừ lô đã có bảng kê
   const sel = shown.filter(isOn);
+  // TOGGLE "Chi phí" từng lô (chi phí + chi hộ, từ popup Chi phí lô hàng) — như trang xem; mặc định thu gọn.
+  const [costOpen, setCostOpen] = useState({});
+  const costsOf = (x) => (Array.isArray(x.costLines) ? x.costLines : []);
+  const withCosts = shown.filter((x) => costsOf(x).length);
+  const allCostOpen = withCosts.length > 0 && withCosts.every((x) => costOpen[x.id]);
+  const toggleAllCosts = () => setCostOpen(allCostOpen ? {} : Object.fromEntries(withCosts.map((x) => [x.id, true])));
   // CỘT CHI PHÍ RIÊNG của bảng kê đang tạo + số từng lô (extraOv[shipmentId][key]) — lưu cùng bảng kê (extraCols / detail.extras).
   const [extraCols, setExtraCols] = useState([]);
   const [extraOv, setExtraOv] = useState({});
@@ -658,6 +666,12 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
           <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>Connect</div>
           <IoSeg value={conn} onChange={setConn} counts={connCounts(ioShown)} opts={CONN_OPTS} />
         </div>
+        {withCosts.length > 0 && (
+          <button type="button" onClick={toggleAllCosts} title="Mở / thu gọn danh sách Chi phí lô hàng (chi phí + chi hộ) của mọi lô đang xem"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 36, padding: "0 13px", fontSize: 13, fontWeight: 600, borderRadius: 9, cursor: "pointer", border: "1px solid " + (allCostOpen ? "var(--accent)" : "var(--line)"), background: allCostOpen ? "var(--accent-weak-2)" : "#fff", color: allCostOpen ? "var(--accent)" : "var(--ink-2)" }}>
+            <i className="bi bi-receipt" /> {allCostOpen ? "Thu gọn chi phí" : "Xem chi phí tất cả lô"}
+          </button>
+        )}
         <button type="button" onClick={() => setReloadTick((t) => t + 1)} disabled={!cust || (!from && !to) || loading}
           title="Tải lại lô + chi hộ mới nhất theo khách và kỳ đang chọn — giữ giá gõ tay, VAT riêng, phí cột riêng và lô đã bỏ tích"
           style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 36, padding: "0 13px", fontSize: 13, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--ink-2)", cursor: (!cust || (!from && !to) || loading) ? "default" : "pointer", opacity: (!cust || (!from && !to)) ? 0.5 : 1 }}>
@@ -737,6 +751,8 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
             {shown.map((x, i) => {
               const on = isOn(x);
               const billed = billedOf(x);
+              const costs = costsOf(x);
+              const costShown = !!costOpen[x.id] && costs.length > 0;
               return (
                 <React.Fragment key={x.id}>
                 <tr className={i % 2 ? "ke-zebra" : ""} style={{ opacity: on ? 1 : 0.4 }}>
@@ -747,6 +763,14 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
                   <td style={{ padding: "8px", borderBottom: "none", verticalAlign: "top" }}>
                     <div style={{ fontWeight: 600 }} className="tnum">{x.booking || "—"}</div>
                     <div style={{ fontSize: 11, color: "var(--ink-4)" }}>{x.sheet} · {x.io}</div>
+                    {costs.length > 0 && (
+                      <button type="button" className="ke-noprint" onClick={() => setCostOpen((o) => ({ ...o, [x.id]: !o[x.id] }))}
+                        title={costShown ? "Thu gọn danh sách Chi phí lô hàng" : "Xem danh sách Chi phí lô hàng (chi phí + chi hộ)"}
+                        style={{ marginTop: 4, marginRight: 4, display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", fontSize: 11, fontWeight: 600, borderRadius: 999, cursor: "pointer", whiteSpace: "nowrap",
+                          border: "1px solid " + (costShown ? "var(--accent)" : "var(--line)"), background: costShown ? "var(--accent-weak-2)" : "#fff", color: costShown ? "var(--accent)" : "var(--ink-3)" }}>
+                        <i className={"bi " + (costShown ? "bi-chevron-down" : "bi-chevron-right")} style={{ fontSize: 9 }} /> Chi phí <span className="tnum">({costs.length})</span>
+                      </button>
+                    )}
                     {billed.length > 0 && (
                       <div className="ke-noprint" style={{ marginTop: 4, display: "inline-flex", flexWrap: "wrap", alignItems: "center", gap: 4, fontSize: 10.5, fontWeight: 700, color: "#9a6700", background: "#fff7e6", border: "1px solid #ffe1a8", borderRadius: 999, padding: "1px 8px" }}
                         title="Lô này đã nằm trong bảng kê trước — bỏ tích sẵn để tránh thu trùng. Tích lại nếu cần thu bổ sung.">
@@ -761,7 +785,7 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
                     {x.early && (
                       <div className="ke-noprint" style={{ marginTop: 4, display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", borderRadius: 999, padding: "1px 8px" }}
                         title="Lô chưa ra, thêm tay để thu trước — lần tạo bảng kê sau lô này tự bị loại ra">
-                        <i className="bi bi-hourglass-split" /> Thu trước · chưa ra
+                        <i className="bi bi-hourglass-split" /> Thu trước · {x.gioRa ? "ra sau kỳ" : "chưa ra"}
                         <button type="button" onClick={() => removeEarly(x.id)} title="Bỏ lô này khỏi bảng kê đang tạo"
                           style={{ border: "none", background: "transparent", color: "var(--ink-4)", cursor: "pointer", padding: 0, fontSize: 11, lineHeight: 1 }}>✕</button>
                       </div>
@@ -807,11 +831,14 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
                   <td colSpan={nCols - 2} style={{ padding: "0 8px", borderBottom: "1px solid var(--line-2)" }}>
                     <LotNote text={x.infoNote} />
                     <div className="ke-noprint" style={{ fontSize: 11, lineHeight: 1.55, padding: "0 0 8px" }}>
-                      <LotCostLine items={x.pr.costItems} block notes={costNoteMap(x.pr.costItems)} />
+                      {/* Chi phí công ty: có danh sách trực tiếp từ lô thì xem qua toggle "Chi phí" cho đỡ rối */}
+                      {!costs.length && <LotCostLine items={x.pr.costItems} block notes={costNoteMap(x.pr.costItems)} />}
                       {x.pr.matched
                         ? <span style={{ color: "var(--good)" }}>✓ Bảng giá · {x.cru ? (/xu/i.test(x.io || "") ? "CRU ngoại" : "CRU nội") : "1 chiều"} · {x.pr.conn || "—"} · {contColLabel(x.pr)}{x.pr.priceBook ? <span style={{ color: "var(--accent)" }}> · 📅 {bookLabel(x.pr.priceBook)}</span> : null} · <span className="tnum">{x.pr.route}</span>{x.pr.noDrop ? <span style={{ color: "var(--warn)" }}> (lô chưa có Nơi hạ — khớp theo FROM)</span> : null} — <span className="tnum">{x.pr.dau > 0 ? `Cước ${fmtNum(x.pr.cuoc)} + Dầu ${fmtNum(x.pr.dau)}` : `Cước+dầu ${fmtNum(x.pr.cuoc)}`}{(x.pr.bargeCuoc || x.pr.bargeDau) ? " + Sà lan " + fmtNum((x.pr.bargeCuoc || 0) + (x.pr.bargeDau || 0)) : ""}{x.pr.chiHo ? " + Chi hộ " + fmtNum(x.pr.chiHo) : ""} = {fmtNum(x.pr.phaiThu)} ₫</span>{x.pr.isBarge && !x.pr.bargeMatched ? <span style={{ color: "var(--warn)" }}> · ⚠ sà lan chưa khớp giá</span> : null}</span>
                         : <span style={{ color: "var(--warn)" }}>⚠ Chưa khớp bảng giá{!x.pr.priceBook ? " (ngày cont ra ngoài mọi bảng giá)" : (x.pr.routeMatched ? ` (tuyến có giá nhưng thiếu cột loại cont ${x.pr.contType || "?"})` : "")}{x.pr.chiHo ? " · mới có Chi hộ " + fmtShort(x.pr.chiHo) : " · phải thu 0"}</span>}
                     </div>
+                    {costShown && <div style={{ paddingBottom: 8 }}><LotCostsPanel items={costs} choho={lineAmt(x).choho}
+                      editUrl={ROUTES_TRK.loHang && x.contNo ? ROUTES_TRK.loHang + "?q=" + encodeURIComponent(x.contNo) + "&open=1" : null} /></div>}
                   </td>
                 </tr>
                 </React.Fragment>
@@ -870,7 +897,7 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
 
         <div className="ke-noprint" style={{ marginTop: 14, fontSize: 12.5, color: "var(--ink-4)" }}>Sau khi lưu, mở bảng kê để nhập các đợt khách thanh toán và theo dõi công nợ.</div>
       </div>
-      <PendingLotsBox cust={cust} url={ROUTES.pendingLots} addedIds={new Set(all.map((x) => String(x.id)))} onAdd={addEarly} />
+      <PendingLotsBox cust={cust} url={ROUTES.pendingLots} to={to} toTime={toTime} addedIds={new Set(all.map((x) => String(x.id)))} onAdd={addEarly} />
       {footer}
     </div>
   );
@@ -1437,6 +1464,11 @@ function SavedStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUrl, 
         {newLots && <LotPicker lots={newLots} inOther={inOtherStatements} width={wide} onAdd={onAddNewLots} onClose={onCloseLots} />}
         <div style={{ maxWidth: wide, margin: "0 auto", background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "8px 22px 18px" }}>
           <StatementDetailBody st={st} onUpdate={onUpdate} detailById={detailById || {}} suggestById={suggestById} onApplyLine={onApplyLine} />
+          {onUpdate && (
+            <PendingLotsBox cust={st.customer} url={ROUTES_TRK.pendingLots} to={st.to} toTime={(st.info || {}).toTime}
+              addedIds={new Set((st.lines || []).map((l) => String(l.id)))}
+              onAdd={(x) => onUpdate({ ...st, lines: [...(st.lines || []), candidateToLine(x)] })} />
+          )}
           <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
             <StatementActions st={st} isDirty={isDirty} onSave={onSave} onDelete={(id) => { Promise.resolve(onDelete && onDelete(id)).then(() => { window.location.href = backUrl; }); }} />
           </div>

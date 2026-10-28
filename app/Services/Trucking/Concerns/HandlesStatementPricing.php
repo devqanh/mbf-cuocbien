@@ -573,31 +573,63 @@ trait HandlesStatementPricing
     }
 
     /**
-     * LÔ CHƯA RA của 1 khách (chưa có Giờ xe ra; HPH chưa có ngày tàu) và CHƯA nằm trong bảng kê nào — trang Tạo bảng kê
-     * thêm tay vào để THU TRƯỚC; lưu xong lô đã có bảng kê nên lần tạo sau tự bỏ tích (billedIn).
-     * Chưa có ngày định giá (giờ xe ra) → định giá theo ngày vận hành của Giờ xe đến, không có thì hôm nay.
+     * LÔ CHƯA RA TRONG KỲ của 1 khách và CHƯA nằm trong bảng kê nào — trang Tạo / Xem bảng kê thêm tay để THU TRƯỚC;
+     * lưu xong lô đã có bảng kê nên lần tạo sau tự bỏ tích (billedIn).
+     * "Chưa ra trong kỳ" = chưa có Giờ xe ra (HPH: chưa có ngày tàu) HOẶC ra SAU cuối kỳ ($to [+ $toTime]);
+     * có cuối kỳ thì chỉ lấy lô KÉO VÀO (Giờ xe đến) không sau cuối kỳ (hoặc chưa có giờ đến).
+     * Đã có giờ ra → định giá như thường; chưa có → theo ngày vận hành của Giờ xe đến, không có thì hôm nay.
      * Mới nhất trước, tối đa $limit lô; $q lọc số cont / booking.
      */
-    public function statementPendingLots(string $customer, ?string $q = null, int $limit = 100): array
+    public function statementPendingLots(string $customer, ?string $q = null, ?string $to = null, ?string $toTime = null, int $limit = 100): array
     {
         $cust = trim($customer);
         $custId = $cust !== '' ? $this->customerIdByName($cust) : null;
         if (! $custId) return ['lots' => []];
-        $query = TruckingShipment::where('customer_id', $custId)->whereNull('gio_xe_ra')
-            ->where(fn ($w) => $w->where('sheet', '!=', 'HPH')->orWhereNull('sail_date'))
+        $hi = $to ? $to . ' ' . ($toTime ? $toTime . ':59' : '23:59:59') : null;
+        $query = TruckingShipment::where('customer_id', $custId)
+            ->where(function ($w) use ($hi, $to) {
+                $w->where(fn ($a) => $a->whereNull('gio_xe_ra')->where(fn ($b) => $b->where('sheet', '!=', 'HPH')->orWhereNull('sail_date')));
+                if ($hi) {
+                    $w->orWhere('gio_xe_ra', '>', $hi)
+                      ->orWhere(fn ($a) => $a->whereNull('gio_xe_ra')->where('sheet', 'HPH')->whereDate('sail_date', '>', $to));
+                }
+            })
             ->whereNotIn('id', \App\Models\TruckingStatementLine::whereNotNull('shipment_id')->select('shipment_id'))
             ->with(['costLines', 'raOther:id,gio_xe_ra']);
+        if ($hi) $query->where(fn ($w) => $w->whereNull('gio_xe_den')->orWhere('gio_xe_den', '<=', $hi));
         $q = trim((string) $q);
         if ($q !== '') $query->where(fn ($w) => $w->where('cont_no', 'like', "%{$q}%")->orWhere('booking', 'like', "%{$q}%"));
         $rows = $query->orderByDesc('gio_xe_den')->orderByDesc('id')->limit($limit)->get();
         $out = [];
         foreach ($rows as $s) {
-            $den = $s->gio_xe_den ? ($s->gio_xe_den instanceof Carbon ? $s->gio_xe_den->copy() : Carbon::parse((string) $s->gio_xe_den)) : null;
-            if ($den && $den->hour < self::OPS_DAY_START_HOUR) $den->subDay();
-            $ctx = $this->pricingContextForDate((int) $custId, $cust, $den ? $den->format('Y-m-d') : now()->format('Y-m-d'));
-            $out[] = $this->candidateRow($s, strtoupper((string) $s->sheet), '', $this->priceShipment($s, $ctx)) + ['billedIn' => []];
+            $sheet = strtoupper((string) $s->sheet);
+            $date  = $this->outDate($s->gio_xe_ra) ?: ($sheet === 'HPH' ? $this->outDate($s->sail_date) : '');
+            if ($date !== '') {
+                $ctx = $this->pricingContextForShipment($s, (int) $custId, $cust);
+            } else {
+                $den = $s->gio_xe_den ? ($s->gio_xe_den instanceof Carbon ? $s->gio_xe_den->copy() : Carbon::parse((string) $s->gio_xe_den)) : null;
+                if ($den && $den->hour < self::OPS_DAY_START_HOUR) $den->subDay();
+                $ctx = $this->pricingContextForDate((int) $custId, $cust, $den ? $den->format('Y-m-d') : now()->format('Y-m-d'));
+            }
+            $out[] = $this->candidateRow($s, $sheet, $date, $this->priceShipment($s, $ctx)) + ['billedIn' => []];
         }
         return ['lots' => $out];
+    }
+
+    /** 1 khoản Chi phí lô hàng → shape hiển thị (toggle "Chi phí" ở trang tạo / xem bảng kê). Chỉ để xem. */
+    private function costLineOut(\App\Models\TruckingCostLine $c): array
+    {
+        return [
+            'item'      => $c->item ?: '(khoản)',
+            'amount'    => (int) round((float) $c->amount),
+            'vat'       => (float) $c->vat,
+            'invoiceNo' => (string) ($c->invoice_no ?? ''),
+            'payer'     => (string) ($c->payer ?? ''),
+            'date'      => $this->outDate($c->date),
+            'billable'  => (bool) $c->billable,
+            'extPay'    => (bool) $c->ext_pay,
+            'note'      => trim((string) $c->note),
+        ];
     }
 
     /**
@@ -667,6 +699,8 @@ trait HandlesStatementPricing
             'gioVao' => $this->outDateTime($s->gio_xe_den), 'gioRa' => $this->outDateTime($s->gio_xe_ra),   // ngày + giờ kéo vào / cont ra
             // "Ghi chú tự do cho lô hàng" (popup Thông tin lô) — hiện ở trang tạo bảng kê như trang xem.
             'infoNote' => trim((string) $s->info_note),
+            // Toàn bộ khoản Chi phí lô hàng (chi phí + chi hộ) cho toggle "Chi phí" — chỉ để xem.
+            'costLines' => $s->relationLoaded('costLines') ? $s->costLines->map(fn ($c) => $this->costLineOut($c))->values()->all() : [],
             'pr' => $pr,
         ];
     }

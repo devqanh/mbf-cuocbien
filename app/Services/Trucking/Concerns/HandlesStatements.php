@@ -339,17 +339,7 @@ trait HandlesStatements
             ->orderBy('sort')->orderBy('id')
             ->get(['shipment_id', 'item', 'amount', 'vat', 'invoice_no', 'payer', 'date', 'billable', 'ext_pay', 'note'])
             ->groupBy('shipment_id');
-        $costLines = $costRows->map(fn ($g) => $g->map(fn ($c) => [
-            'item'      => $c->item ?: '(khoản)',
-            'amount'    => (int) round((float) $c->amount),
-            'vat'       => (float) $c->vat,
-            'invoiceNo' => (string) ($c->invoice_no ?? ''),
-            'payer'     => (string) ($c->payer ?? ''),
-            'date'      => $this->outDate($c->date),
-            'billable'  => (bool) $c->billable,
-            'extPay'    => (bool) $c->ext_pay,
-            'note'      => trim((string) $c->note),
-        ])->values()->all())->all();
+        $costLines = $costRows->map(fn ($g) => $g->map(fn ($c) => $this->costLineOut($c))->values()->all())->all();
         // GHI CHÚ từng khoản (chỉ dòng có ghi chú) — giữ khóa cũ cho ô Chi hộ / dòng chi phí công ty.
         $costNotes = array_map(fn ($list) => array_values(array_map(
             fn ($c) => ['item' => $c['item'], 'note' => $c['note'], 'billable' => $c['billable']],
