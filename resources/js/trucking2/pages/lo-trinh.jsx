@@ -135,12 +135,12 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
     const extraItems = [];
     groups.forEach((g, gi) => (extras[gi] || []).forEach((m) => {
       if (!(m.name || "").trim() && !toNum(m.amount)) return;   // bỏ dòng rỗng
-      extraItems.push({ cont: g.cont || "", name: m.name || "", amount: m.amount, perDay: m.perDay !== false, choHo: !m.khac && !!m.choHo, khac: !!m.khac, note: m.khac ? (m.note || "") : "" });
+      extraItems.push({ trip: g.trip || "", cont: g.cont || "", name: m.name || "", amount: m.amount, perDay: m.perDay !== false, choHo: !m.khac && !!m.choHo, khac: !!m.khac, note: m.khac ? (m.note || "") : "" });
     }));
     // Khoản phí tuyến chọn Chi hộ theo từng chuyến (gửi đủ mọi chuyến để bỏ chọn cũng được lưu)
-    const chohoItems = groups.map((g, gi) => ({ cont: g.cont || "", keys: [...(chSel[gi] || [])] }));
+    const chohoItems = groups.map((g, gi) => ({ trip: g.trip || "", cont: g.cont || "", keys: [...(chSel[gi] || [])] }));
     // Số tiền nhập tay (gửi đủ mọi khoản editable — xóa trắng = bỏ nhập tay)
-    const amountItems = groups.flatMap((g, gi) => editables(g).map((it) => ({ cont: g.cont || "", key: it.key, amount: (amt[gi] || {})[it.key] ?? "" })));
+    const amountItems = groups.flatMap((g, gi) => editables(g).map((it) => ({ trip: g.trip || "", cont: g.cont || "", key: it.key, amount: (amt[gi] || {})[it.key] ?? "" })));
     window.trkApi("POST", (window.__TRK.routes || {}).savePay, { date, bks: truck.bks, driver, paid, note, extraItems, chohoItems, amountItems })
       .then((r) => { if (r && r.ok) { window.trkToast && window.trkToast("Đã lưu chi cho lái"); onSaved({ payDriver: driver, paid, payNote: note }); onClose(); } else { window.trkToast && window.trkToast("Lưu thất bại", "error"); setSaving(false); } })
       .catch(() => { window.trkToast && window.trkToast("Lỗi kết nối", "error"); setSaving(false); });
@@ -661,19 +661,19 @@ function LoTrinhApp() {
   }, [data]);
 
   const shiftDay = (n) => { const d = new Date(date + "T12:00:00"); d.setDate(d.getDate() + n); setDate(toYmd(d)); };
-  // Sửa lít dầu 1 chuyến (theo cont) → lưu rồi tải lại ngày (tiền dầu, tổng xe, báo cáo đều tính lại ở backend).
+  // Sửa lít dầu 1 chuyến (trip = #id lô — 1 cont có thể chạy nhiều chuyến/ngày) → lưu rồi tải lại ngày (tiền dầu, tổng xe, báo cáo đều tính lại ở backend).
   // Sửa tay phụ cấp đi đường / lương chuyến 1 chuyến ngay trên Lộ trình (amount null = về mức quy chế) → tải lại ngầm
-  const saveAmount = async (tr, cont, key, amount) => {
+  const saveAmount = async (tr, trip, cont, key, amount) => {
     try {
-      const r = await window.trkApi("POST", ROUTES.saveAmount, { date, bks: tr.bks, cont, key, amount: amount == null ? null : String(amount) });
+      const r = await window.trkApi("POST", ROUTES.saveAmount, { date, bks: tr.bks, trip, cont, key, amount: amount == null ? null : String(amount) });
       if (r && r.ok) { window.trkToast && window.trkToast(amount == null ? "Đã về mức quy chế" : "Đã lưu số tiền"); load(true); return true; }
       window.trkToast && window.trkToast((r && r.message) || "Lưu thất bại", "error");
     } catch (e) { /* trkApi đã báo lỗi */ }
     return false;
   };
-  const saveFuel = async (tr, cont, liters) => {
+  const saveFuel = async (tr, trip, cont, liters) => {
     try {
-      const r = await window.trkApi("POST", ROUTES.saveFuel, { date, bks: tr.bks, cont, liters: liters == null ? null : String(liters) });
+      const r = await window.trkApi("POST", ROUTES.saveFuel, { date, bks: tr.bks, trip, cont, liters: liters == null ? null : String(liters) });
       if (r && r.ok) { window.trkToast && window.trkToast(liters == null ? "Đã về định mức dầu" : "Đã lưu số lít dầu"); load(true); return true; }
       window.trkToast && window.trkToast((r && r.message) || "Lưu thất bại", "error");
     } catch (e) { /* trkApi đã báo lỗi */ }
@@ -830,8 +830,8 @@ function LoTrinhApp() {
                       const hrefOf = (l) => ROUTES.shipment + (l.cont ? "?q=" + encodeURIComponent(l.cont) + (openOf(l) || "&open=1") : (l.booking ? "?q=" + encodeURIComponent(l.booking) + openOf(l) : ""));
                       return items.map(({ l, g }, i) => (
                         <TripNode key={i} l={l} isFirst={i === 0} isLast={i === items.length - 1} bks={tr.bks} g={g} href={hrefOf(l)}
-                          canEdit={!!T.canEdit} frozen={tr.frozen} onFuel={(leg, liters) => saveFuel(tr, (g && g.cont) || leg.cont || "", liters)}
-                          onAmount={(leg, key, amount) => saveAmount(tr, (g && g.cont) || leg.cont || "", key, amount)} />
+                          canEdit={!!T.canEdit} frozen={tr.frozen} onFuel={(leg, liters) => saveFuel(tr, (g && g.trip) || leg.trip || "", (g && g.cont) || leg.cont || "", liters)}
+                          onAmount={(leg, key, amount) => saveAmount(tr, (g && g.trip) || leg.trip || "", (g && g.cont) || leg.cont || "", key, amount)} />
                       ));
                     })()}
                   </div>

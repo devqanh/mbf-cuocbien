@@ -40,6 +40,7 @@ class LoTrinhController extends BaseTruckingController
             'paidDate' => ['nullable', 'string'],
             'note'   => ['nullable', 'string'],
             'extraItems'            => ['nullable', 'array'],
+            'extraItems.*.trip'     => ['nullable', 'string', 'max:40'],   // khóa chuyến (#id lô) — 1 cont có thể chạy nhiều chuyến/ngày
             'extraItems.*.cont'     => ['nullable', 'string'],
             'extraItems.*.name'     => ['nullable', 'string'],
             'extraItems.*.amount'   => ['nullable'],
@@ -48,9 +49,11 @@ class LoTrinhController extends BaseTruckingController
             'extraItems.*.khac'     => ['nullable', 'boolean'],   // chi phí khác (không tính lương, thống kê riêng)
             'extraItems.*.note'     => ['nullable', 'string', 'max:500'],   // ghi chú chi phí khác
             'chohoItems'            => ['nullable', 'array'],    // khoản phí tuyến chọn "Chi hộ" theo chuyến: [{cont, keys[]}]
+            'chohoItems.*.trip'     => ['nullable', 'string', 'max:40'],
             'chohoItems.*.cont'     => ['nullable', 'string'],
             'chohoItems.*.keys'     => ['nullable', 'array'],
             'amountItems'           => ['nullable', 'array'],    // số tiền nhập tay theo chuyến: [{cont, key, amount}]
+            'amountItems.*.trip'    => ['nullable', 'string', 'max:40'],
             'amountItems.*.cont'    => ['nullable', 'string'],
             'amountItems.*.key'     => ['required', 'string', 'max:40'],
             'amountItems.*.amount'  => ['nullable'],
@@ -65,11 +68,12 @@ class LoTrinhController extends BaseTruckingController
             'date'   => ['required', 'string'],
             'bks'    => ['required', 'string'],
             'cont'   => ['nullable', 'string'],
+            'trip'   => ['nullable', 'string', 'max:40'],   // khóa chuyến (#id lô) — chỉ sửa đúng chuyến này dù trùng cont
             'liters' => ['nullable'],
         ]);
         $raw = trim(str_replace(',', '.', (string) ($d['liters'] ?? '')));
         if ($raw !== '' && ! is_numeric($raw)) return response()->json(['ok' => false, 'message' => 'Số lít không hợp lệ'], 422);
-        return response()->json($this->svc->saveRouteFuel($d['date'], $d['bks'], (string) ($d['cont'] ?? ''), $raw === '' ? null : (float) $raw));
+        return response()->json($this->svc->saveRouteFuel($d['date'], $d['bks'], (string) ($d['cont'] ?? ''), $raw === '' ? null : (float) $raw, (string) ($d['trip'] ?? '')));
     }
 
     /** Sửa tay phụ cấp đi đường / lương chuyến / vé trạm của 1 chuyến ngay trên Lộ trình (amount trống = về mức quy chế). */
@@ -79,11 +83,12 @@ class LoTrinhController extends BaseTruckingController
             'date'   => ['required', 'string'],
             'bks'    => ['required', 'string'],
             'cont'   => ['nullable', 'string'],
+            'trip'   => ['nullable', 'string', 'max:40'],
             'key'    => ['required', 'string', 'in:tienDuong,luong,veTram'],
             'amount' => ['nullable'],
         ]);
         $raw = preg_replace('/\D/', '', (string) ($d['amount'] ?? ''));
-        return response()->json($this->svc->saveRouteAmount($d['date'], $d['bks'], (string) ($d['cont'] ?? ''), $d['key'], $raw === '' ? null : (int) $raw));
+        return response()->json($this->svc->saveRouteAmount($d['date'], $d['bks'], (string) ($d['cont'] ?? ''), $d['key'], $raw === '' ? null : (int) $raw, (string) ($d['trip'] ?? '')));
     }
 
     /** Chốt / bỏ chốt cả ngày (đóng băng số tiền chi cho lái). */

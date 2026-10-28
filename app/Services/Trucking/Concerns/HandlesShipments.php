@@ -492,6 +492,8 @@ trait HandlesShipments
                 'ketHop'   => (bool) ($s->ket_hop || $out->ket_hop),
                 'booking'  => $s->booking ?? '',
                 'hashid'   => \App\Support\Hashid::encode($s->id),
+                // Khóa CHỈNH TAY của chuyến (trip_overrides / chi khác) theo LÔ — 1 cont có thể chạy nhiều chuyến trong ngày.
+                'trip'     => '#' . $s->id,
             ], $extra);
         };
 
@@ -614,13 +616,15 @@ trait HandlesShipments
                 $matched = $vehByPlate->has($bks);
             }
             $pay = $paysByBks->get($bks);
-            // Chi khác phát sinh THỦ CÔNG (đã lưu) — gom theo cont để gắn vào đúng chuyến.
-            $manualByCont = [];
+            // Chi khác phát sinh THỦ CÔNG (đã lưu) — gom theo chuyến (trip = #id lô) để gắn vào đúng chuyến;
+            // dòng cũ chưa có trip gom theo cont, chỉ gắn vào chuyến ĐẦU TIÊN của cont đó (tránh cộng trùng).
+            $manualByTrip = []; $manualByCont = [];
             foreach ((array) ($pay?->extra_items ?? []) as $m) {
                 if (! is_array($m)) continue;
-                $manualByCont[(string) ($m['cont'] ?? '')][] = $m;
+                $tk = (string) ($m['trip'] ?? '');
+                if ($tk !== '') $manualByTrip[$tk][] = $m; else $manualByCont[(string) ($m['cont'] ?? '')][] = $m;
             }
-            // CHỈNH TAY theo chuyến (cont) — route_pays.trip_overrides {cont: {liters?, choho?}}.
+            // CHỈNH TAY theo chuyến — route_pays.trip_overrides {#id lô | cont (cũ): {liters?, choho?, amounts?}}.
             $tripOv = is_array($pay?->trip_overrides) ? $pay->trip_overrides : [];
             // MỖI chuyến (leg) = 1 nhóm (kể cả không khớp phí tuyến → cảnh báo cho kế toán).
             // payTotal = chi theo ngày; payrollTotal = khoản gom trả 1 đợt (lương) cho kỳ lương.
@@ -630,7 +634,7 @@ trait HandlesShipments
             foreach ($ls as $l) {
                 $g = $this->legPayGroup($l, $axle, $fuels, $dateStr);
                 // Lít dầu sửa tay ghi đè định mức quy chế của chuyến (làm tròn số nguyên); tiền = lít × giá dầu theo ngày.
-                $ov = is_array($tripOv[(string) $g['cont']] ?? null) ? $tripOv[(string) $g['cont']] : [];
+                $ov = $this->tripOvGet($tripOv, (string) $g['trip'], (string) $g['cont']);
                 $fl = $ov['liters'] ?? null;
                 if ($fl !== null && $fl !== '') {
                     $fl = round((float) $fl);
@@ -671,9 +675,12 @@ trait HandlesShipments
                     if ($it['choHo']) $g['chohoSub'] += (int) $it['amount'];
                 }
                 unset($it);
-                // Gắn chi khác phát sinh của chuyến (theo cont).
+                // Gắn chi khác phát sinh của chuyến (theo trip; dòng cũ theo cont → chuyến đầu của cont).
                 $g['khacSub'] = 0;
-                $addManual($g, $manualByCont[(string) $g['cont']] ?? []);
+                $ms = $manualByTrip[(string) $g['trip']] ?? [];
+                unset($manualByTrip[(string) $g['trip']]);
+                if (isset($manualByCont[(string) $g['cont']])) { $ms = array_merge($ms, $manualByCont[(string) $g['cont']]); unset($manualByCont[(string) $g['cont']]); }
+                $addManual($g, $ms);
                 // có tiền (kể cả thủ công) → hết cảnh báo; trừ khoản còn chờ NHẬP TAY (vd tiền đường khác nhóm cảng)
                 if ($g['sub'] > 0 && $g['note'] !== '' && empty($g['needInput'])) $g['note'] = '';
                 // TRỢ CẤP THEO NGÀY (quy chế; kế toán chốt 09/10/2026) — chi trong ngày, tính lương. Thêm sau dòng xóa cảnh báo
@@ -700,10 +707,12 @@ trait HandlesShipments
             }
             // Chi khác đã lưu nhưng cont KHÔNG còn khớp chuyến nào trong ngày (lô bị sửa cont/xe/giờ sau khi nhập) →
             // KHÔNG bỏ rơi tiền: gom thành nhóm "chưa gắn chuyến" (orphan, không tính là chuyến) + cảnh báo để kế toán xử lý.
-            $seenConts = array_flip(array_map(fn ($g) => (string) $g['cont'], $payGroups));
-            foreach ($manualByCont as $cont => $ms) {
-                if (isset($seenConts[(string) $cont])) continue;
-                $g = ['route' => 'Chi khác chưa gắn chuyến', 'cont' => (string) $cont, 'mode' => '', 'orphan' => true,
+            // (đã gắn thì bị unset ở trên → phần còn lại là chi khác không còn chuyến)
+            $orphans = [];
+            foreach ($manualByTrip as $tk => $ms) $orphans[] = [(string) $tk, (string) ($ms[0]['cont'] ?? ''), $ms];
+            foreach ($manualByCont as $cont => $ms) $orphans[] = ['', (string) $cont, $ms];
+            foreach ($orphans as [$tk, $cont, $ms]) {
+                $g = ['route' => 'Chi khác chưa gắn chuyến', 'cont' => $cont, 'trip' => $tk, 'mode' => '', 'orphan' => true,
                       'items' => [], 'sub' => 0, 'payrollItems' => [], 'payrollSub' => 0, 'chohoSub' => 0, 'khacSub' => 0, 'fuel' => null,
                       'matched' => false, 'note' => 'Cont ' . ($cont !== '' ? $cont : '(trống)') . ' không còn là chuyến của xe trong ngày — kiểm tra lại lô hoặc chi khác',
                       'issues' => []];
@@ -803,7 +812,7 @@ trait HandlesShipments
         $disp = [];
         foreach ($nodes as $n) { $n = trim((string) $n); if ($n === '' || (count($disp) && end($disp) === $n)) continue; $disp[] = $n; }
         $routeDisp = implode(' → ', $disp) ?: ($this->khoRouteDisplay($leg['kho'] ?? '') ?: '—');
-        $g = ['route' => $routeDisp, 'cont' => $leg['cont'] ?? '', 'mode' => $leg['mode'] ?? '',
+        $g = ['route' => $routeDisp, 'cont' => $leg['cont'] ?? '', 'trip' => $leg['trip'] ?? '', 'mode' => $leg['mode'] ?? '',
               'items' => [], 'sub' => 0, 'payrollItems' => [], 'payrollSub' => 0, 'fuel' => null, 'matched' => false, 'note' => '',
               'issues' => []];   // [{type, refs[]}] — khung "Kiểm tra dữ liệu" ở Lộ trình gom theo loại để chỉ chỗ cần nhập
 
@@ -1073,7 +1082,7 @@ trait HandlesShipments
         $dkey = $driver ? mb_strtolower(preg_replace('/\s+/u', ' ', trim($driver)) ?? '') : '';
         $paid = ! empty($data['paid']);
         $veh = TruckingVehicle::where('plate', $bks)->first();
-        // Chi khác phát sinh THỦ CÔNG theo từng chuyến (cont) — {cont, name, amount, perDay}.
+        // Chi khác phát sinh THỦ CÔNG theo từng chuyến (trip = #id lô; cont để hiển thị) — {trip, cont, name, amount, perDay}.
         $extraItems = [];
         foreach ((array) ($data['extraItems'] ?? []) as $m) {
             if (! is_array($m)) continue;
@@ -1081,6 +1090,7 @@ trait HandlesShipments
             $amount = $this->inMoney($m['amount'] ?? null) ?? 0;
             if ($name === '' && $amount <= 0) continue;
             $extraItems[] = [
+                'trip'   => $this->str($m['trip'] ?? null) ?? '',
                 'cont'   => $this->str($m['cont'] ?? null) ?? '',
                 'name'   => $name,
                 'amount' => $amount,
@@ -1095,23 +1105,23 @@ trait HandlesShipments
         $tripOv = is_array($existing?->trip_overrides) ? $existing->trip_overrides : [];
         foreach ((array) ($data['chohoItems'] ?? []) as $c) {
             if (! is_array($c)) continue;
-            $cont = (string) ($c['cont'] ?? '');
+            $cont = (string) ($c['cont'] ?? ''); $trip = (string) ($c['trip'] ?? '');
             $keys = array_values(array_unique(array_filter(array_map('strval', (array) ($c['keys'] ?? [])), fn ($k) => $k !== '')));
-            $cur = is_array($tripOv[$cont] ?? null) ? $tripOv[$cont] : [];
+            $cur = $this->tripOvGet($tripOv, $trip, $cont);
             if ($keys) $cur['choho'] = $keys; else unset($cur['choho']);
-            if ($cur) $tripOv[$cont] = $cur; else unset($tripOv[$cont]);
+            $this->tripOvPut($tripOv, $trip, $cont, $cur);
         }
-        // Số tiền NHẬP TAY theo chuyến (tiền đường chuyến khác nhóm cảng): [{cont, key, amount}] — trống = bỏ nhập tay.
+        // Số tiền NHẬP TAY theo chuyến (tiền đường chuyến khác nhóm cảng): [{trip, cont, key, amount}] — trống = bỏ nhập tay.
         foreach ((array) ($data['amountItems'] ?? []) as $a) {
             if (! is_array($a) || ($key = (string) ($a['key'] ?? '')) === '') continue;
-            $cont = (string) ($a['cont'] ?? '');
-            $cur = is_array($tripOv[$cont] ?? null) ? $tripOv[$cont] : [];
+            $cont = (string) ($a['cont'] ?? ''); $trip = (string) ($a['trip'] ?? '');
+            $cur = $this->tripOvGet($tripOv, $trip, $cont);
             $amts = is_array($cur['amounts'] ?? null) ? $cur['amounts'] : [];
             $raw = $a['amount'] ?? null;
             if ($raw === null || trim((string) $raw) === '') unset($amts[$key]);
             else $amts[$key] = $this->inMoney($raw) ?? 0;
             if ($amts) $cur['amounts'] = $amts; else unset($cur['amounts']);
-            if ($cur) $tripOv[$cont] = $cur; else unset($tripOv[$cont]);
+            $this->tripOvPut($tripOv, $trip, $cont, $cur);
         }
         \App\Models\TruckingRoutePay::updateOrCreate(
             ['work_date' => $date, 'bks' => $bks],
@@ -1131,10 +1141,27 @@ trait HandlesShipments
     }
 
     /**
-     * Sửa LÍT DẦU của 1 chuyến (theo cont) ở Lộ trình — chỉ ghi route_pays.trip_overrides[cont].liters, không đụng lái nhận / chi khác.
+     * Chỉnh tay của 1 chuyến trong trip_overrides: khóa theo LÔ ($trip = '#id') vì 1 cont có thể chạy nhiều chuyến / ngày.
+     * Dữ liệu cũ khóa theo cont → chuyến chưa có khóa riêng thì đọc theo cont.
+     */
+    private function tripOvGet(array $map, string $trip, string $cont): array
+    {
+        $v = ($trip !== '' && array_key_exists($trip, $map)) ? $map[$trip] : ($map[$cont] ?? null);
+        return is_array($v) ? $v : [];
+    }
+
+    /** Ghi chỉnh tay của 1 chuyến; còn khóa cont cũ thì giữ cả mục rỗng để chuyến này không rơi về giá trị cũ của cont. */
+    private function tripOvPut(array &$map, string $trip, string $cont, array $cur): void
+    {
+        $k = $trip !== '' ? $trip : $cont;
+        if ($cur || ($trip !== '' && array_key_exists($cont, $map))) $map[$k] = $cur; else unset($map[$k]);
+    }
+
+    /**
+     * Sửa LÍT DẦU của 1 chuyến ở Lộ trình — chỉ ghi route_pays.trip_overrides[trip].liters, không đụng lái nhận / chi khác.
      * $liters null = bỏ sửa tay, về định mức phí tuyến. Ngày đã chốt thì không cho sửa (số đã đóng băng).
      */
-    public function saveRouteFuel(string $date, string $bks, string $cont, ?float $liters): array
+    public function saveRouteFuel(string $date, string $bks, string $cont, ?float $liters, string $trip = ''): array
     {
         $bks = trim($bks); $date = trim($date);
         if ($bks === '' || $date === '') return ['ok' => false, 'message' => 'Thiếu ngày/biển số'];
@@ -1142,9 +1169,9 @@ trait HandlesShipments
             ?? new \App\Models\TruckingRoutePay(['work_date' => $date, 'bks' => $bks]);
         if ($row->frozen) return ['ok' => false, 'message' => 'Ngày đã chốt — bỏ chốt ngày để sửa lít dầu'];
         $map = is_array($row->trip_overrides) ? $row->trip_overrides : [];
-        $cur = is_array($map[$cont] ?? null) ? $map[$cont] : [];
+        $cur = $this->tripOvGet($map, $trip, $cont);
         if ($liters === null || $liters < 0) unset($cur['liters']); else $cur['liters'] = round($liters);   // lít nguyên, không lẻ
-        if ($cur) $map[$cont] = $cur; else unset($map[$cont]);
+        $this->tripOvPut($map, $trip, $cont, $cur);
         $row->trip_overrides = $map ?: null;
         if (! $row->vehicle_id) $row->vehicle_id = TruckingVehicle::where('plate', $bks)->value('id');
         $row->updated_by = auth()->id();
@@ -1154,9 +1181,9 @@ trait HandlesShipments
 
     /**
      * Sửa tay SỐ TIỀN 1 khoản của 1 chuyến ngay trên Lộ trình (phụ cấp đi đường / lương chuyến) — chỉ ghi
-     * trip_overrides[cont].amounts[key], không đụng lái nhận / chi khác. $amount null = về mức quy chế.
+     * trip_overrides[trip].amounts[key], không đụng lái nhận / chi khác. $amount null = về mức quy chế.
      */
-    public function saveRouteAmount(string $date, string $bks, string $cont, string $key, ?int $amount): array
+    public function saveRouteAmount(string $date, string $bks, string $cont, string $key, ?int $amount, string $trip = ''): array
     {
         $bks = trim($bks); $date = trim($date);
         if ($bks === '' || $date === '') return ['ok' => false, 'message' => 'Thiếu ngày/biển số'];
@@ -1165,11 +1192,11 @@ trait HandlesShipments
             ?? new \App\Models\TruckingRoutePay(['work_date' => $date, 'bks' => $bks]);
         if ($row->frozen) return ['ok' => false, 'message' => 'Ngày đã chốt — bỏ chốt ngày để sửa'];
         $map = is_array($row->trip_overrides) ? $row->trip_overrides : [];
-        $cur = is_array($map[$cont] ?? null) ? $map[$cont] : [];
+        $cur = $this->tripOvGet($map, $trip, $cont);
         $amts = is_array($cur['amounts'] ?? null) ? $cur['amounts'] : [];
         if ($amount === null) unset($amts[$key]); else $amts[$key] = max(0, $amount);
         if ($amts) $cur['amounts'] = $amts; else unset($cur['amounts']);
-        if ($cur) $map[$cont] = $cur; else unset($map[$cont]);
+        $this->tripOvPut($map, $trip, $cont, $cur);
         $row->trip_overrides = $map ?: null;
         if (! $row->vehicle_id) $row->vehicle_id = TruckingVehicle::where('plate', $bks)->value('id');
         $row->updated_by = auth()->id();
