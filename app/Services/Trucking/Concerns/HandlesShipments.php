@@ -689,15 +689,23 @@ trait HandlesShipments
                 //    (vd Hải Dương rồi Bắc Ninh). Chuyến ngắn trên Bắc Ninh (ICD / Tri Phương — bảng KCN) tính như chuyến ngắn
                 //    Hải Phòng → KHÔNG xét quay đầu.
                 //  - TỪ CHUYẾN THỨ 3 trong ngày: chuyến kéo cont thứ 3, 4, 5… của xe (bất kể đi đâu) → MỖI chuyến +100k.
+                //  1 chuyến CHỈ hưởng 1 trợ cấp: đã có quay đầu (còn trả) thì không cộng thêm chuyến thứ 3; kế toán bỏ quay đầu
+                //  ở chuyến đó → chuyến thứ 3 (nếu đủ điều kiện) được tính lại.
                 if (($l['mode'] ?? '') !== 'none') {
                     $tripNo++;
                     $outHp = ($g['tripMode'] ?? '') === 'zone' && $this->legOutsideHaiPhong($l);
-                    $add = function ($key, $label, $amount) use (&$g) {
-                        $g['items'][] = ['key' => $key, 'ck' => $key, 'label' => $label, 'amount' => $amount, 'perDay' => true, 'fixed' => 'luong', 'choHo' => false];
-                        $g['sub'] += $amount;
+                    $add = function ($key, $label, $amount, array $extra = []) use (&$g, $amts) {
+                        $it = ['key' => $key, 'ck' => $key, 'label' => $label, 'amount' => $amount, 'perDay' => true, 'fixed' => 'luong', 'choHo' => false] + $extra;
+                        // Khoản sửa tay được (quay đầu): trip_overrides[trip].amounts[key] ghi đè; 0 = BỎ trợ cấp cho chuyến này.
+                        if (! empty($it['editable']) && array_key_exists($key, $amts)) { $it['amount'] = (int) $amts[$key]; $it['edited'] = true; }
+                        $g['items'][] = $it;
+                        $g['sub'] += $it['amount'];
+                        return $it['amount'];
                     };
-                    if ($outHp && $prevOutHp && $turnaroundAllowance > 0) $add('quayDau', 'Trợ cấp quay đầu ngoài HP', $turnaroundAllowance);
-                    if ($tripNo >= 3 && $thirdTripAllowance > 0) $add('chuyen3', 'Trợ cấp chuyến thứ ' . $tripNo . ' trong ngày', $thirdTripAllowance);
+                    // Quay đầu tính theo điều kiện nhưng nhiều lô thực tế không trả → kế toán sửa / bỏ từng chuyến.
+                    $turnPaid = ($outHp && $prevOutHp && $turnaroundAllowance > 0) ? $add('quayDau', 'Trợ cấp quay đầu ngoài HP', $turnaroundAllowance,
+                        ['editable' => true, 'removable' => true, 'base' => $turnaroundAllowance]) : 0;
+                    if ($tripNo >= 3 && $thirdTripAllowance > 0 && $turnPaid <= 0) $add('chuyen3', 'Trợ cấp chuyến thứ ' . $tripNo . ' trong ngày', $thirdTripAllowance);
                     $prevOutHp = $outHp;
                 }
                 $payGroups[] = $g;
@@ -1187,7 +1195,7 @@ trait HandlesShipments
     {
         $bks = trim($bks); $date = trim($date);
         if ($bks === '' || $date === '') return ['ok' => false, 'message' => 'Thiếu ngày/biển số'];
-        if (! in_array($key, ['tienDuong', 'luong', 'veTram'], true)) return ['ok' => false, 'message' => 'Khoản không cho sửa'];
+        if (! in_array($key, ['tienDuong', 'luong', 'veTram', 'quayDau'], true)) return ['ok' => false, 'message' => 'Khoản không cho sửa'];
         $row = \App\Models\TruckingRoutePay::whereDate('work_date', $date)->where('bks', $bks)->first()
             ?? new \App\Models\TruckingRoutePay(['work_date' => $date, 'bks' => $bks]);
         if ($row->frozen) return ['ok' => false, 'message' => 'Ngày đã chốt — bỏ chốt ngày để sửa'];

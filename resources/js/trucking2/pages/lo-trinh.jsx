@@ -359,11 +359,19 @@ function AmountChip({ it, payroll, hint, canEdit, frozen, onSave }) {
         onKeyDown={(e) => { if (e.key === "Enter") save(e, val === "" ? null : +val); if (e.key === "Escape") { stopLink(e); setEdit(false); } }}
         className="tnum" style={{ width: 90, padding: "2px 6px", fontSize: 12, textAlign: "right", border: "1px solid var(--line)", borderRadius: 6, outline: "none" }} />
       <button type="button" disabled={busy} onClick={(e) => save(e, val === "" ? null : +val)} style={{ ...mini, color: "var(--accent)" }}>{busy ? "…" : "Lưu"}</button>
+      {it.removable && !(it.edited && !it.amount) && <button type="button" disabled={busy} onClick={(e) => save(e, 0)} title="Không trả khoản này cho chuyến này (lưu 0 đ)" style={{ ...mini, color: "var(--bad, #c0392b)" }}>Bỏ trợ cấp</button>}
       {(it.edited || it.required) && <button type="button" disabled={busy} onClick={(e) => save(e, null)} title={it.base != null ? "Về mức quy chế " + fmtVND(it.base) : "Bỏ số nhập tay"} style={{ ...mini, color: "var(--ink-3)" }}>{it.base != null ? "Về quy chế" : "Bỏ nhập"}</button>}
       <button type="button" onClick={(e) => { stopLink(e); setEdit(false); }} style={{ ...mini, color: "var(--ink-4)" }}>Hủy</button>
     </span>
   );
   const pend = it.required && !it.edited;
+  // Khoản đã BỎ cho chuyến này (vd trợ cấp quay đầu không trả) — gạch ngang, bấm để khôi phục về quy chế
+  if (it.removable && it.edited && !it.amount) return (
+    <span onClick={open} title={"Đã bỏ cho chuyến này (quy chế " + fmtVND(it.base || 0) + ")" + (can ? " · bấm để khôi phục" : "")}
+      style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "1px 8px", fontSize: 11, fontWeight: 600, borderRadius: 999, cursor: can ? "pointer" : "default", background: "var(--line-2)", color: "var(--ink-4)" }}>
+      <s>{it.label} <span className="tnum">{fmtVND(it.base || 0)}</span></s> · đã bỏ
+    </span>
+  );
   const tone = pend ? { background: "#fff1d6", color: "#a05a00", border: "1px dashed #e8b860", fontWeight: 700 }
     : payroll ? { background: "#fbf0d3", color: "#7c5b16" } : { background: "var(--accent-weak)", color: "var(--accent)" };
   const title = (pend ? (hint || "Quy chế không có định mức") + " — bấm để nhập"

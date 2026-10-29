@@ -84,7 +84,7 @@ class LoTrinhController extends BaseTruckingController
             'bks'    => ['required', 'string'],
             'cont'   => ['nullable', 'string'],
             'trip'   => ['nullable', 'string', 'max:40'],
-            'key'    => ['required', 'string', 'in:tienDuong,luong,veTram'],
+            'key'    => ['required', 'string', 'in:tienDuong,luong,veTram,quayDau'],
             'amount' => ['nullable'],
         ]);
         $raw = preg_replace('/\D/', '', (string) ($d['amount'] ?? ''));

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Concerns\HasHashid;
+use App\Support\PlateNormalizer;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -54,6 +55,18 @@ class TruckingShipment extends Model
         'tags'            => 'array',
         'declarations'    => 'array',   // [{no, fee}] — 1 lô nhiều tờ khai, mỗi tờ khai 1 phí
     ];
+
+    // BKS vào / ra luôn lưu dạng chuẩn ("15C 15877" → "15C-15877") — mọi đường ghi (popup, gán nhanh,
+    // import, link lái xe) đi qua đây nên danh sách hiển thị thống nhất với danh mục xe.
+    public function setBksVaoAttribute($v): void
+    {
+        $this->attributes['bks_vao'] = PlateNormalizer::canonical($v);
+    }
+
+    public function setBksRaAttribute($v): void
+    {
+        $this->attributes['bks_ra'] = PlateNormalizer::canonical($v);
+    }
 
     public function customer(): BelongsTo
     {
