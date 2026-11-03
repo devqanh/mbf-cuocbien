@@ -177,6 +177,22 @@ trait HandlesTripAndDrivers
         ];
     }
 
+    /**
+     * Dòng Thời gian sử dụng (lái xe) của 1 xe áp cho NGÀY Y-m-d: dòng có Từ ngày LỚN NHẤT ≤ ngày (cùng ngày → dòng
+     * sau thắng) — người kế tiếp tự nối tiếp từ ngày họ bắt đầu, không cần Đến ngày. Từ ngày trống = từ đầu.
+     * Dòng cũ còn Đến ngày < ngày (xe ngừng, chưa có người kế tiếp) → null.
+     */
+    private function usageOn(iterable $usages, string $date): ?TruckingVehicleUsage
+    {
+        $best = null; $bf = '';
+        foreach ($usages as $u) {
+            $f = $u->from_date?->format('Y-m-d') ?? '';
+            if ($f <= $date && ($best === null || $f >= $bf)) { $best = $u; $bf = $f; }
+        }
+        $t = $best?->to_date?->format('Y-m-d');
+        return ($best && (! $t || $t >= $date)) ? $best : null;
+    }
+
     /** Gợi ý phí cho 1 lô: dò route_fee theo kho, dầu theo cầu xe, giá dầu theo ngày, lái xe theo lịch dùng xe. */
     private function tripSuggest($s, array $bundle): array
     {
@@ -188,13 +204,8 @@ trait HandlesTripAndDrivers
         $liters = $rf ? (float) ($axle === '2' ? $rf->dau_2cau : $rf->dau_1cau) : 0;
         $price  = $this->fuelPriceForDate($bundle['fuels'], $date);
 
-        $driver = '';
         $hasUsage = isset($bundle['usagesByVeh'][$veh?->id]);
-        foreach (($bundle['usagesByVeh'][$veh?->id] ?? []) as $u) {
-            $uf = $u->from_date?->format('Y-m-d');
-            $ut = $u->to_date?->format('Y-m-d');
-            if ($date && $uf && $uf <= $date && (! $ut || $ut >= $date)) { $driver = $u->driver ?? ''; break; }
-        }
+        $driver = $date ? ($this->usageOn($bundle['usagesByVeh'][$veh?->id] ?? [], $date)?->driver ?? '') : '';
 
         // Chẩn đoán từng mắt xích để cảnh báo đúng nguyên nhân (kế toán rà soát).
         $diag = [

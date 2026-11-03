@@ -230,24 +230,46 @@ function DeprecMonthlyTab({ rows }) {
 }
 
 /* ---- Tab: Thời gian sử dụng xe ---- */
+// Ngày trước 1 ngày ISO (Y-m-d) — "chạy đến" của lái = ngày trước khi người kế tiếp bắt đầu
+const dayBefore = (iso) => { const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() - 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+
 function UsageTab({ rows, onChange, drivers }) {
   const isMobile = useIsMobile();
-  const set = (i, np) => onChange(rows.map((r, j) => (j === i ? { ...r, ...np } : r)));
-  const add = () => onChange([...(rows || []), { id: Date.now() + Math.random(), driver: "", from: "", to: "", note: "" }]);
-  const del = (i) => onChange(rows.filter((_, j) => j !== i));
+  const list = rows || [];
+  const set = (i, np) => onChange(list.map((r, j) => (j === i ? { ...r, ...np } : r)));
+  const add = () => onChange([...list, { id: Date.now() + Math.random(), driver: "", from: today10(), to: "", note: "" }]);
+  const del = (i) => onChange(list.filter((_, j) => j !== i));
+  // Không nhập Đến ngày: lái chạy tới ngày trước khi người kế tiếp (Từ ngày lớn hơn gần nhất) bắt đầu.
+  // Dòng cũ còn Đến ngày (nhập trước đây) vẫn giữ + cho xóa để nối tiếp như dòng mới.
+  const until = (r) => {
+    const next = list.map((x) => x.from).filter((f) => f && r.from && f > r.from).sort()[0];
+    const end = next ? dayBefore(next) : "";
+    return r.to && (!end || r.to < end) ? { date: r.to, fixed: true } : { date: end, fixed: false };
+  };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.5 }}>Gán lái xe (danh mục Lái xe) theo khoảng thời gian dùng xe — để sau tính lương theo phí tuyến đường.</div>
-      {(rows || []).length === 0 && <div style={{ padding: "12px 2px", fontSize: 12.5, color: "var(--ink-4)" }}>Chưa có lịch sử — bấm <b>+ Thêm lượt sử dụng</b>.</div>}
-      {(rows || []).map((r, i) => (
-        <div key={r.id || i} style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 150px 150px 1fr 34px", gap: 10, alignItems: "end", ...card }}>
-          <div>{lbl("Lái xe")}<Combo value={r.driver} onChange={(x) => set(i, { driver: x })} options={drivers || []} placeholder="Chọn lái xe…" /></div>
-          <div>{lbl("Từ ngày")}<DateField value={r.from} onChange={(x) => set(i, { from: x })} /></div>
-          <div>{lbl("Đến ngày")}<DateField value={r.to} onChange={(x) => set(i, { to: x })} /></div>
-          <div>{lbl("Ghi chú")}<Txt value={r.note} onChange={(x) => set(i, { note: x })} placeholder="…" /></div>
-          {delBtn(() => del(i))}
-        </div>
-      ))}
+      <div style={{ fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.5 }}>Gán lái xe (danh mục Lái xe) theo ngày bắt đầu dùng xe — <b>Báo cáo lái xe</b> tính chuyến của xe cho lái theo từng ngày. Đổi lái / đổi chéo xe: bấm <b>+ Thêm lượt sử dụng</b>, chọn lái mới và <b>Từ ngày</b> = ngày bắt đầu; lái trước tự tính đến hết ngày hôm trước.</div>
+      {list.length === 0 && <div style={{ padding: "12px 2px", fontSize: 12.5, color: "var(--ink-4)" }}>Chưa có lịch sử — bấm <b>+ Thêm lượt sử dụng</b>.</div>}
+      {list.map((r, i) => {
+        const u = until(r);
+        return (
+          <div key={r.id || i} style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 150px 190px 1fr 34px", gap: 10, alignItems: "end", ...card }}>
+            <div>{lbl("Lái xe")}<Combo value={r.driver} onChange={(x) => set(i, { driver: x })} options={drivers || []} placeholder="Chọn lái xe…" /></div>
+            <div>{lbl("Từ ngày")}<DateField value={r.from} onChange={(x) => set(i, { from: x })} /></div>
+            <div>{lbl("Chạy đến")}
+              <div style={{ display: "flex", alignItems: "center", gap: 6, minHeight: 38, fontSize: 13, color: u.fixed ? "#b45309" : "var(--ink-2)" }}>
+                {!r.from ? <span style={{ color: "var(--ink-4)" }}>—</span>
+                  : u.fixed ? <>kết thúc {fmtDate(u.date)}
+                      <button type="button" title="Bỏ ngày kết thúc — chạy tiếp tới khi có người kế tiếp" onClick={() => set(i, { to: "" })}
+                        style={{ border: "none", background: "none", color: "var(--ink-4)", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 }}><i className="bi bi-x-circle" /></button></>
+                  : u.date ? fmtDate(u.date) : <b style={{ color: "#15803d" }}>Hiện tại</b>}
+              </div>
+            </div>
+            <div>{lbl("Ghi chú")}<Txt value={r.note} onChange={(x) => set(i, { note: x })} placeholder="…" /></div>
+            {delBtn(() => del(i))}
+          </div>
+        );
+      })}
       {addBtn(add, "Thêm lượt sử dụng")}
     </div>
   );

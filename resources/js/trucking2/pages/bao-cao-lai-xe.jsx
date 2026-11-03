@@ -7,7 +7,9 @@ import { card, CardTitle, KPI, Empty } from "@trk/components/report-ui.jsx";
 const { useState, useEffect, useRef, useMemo } = React;
 
 /* BÁO CÁO LÁI XE — số chuyến HOÀN THÀNH theo lái xe trong khoảng ngày vận hành (08:00 → 08:00), dựng từ Lộ trình.
-   Lái = lái mặc định của xe (Cài đặt › Biển số xe); xe MBF chưa gắn lái → cảnh báo nhắc gắn. Xe ngoài không tính. */
+   Lái của xe THEO NGÀY: Quản lý xe › Thời gian sử dụng (Từ ngày gần nhất ≤ ngày chạy) → đổi lái / đổi chéo xe tính đúng
+   người; không có dòng khớp → lái mặc định (Cài đặt › Biển số xe). Ngày chạy chưa xác định được lái → cảnh báo nhắc gắn.
+   Xe ngoài không tính. */
 
 const T = window.__TRK || {};
 const ROUTES = T.routes || {};
@@ -23,6 +25,7 @@ const PRESETS = [
 const MODE_LABEL = { self: "Kéo cont ra", other: "Kéo cont khác ra", none: "Không kéo cont" };
 const MODE_COLOR = { self: "#2563eb", other: "#7c3aed", none: "#94a3b8" };
 const routeHref = (date, bks) => (ROUTES.loTrinh || "") + "?date=" + date + "&bks=" + encodeURIComponent(bks);
+const usageHref = (hashid) => (ROUTES.fleet || "") + "#" + hashid + "/usage";   // Quản lý xe › Thời gian sử dụng của xe
 
 const btn = { display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 11px", fontSize: 12.5, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--ink-2)", cursor: "pointer", textDecoration: "none" };
 
@@ -91,7 +94,7 @@ function DayLines({ lines, driverName, isMobile }) {
               <td style={{ padding: "6px 8px", whiteSpace: "nowrap", fontWeight: 600 }}>
                 {l.bks}
                 {otherPayDriver(l, driverName) && (
-                  <div style={{ fontSize: 11, fontWeight: 500, color: "#b45309" }} title="Lái nhận tiền ở Lộ trình khác lái mặc định của xe">
+                  <div style={{ fontSize: 11, fontWeight: 500, color: "#b45309" }} title="Lái nhận tiền ở Lộ trình khác lái được gắn cho xe ngày này">
                     <i className="bi bi-exclamation-triangle" /> lái nhận: {l.payDriver}
                   </div>
                 )}
@@ -109,7 +112,7 @@ function DayLines({ lines, driverName, isMobile }) {
   );
 }
 
-/* Cảnh báo xe MBF chưa gắn lái xe — nhắc nhân viên gắn ở Cài đặt › Biển số xe */
+/* Cảnh báo xe MBF chạy vào ngày chưa xác định được lái — nhắc gắn ở Quản lý xe › Thời gian sử dụng */
 function NoDriverWarning({ rep, isMobile }) {
   const [open, setOpen] = useState(false);
   const [allChips, setAllChips] = useState(false);
@@ -130,15 +133,16 @@ function NoDriverWarning({ rep, isMobile }) {
           ) : (
             <div style={{ fontSize: 13.5, fontWeight: 700, color: "var(--ink-2)" }}>{idle.length} xe MBF chưa gắn lái xe</div>
           )}
-          <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 3 }}>
-            Gắn lái xe mặc định cho xe ở <b>Cài đặt › Biển số xe</b> để báo cáo tính đúng chuyến cho từng lái.
+          <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 3, lineHeight: 1.5 }}>
+            Bấm từng xe để gắn lái ở <b>Quản lý xe › Thời gian sử dụng</b> (Lái xe + <b>Từ ngày</b> bắt đầu chạy) — hoặc lái mặc định ở Cài đặt › Biển số xe.
           </div>
           {hasTrips && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
               {list.slice(0, allChips ? list.length : CHIPS).map((v) => (
-                <span key={v.vehicleId} style={{ fontSize: 12, fontWeight: 600, padding: "2px 9px", borderRadius: 7, background: "#fff", border: "1px solid #fcd34d", color: "#92400e" }}>
+                <a key={v.vehicleId} href={usageHref(v.hashid)} target="_blank" rel="noopener" title="Mở Thời gian sử dụng của xe để gắn lái"
+                  style={{ fontSize: 12, fontWeight: 600, padding: "2px 9px", borderRadius: 7, background: "#fff", border: "1px solid #fcd34d", color: "#92400e", textDecoration: "none" }}>
                   {v.bks} · <span className="tnum">{v.trips}</span> chuyến
-                </span>
+                </a>
               ))}
               {list.length > CHIPS && (
                 <button type="button" onClick={() => setAllChips((o) => !o)} style={{ border: "none", background: "none", color: "var(--accent)", cursor: "pointer", fontSize: 12, fontWeight: 600, padding: "2px 4px" }}>
@@ -155,7 +159,7 @@ function NoDriverWarning({ rep, isMobile }) {
             </div>
           )}
         </div>
-        <a href={ROUTES.vehicles} style={{ ...btn, borderColor: "#f59e0b", color: "#92400e" }}><i className="bi bi-person-plus" /> Gắn lái xe</a>
+        <a href={ROUTES.fleet} style={{ ...btn, borderColor: "#f59e0b", color: "#92400e" }}><i className="bi bi-person-plus" /> Gắn lái xe</a>
       </div>
       {hasTrips && (
         <details style={{ marginTop: 10 }}>
@@ -163,6 +167,39 @@ function NoDriverWarning({ rep, isMobile }) {
           <div style={{ marginTop: 8 }}><DayLines lines={list.flatMap((v) => v.lines)} isMobile={isMobile} /></div>
         </details>
       )}
+    </div>
+  );
+}
+
+/* Cảnh báo 1 lái được tính cho ≥ 2 xe cùng ngày — thường do chuyển lái sang xe khác mà xe cũ chưa gắn lái mới */
+function ConflictWarning({ rep }) {
+  const [open, setOpen] = useState(false);
+  const list = rep.conflicts || [];
+  if (!list.length) return null;
+  const drivers = [...new Set(list.map((c) => c.name))];
+  return (
+    <div style={{ ...card, borderColor: "#f87171", background: "#fef2f2", marginBottom: 14 }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+        <i className="bi bi-shuffle" style={{ color: "#dc2626", fontSize: 18, marginTop: 1 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 700, color: "#991b1b" }}>
+            {drivers.length} lái xe được tính cho 2 xe trở lên trong cùng ngày ({list.length} ngày)
+          </div>
+          <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 3, lineHeight: 1.5 }}>
+            Thường do chuyển lái sang xe khác mà xe cũ chưa gắn lái mới. Ở <b>Quản lý xe › Thời gian sử dụng</b> của xe cũ: thêm dòng lái mới với <b>Từ ngày</b> = ngày đổi.
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 8, fontSize: 12.5 }}>
+            {list.slice(0, open ? list.length : 5).map((c, i) => (
+              <div key={i}><b>{c.name}</b> · {fmtDate(c.date)} · <span style={{ color: "#991b1b" }}>{c.plates.join(" + ")}</span></div>
+            ))}
+            {list.length > 5 && (
+              <button type="button" onClick={() => setOpen((o) => !o)} style={{ alignSelf: "flex-start", border: "none", background: "none", color: "var(--accent)", cursor: "pointer", fontSize: 12, fontWeight: 600, padding: 0 }}>
+                {open ? "thu gọn" : `+${list.length - 5} ngày`}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -233,11 +270,12 @@ function DriverReportApp() {
             <div style={{ fontSize: 12, color: "var(--ink-3)" }}>Kỳ {periodLabel} · in ngày {new Date().toLocaleDateString("vi-VN")}</div>
           </div>
 
+          <ConflictWarning rep={rep} />
           <NoDriverWarning rep={rep} isMobile={isMobile} />
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
             <KPI label="Tổng chuyến" value={tt.trips || 0} sub={`Kéo cont ${tt.self || 0} · kéo cont khác ${tt.other || 0} · không kéo cont ${tt.none || 0}`} />
-            <KPI label="Lái xe có chạy" value={`${tt.activeDrivers || 0} / ${(rep.rows || []).length}`} sub="lái đã gắn xe MBF" />
+            <KPI label="Lái xe có chạy" value={`${tt.activeDrivers || 0} / ${(rep.rows || []).length}`} sub="lái được gắn xe MBF trong kỳ" />
             <KPI label="TB chuyến / lái" value={avg} sub={periodLabel} />
             <KPI label="Chuyến chưa gắn lái" value={tt.noDriverTrips || 0} color={tt.noDriverTrips ? "#d97706" : undefined}
               sub={(rep.noDriver || []).length ? `${rep.noDriver.length} xe chưa gắn lái` : "Mọi xe có chạy đều đã gắn lái"} />
@@ -271,10 +309,10 @@ function DriverReportApp() {
                   </thead>
                   <tbody>
                     {rows.map((r, i) => {
-                      const open = openId === r.driverId;
+                      const open = openId === r.key;
                       return (
-                        <React.Fragment key={r.driverId}>
-                          <tr onClick={() => setOpenId(open ? null : r.driverId)}
+                        <React.Fragment key={r.key}>
+                          <tr onClick={() => setOpenId(open ? null : r.key)}
                             style={{ borderTop: "1px solid var(--line)", cursor: "pointer", background: open ? "var(--accent-weak-2)" : undefined, color: r.trips ? undefined : "var(--ink-4)" }}>
                             <td style={{ padding: "9px 8px", color: "var(--ink-4)" }}>{i + 1}</td>
                             <td style={{ padding: "9px 8px", fontWeight: 700 }}>
@@ -303,7 +341,8 @@ function DriverReportApp() {
               </div>
             )}
             <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 10, lineHeight: 1.5 }}>
-              Chỉ tính chuyến đã có giờ ra (hoàn thành) của xe MBF; lái xe theo lái mặc định của xe ở Cài đặt › Biển số xe.
+              Chỉ tính chuyến đã có giờ ra (hoàn thành) của xe MBF. Lái của xe tính <b>theo từng ngày</b> từ Quản lý xe › Thời gian sử dụng
+              (dòng có Từ ngày gần nhất) — đổi lái / đổi chéo xe chỉ cần thêm dòng mới với Từ ngày = ngày đổi; xe không có dòng nào khớp thì lấy lái mặc định ở Cài đặt › Biển số xe.
               {rep.extTrips > 0 && <> Không tính <b className="tnum">{rep.extTrips}</b> chuyến của xe ngoài.</>}
             </div>
           </div>

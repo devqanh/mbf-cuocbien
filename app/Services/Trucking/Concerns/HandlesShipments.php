@@ -1311,8 +1311,10 @@ trait HandlesShipments
 
     /**
      * BÁO CÁO LÁI XE — số chuyến HOÀN THÀNH theo lái xe qua khoảng NGÀY VẬN HÀNH [from..to] (mỗi ngày 08:00 → 08:00),
-     * dựng từ Lộ trình (routeTripByDate, không gồm chuyến chưa ra). Chỉ xe MBF; lái = LÁI MẶC ĐỊNH của xe
-     * (Cài đặt › Biển số xe). Xe MBF có chuyến mà chưa gắn lái → noDriver (cảnh báo nhắc gắn), xe ngoài bỏ qua.
+     * dựng từ Lộ trình (routeTripByDate, không gồm chuyến chưa ra). Chỉ xe MBF. Lái của xe THEO TỪNG NGÀY:
+     * Quản lý xe › Thời gian sử dụng (dòng có Từ ngày gần nhất ≤ ngày chạy — usageOn; người kế tiếp nối tiếp từ ngày
+     * họ bắt đầu) → đổi lái / đổi chéo xe giữa kỳ tính đúng người; không có dòng khớp → lái mặc định (Cài đặt › Biển số xe).
+     * Ngày xe chạy mà không xác định được lái → noDriver (cảnh báo nhắc gắn); xe ngoài bỏ qua.
      */
     public function driverTripReport(?string $from, ?string $to): array
     {
@@ -1320,12 +1322,30 @@ trait HandlesShipments
         $end   = Carbon::parse($to ?: now()->format('Y-m-d'))->startOfDay();
         if ($end->lt($start)) { $tmp = $start; $start = $end; $end = $tmp; }
         if ($start->diffInDays($end) > 92) $end = $start->copy()->addDays(92);   // tối đa ~3 tháng (tính lộ trình từng ngày)
+        $s0 = $start->format('Y-m-d'); $s1 = $end->format('Y-m-d');
 
         $fleet   = TruckingVehicle::mbfFleet()->with('driver:id,name')->get(['id', 'plate', 'type', 'kind', 'driver_id']);
         $byId    = $fleet->keyBy('id');
         $byPlate = $fleet->keyBy(fn ($v) => trim((string) $v->plate));
 
-        $drivers = []; $noDriver = []; $extTrips = 0;
+        // Lịch sử gắn lái (bỏ dòng chưa chọn lái) — chọn dòng áp cho từng ngày bằng usageOn (quy tắc chung với Phí xe).
+        $names  = TruckingDriver::pluck('name', 'id');
+        $usages = TruckingVehicleUsage::whereIn('vehicle_id', $byId->keys())->orderBy('sort')
+            ->get(['vehicle_id', 'driver', 'driver_id', 'from_date', 'to_date', 'sort'])
+            ->filter(fn ($u) => trim((string) $u->driver) !== '' || $u->driver_id)->groupBy('vehicle_id');
+        $asDriver = function (TruckingVehicleUsage $u) use ($names): array {
+            $did  = $u->driver_id && isset($names[$u->driver_id]) ? (int) $u->driver_id : null;
+            $name = $did ? $names[$did] : trim((string) $u->driver);
+            // lái chưa có trong danh mục (gõ tên) vẫn gom theo tên
+            return ['key' => $did ? 'd' . $did : 'n:' . mb_strtolower($name), 'driverId' => $did, 'name' => $name];
+        };
+        $byDefault = fn (TruckingVehicle $v) => $v->driver ? ['key' => 'd' . $v->driver->id, 'driverId' => (int) $v->driver->id, 'name' => $v->driver->name] : null;
+        $who = function (TruckingVehicle $v, string $ds) use ($usages, $asDriver, $byDefault): ?array {
+            $u = $this->usageOn($usages[$v->id] ?? [], $ds);
+            return $u ? $asDriver($u) : $byDefault($v);
+        };
+
+        $drivers = []; $noDriver = []; $extTrips = 0; $seen = [];   // $seen[key][ngày][xe] → phát hiện 1 lái 2 xe/ngày
         $blank = fn () => ['trips' => 0, 'self' => 0, 'other' => 0, 'none' => 0, 'dates' => [], 'plates' => [], 'lines' => []];
         for ($d = $start->copy(); $d->lte($end); $d->addDay()) {
             $ds = $d->format('Y-m-d');
@@ -1345,10 +1365,11 @@ trait HandlesShipments
                 }
                 $line = ['date' => $ds, 'bks' => $t['bks'], 'trips' => count($t['legs'])] + $cnt + ['conts' => $conts, 'payDriver' => $t['payDriver'] ?? ''];
 
-                if ($v->driver) {
-                    $k = (int) $v->driver->id;
-                    $drivers[$k] ??= ['driverId' => $k, 'name' => $v->driver->name] + $blank();
+                if ($w = $who($v, $ds)) {
+                    $k = $w['key'];
+                    $drivers[$k] ??= ['key' => $k, 'driverId' => $w['driverId'], 'name' => $w['name']] + $blank();
                     $r = &$drivers[$k];
+                    $seen[$k][$ds][$v->id] = $v->plate;
                 } else {
                     $k = (int) $v->id;
                     $noDriver[$k] ??= ['vehicleId' => $k, 'hashid' => Hashid::encode($k), 'bks' => $v->plate] + $blank();
@@ -1363,12 +1384,25 @@ trait HandlesShipments
             }
         }
 
-        // Lái đã gắn xe MBF nhưng không chạy chuyến nào trong kỳ → vẫn liệt kê (0 chuyến) để thấy ai nghỉ.
+        // Lái được gắn xe MBF trong kỳ nhưng không chạy chuyến nào → vẫn liệt kê (0 chuyến) để thấy ai nghỉ.
+        // Gắn = lái áp ngày đầu kỳ + mọi người bắt đầu (Từ ngày) trong kỳ.
         foreach ($fleet as $v) {
-            if ($v->driver && ! isset($drivers[(int) $v->driver->id])) {
-                $drivers[(int) $v->driver->id] = ['driverId' => (int) $v->driver->id, 'name' => $v->driver->name] + $blank();
+            $inPeriod = ($w = $who($v, $s0)) ? [$w] : [];
+            foreach ($usages[$v->id] ?? [] as $u) {
+                $f = $u->from_date?->format('Y-m-d');
+                if ($f && $f > $s0 && $f <= $s1) $inPeriod[] = $asDriver($u);
+            }
+            foreach ($inPeriod as $u) $drivers[$u['key']] ??= ['key' => $u['key'], 'driverId' => $u['driverId'], 'name' => $u['name']] + $blank();
+        }
+        // 1 lái được tính cho ≥ 2 xe CÙNG ngày → thường do chuyển lái sang xe khác mà xe cũ chưa gắn lái mới.
+        $conflicts = [];
+        foreach ($seen as $k => $days) {
+            foreach ($days as $ds => $plates) {
+                if (count($plates) > 1) $conflicts[] = ['key' => $k, 'name' => $drivers[$k]['name'], 'date' => $ds, 'plates' => array_values($plates)];
             }
         }
+        usort($conflicts, fn ($a, $b) => strcmp($a['date'], $b['date']) ?: strcmp($a['name'], $b['name']));
+
         $out = function (array $r) {
             $r['days']   = count($r['dates']);
             $r['plates'] = array_keys($r['plates']);
@@ -1379,18 +1413,19 @@ trait HandlesShipments
         usort($rows, fn ($a, $b) => ($b['trips'] <=> $a['trips']) ?: strcmp($a['name'], $b['name']));
         $noDriver = array_map($out, array_values($noDriver));
         usort($noDriver, fn ($a, $b) => $b['trips'] <=> $a['trips']);
-        // Xe MBF chưa gắn lái (không chạy trong kỳ) — nhắc gắn luôn cho đủ.
+        // Xe MBF không chạy trong kỳ và tới cuối kỳ vẫn chưa xác định được lái — nhắc gắn luôn cho đủ.
         $busy = array_flip(array_column($noDriver, 'vehicleId'));
-        $idle = $fleet->filter(fn ($v) => ! $v->driver && ! isset($busy[$v->id]))
+        $idle = $fleet->filter(fn ($v) => ! isset($busy[$v->id]) && ! $who($v, $s1))
             ->map(fn ($v) => ['vehicleId' => (int) $v->id, 'hashid' => Hashid::encode($v->id), 'bks' => $v->plate])->values()->all();
 
         $sum = fn ($k) => array_sum(array_column($rows, $k));
         return [
-            'from' => $start->format('Y-m-d'), 'to' => $end->format('Y-m-d'),
+            'from' => $s0, 'to' => $s1,
             'days' => (int) $start->diffInDays($end) + 1,
             'rows' => $rows,
             'noDriver' => $noDriver,
             'idleNoDriver' => $idle,
+            'conflicts' => $conflicts,
             'extTrips' => $extTrips,
             'totals' => [
                 'trips' => $sum('trips'), 'self' => $sum('self'), 'other' => $sum('other'), 'none' => $sum('none'),

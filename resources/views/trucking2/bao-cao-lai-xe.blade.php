@@ -15,6 +15,7 @@ window.__TRK = {
     data:     '{{ route("trucking2.driverReport.data") }}',
     loTrinh:  '{{ route("trucking2.loTrinh") }}',              // ?date=&bks= → mở đúng ngày, cuộn tới xe
     vehicles: '{{ url("trucking-v2/cai-dat") }}#vehicles',     // gắn lái xe mặc định cho xe
+    fleet:    '{{ url("trucking-v2/quan-ly-xe") }}',           // #<hashid>/usage → Thời gian sử dụng (lái theo ngày)
   },
   boot: @json($boot),
 };
