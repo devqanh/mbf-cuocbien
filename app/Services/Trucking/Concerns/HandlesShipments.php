@@ -1310,6 +1310,97 @@ trait HandlesShipments
     }
 
     /**
+     * BÁO CÁO LÁI XE — số chuyến HOÀN THÀNH theo lái xe qua khoảng NGÀY VẬN HÀNH [from..to] (mỗi ngày 08:00 → 08:00),
+     * dựng từ Lộ trình (routeTripByDate, không gồm chuyến chưa ra). Chỉ xe MBF; lái = LÁI MẶC ĐỊNH của xe
+     * (Cài đặt › Biển số xe). Xe MBF có chuyến mà chưa gắn lái → noDriver (cảnh báo nhắc gắn), xe ngoài bỏ qua.
+     */
+    public function driverTripReport(?string $from, ?string $to): array
+    {
+        $start = Carbon::parse($from ?: now()->startOfMonth()->format('Y-m-d'))->startOfDay();
+        $end   = Carbon::parse($to ?: now()->format('Y-m-d'))->startOfDay();
+        if ($end->lt($start)) { $tmp = $start; $start = $end; $end = $tmp; }
+        if ($start->diffInDays($end) > 92) $end = $start->copy()->addDays(92);   // tối đa ~3 tháng (tính lộ trình từng ngày)
+
+        $fleet   = TruckingVehicle::mbfFleet()->with('driver:id,name')->get(['id', 'plate', 'type', 'kind', 'driver_id']);
+        $byId    = $fleet->keyBy('id');
+        $byPlate = $fleet->keyBy(fn ($v) => trim((string) $v->plate));
+
+        $drivers = []; $noDriver = []; $extTrips = 0;
+        $blank = fn () => ['trips' => 0, 'self' => 0, 'other' => 0, 'none' => 0, 'dates' => [], 'plates' => [], 'lines' => []];
+        for ($d = $start->copy(); $d->lte($end); $d->addDay()) {
+            $ds = $d->format('Y-m-d');
+            foreach ($this->routeTripByDate($ds)['trucks'] as $t) {
+                if (! $t['legs']) continue;
+                $v = ($t['vehicleId'] && $byId->has($t['vehicleId'])) ? $byId[$t['vehicleId']] : $byPlate->get($t['bks']);
+                if (! $v) { $extTrips += count($t['legs']); continue; }
+
+                $cnt = ['self' => 0, 'other' => 0, 'none' => 0];
+                $conts = [];
+                foreach ($t['legs'] as $l) {
+                    $m = in_array($l['mode'], ['other', 'none'], true) ? $l['mode'] : 'self';
+                    $cnt[$m]++;
+                    $c = trim((string) $l['cont']);
+                    if ($m === 'other' && ! empty($l['refCont'])) $c = ($c !== '' ? $c : '?') . ' → ' . $l['refCont'];
+                    $conts[] = ['cont' => $c, 'mode' => $m, 'time' => $l['timeLabel']];
+                }
+                $line = ['date' => $ds, 'bks' => $t['bks'], 'trips' => count($t['legs'])] + $cnt + ['conts' => $conts, 'payDriver' => $t['payDriver'] ?? ''];
+
+                if ($v->driver) {
+                    $k = (int) $v->driver->id;
+                    $drivers[$k] ??= ['driverId' => $k, 'name' => $v->driver->name] + $blank();
+                    $r = &$drivers[$k];
+                } else {
+                    $k = (int) $v->id;
+                    $noDriver[$k] ??= ['vehicleId' => $k, 'hashid' => Hashid::encode($k), 'bks' => $v->plate] + $blank();
+                    $r = &$noDriver[$k];
+                }
+                $r['trips'] += $line['trips'];
+                foreach ($cnt as $m => $n) $r[$m] += $n;
+                $r['dates'][$ds] = true;
+                $r['plates'][$t['bks']] = true;
+                $r['lines'][] = $line;
+                unset($r);
+            }
+        }
+
+        // Lái đã gắn xe MBF nhưng không chạy chuyến nào trong kỳ → vẫn liệt kê (0 chuyến) để thấy ai nghỉ.
+        foreach ($fleet as $v) {
+            if ($v->driver && ! isset($drivers[(int) $v->driver->id])) {
+                $drivers[(int) $v->driver->id] = ['driverId' => (int) $v->driver->id, 'name' => $v->driver->name] + $blank();
+            }
+        }
+        $out = function (array $r) {
+            $r['days']   = count($r['dates']);
+            $r['plates'] = array_keys($r['plates']);
+            unset($r['dates']);
+            return $r;
+        };
+        $rows = array_map($out, array_values($drivers));
+        usort($rows, fn ($a, $b) => ($b['trips'] <=> $a['trips']) ?: strcmp($a['name'], $b['name']));
+        $noDriver = array_map($out, array_values($noDriver));
+        usort($noDriver, fn ($a, $b) => $b['trips'] <=> $a['trips']);
+        // Xe MBF chưa gắn lái (không chạy trong kỳ) — nhắc gắn luôn cho đủ.
+        $busy = array_flip(array_column($noDriver, 'vehicleId'));
+        $idle = $fleet->filter(fn ($v) => ! $v->driver && ! isset($busy[$v->id]))
+            ->map(fn ($v) => ['vehicleId' => (int) $v->id, 'hashid' => Hashid::encode($v->id), 'bks' => $v->plate])->values()->all();
+
+        $sum = fn ($k) => array_sum(array_column($rows, $k));
+        return [
+            'from' => $start->format('Y-m-d'), 'to' => $end->format('Y-m-d'),
+            'days' => (int) $start->diffInDays($end) + 1,
+            'rows' => $rows,
+            'noDriver' => $noDriver,
+            'idleNoDriver' => $idle,
+            'extTrips' => $extTrips,
+            'totals' => [
+                'trips' => $sum('trips'), 'self' => $sum('self'), 'other' => $sum('other'), 'none' => $sum('none'),
+                'activeDrivers' => count(array_filter($rows, fn ($r) => $r['trips'] > 0)),
+                'noDriverTrips' => array_sum(array_column($noDriver, 'trips')),
+            ],
+        ];
+    }
+
+    /**
      * Thống kê cờ theo dõi trên tập lô (builder) — gom theo màu, đếm lô có cờ &
      * lô có cờ nhưng CHƯA điền tiền. Chỉ nạp đúng các dòng chi phí thuộc khoản
      * "theo dõi" (không nạp toàn bộ dòng con) → nhẹ.

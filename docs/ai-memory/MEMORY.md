@@ -63,4 +63,5 @@
 - [Phí tờ khai thu khách](declaration-fee-billing.md) — phí mở TK + phí thanh lý (thanh_ly_fee) lên Bảng kê cột Phí tờ khai, không VAT, không còn dòng chi phí thanhLyFee; Excel tờ khai mỗi lô 1 dòng (đơn giá × số TK)
 - [Activity log](activity-log.md) — nhật ký thao tác ĐÃ build; rà lỗi dữ liệu thì tra `php artisan activity:log --subject=...` trước khi đoán (sau db:pull); log model khai ở config/activity.php
 - [Biển số chuẩn hóa](plate-canonical.md) — bks_vao/bks_ra tự lưu dạng 15C-15877 qua mutator TruckingShipment + PlateNormalizer::canonical; migration 2026_10_29 đã sửa dữ liệu cũ
+- [Báo cáo lái xe](driver-report.md) — /bao-cao-lai-xe (Quản trị, reports.view): số chuyến theo lái từ Lộ trình; lái = lái mặc định của xe (cai-dat#vehicles), xe chưa gắn lái → cảnh báo
 - [Nhật ký đổ dầu](fuel-log.md) — /nhat-ky-do-dau (menu Lô hàng) dùng chung trucking_fuel_refills với tab Dầu; popup xác nhận khi Ghi; xem=shipments.view, ghi=shipments.update

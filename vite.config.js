@@ -41,6 +41,7 @@ export default defineConfig(({ mode }) => {
                     'resources/js/trucking2/pages/lo-trinh.jsx',
                     'resources/js/trucking2/pages/bao-cao.jsx',
                     'resources/js/trucking2/pages/bao-cao-tai-san.jsx',
+                    'resources/js/trucking2/pages/bao-cao-lai-xe.jsx',
                 ],
                 refresh: true,
             }),

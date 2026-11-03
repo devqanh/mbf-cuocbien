@@ -46,6 +46,24 @@ class ReportController extends BaseTruckingController
         return response()->json(['ok' => true, 'report' => $this->svc->assetReport($d['from'], $d['to'])]);
     }
 
+    /** Trang Báo cáo lái xe — số chuyến theo lái xe trong khoảng ngày (dựng từ Lộ trình). */
+    public function driverIndex()
+    {
+        return view('trucking2.bao-cao-lai-xe', $this->pageData([
+            'report' => $this->svc->driverTripReport(now()->startOfMonth()->format('Y-m-d'), now()->format('Y-m-d')),
+        ], 'reports.view'));
+    }
+
+    /** JSON: báo cáo lái xe theo khoảng ngày (from, to = YYYY-MM-DD). */
+    public function driverData(Request $request): JsonResponse
+    {
+        $d = $request->validate([
+            'from' => ['required', 'date_format:Y-m-d'],
+            'to'   => ['required', 'date_format:Y-m-d'],
+        ]);
+        return response()->json(['ok' => true, 'report' => $this->svc->driverTripReport($d['from'], $d['to'])]);
+    }
+
     /** JSON: xu hướng 12 tháng (kết tại year/month) — lazy-load vì có cộng route-pay theo ngày. */
     public function trend(Request $request): JsonResponse
     {
