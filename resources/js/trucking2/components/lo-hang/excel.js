@@ -103,6 +103,8 @@ const COST_GROUPS = [
   { item: "Thanh lí", fields: [F_AMOUNT, ["invoiceNo", "Số HĐ"], F_DATE, ["note", "Ghi chú thanh lí"], F_CHIHO, F_EXTPAY] },
 ];
 const COST_CHIHO_ITEM = "Chi hộ LCC";   // cột lẻ "CHI HỘ LCC" = số tiền khoản Chi hộ LCC (file cũ ghi "CHI HỘ")
+// Khoản khác có trên các lô xuất (thêm tay trong popup, Cước xe ngoài…) → mỗi khoản 1 nhóm đủ ô, nối sau Thanh lí.
+const COST_EXTRA_FIELDS = [F_AMOUNT, F_VAT, ["invoiceNo", "Số hóa đơn"], F_PAYER, F_DATE, ["note", "Ghi chú"], F_CHIHO, F_EXTPAY];
 
 // Số tiền: bỏ mọi ký tự không phải số → chuỗi digit (backend tự parse). "" nếu trống.
 const money = (v) => { if (v == null) return ""; if (typeof v === "number") return String(Math.round(v)); return String(v).replace(/[^\d]/g, ""); };
@@ -198,7 +200,7 @@ function cshtGuideSheet() {
     { "Cột": "SỐ CONT", "Ý nghĩa": "Dòng không có ID LÔ thì khớp theo số cont — cont trùng nhiều lô sẽ báo lỗi." },
     { "Cột": "NHẬP/XUẤT", "Ý nghĩa": "Đối chiếu với lô; LỆCH sẽ báo lỗi (để trống = không đối chiếu)." },
     { "Cột": "LOẠI CONT · KHÁCH HÀNG · BOOKING · NGÀY XE RA · Nhà xe ngoài · Nơi lấy · Kho · Nơi hạ", "Ý nghĩa": "Chỉ để dò lô — sửa ở đây không có tác dụng. Nơi lấy / Nơi hạ ghi “Tên — Ký hiệu” như trong chi tiết lô hàng." },
-    { "Cột": "Nhóm Nâng / Hạ / CSHT / Thanh lí", "Ý nghĩa": "Dòng 1 = tên khoản (đúng tên trong Cài đặt → Khoản chi phí), dòng 2 = ô của khoản: Số tiền (đã gồm VAT) · Vat (%) · Số hóa đơn (không có hóa đơn thì ghi 0 — vẫn hợp lệ, tính là đã điền) · Người chi · Ngày HĐ (dd/mm/yyyy) · Ghi chú · Chi hộ (x) · Chi hộ xe ngoài (x). Thêm nhóm khoản khác: chèn cột, ghi tên khoản ở dòng 1, tên ô ở dòng 2." },
+    { "Cột": "Nhóm Nâng / Hạ / CSHT / Thanh lí", "Ý nghĩa": "Dòng 1 = tên khoản (đúng tên trong Cài đặt → Khoản chi phí), dòng 2 = ô của khoản: Số tiền (đã gồm VAT) · Vat (%) · Số hóa đơn (không có hóa đơn thì ghi 0 — vẫn hợp lệ, tính là đã điền) · Người chi · Ngày HĐ (dd/mm/yyyy) · Ghi chú · Chi hộ (x) · Chi hộ xe ngoài (x). File xuất tự thêm nhóm cho mọi khoản khác đang có trên các lô (khoản thêm tay trong popup, Cước xe ngoài…), nối sau Thanh lí. Thêm nhóm khoản khác: chèn cột, ghi tên khoản ở dòng 1, tên ô ở dòng 2." },
     { "Cột": "Chi hộ (x)", "Ý nghĩa": "Dấu tích “Chi hộ” (thu lại khách) của khoản — giống ô tích CHI HỘ trong popup Chi phí lô hàng. Ghi x = CÓ tích; để TRỐNG = KHÔNG tích (khi khoản đó có số liệu trên dòng). Lô có nhiều dòng cùng khoản mà dòng tích, dòng không thì file để trống và import giữ nguyên." },
     { "Cột": "Chi hộ xe ngoài (x)", "Ý nghĩa": "Dấu tích “Chi hộ xe ngoài” của khoản — giống ô tích trong popup Chi phí lô hàng: khoản tích sẽ vào Bảng kê xe ngoài (cột Chi hộ) của nhà xe. Ghi x = CÓ tích; để TRỐNG = KHÔNG tích (khi khoản đó có số liệu trên dòng). Dòng tích lẫn lộn → file để trống, import giữ nguyên." },
     { "Cột": "CHI HỘ LCC", "Ý nghĩa": "Số tiền khoản “Chi hộ LCC” (một khoản chi phí riêng — khác với dấu tích Chi hộ ở từng nhóm)." },
@@ -228,7 +230,15 @@ export function buildCostExportWb(list) {
   const locLabel = (name, code) => { name = String(name || "").trim(); code = String(code || "").trim(); return name && code && code.toUpperCase() !== name.toUpperCase() ? `${name} — ${code}` : name; };
   const fmtOut = (v) => { const m = /^(\d{4})-(\d{2})-(\d{2})[T ]?(\d{2}:\d{2})?/.exec(String(v || "")); return m ? `${m[3]}/${m[2]}/${m[1]}${m[4] ? " " + m[4] : ""}` : ""; };
   const row1 = [...COST_INFO.map(() => "")], row2 = [...COST_INFO], merges = [];
-  COST_GROUPS.forEach((g) => {
+  // Nhóm cố định + khoản khác theo thứ tự gặp đầu tiên (tên khoản trống thì bỏ — không gán được khi import).
+  const known = new Set([...COST_GROUPS.map((g) => nkItem(g.item)), nkItem(COST_CHIHO_ITEM)]);
+  const extra = [];
+  (list || []).forEach((s) => ((s.cost && s.cost.items) || []).forEach((c) => {
+    const name = String(c.item || "").trim(), k = nkItem(name);
+    if (k && !known.has(k)) { known.add(k); extra.push({ item: name, fields: COST_EXTRA_FIELDS }); }
+  }));
+  const groups = [...COST_GROUPS, ...extra];
+  groups.forEach((g) => {
     const c0 = row2.length;
     g.fields.forEach(([, label], j) => { row1.push(j === 0 ? g.item : ""); row2.push(label); });
     if (g.fields.length > 1) merges.push({ s: { r: 0, c: c0 }, e: { r: 0, c: c0 + g.fields.length - 1 } });
@@ -239,14 +249,14 @@ export function buildCostExportWb(list) {
     const of = (name) => lines.filter((c) => nkItem(c.item) === nkItem(name));
     const r = [s.id, s.contNo || "", s.contType || "", s.io || "", s.customer || "", s.booking || "", fmtOut(s.gioXeRa), s.extVendor || "",
       locLabel(s.from, s.fromCode), String(s.kho || "").trim(), locLabel(s.to, s.toCode)];
-    COST_GROUPS.forEach((g) => { const ls = of(g.item); g.fields.forEach(([f]) => r.push(costGroupValues(ls, f))); });
+    groups.forEach((g) => { const ls = of(g.item); g.fields.forEach(([f]) => r.push(costGroupValues(ls, f))); });
     r.push(costGroupValues(of(COST_CHIHO_ITEM), "amount"), (s.tags || []).join(", "));
     return r;
   });
   const ws = XLSX.utils.aoa_to_sheet([row1, row2, ...body]);
   ws["!merges"] = merges;
   ws["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 1, c: 0 }, e: { r: 1 + body.length, c: row2.length - 1 } }) };
-  const W = { "ID LÔ": 8, "SỐ CONT": 13, "LOẠI CONT": 10, "NHẬP/XUẤT": 11, "KHÁCH HÀNG": 22, "BOOKING": 16, "NGÀY XE RA": 16, "Nhà xe ngoài": 16, "Nơi lấy": 22, "Kho": 16, "Nơi hạ": 22, "Chi hộ (x)": 9, "Chi hộ xe ngoài (x)": 11, "Số tiền": 12, "Vat": 6, "Số hóa đơn": 12, "Số HĐ": 12, "Người chi": 13, "Ngày HĐ": 11, "Ghi chú thanh lí": 22, "CHI HỘ LCC": 12, "NHÃN": 26 };
+  const W = { "ID LÔ": 8, "SỐ CONT": 13, "LOẠI CONT": 10, "NHẬP/XUẤT": 11, "KHÁCH HÀNG": 22, "BOOKING": 16, "NGÀY XE RA": 16, "Nhà xe ngoài": 16, "Nơi lấy": 22, "Kho": 16, "Nơi hạ": 22, "Chi hộ (x)": 9, "Chi hộ xe ngoài (x)": 11, "Số tiền": 12, "Vat": 6, "Số hóa đơn": 12, "Số HĐ": 12, "Người chi": 13, "Ngày HĐ": 11, "Ghi chú thanh lí": 22, "Ghi chú": 18, "CHI HỘ LCC": 12, "NHÃN": 26 };
   ws["!cols"] = row2.map((h) => ({ wch: W[h] || 12 }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Chi phí lô");

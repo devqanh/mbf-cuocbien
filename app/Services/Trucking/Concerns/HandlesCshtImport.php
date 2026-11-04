@@ -93,12 +93,20 @@ trait HandlesCshtImport
         // 1) Cột / nhóm trong file → khoản chi phí trong danh mục. Mỗi khoản chỉ được xuất hiện 1 lần.
         $columns = [];       // nhãn cột hoặc nhóm → tên khoản (null = bỏ qua)
         $byItem = [];        // item id => nhãn đã nhận
-        $resolve = function (string $label, bool $hasValue) use ($catalog, &$columns, &$byItem, &$errors, &$warnings) {
+        // Khớp ĐÚNG tên trước, khớp gần đúng sau: file xuất có nhóm cho mọi khoản trên lô (kể cả tên ngoài danh mục
+        // như “Phí thanh lý tờ khai”) — nhóm đó khớp gần đúng trùng khoản đã có cột riêng thì chỉ bỏ qua, không chặn file.
+        $resolve = function (string $label, bool $hasValue, bool $exactOnly) use ($catalog, &$columns, &$byItem, &$errors, &$warnings) {
             if (array_key_exists($label, $columns)) return;
-            $item = $this->cshtItemForHeader($label, $catalog);
+            $item = $this->cshtItemForHeader($label, $catalog, $exactOnly);
             if (! $item) {
+                if ($exactOnly) return;
                 $columns[$label] = null;
                 if ($hasValue) $warnings[] = "Bỏ qua cột “{$label}” — không phải khoản chi phí trong Cài đặt → Khoản chi phí";
+                return;
+            }
+            if (! $exactOnly && isset($byItem[$item->id])) {
+                $columns[$label] = null;
+                if ($hasValue) $warnings[] = "Bỏ qua cột “{$label}” — không đúng tên khoản nào trong Cài đặt → Khoản chi phí (gần giống {$item->name} đã có cột “{$byItem[$item->id]}”)";
                 return;
             }
             if (isset($byItem[$item->id])) {
@@ -114,7 +122,7 @@ trait HandlesCshtImport
             foreach ((array) ($r['groups'] ?? []) as $g => $f) $labels[$g] = ($labels[$g] ?? false) || $this->cshtGroupHasValue((array) $f);
             foreach ((array) ($r['amounts'] ?? []) as $h => $v) $labels[$h] = ($labels[$h] ?? false) || trim((string) $v) !== '';
         }
-        foreach ($labels as $label => $has) $resolve((string) $label, $has);
+        foreach ([true, false] as $exactOnly) foreach ($labels as $label => $has) $resolve((string) $label, $has, $exactOnly);
         $itemOf = fn (string $label) => ($columns[$label] ?? null) !== null ? $catalog->firstWhere('name', $columns[$label]) : null;
         // Thứ tự cột xem trước = thứ tự danh mục (như popup).
         $items = $catalog->pluck('name')->filter(fn ($n) => in_array($n, $columns, true))->values()->all();
@@ -387,11 +395,12 @@ trait HandlesCshtImport
      * Tiêu đề cột / nhãn nhóm → khoản trong danh mục. Khớp đúng tên (bỏ dấu); bỏ tiền tố "phí"/"số tiền";
      * mẫu cũ "PHÍ CSHT" / "SỐ TIỀN THANH LÝ"; cuối cùng là tiền tố DUY NHẤT ("CHI HỘ" → "Chi hộ LCC").
      */
-    private function cshtItemForHeader(string $h, Collection $catalog): ?TruckingCostItem
+    private function cshtItemForHeader(string $h, Collection $catalog, bool $exactOnly = false): ?TruckingCostItem
     {
         $n = $this->cshtNorm(str_replace('*', '', $h));
         if ($n === '') return null;
         $byNorm = $catalog->keyBy(fn ($c) => $this->cshtNorm($c->name));
+        if ($exactOnly) return $byNorm->get($n);
         $stripped = preg_replace('/^(sotien|phi|tien)/', '', $n);
         foreach ([$n, $stripped] as $k) {
             if ($k !== '' && $byNorm->has($k)) return $byNorm->get($k);
