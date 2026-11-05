@@ -106,6 +106,7 @@ function ShipmentsApp() {
   const [expNotOut, setExpNotOut] = useState(false);   // chỉ xuất cont CHƯA RA
   const [expTl, setExpTl] = useState("all");           // thanh lý tờ khai: all | done | pending
   const [expHc, setExpHc] = useState("all");           // hạ cont: all | done | pending
+  const [expFull, setExpFull] = useState(false);       // xuất TOÀN BỘ dữ liệu lô (thêm mọi cột sau bộ cột chuẩn)
   const [showImport, setShowImport] = useState(false);
   const [impWb, setImpWb] = useState(null);   // {names, wb}
   const [impSheet, setImpSheet] = useState("");
@@ -439,7 +440,53 @@ function ShipmentsApp() {
     // Biển số lấy BKS VÀO — xe nhận việc; không lô nào có BKS ra mà thiếu BKS vào nên không cần fallback.
     const cols = ["NHÀ MÁY", "SỐ BOOKING/BILL", "NHẬP/XUẤT", "SỐ LƯỢNG", "LOẠI", "SỐ CONT", "THANH LÝ", "HẠ CONT", "CẮT MÁNG", "NƠI LẤY", "NƠI HẠ", "NGÀY", "GIỜ", "BIỂN SỐ XE", "KHO", "ĐỊA CHỈ ĐÓNG HÀNG", "INVOICE", "MÃ SỐ THUẾ / ĐỊA CHỈ / EMAIL"];
     const dmy = (v) => (v ? String(v).slice(0, 10).split("-").reverse().join("/") : "");
+    // Xuất toàn bộ: nối thêm mọi trường của lô sau bộ cột chuẩn, theo quyền xem cột như trên bảng
+    // (thiếu quyền chi phí / doanh thu thì server đã cắt dữ liệu tiền, cột cũng không xuất).
+    const dmyHm = (v) => { const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/.exec(String(v || "")); return m ? `${m[3]}/${m[2]}/${m[1]}${m[4] ? ` ${m[4]}:${m[5]}` : ""}` : ""; };
+    const xMark = (b) => (b ? "x" : "");
+    const RA_MODE = { self: "Không cắt móc", other: "Cắt móc — cont khác ra", none: "Cắt móc — không kéo ra" };
+    const fullCols = !expFull ? [] : [
+      ...(canCol("id") ? [["ID LÔ", (s) => s.id]] : []),
+      ["CRU", (s) => xMark(s.cru)], ["KẸP CONT", (s) => xMark(s.kepCont)], ["KẾT HỢP", (s) => xMark(s.ketHop)],
+      ["SÀ LAN", (s) => xMark(s.isBarge)], ["CONT SÀ LAN", (s) => s.bargeCont || ""], ["HẠ SÀ LAN", (s) => s.bargeDrop || ""],
+      ...(canCol("customs") ? [
+        ["SỐ TỜ KHAI", (s) => (s.declarations || []).map((d) => d.no).filter(Boolean).join(", ") || s.declNo || ""],
+        ["PHÍ MỞ TỜ KHAI", (s) => (s.declarations || []).reduce((a, d) => a + toNum(d.fee), 0) || ""],
+        ["PHÍ THANH LÝ", (s) => toNum(s.thanhLyFee) || ""],
+        ["GHI CHÚ TỜ KHAI", (s) => s.declNote || ""], ["GHI CHÚ CSHT", (s) => s.cshtNote || ""],
+      ] : []),
+      ...(canCol("route") ? [["TUYẾN (KÝ HIỆU)", (s) => (s.routeCodes || []).join(" → ")]] : []),
+      ...(canCol("plate") ? [
+        ["BKS RA", (s) => s.bksRa || ""], ["KIỂU RA", (s) => RA_MODE[s.raMode || "self"] || ""], ["CONT RA HỘ", (s) => s.raOtherContNo || ""],
+      ] : []),
+      ...(canCol("schedule") ? [
+        ["NGÀY TÀU CHẠY", (s) => dmy(s.sailDate)], ["CONT ĐẾN", (s) => dmy(s.contDen)], ["CONT RA", (s) => dmy(s.contRa)],
+        ["GIỜ XE ĐẾN", (s) => dmyHm(s.gioXeDen)], ["GIỜ XE RA", (s) => dmyHm(s.gioXeRa)], ["GIỜ XE RA (KHÔNG KÉO CONT)", (s) => dmyHm(s.gioXeRaXe)],
+      ] : []),
+      ["NHÀ XE NGOÀI", (s) => s.extVendor || ""],
+      ["GHI CHÚ", (s) => s.infoNote || ""], ["NHÃN", (s) => (s.tags || []).join(", ")],
+    ];
+    if (expFull && canCol("cost")) {
+      // Mỗi khoản chi phí có trên các lô xuất = 1 cột số tiền (gồm VAT, nhiều dòng cùng khoản cộng lại), theo thứ tự gặp đầu.
+      const items = [];
+      list.forEach((s) => ((s.cost && s.cost.items) || []).forEach((c) => { const n = String(c.item || "").trim(); if (n && !items.includes(n)) items.push(n); }));
+      items.forEach((n) => fullCols.push([`CP: ${n}`, (s) => ((s.cost && s.cost.items) || []).filter((c) => String(c.item || "").trim() === n).reduce((a, c) => a + toNum(c.amount), 0) || ""]));
+      fullCols.push(["TỔNG CHI PHÍ (NET)", (s) => calcCost(s.cost).tongChiPhi], ["CHI HỘ (THU LẠI KHÁCH)", (s) => calcCost(s.cost).thuChiHo], ["CHI PHÍ CÔNG TY", (s) => calcCost(s.cost).congTy]);
+    }
+    if (expFull && canCol("revenue")) {
+      const rv = (s) => (isHph ? calcRev(s.rev) : calcRevICD(s.rev));
+      fullCols.push(
+        ["DOANH THU", (s) => rv(s).tongDT], ["VAT %", (s) => rv(s).rate], ["TIỀN VAT", (s) => rv(s).vat],
+        ["CHI HỘ THU KHÁCH", (s) => (s.rev && s.rev.choHo || []).reduce((a, e) => a + toNum(e.amount), 0)],
+        ["PHẢI THU", (s) => rv(s).phaiThu], ["ĐÃ THU", (s) => rv(s).daTT], ["CÒN NỢ", (s) => rv(s).conNo],
+        ["HẠN THANH TOÁN", (s) => dmy(s.rev && s.rev.hanTT)], ["GHI CHÚ DOANH THU", (s) => (s.rev && s.rev.ghiChu) || ""],
+      );
+      if (canCol("cost")) fullCols.push(["LỢI NHUẬN", (s) => metrics(s).profit]);
+    }
+    const allCols = [...cols, ...fullCols.map(([h]) => h)];
     const data = list.map((s) => {
+      const extra = {};
+      fullCols.forEach(([h, f]) => { extra[h] = f(s); });
       const ci = info[s.customer] || {};
       const dt = s.gioDenDuKien || "";
       const ngay = dt.length >= 10 ? dt.slice(0, 10).split("-").reverse().join("/") : "";
@@ -450,15 +497,15 @@ function ShipmentsApp() {
         // Đã thanh lý tờ khai / đã hạ cont → hiện NGÀY (dd/mm/yyyy); chưa thì để TRỐNG
         // → trong Excel lọc "ô trống / khác trống" là ra ngay nhóm cần làm.
         "THANH LÝ": dmy(s.thanhLy), "HẠ CONT": dmy(s.haCont),
-        "CẮT MÁNG": fmtCM(s.cutOff), "NƠI LẤY": s.from || "", "NƠI HẠ": s.to || "", "NGÀY": ngay, "GIỜ": gio, "BIỂN SỐ XE": s.bksVao || "", "KHO": s.kho || "", "ĐỊA CHỈ ĐÓNG HÀNG": khoNote(s.kho), "INVOICE": s.inv || "", "MÃ SỐ THUẾ / ĐỊA CHỈ / EMAIL": congTy };
+        "CẮT MÁNG": fmtCM(s.cutOff), "NƠI LẤY": s.from || "", "NƠI HẠ": s.to || "", "NGÀY": ngay, "GIỜ": gio, "BIỂN SỐ XE": s.bksVao || "", "KHO": s.kho || "", "ĐỊA CHỈ ĐÓNG HÀNG": khoNote(s.kho), "INVOICE": s.inv || "", "MÃ SỐ THUẾ / ĐỊA CHỈ / EMAIL": congTy, ...extra };
     });
-    const ws = XLSX.utils.json_to_sheet(data, { header: cols });
+    const ws = XLSX.utils.json_to_sheet(data, { header: allCols });
     // Cột ghi chú kho thường dài (địa chỉ) → cho rộng hơn để không phải kéo tay.
-    ws["!cols"] = cols.map((c) => ({ wch: (c === "ĐỊA CHỈ ĐÓNG HÀNG" || c === "MÃ SỐ THUẾ / ĐỊA CHỈ / EMAIL") ? 42 : Math.max(12, c.length + 2) }));
+    ws["!cols"] = allCols.map((c) => ({ wch: (c === "ĐỊA CHỈ ĐÓNG HÀNG" || c === "MÃ SỐ THUẾ / ĐỊA CHỈ / EMAIL") ? 42 : Math.min(30, Math.max(12, c.length + 2)) }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Lô hàng");
     const stamp = new Date().toISOString().slice(0, 10);
-    XLSX.writeFile(wb, `lo-hang-${stamp}.xlsx`);
+    XLSX.writeFile(wb, `lo-hang${expFull ? "-day-du" : ""}-${stamp}.xlsx`);
     setShowExport(false);
     } finally { setExporting(false); }
   };
@@ -1062,6 +1109,11 @@ function ShipmentsApp() {
                   <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11, cursor: "pointer", fontSize: 12.5, color: "var(--ink-2)", fontWeight: 500 }}>
                     <input type="checkbox" checked={expNotOut} onChange={(e) => setExpNotOut(e.target.checked)} style={{ width: 16, height: 16, accentColor: "var(--accent)", cursor: "pointer" }} />
                     Chỉ xuất cont <b style={{ color: "var(--warn)" }}>chưa ra</b>
+                  </label>
+                  <label title="Thêm mọi cột của lô sau bộ cột chuẩn: tờ khai, sà lan, giờ xe đến/ra, BKS ra, nhãn, ghi chú, từng khoản chi phí, doanh thu, lợi nhuận (theo quyền xem cột)"
+                    style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11, cursor: "pointer", fontSize: 12.5, color: "var(--ink-2)", fontWeight: 500 }}>
+                    <input type="checkbox" checked={expFull} onChange={(e) => setExpFull(e.target.checked)} style={{ width: 16, height: 16, accentColor: "var(--accent)", cursor: "pointer" }} />
+                    Xuất <b style={{ color: "var(--accent)" }}>toàn bộ dữ liệu</b> (mọi cột)
                   </label>
                   <div style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>Thanh lý tờ khai</div>
                   <SegDone value={expTl} onChange={setExpTl} counts={tlCounts} labels={["Tất cả", "Đã TL", "Chưa TL"]} full
