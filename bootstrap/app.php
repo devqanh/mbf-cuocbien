@@ -33,6 +33,8 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // Chặn browser cache HTML pages — fix bug bấm Back về login (cached login HTML).
         $middleware->web(append: [
+            // Đá phiên / cookie "ghi nhớ" mang mã băm mật khẩu cũ → đổi mật khẩu là thoát mọi thiết bị.
+            \Illuminate\Session\Middleware\AuthenticateSession::class,
             \App\Http\Middleware\NoCacheHeaders::class,
             \App\Http\Middleware\LogActivity::class,   // nhật ký thao tác (ghi gộp khi app terminating)
         ]);

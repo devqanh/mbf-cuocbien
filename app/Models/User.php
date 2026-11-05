@@ -2,15 +2,30 @@
 
 namespace App\Models;
 
+use App\Http\Controllers\Auth\LoginController;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cookie;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable
 {
     use HasFactory, Notifiable, HasRoles;
+
+    /** Số phiên vừa bị đăng xuất ở lần đổi mật khẩu gần nhất (controller đọc để báo lại). */
+    public int $revokedSessionCount = 0;
+
+    protected static function booted(): void
+    {
+        // Đổi mật khẩu (admin ở /users hay chính chủ ở /profile) → đăng xuất mọi phiên cũ.
+        static::updated(function (User $user) {
+            if ($user->wasChanged('password')) $user->logoutSessionsAfterPasswordChange();
+        });
+    }
 
     protected $fillable = [
         'name',
@@ -85,6 +100,41 @@ class User extends Authenticatable
             'two_factor_recovery_codes' => null,
             'two_factor_confirmed_at'   => null,
         ])->save();
+    }
+
+    /**
+     * Chốt chặn thật là middleware AuthenticateSession (nhóm web): phiên hay cookie "ghi nhớ" mang mã băm
+     * mật khẩu cũ bị đá ở request kế tiếp, với mọi session driver. Ở đây: xoá ngay dòng phiên DB (danh sách
+     * thiết bị ở /profile cập nhật liền) và giữ phiên hiện tại khi chính chủ tự đổi.
+     */
+    public function logoutSessionsAfterPasswordChange(): void
+    {
+        $request = request();
+        $isSelf  = $request->hasSession() && Auth::id() === $this->id;
+        $current = $isSelf ? $request->session()->getId() : null;
+
+        if (config('session.driver') === 'database') {
+            $this->revokedSessionCount = DB::table(config('session.table', 'sessions'))
+                ->where('user_id', $this->id)
+                ->when($current, fn ($q) => $q->where('id', '!=', $current))
+                ->delete();
+        }
+
+        if (! $isSelf) return;
+
+        // Phiên đang thao tác: ghi mã băm mới để AuthenticateSession không đá chính mình (setUser vì middleware
+        // ghi lại mã băm từ user của guard sau response), và cấp lại cookie "ghi nhớ" vì cookie cũ chứa mã băm cũ.
+        $guard = Auth::guard();
+        $hash  = $guard->hashPasswordForCookie($this->getAuthPassword());
+        $guard->setUser($this);
+        $request->session()->put('password_hash_' . Auth::getDefaultDriver(), $hash);
+        if ($this->getRememberToken() && $request->cookies->has($guard->getRecallerName())) {
+            Cookie::queue(
+                $guard->getRecallerName(),
+                $this->id . '|' . $this->getRememberToken() . '|' . $hash,
+                LoginController::REMEMBER_DURATION_MINUTES,
+            );
+        }
     }
 
     /**

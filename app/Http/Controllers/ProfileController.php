@@ -189,7 +189,8 @@ class ProfileController extends Controller
 
         $user->update(['password' => Hash::make($request->input('password'))]);
 
-        return back()->with('success', 'Đã đổi mật khẩu. Lần đăng nhập tới hãy dùng mật khẩu mới.');
+        return back()->with('success', 'Đã đổi mật khẩu. Mọi thiết bị khác đã bị đăng xuất'
+            . ($user->revokedSessionCount ? " ({$user->revokedSessionCount} phiên)" : '') . '.');
     }
 
     /**

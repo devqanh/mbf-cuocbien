@@ -78,9 +78,12 @@ class UserController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
+        $passwordChanged = ! empty($data['password']);
         $user = $this->users->update($user, $data, $data['roles'] ?? []);
 
-        return back()->with('success', "Đã cập nhật thành viên: {$user->name}");
+        return back()->with('success', "Đã cập nhật thành viên: {$user->name}"
+            . ($passwordChanged ? ' · đã đổi mật khẩu và đăng xuất mọi phiên cũ'
+                . ($user->revokedSessionCount ? " ({$user->revokedSessionCount} phiên)" : '') : ''));
     }
 
     public function destroy(Request $request, User $user): RedirectResponse
