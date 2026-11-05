@@ -178,7 +178,7 @@ class ProfileController extends Controller
 
         $request->validate([
             'current_password' => ['required', 'current_password'],
-            'password'         => ['required', 'confirmed', Password::min(6)],
+            'password'         => ['required', 'confirmed', Password::defaults()],
         ], [
             'current_password.current_password' => 'Mật khẩu hiện tại không đúng.',
             'password.confirmed' => 'Mật khẩu xác nhận không khớp.',

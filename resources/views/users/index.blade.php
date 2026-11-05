@@ -29,6 +29,17 @@
         </div>
     </div>
 
+    @if ($errors->any())
+        <div class="alert alert-danger">
+            <div class="fw-semibold mb-1"><i class="bi bi-exclamation-triangle me-1"></i> Chưa lưu được thành viên:</div>
+            <ul class="mb-0 small">
+                @foreach ($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
     @push('scripts')
     <script>
         document.getElementById('btnBroadcastTest')?.addEventListener('click', async (e) => {
@@ -251,11 +262,16 @@
                             <label class="form-label fw-semibold">Mật khẩu <small class="text-muted fw-normal" id="u_pw_hint">(bắt buộc)</small></label>
                             <div class="input-group">
                                 <span class="input-group-text bg-white text-muted"><i class="bi bi-lock"></i></span>
-                                <input type="password" name="password" id="u_password" class="form-control" autocomplete="new-password" placeholder="Tối thiểu 6 ký tự">
+                                <input type="password" name="password" id="u_password" class="form-control" autocomplete="new-password" placeholder="Mật khẩu mạnh, tối thiểu 8 ký tự">
                                 <button type="button" class="btn btn-outline-secondary" id="u_pw_toggle" title="Hiện/ẩn mật khẩu">
                                     <i class="bi bi-eye" id="u_pw_eye"></i>
                                 </button>
                             </div>
+                            <div class="input-group mt-2">
+                                <span class="input-group-text bg-white text-muted"><i class="bi bi-lock-fill"></i></span>
+                                <input type="password" name="password_confirmation" id="u_password_confirm" class="form-control" autocomplete="new-password" placeholder="Nhập lại mật khẩu">
+                            </div>
+                            @include('partials._password-rules', ['input' => 'u_password', 'confirm' => 'u_password_confirm'])
                         </div>
 
                         <div class="mt-4">
@@ -326,6 +342,7 @@
             document.getElementById('u_email').value    = user.email;
             document.getElementById('u_password').value = '';
             document.getElementById('u_pw_hint').textContent = '(để trống nếu không đổi)';
+            setPasswordRequired(false);
             (user.roles || []).forEach(name => {
                 const el = document.querySelector(`.role-check[value="${name}"]`);
                 if (el) el.checked = true;
@@ -346,9 +363,22 @@
             document.getElementById('u_email').value = '';
             document.getElementById('u_password').value = '';
             document.getElementById('u_pw_hint').textContent = '(bắt buộc)';
+            setPasswordRequired(true);
             $2fa.classList.add('d-none');
         }
         refreshIdentity();
+    }
+
+    // Thêm mới: bắt buộc mật khẩu + nhập lại; Sửa: để trống = không đổi. Luôn xoá trắng 2 ô khi mở modal.
+    function setPasswordRequired(required) {
+        ['u_password', 'u_password_confirm'].forEach(id => {
+            const el = document.getElementById(id);
+            el.value = '';
+            el.required = required;
+            el.type = 'password';
+        });
+        document.getElementById('u_pw_eye').className = 'bi bi-eye';
+        document.getElementById('u_password').dispatchEvent(new Event('pw:reset'));
     }
 
     // Preview trực tiếp khi gõ
@@ -361,6 +391,7 @@
         const eye = document.getElementById('u_pw_eye');
         const show = inp.type === 'password';
         inp.type = show ? 'text' : 'password';
+        document.getElementById('u_password_confirm').type = inp.type;
         eye.className = show ? 'bi bi-eye-slash' : 'bi bi-eye';
     });
 

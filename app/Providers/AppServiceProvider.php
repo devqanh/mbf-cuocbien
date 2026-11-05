@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Validation\Rules\Password;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -33,6 +34,10 @@ class AppServiceProvider extends ServiceProvider
     {
         // Carbon locale → diffForHumans() trả "1 phút trước" thay vì "1 minute ago"
         Carbon::setLocale(config('app.locale', 'vi'));
+
+        // Mật khẩu mạnh dùng chung (tạo/sửa thành viên + đổi mật khẩu ở /profile) — gợi ý client-side
+        // ở partials/_password-rules.blade.php phải khớp các điều kiện này.
+        Password::defaults(fn () => Password::min(8)->letters()->mixedCase()->numbers()->symbols());
 
         // Force scheme HTTPS khi APP_URL là https — tránh Mixed Content khi chạy sau reverse proxy.
         if (str_starts_with((string) config('app.url'), 'https://')) {

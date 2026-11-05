@@ -10,7 +10,7 @@
 - [Trucking report schema](trucking-report-schema.md) — lô hàng có cột/tham chiếu chốt sẵn (totals + cost_item_id/payer_id/vehicle_id/location_id + shipment_warehouses) để query báo cáo; maintain qua recomputeShipmentDerived / trucking:recompute-derived
 - [Spend request flow](spend-request-flow.md) — /yeu-cau-chi cần quyền spend.request + login mobile (bỏ 2FA); phiếu=vehicle_cost có created_by/cancelled; tài xế & admin hủy phiếu theo quy tắc
 - [File attachments](file-attachments.md) — mọi upload gom về bảng trucking_attachments (polymorphic, disk theo file) để S3-ready; stream 1 route disk-agnostic; xóa theo id attachment
-- [Đổi MK thoát phiên](password-change-logout.md) — AuthenticateSession nhóm web + hook User::updated; session/cookie dùng HMAC hashPasswordForCookie
+- [Đổi MK thoát phiên + MK mạnh](password-change-logout.md) — AuthenticateSession nhóm web + hook User::updated; Password::defaults() ≥8 hoa/thường/số/ký tự đặc biệt + nhập lại, gợi ý ở partials/_password-rules
 - [Two-factor auth](two-factor-auth.md) — 2FA/TOTP tự viết thuần PHP (không package), QR client-side; profile bật/tắt + login challenge + admin reset
 - [Font global config](font-global-config.md) — font toàn dự án tập trung ở partials/_font.blade.php (Inter); đổi 1 chỗ + view:clear, không cần npm build
 - [Dev tunnel + Vite](dev-tunnel-vite.md) — local map ra domain qua Cloudflare Tunnel/ngrok (chỉ 443); npm run dev lỗi vì 5173 không lộ; dùng VITE_TUNNEL_HOST hoặc dev qua URL local

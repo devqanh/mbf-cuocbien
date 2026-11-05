@@ -10,9 +10,12 @@ use App\Support\PermissionScope;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Validation\Rules\Password;
 
 class UserController extends Controller
 {
+    private const ATTRIBUTES = ['name' => 'Họ tên', 'email' => 'Email', 'password' => 'Mật khẩu'];
+
     public function __construct(
         private readonly UserService $users,
     ) {}
@@ -45,10 +48,10 @@ class UserController extends Controller
         $data = $request->validate([
             'name'     => ['required', 'string', 'max:255'],
             'email'    => ['required', 'email', 'unique:users,email'],
-            'password' => ['required', 'string', 'min:6'],
+            'password' => ['required', 'string', 'confirmed', Password::defaults()],
             'roles'    => ['array'],
             'roles.*'  => ['string', 'exists:roles,name'],
-        ]);
+        ], [], self::ATTRIBUTES);
 
         try {
             PermissionScope::assertCanAssignRoles($request->user(), $data['roles'] ?? []);
@@ -66,10 +69,10 @@ class UserController extends Controller
         $data = $request->validate([
             'name'     => ['required', 'string', 'max:255'],
             'email'    => ['required', 'email', 'unique:users,email,' . $user->id],
-            'password' => ['nullable', 'string', 'min:6'],
+            'password' => ['nullable', 'string', 'confirmed', Password::defaults()],
             'roles'    => ['array'],
             'roles.*'  => ['string', 'exists:roles,name'],
-        ]);
+        ], [], self::ATTRIBUTES);
 
         try {
             PermissionScope::assertCanManageUser($request->user(), $user);

@@ -194,7 +194,7 @@
                 <div class="card-body">
                     <div class="pw-hint">
                         <i class="bi bi-info-circle me-1"></i>
-                        Mật khẩu nên có tối thiểu 6 ký tự. Sau khi đổi, các thiết bị khác đã đăng nhập vẫn giữ phiên cho đến khi hết hạn.
+                        Mật khẩu phải tối thiểu 8 ký tự, gồm chữ hoa, chữ thường, chữ số và ký tự đặc biệt. Sau khi đổi, mọi thiết bị khác sẽ bị đăng xuất.
                     </div>
                     <form id="passwordForm" method="POST" action="{{ route('profile.password') }}" autocomplete="off">
                         @csrf @method('PUT')
@@ -205,13 +205,14 @@
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label class="form-label fw-semibold">Mật khẩu mới <span class="text-danger">*</span></label>
-                                <input type="password" name="password" class="form-control" required minlength="6">
+                                <input type="password" name="password" id="pf_password" class="form-control" required autocomplete="new-password">
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label fw-semibold">Xác nhận mật khẩu mới <span class="text-danger">*</span></label>
-                                <input type="password" name="password_confirmation" class="form-control" required minlength="6">
+                                <input type="password" name="password_confirmation" id="pf_password_confirm" class="form-control" required autocomplete="new-password">
                             </div>
                         </div>
+                        @include('partials._password-rules', ['input' => 'pf_password', 'confirm' => 'pf_password_confirm'])
                         <div class="mt-3 text-end">
                             <button type="submit" class="btn btn-primary">
                                 <i class="bi bi-shield-lock me-1"></i> Cập nhật mật khẩu
@@ -416,7 +417,7 @@
             e.preventDefault();
             const ok = await window.confirmAction({
                 title: 'Xác nhận đổi mật khẩu?',
-                text: 'Hãy ghi nhớ mật khẩu mới của bạn. Các thiết bị đã đăng nhập sẽ vẫn giữ phiên cho đến khi hết hạn.',
+                text: 'Hãy ghi nhớ mật khẩu mới của bạn. Mọi thiết bị khác đang đăng nhập sẽ bị đăng xuất.',
                 confirmText: '<i class="bi bi-shield-lock me-1"></i> Đổi mật khẩu',
                 danger: true,
             });
