@@ -239,31 +239,28 @@ function UsageTab({ rows, onChange, drivers }) {
   const set = (i, np) => onChange(list.map((r, j) => (j === i ? { ...r, ...np } : r)));
   const add = () => onChange([...list, { id: Date.now() + Math.random(), driver: "", from: today10(), to: "", note: "" }]);
   const del = (i) => onChange(list.filter((_, j) => j !== i));
-  // Không nhập Đến ngày: lái chạy tới ngày trước khi người kế tiếp (Từ ngày lớn hơn gần nhất) bắt đầu.
-  // Dòng cũ còn Đến ngày (nhập trước đây) vẫn giữ + cho xóa để nối tiếp như dòng mới.
-  const until = (r) => {
-    const next = list.map((x) => x.from).filter((f) => f && r.from && f > r.from).sort()[0];
-    const end = next ? dayBefore(next) : "";
-    return r.to && (!end || r.to < end) ? { date: r.to, fixed: true } : { date: end, fixed: false };
+  // Chạy đến để trống = tự tính: tới ngày trước khi người kế tiếp (Từ ngày lớn hơn gần nhất) bắt đầu.
+  // Nhập tay = kết thúc sớm hơn (sau đó xe về lái mặc định / chưa gắn lái); nhập muộn hơn thì người kế tiếp vẫn nhận từ Từ ngày của họ.
+  const nextFrom = (r) => list.map((x) => x.from).filter((f) => f && r.from && f > r.from).sort()[0] || "";
+  const status = (r, next) => {
+    if (!r.to) return next ? ["tự tính", "var(--ink-4)"] : ["hiện tại", "#15803d"];
+    if (r.from && r.to < r.from) return ["trước Từ ngày!", "#dc2626"];
+    if (next && r.to >= next) return [`lái sau nhận từ ${fmtDate(next)}`, "#b45309"];
+    return ["nhập tay", "#b45309"];
   };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.5 }}>Gán lái xe (danh mục Lái xe) theo ngày bắt đầu dùng xe — <b>Báo cáo lái xe</b> tính chuyến của xe cho lái theo từng ngày. Đổi lái / đổi chéo xe: bấm <b>+ Thêm lượt sử dụng</b>, chọn lái mới và <b>Từ ngày</b> = ngày bắt đầu; lái trước tự tính đến hết ngày hôm trước.</div>
+      <div style={{ fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.5 }}>Gán lái xe (danh mục Lái xe) theo ngày bắt đầu dùng xe — <b>Báo cáo lái xe</b> tính chuyến của xe cho lái theo từng ngày. Đổi lái / đổi chéo xe: bấm <b>+ Thêm lượt sử dụng</b>, chọn lái mới và <b>Từ ngày</b> = ngày bắt đầu; lái trước tự tính đến hết ngày hôm trước. <b>Chạy đến</b> để trống = tự tính; nhập ngày nếu lái nghỉ sớm (sau ngày đó xe về lái mặc định / chưa gắn lái).</div>
       {list.length === 0 && <div style={{ padding: "12px 2px", fontSize: 12.5, color: "var(--ink-4)" }}>Chưa có lịch sử — bấm <b>+ Thêm lượt sử dụng</b>.</div>}
       {list.map((r, i) => {
-        const u = until(r);
+        const next = nextFrom(r), end = next ? dayBefore(next) : "";
+        const [st, stColor] = status(r, next);
         return (
           <div key={r.id || i} style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 150px 190px 1fr 34px", gap: 10, alignItems: "end", ...card }}>
             <div>{lbl("Lái xe")}<Combo value={r.driver} onChange={(x) => set(i, { driver: x })} options={drivers || []} placeholder="Chọn lái xe…" /></div>
             <div>{lbl("Từ ngày")}<DateField value={r.from} onChange={(x) => set(i, { from: x })} /></div>
-            <div>{lbl("Chạy đến")}
-              <div style={{ display: "flex", alignItems: "center", gap: 6, minHeight: 38, fontSize: 13, color: u.fixed ? "#b45309" : "var(--ink-2)" }}>
-                {!r.from ? <span style={{ color: "var(--ink-4)" }}>—</span>
-                  : u.fixed ? <>kết thúc {fmtDate(u.date)}
-                      <button type="button" title="Bỏ ngày kết thúc — chạy tiếp tới khi có người kế tiếp" onClick={() => set(i, { to: "" })}
-                        style={{ border: "none", background: "none", color: "var(--ink-4)", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 }}><i className="bi bi-x-circle" /></button></>
-                  : u.date ? fmtDate(u.date) : <b style={{ color: "#15803d" }}>Hiện tại</b>}
-              </div>
+            <div>{lbl(<>Chạy đến {r.from && <span style={{ fontWeight: 400, color: stColor }}>· {st}</span>}</>)}
+              <DateField value={r.to} onChange={(x) => set(i, { to: x })} placeholder={end ? fmtDate(end) : "Hiện tại"} />
             </div>
             <div>{lbl("Ghi chú")}<Txt value={r.note} onChange={(x) => set(i, { note: x })} placeholder="…" /></div>
             {delBtn(() => del(i))}

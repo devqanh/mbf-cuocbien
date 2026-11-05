@@ -423,7 +423,7 @@ function MultiCombo({ values = [], onChange, options = [], groups = null, onCrea
 }
 /* Ngày — dùng Flatpickr (đã nạp sẵn ở layout, locale VN) để dễ thao tác hơn input date mặc định.
    Lưu giá trị ISO Y-m-d (không đổi format cũ), hiển thị d/m/Y. disableMobile để dùng cùng UI trên điện thoại. */
-function DateField({ value, onChange }) {
+function DateField({ value, onChange, placeholder = "dd/mm/yyyy" }) {
   const hasFp = typeof window !== "undefined" && !!window.flatpickr;
   const ref = useRef(null);
   const fp = useRef(null);
@@ -442,11 +442,13 @@ function DateField({ value, onChange }) {
   useEffect(() => {
     if (fp.current && (value || "") !== (fp.current.input.value || "")) fp.current.setDate(value || "", false);
   }, [value]);
+  // altInput chỉ chép placeholder lúc khởi tạo → cập nhật tay khi placeholder đổi (vd gợi ý tự tính)
+  useEffect(() => { if (fp.current?.altInput) fp.current.altInput.placeholder = placeholder; }, [placeholder]);
   // Fallback: nơi không nạp Flatpickr → input date gốc (vẫn hoạt động).
   if (!hasFp) return <input type="date" className="trk-fp" value={value || ""} onChange={(e) => onChange(e.target.value)} style={{ colorScheme: "light" }} />;
   return (
     <div style={{ position: "relative", width: "100%" }}>
-      <input ref={ref} type="text" className="trk-fp" placeholder="dd/mm/yyyy" />
+      <input ref={ref} type="text" className="trk-fp" placeholder={placeholder} />
       {value ? (
         <span role="button" title="Xoá ngày"
           onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
