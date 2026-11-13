@@ -304,7 +304,7 @@ function LotCostsPanel({ items, choho, editUrl }) {
   );
 }
 
-/* Ô PHÍ TỜ KHAI của 1 lô (thu khách, không VAT): tổng + tách Mở TK (× số tờ khai) / Thanh lý — từ detail.declFee / tlFee. */
+/* Ô PHÍ TỜ KHAI của 1 lô (thu khách, số sau VAT — không tính VAT thêm): tổng + tách Mở TK (× số tờ khai) / Thanh lý — từ detail.declFee / tlFee. */
 function TkCell({ d }) {
   const decl = Math.round(+(d && d.declFee) || 0), tl = Math.round(+(d && d.tlFee) || 0), n = +(d && d.declCount) || 0;
   if (!decl && !tl) return <span style={{ color: "var(--ink-4)" }}>0</span>;
@@ -370,7 +370,7 @@ function AmountSummary({ amt, vatRate, paid, payCount, showDebt, extras = [], ch
       {row("Phải thu (cước + dầu)", amt.base)}
       {row(`VAT (${vatRate || 0}%)`, amt.vat, { valStyle: { color: (vatRate ? "var(--accent)" : "var(--ink-4)") } })}
       {row("Chi hộ (không VAT)", amt.choho)}
-      {amt.tk > 0 && row("Phí tờ khai (không VAT)", amt.tk)}
+      {amt.tk > 0 && row("Phí tờ khai (sau VAT)", amt.tk)}
       {extras.map((c) => <React.Fragment key={c.key}>{row((String(c.label || "").trim() || "Khoản mới") + (c.vat ? " (chịu VAT)" : " (không VAT)"), c.sum)}</React.Fragment>)}
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, paddingTop: 8, marginBottom: showDebt ? 8 : 0, borderTop: "1px solid var(--line)" }}>
         <span style={{ fontWeight: 700 }}>TỔNG TIỀN</span><b className="tnum">{fmtVND(amt.total)}</b>
@@ -731,7 +731,7 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
               <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>VAT</th>
               {extraCols.map((c) => <th key={c.key} style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>{colLabel(c)}{c.vat ? <span style={{ color: "var(--accent)", fontSize: 9.5 }}><br/>+VAT</span> : null}</th>)}
               <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Chi hộ</th>
-              <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }} title="Phí mở tờ khai + phí thanh lý (không VAT)">Phí tờ khai</th>
+              <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }} title="Phí mở tờ khai + phí thanh lý (sau VAT — cộng thẳng vào tổng, không tính VAT thêm)">Phí tờ khai</th>
               <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Tổng tiền</th>
               <th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Ghi chú</th>
             </tr>
@@ -883,7 +883,7 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
             </tr>
             {amt.tk > 0 && <tr>
               <td className="ke-noprint"></td>
-              <td colSpan={nCols - 4} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>Phí tờ khai — mở + thanh lý (không VAT)</td>
+              <td colSpan={nCols - 4} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>Phí tờ khai — mở + thanh lý (sau VAT)</td>
               <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px" }}>{fmtVND(amt.tk)}</td><td></td>
             </tr>}
             <tr style={{ fontWeight: 700 }}>
@@ -1245,7 +1245,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
               <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px" }}>{fmtVND(amt.choho)}</td><td></td>
             </tr>
             {amt.tk > 0 && <tr>
-              <td colSpan={nCols - 3} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>Phí tờ khai — mở + thanh lý (không VAT)</td>
+              <td colSpan={nCols - 3} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>Phí tờ khai — mở + thanh lý (sau VAT)</td>
               <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px" }}>{fmtVND(amt.tk)}</td><td></td>
             </tr>}
             <tr style={{ fontWeight: 700 }}>

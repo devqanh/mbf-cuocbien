@@ -565,7 +565,7 @@ export function buildDeclarationWb(list) {
     { "Quy tắc": "PHÍ THANH LÝ", "Ý nghĩa": `1 số cho cả lô. Để trống = giữ nguyên; gõ ${CLEAR_TOKEN} hoặc 0 = xóa` },
     { "Quy tắc": `Xóa HẾT tờ khai của 1 lô`, "Ý nghĩa": `Gõ ${CLEAR_TOKEN} ở ô SỐ TỜ KHAI` },
     { "Quy tắc": "Lô không đụng tới", "Ý nghĩa": "Để trống các ô (hoặc xóa dòng khỏi file) — chỉ ô có nội dung mới được ghi" },
-    { "Quy tắc": "Thu khách", "Ý nghĩa": "Phí mở tờ khai + phí thanh lý lên Bảng kê (cột Phí tờ khai, không VAT) — KHÔNG vào Chi phí lô" },
+    { "Quy tắc": "Thu khách", "Ý nghĩa": "Phí mở tờ khai + phí thanh lý lên Bảng kê (cột Phí tờ khai, số sau VAT) — KHÔNG vào Chi phí lô" },
     { "Quy tắc": "Kiểm tra trước", "Ý nghĩa": "Hệ thống liệt kê từng lô cũ → mới để bạn duyệt; 1 dòng lỗi là KHÔNG ghi gì cả" },
   ];
   const wg = XLSX.utils.json_to_sheet(guide, { header: ["Quy tắc", "Ý nghĩa"] });

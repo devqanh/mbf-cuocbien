@@ -2270,7 +2270,7 @@ function ShipmentsApp() {
             </div>
             <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginBottom: 14, lineHeight: 1.6 }}>
               Mỗi lô <b>1 dòng</b>: nhiều tờ khai ghi chung ô Số tờ khai (Alt+Enter hoặc ;). Phí mở = số tờ khai × <b>Đơn giá mở tờ khai</b>; <b>Phí thanh lý</b> 1 số / lô.
-              Ô để trống = giữ nguyên; gõ <b>--</b> ở ô Số tờ khai = xóa hết tờ khai của lô. Phí tờ khai <b>thu khách qua Bảng kê</b> (không VAT), không vào chi phí lô.
+              Ô để trống = giữ nguyên; gõ <b>--</b> ở ô Số tờ khai = xóa hết tờ khai của lô. Phí tờ khai <b>thu khách qua Bảng kê</b> (số sau VAT), không vào chi phí lô.
             </div>
 
             {declWb && (

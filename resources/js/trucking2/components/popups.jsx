@@ -303,7 +303,7 @@ function InfoPopup({ ship, patch, patchOther, onSave, isDirty, siblings = [], on
   // Biển số gõ tạo mới ở các ô BKS lô hàng → mặc định "Xe ngoài" (xe thuê ngoài, không lọt đội xe MBF)
   const addVehExt = (v) => addCfg && addCfg("vehicles", v, { external: true });
   // Tờ khai: 1 lô nhiều tờ khai, mỗi tờ khai 1 phí mở — [{no, fee}]. Phí mở + Phí thanh lý = THU KHÁCH, lên Bảng kê
-  // (cột Phí tờ khai, không VAT) — KHÔNG thành chi phí lô.
+  // (cột Phí tờ khai, số sau VAT) — KHÔNG thành chi phí lô.
   const decls = Array.isArray(ship.declarations) ? ship.declarations : [];
   const setDecls = (arr) => patch({ declarations: arr });
   const declTotal = decls.reduce((a, d) => a + toNum(d.fee), 0);
