@@ -78,7 +78,6 @@ trait HandlesStatementPricing
     private function priceShipment(TruckingShipment $s, array $ctx): array
     {
         $codeMap   = $ctx['codeMap'];
-        $codeToName = $ctx['codeToName'];
         $priceList = $ctx['priceList'];
         $threshold = $ctx['threshold'];
 
@@ -180,13 +179,14 @@ trait HandlesStatementPricing
                 'vendor' => ($c->src ?? '') === 'extTruck' ? (string) ($s->ext_vendor ?? '') : ''];
         }
         $chiHo = array_sum(array_column($choHoItems, 'amount'));
-        // Tuyến hiển thị: ĐI → NHÀ MÁY → HẠ (theo tên cho rõ; ký hiệu là khóa link)
-        $nameOf = function ($v) use ($codeToName) { $v = trim((string) $v); return $codeToName[$v] ?? $v; };
-        $route = $p ? (($nameOf($p['from'] ?? '') ?: '?') . ' → '
-            . (implode(' → ', array_filter(array_map(fn ($k) => $nameOf($p[$k] ?? ''), ['to1', 'to2', 'to3', 'to4']))) ?: '?')   // đủ các điểm đến của dòng giá (kể cả bãi ở cột to4)
-            . ' → ' . ($nameOf($p['loc'] ?? '') ?: '?')) : null;
-        // Tuyến sà lan: nơi hạ cont → nơi hạ sà lan (theo tên cho rõ)
-        $bargeRoute = $bp ? (($nameOf($bp['from'] ?? '') ?: '?') . ' → ' . ($nameOf($bp['loc'] ?? '') ?: '?')) : null;
+        // Tuyến hiển thị: ĐI → NHÀ MÁY → HẠ (theo tên cho rõ; ký hiệu là khóa link). Tên lấy theo LÔ — xem routeSegName.
+        $route = $p ? $this->relabelRoute(implode(' → ', [
+            trim((string) ($p['from'] ?? '')) ?: '?',
+            implode(' → ', array_filter(array_map(fn ($k) => trim((string) ($p[$k] ?? '')), ['to1', 'to2', 'to3', 'to4']))) ?: '?',   // đủ các điểm đến của dòng giá (kể cả bãi ở cột to4)
+            trim((string) ($p['loc'] ?? '')) ?: '?',
+        ]), $s) : null;
+        // Tuyến sà lan: nơi hạ cont → nơi hạ sà lan (đoạn đầu là nơi HẠ của lô, không phải nơi lấy)
+        $bargeRoute = $bp ? $this->relabelRoute((trim((string) ($bp['from'] ?? '')) ?: '?') . ' → ' . (trim((string) ($bp['loc'] ?? '')) ?: '?'), $s, 'to') : null;
 
         $diag = [
             'hasPrice' => count($priceList) > 0,
@@ -342,6 +342,44 @@ trait HandlesStatementPricing
     }
 
     /**
+     * Đổi từng đoạn của chuỗi tuyến "A → B → … → Z" (ký hiệu dòng giá hoặc tên đã chốt) sang TÊN theo đúng lô.
+     * Đoạn đầu là vai $firstRole ('from' = nơi lấy; tuyến sà lan bắt đầu ở nơi hạ nên 'to'), các đoạn sau 'to'.
+     * Dùng khi định giá và để sửa tuyến đã chốt trong bảng kê cũ.
+     */
+    public function relabelRoute(string $route, TruckingShipment $s, string $firstRole = 'from'): string
+    {
+        $segs = preg_split('/\s*→\s*/u', trim($route)) ?: [];
+        return implode(' → ', array_map(fn ($v, $i) => $this->routeSegName($v, $i === 0 ? $firstRole : 'to', $s), $segs, array_keys($segs)));
+    }
+
+    /**
+     * TÊN 1 đoạn tuyến. NHIỀU ĐỊA ĐIỂM DÙNG CHUNG 1 KÝ HIỆU (vd 48 cảng HPP, 5 điểm LHP) nên không có "tên của ký hiệu":
+     * lấy tên ghi trên LÔ có cùng ký hiệu (đoạn đi = nơi lấy; đoạn sau = nơi hạ / nơi hạ sà lan / bãi trong kho — KHÔNG đoán
+     * bằng nơi lấy: dòng giá chuỗi CRU có cảng cuối khác nơi hạ của lô). Lô không có → ký hiệu chỉ 1 địa điểm thì tên đó,
+     * nhiều địa điểm thì GIỮ KÝ HIỆU (trước đây lấy địa điểm thêm sau cùng → mọi lô HPP hiện "VAN VINH LIEN", trước nữa
+     * "HAI PHONG"). Kho (nhà máy) không phải địa điểm → giữ nguyên như cũ.
+     */
+    private function routeSegName(string $v, string $role, TruckingShipment $s): string
+    {
+        $v = trim($v);
+        if ($v === '' || $v === '?') return $v;
+        $codeMap = $this->normalizedCodeMap();
+        $norm = fn ($x) => mb_strtoupper(preg_replace('/\s+/u', '', trim(Str::ascii((string) $x))) ?? '');
+        $rc   = fn ($x) => $codeMap[$norm($x)] ?? $norm($x);
+        $c = $rc($v);
+        $locCode = $this->locationCodeMap();
+        $khoLocs = array_filter(preg_split('/\s*(?:,|→|->|–|—|\s-\s)\s*/u', (string) $s->kho) ?: [], fn ($k) => isset($locCode[trim($k)]));
+        $cands = $role === 'from' ? [$s->from_loc] : [$s->to_loc, $s->barge_drop, ...$khoLocs];
+        foreach ($cands as $n) {
+            $n = trim((string) $n);
+            if ($n !== '' && $rc($n) === $c) return $n;
+        }
+        $names = array_keys($locCode, $c, true);
+        if (count($names) === 1) return $names[0];
+        return $names ? $c : $v;
+    }
+
+    /**
      * [chuẩn-hóa(bỏ dấu + viết hoa) => KÝ HIỆU] gộp ĐỊA ĐIỂM + KHO, khớp cả code lẫn tên.
      * Để khớp bảng giá theo ký hiệu duy nhất dù dữ liệu ghi tên có/không dấu
      * (vd "LACH HUYEN" / "LẠCH HUYỆN" / "LHP" → cùng "LHP"). Memoize per-request.
@@ -370,7 +408,7 @@ trait HandlesStatementPricing
      * Gom toàn bộ đầu vào định giá cho 1 khách thành 1 context dùng lại được:
      *  - priceList ĐÃ PRECOMPUTE ký hiệu chuẩn (rcFrom/rcDrop/rcKho/rcKind/conn) cho mỗi
      *    dòng giá → khi loop qua nhiều lô không phải chuẩn hóa lặp.
-     *  - locCode / codeMap / threshold / codeToName chia sẻ.
+     *  - locCode / codeMap / threshold chia sẻ.
      * Cache theo customer_id để cùng 1 khách qua nhiều lượt gọi chỉ build 1 lần.
      */
     private function pricingContext(?int $customerId, ?string $customerName = null, ?int $priceBookId = null, ?array $priceBook = null): array
@@ -388,9 +426,6 @@ trait HandlesStatementPricing
         $norm = fn ($v) => mb_strtoupper(preg_replace('/\s+/u', '', trim(Str::ascii((string) $v))) ?? '');   // bỏ DẤU CÁCH giữa: "ICD QV" == "ICDQV"
         $rc   = fn ($v) => $codeMap[$norm($v)] ?? $norm($v);
         $nk   = fn ($v) => mb_strtolower(trim((string) $v));
-
-        $codeToName = [];
-        foreach ($locCode as $nm => $c) { $c = trim((string) $c); if ($c !== '') $codeToName[$c] = $nm; }
 
         $prepared = [];
         foreach ($priceList as $row) {
@@ -412,7 +447,6 @@ trait HandlesStatementPricing
             'rawList'    => $priceList,
             'locCode'    => $locCode,
             'codeMap'    => $codeMap,
-            'codeToName' => $codeToName,
             'threshold'  => $this->freeTimeThreshold(),
             'priceBook'  => $priceBook,   // meta bảng giá đã chọn (id/label/from/to) — để hiển thị ở bảng kê
         ];

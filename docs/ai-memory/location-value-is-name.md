@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 7f0d2428-dc59-47c9-b3b0-a89c0b9bf3a0
-  modified: 2026-09-30T04:20:59.980Z
+  modified: 2026-11-13T03:15:25.058Z
 ---
 
 Danh mục Địa điểm: **ký hiệu (code) KHÔNG duy nhất** — nhiều địa điểm chung 1 mã (vd HÀ HƯNG HẢI, TÂN VŨ, GIC, SAO Á… đều = HPP; còn có 1 địa điểm tên đúng "HPP"). Vì vậy `locOptions` (popups.jsx) phải dùng `value = TÊN` (duy nhất), label = "Tên — Ký hiệu". Nếu lưu value=code: chọn "HÀ HƯNG HẢI — HPP" sẽ lưu "HPP" rồi curLabel tra ngược ra option đầu trùng mã → nhảy về "HPP — HPP", và from_location_id gộp nhầm mọi depot HPP.
@@ -14,6 +14,8 @@ Danh mục Địa điểm: **ký hiệu (code) KHÔNG duy nhất** — nhiều �
 - Định giá: `$rc($s->from_loc)` (HandlesStatementPricing) name/code → code.
 - from_location_id: `locationIdMap()` key cả name lẫn code → ra đúng location cụ thể.
 - Hiển thị TUYẾN: dùng from_loc trực tiếp = tên; ký hiệu suy bằng `locCode()`. Xem [[trucking-report-schema]], [[coded-catalog-edit]].
+
+**KHÔNG có "tên của 1 ký hiệu" (2026-11-13):** tuyến định giá (detail.route bảng kê) từng đổi mã dòng giá → tên bằng map code→name lấy địa điểm THÊM SAU CÙNG, nên mọi lô HPP hiện "VAN VINH LIEN" (trước đó "HAI PHONG"), LHP hiện "SITC8". Nay `relabelRoute`/`routeSegName` (HandlesStatementPricing): đoạn đi = from_loc của lô, đoạn sau = to_loc / barge_drop / bãi trong kho cùng mã; không khớp mà mã chung nhiều địa điểm → GIỮ MÃ. Excel bảng kê cũng không đổi mã dùng chung ra tên. Migration 2026_11_13_000001 sửa 873 dòng cũ. Mọi chỗ mới cần đổi mã→tên phải theo đúng lô, đừng dựng map code→name.
 
 **Popup "Thao tác hàng loạt" (/lo-hang, 2026-09-30)** cũng dùng chung `locOptions` / `bargeDropOptions` (export từ popups.jsx qua `@trk/pop.jsx`) — trước đó gom theo ký hiệu (`locCodeList`) nên chỉ hiện BG/HPP/HN…; bulk lưu qua cùng `saveShipment` nên tên hoạt động y như popup từng lô. Thêm ô chọn địa điểm mới → DÙNG LẠI 2 helper này, đừng dựng list theo mã.
 

@@ -91,10 +91,13 @@ class StatementExcelExporter
         $colNote = Coordinate::stringFromColumnIndex(16 + $nIns);   // "Ghi chú"  (P khi không chèn)
 
         // Map mã/tên → TÊN địa điểm & kho (chỉ là từ điển hiển thị tên, không phải dữ liệu lô)
+        // Ký hiệu dùng chung nhiều địa điểm (vd HPP) KHÔNG đổi ra tên — không biết là cảng nào; tên đúng đã chốt theo lô.
+        $locs = TruckingLocation::get(['name', 'code']);
+        $perCode = $locs->filter(fn ($x) => $x->code && $x->name)->countBy('code');
         $locMap = [];
-        foreach (TruckingLocation::get(['name', 'code']) as $x) {
+        foreach ($locs as $x) {
             if ($x->name) $locMap[$x->name] = $x->name;
-            if ($x->code) $locMap[$x->code] = $x->name;
+            if ($x->code && ($perCode[$x->code] ?? 0) === 1) $locMap[$x->code] = $x->name;
         }
         $whMap = [];
         foreach (TruckingWarehouse::get(['name', 'code']) as $x) {
