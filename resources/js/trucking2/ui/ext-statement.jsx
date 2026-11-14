@@ -908,6 +908,10 @@ function SavedExtStatementPage({ st, onUpdate, onSave, onDelete, onLinesPaid, is
             <div className="tnum" style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{st.no} · {st.vendor}</div>
           </div>
         </div>
+        <Btn onClick={() => {
+          if (dirty) { window.trkToast && window.trkToast("Bảng kê có thay đổi chưa lưu — bấm Lưu trước khi xuất Excel", "error"); return; }
+          window.location.href = (ROUTES_TRK.excel || "") + (st.hashid || st.id) + "/export-excel";
+        }}><i className="bi bi-file-earmark-excel" /> Xuất Excel</Btn>
         <Btn onClick={() => setSnap(true)}><i className="bi bi-camera" /> Chụp ảnh đã chi</Btn>
       </div>
       {snap && <PaidSnapshotModal st={st} entries={paidEntries} onClose={() => setSnap(false)} />}

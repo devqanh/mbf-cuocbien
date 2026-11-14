@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Trucking;
 
 use App\Models\TruckingExtStatement;
+use App\Services\Trucking\ExtStatementExcelExporter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /** Bảng kê xe ngoài (phải trả nhà xe thuê) — danh sách, tạo/xem, CRUD. */
 class ExtStatementController extends BaseTruckingController
@@ -33,6 +35,13 @@ class ExtStatementController extends BaseTruckingController
         return view('trucking2.bang-ke-xe-ngoai-xem', $this->pageData([
             'st' => $this->svc->extStatementToArray($extStatement),
         ], 'extStatements.update', 'extStatements.delete'));
+    }
+
+    /** Xuất Excel theo mẫu kế toán "Bảng kê cước chi hộ" (snapshot đã lưu). */
+    public function export(TruckingExtStatement $extStatement, ExtStatementExcelExporter $exporter): StreamedResponse
+    {
+        $extStatement->loadMissing('lines');
+        return $exporter->download($extStatement, $this->svc->sellerInfo());
     }
 
     /** Ứng viên cho bảng kê MỚI — lô của 1 nhà xe trong khoảng Giờ xe đến, ext_fee > 0. */

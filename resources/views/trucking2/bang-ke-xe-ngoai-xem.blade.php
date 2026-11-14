@@ -15,6 +15,7 @@ window.__TRK = {
   routes: {
     list: '{{ route("trucking2.extStatements") }}',
     extStatement: '{{ url("trucking-v2/ext-statements") }}/',
+    excel: '{{ url("trucking-v2/bang-ke-xe-ngoai") }}/',   // + hashid + '/export-excel'
     extStatementCandidates: '{{ route("trucking2.extStatements.candidates") }}',
     loHang: '{{ url("trucking-v2/lo-hang") }}',
   },

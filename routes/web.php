@@ -283,6 +283,7 @@ Route::middleware(['auth', RestrictSpendOnlySession::class])->group(function () 
             Route::get('/ext-statement-candidates',         [ExtStatementController::class, 'candidates'])->name('extStatements.candidates');
             Route::get('/ext-statement-list',               [ExtStatementController::class, 'list'])->name('extStatements.list');
             Route::get('/bang-ke-xe-ngoai/{extStatement}',  [ExtStatementController::class, 'view'])->name('extStatements.view');
+            Route::get('/bang-ke-xe-ngoai/{extStatement}/export-excel', [ExtStatementController::class, 'export'])->name('extStatements.excel');
         });
         Route::middleware('permission:extStatements.create')->group(function () {
             Route::post('/ext-statements', [ExtStatementController::class, 'store'])->name('extStatements.store');
