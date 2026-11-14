@@ -205,21 +205,6 @@
                     </button>
                     @endcan
 
-                    {{-- Cảnh báo lô QUÊN NHẬP GIỜ XE RA: Giờ xe đến quá N ngày (mặc định 15) mà chưa có Giờ xe ra.
-                         Chỉ hiện khi có lô; bấm → Lô hàng, tab "Chưa ra", lọc đúng các lô đó (?late=1). --}}
-                    @can('shipments.view')
-                    @php($__trk = app(\App\Services\TruckingV2Service::class))
-                    @php($__staleN = $__trk->staleShipmentCount())
-                    @if ($__staleN > 0)
-                    <a href="{{ route('trucking2.shipments', ['late' => 1]) }}" class="icon-btn position-relative text-decoration-none"
-                       style="color:#b45309;"
-                       title="{{ $__staleN }} lô có Giờ xe đến quá {{ $__trk->staleDays() }} ngày mà chưa nhập Giờ xe ra — chưa lên được bảng kê thu khách. Bấm để xem.">
-                        <i class="bi bi-exclamation-triangle"></i>
-                        <span class="bell-badge" style="background:#d97706;">{{ $__staleN > 99 ? '99+' : $__staleN }}</span>
-                    </a>
-                    @endif
-                    @endcan
-
                     {{-- Bell notification --}}
                     <div class="dropdown bell-wrap">
                         <button id="bellBtn" type="button" class="icon-btn position-relative"
@@ -281,6 +266,34 @@
             </div>
         </div>
     </nav>
+
+    {{-- THANH CẢNH BÁO quên nhập Giờ xe ra: lô có Giờ xe đến quá N ngày (mặc định 15, Cài đặt › Tính năng) mà chưa có
+         Giờ xe ra → chưa lên được bảng kê thu khách. AI ĐĂNG NHẬP CŨNG THẤY; nút mở danh sách chỉ hiện cho người xem được
+         Lô hàng (→ tab "Chưa ra", lọc đúng các lô đó). Tự ẩn khi không còn lô nào. --}}
+    @auth
+    @php($__trk = app(\App\Services\TruckingV2Service::class))
+    @php($__staleN = $__trk->staleShipmentCount())
+    @if ($__staleN > 0)
+    <div class="stale-bar" role="alert">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <span>
+            Có <b>{{ $__staleN }} lô</b> đã có <b>Giờ xe đến</b> quá <b>{{ $__trk->staleDays() }} ngày</b> nhưng chưa nhập <b>Giờ xe ra</b>
+            — các lô này <b>chưa lên được bảng kê thu khách</b>.
+        </span>
+        @can('shipments.view')
+        <a href="{{ route('trucking2.shipments', ['late' => 1]) }}" class="stale-bar-btn">Xem và cập nhật <i class="bi bi-arrow-right"></i></a>
+        @endcan
+    </div>
+    <style>
+        .stale-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 24px;background:#fef3c7;border-top:1px solid #fde68a;color:#78350f;font-size:13.5px;line-height:1.45;}
+        .stale-bar > i{color:#d97706;font-size:16px;}
+        .stale-bar > span{flex:1 1 320px;}
+        .stale-bar-btn{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:8px;background:#d97706;color:#fff !important;font-weight:600;font-size:13px;text-decoration:none;white-space:nowrap;}
+        .stale-bar-btn:hover{background:#b45309;}
+        @media (max-width: 768px){.stale-bar{padding:8px 14px;font-size:13px;}}
+    </style>
+    @endif
+    @endauth
 </header>
 
 <main class="app-body">
