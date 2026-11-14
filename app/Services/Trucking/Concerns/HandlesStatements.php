@@ -48,14 +48,18 @@ trait HandlesStatements
 
     /**
      * PHẠM VI bảng kê (io_scope: all | nhap | xuat): lô có io ("Nhập"/"Xuất") thuộc phạm vi mới được TÍNH TIỀN,
-     * in và xuất Excel; lô khác loại vẫn nằm trong bảng kê (hiện mờ) nhưng không tính. Khớp ioKey ở frontend.
+     * in và xuất Excel; lô khác loại vẫn nằm trong bảng kê (hiện mờ) nhưng không tính. Khớp ioInScope ở frontend.
+     * Lô "Khác" / chưa chọn Nhập-Xuất (vd CHUYỂN KHO) không thuộc riêng phạm vi nào → thuộc MỌI phạm vi; nếu không
+     * khách tách bảng kê Nhập / Xuất (Canon) sẽ không bao giờ thu được lô này. Chống thu trùng vẫn nhờ billedIn.
      */
     public static function ioInScope(?string $io, ?string $scope): bool
     {
         $scope = $scope ?: 'all';
         if ($scope === 'all') return true;
         $v = mb_strtolower((string) $io);
-        return $scope === 'xuat' ? str_contains($v, 'xu') : str_contains($v, 'nh');
+        $isXuat = str_contains($v, 'xu'); $isNhap = str_contains($v, 'nh');
+        if (! $isXuat && ! $isNhap) return true;
+        return $scope === 'xuat' ? $isXuat : $isNhap;
     }
 
     /**

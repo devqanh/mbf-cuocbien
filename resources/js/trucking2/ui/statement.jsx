@@ -138,6 +138,8 @@ const CO_SUB = [CO.website, CO.phone].filter(Boolean).join(" · ") || "http://mb
 
 /* Lọc lô theo NHẬP / XUẤT (io của lô: "Nhập" | "Xuất"). Dùng ở trang tạo (lọc ứng viên) và trang xem (lọc hiển thị). */
 const ioKey = (io) => { const v = String(io || "").toLowerCase(); return /xu/.test(v) ? "xuat" : /nh/.test(v) ? "nhap" : ""; };
+// Lô thuộc phạm vi? (khớp backend ioInScope) — lô "Khác" / chưa chọn (vd CHUYỂN KHO) thuộc MỌI phạm vi.
+const ioInScope = (io, scope) => scope === "all" || !ioKey(io) || ioKey(io) === scope;
 const IO_OPTS = [["all", "Tất cả"], ["nhap", "Nhập"], ["xuat", "Xuất"]];
 function IoSeg({ value, onChange, counts, opts = IO_OPTS }) {
   return (
@@ -155,7 +157,7 @@ function IoSeg({ value, onChange, counts, opts = IO_OPTS }) {
     </div>
   );
 }
-const ioCounts = (lines) => { const c = { all: 0, nhap: 0, xuat: 0 }; (lines || []).forEach((l) => { c.all++; const k = ioKey(l.io); if (k) c[k]++; }); return c; };
+const ioCounts = (lines) => { const c = { all: 0, nhap: 0, xuat: 0 }; (lines || []).forEach((l) => { c.all++; ["nhap", "xuat"].forEach((k) => { if (ioInScope(l.io, k)) c[k]++; }); }); return c; };
 /* Lọc CONNECT / DISCONNECT (snapshot định giá: detail.conn ở dòng đã lưu, pr.conn ở lô ứng viên). */
 const CONN_OPTS = [["all", "Tất cả"], ["connect", "Connect"], ["disconnect", "Disconnect"]];
 const connKey = (x) => { const v = String((x && ((x.detail && x.detail.conn) || (x.pr && x.pr.conn))) || "").toLowerCase(); return v === "connect" ? "connect" : v === "disconnect" ? "disconnect" : ""; };
@@ -548,7 +550,7 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
   const billedOf = (x) => (Array.isArray(x.billedIn) ? x.billedIn : []);
   const [hideBilled, setHideBilled] = useState(() => { try { return localStorage.getItem(HIDE_BILLED_KEY) === "1"; } catch (e) { return false; } });
   useEffect(() => { try { localStorage.setItem(HIDE_BILLED_KEY, hideBilled ? "1" : "0"); } catch (e) {} }, [hideBilled]);
-  const ioShown = io === "all" ? all : all.filter((x) => ioKey(x.io) === io);
+  const ioShown = all.filter((x) => ioInScope(x.io, io));
   const connShown = conn === "all" ? ioShown : ioShown.filter((x) => connKey(x) === conn);
   const billedCount = connShown.filter((x) => billedOf(x).length).length;
   const shown = hideBilled ? connShown.filter((x) => !billedOf(x).length) : connShown;
@@ -975,7 +977,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
   // (user: hiện mờ nhìn rối) — đổi phạm vi về "Tất cả" là hiện lại; thanh cảnh báo nêu số lô đang ẩn.
   const scope = st.ioScope || "all";
   const setScope = (k) => onUpdate && onUpdate({ ...st, ioScope: k });
-  const inScope = (l) => scope === "all" || ioKey(l.io) === scope;
+  const inScope = (l) => ioInScope(l.io, scope);
   const scopedLines = (st.lines || []).filter(inScope);
   const outCount = (st.lines || []).length - scopedLines.length;
   const scopeLabel = scope === "nhap" ? "Nhập" : "Xuất";
