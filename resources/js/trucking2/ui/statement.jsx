@@ -144,15 +144,19 @@ const ioInScope = (io, scope) => scope === "all" || (scope === "khac" ? !ioKey(i
 const IO_OPTS = [["all", "Tất cả"], ["nhap", "Nhập"], ["xuat", "Xuất"], ["khac", "Khác"]];
 const IO_LABEL = { nhap: "Nhập", xuat: "Xuất", khac: "Khác" };
 function IoSeg({ value, onChange, counts, opts = IO_OPTS }) {
+  // counts.plus[k] = số lô "Khác" ĐI KÈM phạm vi k (Nhập/Xuất) — hiện riêng "+N" để Nhập + Xuất + Khác = Tất cả.
+  const plus = (counts && counts.plus) || {};
   return (
     <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 9, padding: 3, gap: 1 }}>
       {opts.map(([k, lb]) => {
-        const on = value === k; const n = counts ? counts[k] : null;
+        const on = value === k; const n = counts ? counts[k] : null; const p = plus[k] || 0;
         return (
-          <button key={k} type="button" onClick={() => onChange(k)} title={k === "all" ? "Mọi lô" : `Chỉ lô hàng ${lb.toLowerCase()}`}
+          <button key={k} type="button" onClick={() => onChange(k)}
+            title={k === "all" ? "Mọi lô" : `Chỉ lô hàng ${lb.toLowerCase()}` + (p ? ` (${n} lô) — kèm ${p} lô Khác: lô Khác / chưa chọn Nhập-Xuất thuộc mọi phạm vi` : "")}
             style={{ border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, padding: "5px 11px", borderRadius: 7, whiteSpace: "nowrap",
               background: on ? "#fff" : "transparent", color: on ? "var(--accent)" : "var(--ink-3)", boxShadow: on ? "0 1px 2px rgba(16,19,23,.14)" : "none" }}>
             {lb}{n != null ? <span className="tnum" style={{ marginLeft: 5, fontSize: 10.5, fontWeight: 700, color: "var(--ink-4)" }}>{n}</span> : null}
+            {p ? <span className="tnum" style={{ marginLeft: 3, fontSize: 10, fontWeight: 600, color: "var(--ink-4)", opacity: 0.8 }}>+{p}</span> : null}
           </button>
         );
       })}
@@ -185,7 +189,12 @@ function FeeExcludeFilter({ rows, value, onChange, width = 260 }) {
     </div>
   );
 }
-const ioCounts = (lines) => { const c = { all: 0, nhap: 0, xuat: 0, khac: 0 }; (lines || []).forEach((l) => { c.all++; ["nhap", "xuat", "khac"].forEach((k) => { if (ioInScope(l.io, k)) c[k]++; }); }); return c; };
+// Đếm RIÊNG từng loại (Nhập + Xuất + Khác = Tất cả); số lô Khác đi kèm Nhập / Xuất hiện riêng ở plus ("+N").
+const ioCounts = (lines) => {
+  const c = { all: 0, nhap: 0, xuat: 0, khac: 0 };
+  (lines || []).forEach((l) => { c.all++; c[ioKey(l.io) || "khac"]++; });
+  return { ...c, plus: { nhap: c.khac, xuat: c.khac } };
+};
 /* Lọc CONNECT / DISCONNECT (snapshot định giá: detail.conn ở dòng đã lưu, pr.conn ở lô ứng viên). */
 const CONN_OPTS = [["all", "Tất cả"], ["connect", "Connect"], ["disconnect", "Disconnect"]];
 const connKey = (x) => { const v = String((x && ((x.detail && x.detail.conn) || (x.pr && x.pr.conn))) || "").toLowerCase(); return v === "connect" ? "connect" : v === "disconnect" ? "disconnect" : ""; };
