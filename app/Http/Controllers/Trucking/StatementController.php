@@ -96,7 +96,7 @@ class StatementController extends BaseTruckingController
         $d = $request->validate([
             'from' => ['nullable', 'date_format:Y-m-d'],
             'to'   => ['nullable', 'date_format:Y-m-d'],
-            'io'   => ['nullable', 'in:all,nhap,xuat'],
+            'io'   => ['nullable', \Illuminate\Validation\Rule::in(\App\Services\TruckingV2Service::IO_SCOPES)],
             'from_time' => ['nullable', 'date_format:H:i'],   // giờ kỳ (tùy chọn) — trống = cả ngày
             'to_time'   => ['nullable', 'date_format:H:i'],
         ]);

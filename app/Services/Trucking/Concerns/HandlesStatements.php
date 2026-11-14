@@ -47,11 +47,12 @@ trait HandlesStatements
     // ===================================================================
 
     /**
-     * PHẠM VI bảng kê (io_scope: all | nhap | xuat): lô có io ("Nhập"/"Xuất") thuộc phạm vi mới được TÍNH TIỀN,
-     * in và xuất Excel; lô khác loại vẫn nằm trong bảng kê (hiện mờ) nhưng không tính. Khớp ioInScope ở frontend.
-     * Lô "Khác" / chưa chọn Nhập-Xuất (vd CHUYỂN KHO) không thuộc riêng phạm vi nào → thuộc MỌI phạm vi; nếu không
-     * khách tách bảng kê Nhập / Xuất (Canon) sẽ không bao giờ thu được lô này. Chống thu trùng vẫn nhờ billedIn.
-     * Phạm vi 'khac' = CHỈ lô Khác / chưa chọn (bảng kê riêng cho chuyển kho…).
+     * PHẠM VI bảng kê (io_scope): lô thuộc phạm vi mới được TÍNH TIỀN, in và xuất Excel; lô khác loại vẫn nằm
+     * trong bảng kê nhưng không tính. Khớp ioInScope ở frontend.
+     * Mỗi phạm vi CHỈ gồm đúng loại đó (user 14/11: lọc Xuất mà vẫn ra lô chuyển kho là khó hiểu):
+     *   nhap | xuat | khac (= lô Khác / chưa chọn Nhập-Xuất, vd CHUYỂN KHO).
+     * Thu KÈM lô Khác trong bảng kê Nhập / Xuất (Canon tách 2 bảng kê) → tích "Kèm lô Khác" = 'nhap+k' / 'xuat+k'.
+     * Chống thu trùng vẫn nhờ billedIn.
      */
     public static function ioInScope(?string $io, ?string $scope): bool
     {
@@ -59,10 +60,13 @@ trait HandlesStatements
         if ($scope === 'all') return true;
         $v = mb_strtolower((string) $io);
         $isXuat = str_contains($v, 'xu'); $isNhap = str_contains($v, 'nh');
-        if (! $isXuat && ! $isNhap) return true;
-        if ($scope === 'khac') return false;
-        return $scope === 'xuat' ? $isXuat : $isNhap;
+        if (! $isXuat && ! $isNhap) return $scope === 'khac' || str_ends_with($scope, '+k');
+        $base = explode('+', $scope)[0];
+        return $base === 'xuat' ? $isXuat : ($base === 'nhap' ? $isNhap : false);
     }
+
+    /** Các giá trị phạm vi hợp lệ (cột io_scope string(8)). */
+    public const IO_SCOPES = ['all', 'nhap', 'xuat', 'khac', 'nhap+k', 'xuat+k'];
 
     /**
      * Biển kiểm soát in ở bảng kê: cont XUẤT lấy BKS xe ra (xe ra trống / trùng xe vào thì là xe vào);
@@ -78,7 +82,7 @@ trait HandlesStatements
     private static function ioScopeOf($v): string
     {
         $v = (string) ($v ?? 'all');
-        return in_array($v, ['nhap', 'xuat', 'khac'], true) ? $v : 'all';
+        return in_array($v, self::IO_SCOPES, true) ? $v : 'all';
     }
 
     /**

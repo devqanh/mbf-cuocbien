@@ -777,7 +777,7 @@ trait HandlesStatementPricing
         if ($to === null) $toTime ??= $info['toTime'] ?? null;
         $from = $from ?? $this->outDate($st->period_from);
         $to   = $to ?? $this->outDate($st->period_to);
-        $scope = in_array($scope, ['nhap', 'xuat', 'khac'], true) ? $scope : ($st->io_scope ?: 'all');
+        $scope = in_array($scope, self::IO_SCOPES, true) && $scope !== 'all' ? $scope : ($st->io_scope ?: 'all');
         $new = []; $inOther = 0;
         if (($from || $to) && trim($custName) !== '') {
             $have  = array_flip(array_map('intval', $ids));

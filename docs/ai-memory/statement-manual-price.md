@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 4bec1b4a-b245-4320-87b0-daa8ea0472d4
-  modified: 2026-11-14T08:11:38.681Z
+  modified: 2026-11-14T08:20:41.631Z
 ---
 
 Từ 2026-09-23 (plan `plans/260923-0328-bang-ke-gia-tuy-chinh`), user chốt: **giá gõ tay trong bảng kê là số chính thức, "Tính lại" chỉ gợi ý, bấm Áp dụng mới điền** ("nhiều khi giá đó mới là đúng").
@@ -26,7 +26,7 @@ Từ 2026-09-23 (plan `plans/260923-0328-bang-ke-gia-tuy-chinh`), user chốt: *
 
 **Lô "Khác" (2026-11-14):** lô io Khác/trống (CHUYỂN KHO) thuộc MỌI phạm vi (cả Nhập lẫn Xuất), nếu không khách tách bảng kê Nhập/Xuất như Canon sẽ không thu được; chống thu trùng nhờ billedIn. Thêm phạm vi `khac` = CHỈ lô Khác (nút "Khác" ở bộ lọc trang tạo + trang xem, chip "Hàng khác"); FE `ioInScope`/`IO_LABEL` khớp backend.
 
-**Lọc Điểm hạ (2026-11-14):** Tất cả / Hạ ICD QV / Hạ ICD TP / Điểm hạ khác theo `toCode` (ký hiệu Nơi hạ, backend `locationCodeOf()` — "ICD TP"/"ICDTP" cùng ICDTP) có ở candidates + lines; trang tạo = như Connect (LƯU các lô đang hiện), trang xem = chỉ lọc hiển thị. Bộ đếm Phạm vi: Nhập/Xuất đếm RIÊNG + "+N" lô Khác đi kèm để Nhập+Xuất+Khác = Tất cả.
+**Lọc Điểm hạ (2026-11-14):** Tất cả / Hạ ICD QV / Hạ ICD TP / Điểm hạ khác theo `toCode` (ký hiệu Nơi hạ, backend `locationCodeOf()` — "ICD TP"/"ICDTP" cùng ICDTP) có ở candidates + lines; trang tạo = như Connect (LƯU các lô đang hiện), trang xem = chỉ lọc hiển thị. **Phạm vi LOẠI TRỪ (2026-11-14, khách hỏi "lọc Xuất vẫn ra cont chuyển kho"):** Nhập/Xuất/Khác mỗi nút CHỈ đúng loại đó (đếm cộng = Tất cả); thu kèm lô Khác = ô tích "Kèm N lô Khác (chuyển kho)" → io_scope `nhap+k` / `xuat+k` (hằng `IO_SCOPES`, `ScopePicker` FE). Thay quy tắc cũ "lô Khác thuộc mọi phạm vi"; 64 bảng kê đã lưu không đổi tổng.
 
 **Lọc hiển thị + xuất dữ liệu đang xem (2026-11-14):** trang tạo/xem có lọc "Có ghi chú" (infoNote|userNote) và "Có phí khác ngoài" (MultiCombo khoản costLines, `filterOtherFee`) — CHỈ lọc hiển thị (trang tạo vẫn lưu đủ lô đã tích). Trang xem có nút "Xuất dữ liệu đang xem": FE gửi đúng `shownLines` + số `lineAmounts` (kể cả sửa chưa lưu) POST `/bang-ke/{st}/export-view` → `StatementViewExporter` (PhpSpreadsheet, chỉ đọc): sheet Bảng kê (nhóm cột màu, mỗi khoản chi phí 1 cột xanh=chi hộ/cam=công ty, dòng TỔNG SUBTOTAL theo lọc, autofilter, freeze), sheet Chi phí từng khoản, sheet Tổng hợp khoản. Khác mẫu chính thức `export-excel`.
 

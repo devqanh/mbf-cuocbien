@@ -138,29 +138,51 @@ const CO_SUB = [CO.website, CO.phone].filter(Boolean).join(" · ") || "http://mb
 
 /* Lọc lô theo NHẬP / XUẤT (io của lô: "Nhập" | "Xuất"). Dùng ở trang tạo (lọc ứng viên) và trang xem (lọc hiển thị). */
 const ioKey = (io) => { const v = String(io || "").toLowerCase(); return /xu/.test(v) ? "xuat" : /nh/.test(v) ? "nhap" : ""; };
-// Lô thuộc phạm vi? (khớp backend ioInScope) — lô "Khác" / chưa chọn (vd CHUYỂN KHO) thuộc MỌI phạm vi;
-// phạm vi "khac" = CHỈ lô Khác.
-const ioInScope = (io, scope) => scope === "all" || (scope === "khac" ? !ioKey(io) : !ioKey(io) || ioKey(io) === scope);
+// Lô thuộc phạm vi? (khớp backend ioInScope) — mỗi phạm vi CHỈ đúng loại đó: nhap | xuat | khac (lô Khác / chưa chọn,
+// vd CHUYỂN KHO). "nhap+k" / "xuat+k" = Nhập / Xuất KÈM lô Khác (ô tích "Kèm lô Khác", lưu cùng bảng kê).
+const scopeBase = (s) => String(s || "all").split("+")[0];
+const scopeWithKhac = (s) => /\+k$/.test(String(s || ""));
+const ioInScope = (io, scope) => {
+  if (!scope || scope === "all") return true;
+  const k = ioKey(io);
+  return !k ? (scope === "khac" || scopeWithKhac(scope)) : k === scopeBase(scope);
+};
 const IO_OPTS = [["all", "Tất cả"], ["nhap", "Nhập"], ["xuat", "Xuất"], ["khac", "Khác"]];
-const IO_LABEL = { nhap: "Nhập", xuat: "Xuất", khac: "Khác" };
+const IO_LABEL = { nhap: "Nhập", xuat: "Xuất", khac: "Khác", "nhap+k": "Nhập + Khác", "xuat+k": "Xuất + Khác" };
 function IoSeg({ value, onChange, counts, opts = IO_OPTS }) {
-  // counts.plus[k] = số lô "Khác" ĐI KÈM phạm vi k (Nhập/Xuất) — hiện riêng "+N" để Nhập + Xuất + Khác = Tất cả.
-  const plus = (counts && counts.plus) || {};
   return (
     <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 9, padding: 3, gap: 1 }}>
       {opts.map(([k, lb]) => {
-        const on = value === k; const n = counts ? counts[k] : null; const p = plus[k] || 0;
+        const on = value === k; const n = counts ? counts[k] : null;
         return (
-          <button key={k} type="button" onClick={() => onChange(k)}
-            title={k === "all" ? "Mọi lô" : `Chỉ lô hàng ${lb.toLowerCase()}` + (p ? ` (${n} lô) — kèm ${p} lô Khác: lô Khác / chưa chọn Nhập-Xuất thuộc mọi phạm vi` : "")}
+          <button key={k} type="button" onClick={() => onChange(k)} title={k === "all" ? "Mọi lô" : `Chỉ lô hàng ${lb.toLowerCase()}`}
             style={{ border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, padding: "5px 11px", borderRadius: 7, whiteSpace: "nowrap",
               background: on ? "#fff" : "transparent", color: on ? "var(--accent)" : "var(--ink-3)", boxShadow: on ? "0 1px 2px rgba(16,19,23,.14)" : "none" }}>
             {lb}{n != null ? <span className="tnum" style={{ marginLeft: 5, fontSize: 10.5, fontWeight: 700, color: "var(--ink-4)" }}>{n}</span> : null}
-            {p ? <span className="tnum" style={{ marginLeft: 3, fontSize: 10, fontWeight: 600, color: "var(--ink-4)", opacity: 0.8 }}>+{p}</span> : null}
           </button>
         );
       })}
     </div>
+  );
+}
+/* Chọn PHẠM VI: Tất cả · Nhập · Xuất · Khác (mỗi nút đúng 1 loại, Nhập + Xuất + Khác = Tất cả) và — khi đang
+   chọn Nhập / Xuất mà có lô Khác — ô tích "Kèm N lô Khác (chuyển kho)" để thu chung trong cùng bảng kê. */
+function ScopePicker({ value, onChange, lines }) {
+  const c = ioCounts(lines);
+  const base = scopeBase(value), withK = scopeWithKhac(value);
+  const canKhac = (base === "nhap" || base === "xuat") && c.khac > 0;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <IoSeg value={base} onChange={(k) => onChange(withK && (k === "nhap" || k === "xuat") ? k + "+k" : k)} counts={c} />
+      {canKhac && (
+        <label title="Lô Khác = lô chuyển kho / chưa chọn Nhập-Xuất. Tích để thu các lô này CHUNG trong bảng kê này (lưu cùng bảng kê)"
+          style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", padding: "4px 9px", borderRadius: 999,
+            border: "1px solid " + (withK ? "var(--accent)" : "var(--line)"), background: withK ? "var(--accent-weak-2)" : "#fff", color: withK ? "var(--accent)" : "var(--ink-3)" }}>
+          <input type="checkbox" checked={withK} onChange={(e) => onChange(e.target.checked ? base + "+k" : base)} style={{ accentColor: "var(--accent)", cursor: "pointer" }} />
+          Kèm <span className="tnum">{c.khac}</span> lô Khác (chuyển kho)
+        </label>
+      )}
+    </span>
   );
 }
 /* Lọc ĐIỂM HẠ (Nơi hạ của lô) theo KÝ HIỆU — toCode do backend gửi ("ICD TP" / "ICDTP" đều là ICDTP).
@@ -199,11 +221,11 @@ function FeeExcludeFilter({ rows, value, onChange, width = 260 }) {
     </div>
   );
 }
-// Đếm RIÊNG từng loại (Nhập + Xuất + Khác = Tất cả); số lô Khác đi kèm Nhập / Xuất hiện riêng ở plus ("+N").
+// Đếm RIÊNG từng loại: Nhập + Xuất + Khác = Tất cả (khớp đúng kết quả lọc của từng nút).
 const ioCounts = (lines) => {
   const c = { all: 0, nhap: 0, xuat: 0, khac: 0 };
   (lines || []).forEach((l) => { c.all++; c[ioKey(l.io) || "khac"]++; });
-  return { ...c, plus: { nhap: c.khac, xuat: c.khac } };
+  return c;
 };
 /* Lọc CONNECT / DISCONNECT (snapshot định giá: detail.conn ở dòng đã lưu, pr.conn ở lô ứng viên). */
 const CONN_OPTS = [["all", "Tất cả"], ["connect", "Connect"], ["disconnect", "Disconnect"]];
@@ -717,7 +739,7 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
         </div>
         <div style={{ display: "block" }}>
           <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>Lô hàng</div>
-          <IoSeg value={io} onChange={setIo} counts={ioCounts(all)} />
+          <ScopePicker value={io} onChange={setIo} lines={all} />
         </div>
         <div style={{ display: "block" }}>
           <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>Connect</div>
@@ -1128,7 +1150,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
               <span style={{ fontWeight: 600, marginLeft: 6 }}>VAT</span>
               <VatSelect value={vatRate} onChange={setVat} />
               <span style={{ fontWeight: 600, marginLeft: 6 }} title="Phạm vi lô được tính tiền / in / xuất Excel — lưu cùng bảng kê">Phạm vi</span>
-              <IoSeg value={scope} onChange={setScope} counts={ioCounts(st.lines)} />
+              <ScopePicker value={scope} onChange={setScope} lines={st.lines} />
               <span style={{ fontWeight: 600, marginLeft: 6 }} title="Chỉ lọc danh sách đang xem — không đổi tổng tiền, bản in, Excel">Connect</span>
               <IoSeg value={conn} onChange={setConn} counts={connCounts(scopedLines)} opts={CONN_OPTS} />
               <span style={{ fontWeight: 600, marginLeft: 6 }} title="Theo Nơi hạ của lô — chỉ lọc danh sách đang xem, không đổi tổng tiền, bản in, Excel">Điểm hạ</span>
@@ -1803,7 +1825,7 @@ function KePage({ ke, drift = {}, onNew, onOpen, onSetDue = null, children }) {
                 <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={st.customer}>{st.customer}</div>
                 {(driftOf(st) || (st.ioScope && st.ioScope !== "all") || st.extraAmount > 0) ? (
                   <div style={{ marginTop: 3, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    {st.ioScope && st.ioScope !== "all" ? <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", padding: "1px 8px", borderRadius: 999, whiteSpace: "nowrap" }} title="Phạm vi bảng kê — chỉ tính tiền lô loại này">{st.ioScope === "khac" ? "Hàng khác" : st.ioScope === "nhap" ? "Hàng nhập" : "Hàng xuất"}</span> : null}
+                    {st.ioScope && st.ioScope !== "all" ? <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", padding: "1px 8px", borderRadius: 999, whiteSpace: "nowrap" }} title="Phạm vi bảng kê — chỉ tính tiền lô loại này">{"Hàng " + (IO_LABEL[st.ioScope] || "").toLowerCase()}</span> : null}
                     {st.extraAmount > 0 ? <span className="tnum" style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-3)", background: "var(--line-2)", padding: "1px 8px", borderRadius: 999, whiteSpace: "nowrap" }} title="Σ cột chi phí riêng của bảng kê — đã gồm trong Tổng phải thu">+ Phí riêng {fmtNum(st.extraAmount)}</span> : null}
                     {driftOf(st) ? <DriftChip n={driftOf(st).changed} /> : null}
                   </div>
