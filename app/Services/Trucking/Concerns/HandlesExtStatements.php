@@ -356,6 +356,98 @@ trait HandlesExtStatements
     }
 
     /**
+     * Báo cáo CÔNG NỢ PHẢI TRẢ nhà xe ngoài theo tháng (sổ tổng hợp kiểu kế toán, chỉ đọc):
+     *  - Phát sinh TĂNG = bảng kê có NGÀY LẬP trong tháng (tổng = cước + VAT + chi hộ).
+     *  - Phát sinh GIẢM = đợt thanh toán có NGÀY TRẢ trong tháng (cùng nguồn với "Còn nợ" ở danh sách).
+     *  - Dư đầu kỳ = Σ bảng kê lập trước tháng − Σ đợt thanh toán trước tháng; dư cuối = đầu + tăng − giảm
+     *    (âm = trả trước / trả thừa cho nhà xe).
+     *  - ticks: các khoản tích "đã chi" theo lô có ngày chi trong tháng — đối chiếu với đợt thanh toán.
+     * Thiếu ngày lập / ngày trả → lấy ngày tạo bản ghi.
+     */
+    public function extPayableReport(int $year, int $month): array
+    {
+        $start = Carbon::create($year, $month, 1)->startOfDay();
+        $from  = $start->toDateString();
+        $to    = $start->copy()->endOfMonth()->toDateString();
+        $prevFrom = $start->copy()->subMonthNoOverflow()->toDateString();
+
+        $sts = TruckingExtStatement::with(['lines', 'payments'])->orderBy('date')->orderBy('id')->get();
+        $dayOf = fn ($m) => $m->date ? $m->date->toDateString() : optional($m->created_at)->toDateString();
+
+        $rows = []; $incDocs = []; $decDocs = []; $ticks = [];
+        $prev = ['inc' => 0, 'dec' => 0];
+        $row = function (string $v) use (&$rows) {
+            return $rows[$v] ??= ['vendor' => $v, 'opening' => 0, 'inc' => 0, 'dec' => 0, 'nInc' => 0, 'nDec' => 0, 'ticked' => 0];
+        };
+        foreach ($sts as $st) {
+            $v = trim((string) $st->ext_vendor) ?: '(Chưa có nhà xe)';
+            $ref = ['hashid' => Hashid::encode($st->id), 'no' => $st->no, 'vendor' => $v];
+            $total = (int) round((float) $st->total);
+            $d = $dayOf($st);
+            $row($v);
+            if ($d < $from) {
+                $rows[$v]['opening'] += $total;
+                if ($d >= $prevFrom) $prev['inc'] += $total;
+            } elseif ($d <= $to) {
+                $fee = $vat = $choho = 0;
+                foreach ($st->lines as $l) {
+                    $f = (int) round((float) $l->fee);
+                    $fee += $f; $vat += (int) round($f * (float) $l->vat_rate / 100); $choho += (int) round((float) $l->choho);
+                }
+                $rows[$v]['inc'] += $total; $rows[$v]['nInc']++;
+                $incDocs[] = $ref + ['date' => $d, 'from' => $this->outDate($st->period_from), 'to' => $this->outDate($st->period_to),
+                    'count' => $st->lines->count(), 'fee' => $fee, 'vat' => $vat, 'choho' => $choho, 'total' => $total];
+            }
+
+            foreach ($st->payments as $p) {
+                $amt = (int) round((float) $p->amount);
+                if (! $amt) continue;
+                $pd = $dayOf($p);
+                if ($pd < $from) {
+                    $rows[$v]['opening'] -= $amt;
+                    if ($pd >= $prevFrom) $prev['dec'] += $amt;
+                } elseif ($pd <= $to) {
+                    $rows[$v]['dec'] += $amt; $rows[$v]['nDec']++;
+                    $decDocs[] = $ref + ['date' => $pd, 'amount' => $amt, 'note' => $p->note ?? ''];
+                }
+            }
+
+            foreach ($st->lines as $l) {
+                if ($l->paid_parts === null && ! $l->paid_at) continue;
+                $parts = $this->extLinePartsOf($l);
+                $items = collect($this->extChohoItems($l->choho_items, (int) round((float) $l->choho), $l->choho_note ?? ''))->keyBy(fn ($it) => 'i:' . $it['key']);
+                foreach ($this->extLinePaidParts($l) as $k => $pd) {
+                    if ($pd < $from || $pd > $to) continue;
+                    $amt = $parts[$k] ?? 0;
+                    $rows[$v]['ticked'] += $amt;
+                    $ticks[] = $ref + ['date' => $pd, 'booking' => $l->booking ?? '', 'customer' => $l->customer ?? '', 'contLabel' => $l->cont_label ?? '',
+                        'item' => $k === 'fee' ? ((float) $l->vat_rate > 0 ? 'Cước (gồm VAT ' . (float) $l->vat_rate . '%)' : 'Cước') : ($items[$k]['item'] ?? 'Chi hộ'),
+                        'kind' => $k === 'fee' ? 'fee' : 'choho', 'amount' => $amt];
+                }
+            }
+        }
+
+        // Bỏ nhà xe đã tất toán từ trước và không phát sinh gì trong tháng.
+        $rows = array_values(array_filter($rows, fn ($r) => $r['opening'] || $r['inc'] || $r['dec'] || $r['ticked']));
+        foreach ($rows as &$r) $r['closing'] = $r['opening'] + $r['inc'] - $r['dec'];
+        unset($r);
+        usort($rows, fn ($a, $b) => [$b['closing'], $a['vendor']] <=> [$a['closing'], $b['vendor']]);
+        $byDate = fn ($a, $b) => [$a['date'], $a['no']] <=> [$b['date'], $b['no']];
+        usort($incDocs, $byDate); usort($decDocs, $byDate); usort($ticks, $byDate);
+
+        $sum = fn (array $list, string $k) => array_sum(array_column($list, $k));
+        return [
+            'year' => $year, 'month' => $month, 'from' => $from, 'to' => $to,
+            'rows' => $rows, 'incDocs' => $incDocs, 'decDocs' => $decDocs, 'ticks' => $ticks,
+            'totals' => [
+                'opening' => $sum($rows, 'opening'), 'inc' => $sum($rows, 'inc'), 'dec' => $sum($rows, 'dec'), 'closing' => $sum($rows, 'closing'),
+                'ticked' => $sum($rows, 'ticked'), 'fee' => $sum($incDocs, 'fee'), 'vat' => $sum($incDocs, 'vat'), 'choho' => $sum($incDocs, 'choho'),
+            ],
+            'prev' => $prev,
+        ];
+    }
+
+    /**
      * Tích / bỏ tích "đã chi" cho các dòng lô của 1 bảng kê — ghi ngay, không đụng cột khác.
      * $part = null → mọi phần của dòng; 'fee' → cước (+VAT); 'i:<key>' → 1 khoản chi hộ.
      * Trả map {lineId: {paidAt, paidParts}} sau khi cập nhật.

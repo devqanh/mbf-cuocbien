@@ -29,7 +29,7 @@ function ViewExtStatementApp() {
     .catch(() => { window.trkToast && window.trkToast("Lỗi kết nối khi lưu", "error"); return false; });
   const onDelete = () => api("DELETE", ROUTES.extStatement + (st.hashid || st.id));
   // Tích "đã chi" ghi ngay (PATCH) — chỉ cập nhật paidAt các dòng, không đánh dấu thay đổi chưa lưu.
-  const onLinesPaid = (lineIds, paid, part) => api("PATCH", ROUTES.extStatement + (st.hashid || st.id) + "/paid", { lineIds, paid, part: part || null })
+  const onLinesPaid = (lineIds, paid, part, date) => api("PATCH", ROUTES.extStatement + (st.hashid || st.id) + "/paid", { lineIds, paid, part: part || null, date: date || null })
     .then((r) => {
       if (!r || !r.ok) { window.trkToast && window.trkToast("Không cập nhật được trạng thái đã chi", "error"); return; }
       const m = r.paid || {};

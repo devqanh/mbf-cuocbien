@@ -1,6 +1,6 @@
 import React from "react";
 const { useState, useEffect } = React;
-import { I, fmtVND, fmtNum, fmtDate, toNum, Combo, Btn, DateField, useIsMobile } from "@trk/lib.jsx";
+import { I, fmtVND, fmtNum, fmtDate, toNum, Combo, Btn, DateField, Modal, useIsMobile } from "@trk/lib.jsx";
 import { PaidSnapshotModal } from "@trk/ui/ext-paid-snapshot.jsx";
 
 /* Thông tin công ty cho header bảng kê (màn hình + bản in). */
@@ -39,15 +39,56 @@ const paidOf = (l) => l.paidParts || {};
 const isFull = (l) => { const p = partsOf(l); return p.length > 0 && p.every((x) => paidOf(l)[x.k]); };
 const paidAmtOf = (l) => partsOf(l).reduce((a, x) => a + (paidOf(l)[x.k] ? x.amt : 0), 0);
 const todayStr = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
-/* Tích / bỏ tích 1 phần (part) hoặc cả dòng (part = null) — tính lại paidAt (đã chi đủ). */
-const withPaid = (l, on, part) => {
+/* Tích / bỏ tích 1 phần (part) hoặc cả dòng (part = null) với ngày chi date — tính lại paidAt (đã chi đủ). Phần đã tích giữ ngày cũ. */
+const withPaid = (l, on, part, date) => {
   const pp = { ...paidOf(l) };
-  (part ? [part] : partsOf(l).map((x) => x.k)).forEach((k) => { if (on) pp[k] = pp[k] || todayStr(); else delete pp[k]; });
+  (part ? [part] : partsOf(l).map((x) => x.k)).forEach((k) => { if (on) pp[k] = pp[k] || date || todayStr(); else delete pp[k]; });
   const ps = partsOf(l);
   const full = ps.length > 0 && ps.every((x) => pp[x.k]);
   return { ...l, paidParts: pp, paidAt: full ? ps.map((x) => pp[x.k]).sort().pop() : "" };
 };
 const lineKey = (l) => (l.lineId ? "l" + l.lineId : "s" + l.id);
+
+/* ============================================================
+ * Popup xác nhận tích / bỏ tích "đã chi" — tránh bấm nhầm. Tích: bắt buộc chọn NGÀY CHI rồi mới Đồng ý.
+ * req = { lines, on, part } (part null = mọi khoản của lô). onOk(date) áp thay đổi; onCancel giữ nguyên.
+ * ============================================================ */
+/* Các phần sẽ đổi: tích → phần chưa tích; bỏ tích → phần đã tích. */
+const touchedParts = (lines, on, part) => lines.flatMap((l) => partsOf(l).filter((x) => (!part || x.k === part) && !!paidOf(l)[x.k] !== on).map((x) => ({ l, x })));
+
+function PaidConfirmModal({ req, onOk, onCancel }) {
+  const [date, setDate] = useState(todayStr());
+  const { lines, on, part } = req;
+  const touched = touchedParts(lines, on, part);
+  const amt = touched.reduce((a, t) => a + t.x.amt, 0);
+  const what = part ? (touched[0] ? touched[0].x.label : part === "fee" ? "Cước" : "khoản chi hộ") : "tất cả khoản";
+  const lots = [...new Set(touched.map((t) => lineKey(t.l)))].length;
+  const one = lines.length === 1 ? lines[0] : null;
+  return (
+    <Modal title={on ? "Xác nhận đã chi" : "Bỏ đánh dấu đã chi?"} width={460} onClose={onCancel}
+      icon={<i className={"bi " + (on ? "bi-cash-coin" : "bi-arrow-counterclockwise")} style={{ fontSize: 17 }} />}
+      subtitle={one ? `Lô ${one.booking || "—"}${one.customer ? " · " + one.customer : ""}` : `${lots} lô đang chọn`}
+      footer={
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          <Btn onClick={onCancel}>Hủy</Btn>
+          <Btn variant="primary" onClick={() => onOk(on ? date : null)} disabled={on && !date}>{on ? "Đồng ý đã chi" : "Đồng ý bỏ"}</Btn>
+        </div>
+      }>
+      <div style={{ padding: "14px 0 4px", fontSize: 13.5, color: "var(--ink-2)", lineHeight: 1.55 }}>
+        {on ? "Đánh dấu đã chi" : "Bỏ đánh dấu đã chi"} <b>{what}</b>{lots > 1 ? <> của <b className="tnum">{lots}</b> lô</> : null}:
+        <div className="tnum" style={{ fontSize: 22, fontWeight: 800, color: on ? "var(--good)" : "var(--warn)", margin: "6px 0 2px" }}>{fmtVND(amt)}</div>
+        <div style={{ fontSize: 12, color: "var(--ink-4)" }}>{touched.length} khoản{!on && touched.length ? " · ngày chi đã ghi sẽ bị xóa" : ""}</div>
+      </div>
+      {on && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 600 }}>Ngày chi <span style={{ color: "var(--danger)" }}>*</span></div>
+          <div style={{ width: 180 }}><DateField value={date} onChange={setDate} /></div>
+          <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 6 }}>Khoản đã tích trước đó giữ nguyên ngày cũ.</div>
+        </div>
+      )}
+    </Modal>
+  );
+}
 
 /* Bộ lọc Tất cả / Chưa chi / Đã chi — mỗi nút kèm số lô + số tiền để biết ngay còn bao nhiêu chưa chi. */
 function PaidFilter({ lines, value, onChange }) {
@@ -397,6 +438,66 @@ function PaidSummary({ lines, payTotal, onAddPayment, children }) {
   );
 }
 
+/* ============================================================
+ * "Khoản đã chi theo ngày" (trang Xem, mục Thanh toán): chọn ngày (mặc định hôm nay) → các khoản đã tích chi
+ * ngày đó + tổng, so với đợt thanh toán cùng ngày; ghi nhanh 1 đợt thanh toán đúng phần còn thiếu.
+ * ============================================================ */
+function PaidOnDay({ lines, payments, onAddPayment }) {
+  const [day, setDay] = useState(todayStr());
+  const items = lines.flatMap((l) => partsOf(l).filter((x) => paidOf(l)[x.k] === day).map((x) => ({ l, x })));
+  const total = items.reduce((a, t) => a + t.x.amt, 0);
+  const payDay = payments.filter((p) => p.date === day).reduce((a, p) => a + toNum(p.amount), 0);
+  const gap = total - payDay;
+  const cell = { padding: "6px 8px", borderBottom: "1px solid var(--line-2)" };
+  return (
+    <div className="ke-noprint" style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "10px 12px", marginBottom: 12, background: "#fafbfc" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <b style={{ fontSize: 13 }}><i className="bi bi-calendar-check" style={{ color: "var(--accent)", marginRight: 6 }} />Khoản đã chi ngày</b>
+        <div style={{ width: 150 }}><DateField value={day} onChange={(v) => setDay(v || todayStr())} /></div>
+        {day !== todayStr() && <Btn onClick={() => setDay(todayStr())}>Hôm nay</Btn>}
+        <div style={{ flex: 1 }} />
+        <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{items.length} khoản · <b className="tnum" style={{ color: total ? "var(--good)" : "var(--ink-4)", fontSize: 14 }}>{fmtVND(total)}</b></span>
+      </div>
+      {items.length === 0 ? (
+        <div style={{ fontSize: 12.5, color: "var(--ink-4)", padding: "10px 2px 2px" }}>Không có khoản nào tích đã chi ngày {fmtDate(day)}.</div>
+      ) : (
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, marginTop: 8, background: "#fff" }}>
+          <thead><tr style={{ color: "var(--ink-4)", fontSize: 11, textTransform: "uppercase" }}>
+            <th style={{ ...cell, textAlign: "left" }}>Lô / Khách hàng</th><th style={{ ...cell, textAlign: "left" }}>Khoản</th><th style={{ ...cell, textAlign: "right" }}>Số tiền</th>
+          </tr></thead>
+          <tbody>
+            {items.map(({ l, x }) => (
+              <tr key={lineKey(l) + x.k}>
+                <td style={cell}><b className="tnum">{l.booking || "—"}</b>{l.customer && <span style={{ color: "var(--accent)", marginLeft: 6 }}>{l.customer}</span>}
+                  {l.contLabel && <span style={{ color: "var(--ink-4)", marginLeft: 6, fontSize: 11 }}>{l.contLabel}</span>}</td>
+                <td style={{ ...cell, color: x.k === "fee" ? "var(--ink)" : "var(--ink-3)" }}>{x.k === "fee" && l.vatRate > 0 ? `Cước (gồm VAT ${l.vatRate}%)` : x.label}</td>
+                <td className="tnum" style={{ ...cell, textAlign: "right", fontWeight: 600 }}>{fmtNum(x.amt)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot><tr style={{ fontWeight: 700 }}>
+            <td style={cell} colSpan={2}>Tổng đã chi ngày {fmtDate(day)}</td><td className="tnum" style={{ ...cell, textAlign: "right" }}>{fmtNum(total)}</td>
+          </tr></tfoot>
+        </table>
+      )}
+      {(total > 0 || payDay > 0) && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 8, fontSize: 12.5, color: "var(--ink-3)" }}>
+          <span>Đợt thanh toán ghi ngày {fmtDate(day)}: <b className="tnum" style={{ color: "var(--ink-2)" }}>{fmtVND(payDay)}</b></span>
+          {gap === 0
+            ? <span style={{ color: "var(--good)", fontWeight: 600 }}><i className="bi bi-check-circle" /> Khớp</span>
+            : <span style={{ color: "var(--warn)", fontWeight: 600 }}>{gap > 0 ? "Chưa ghi đợt thanh toán " : "Đợt thanh toán nhiều hơn số đã tích "}{fmtNum(Math.abs(gap))}</span>}
+          {gap > 0 && onAddPayment && (
+            <button type="button" onClick={() => onAddPayment(day, gap)}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 10px", fontSize: 12.5, fontWeight: 600, border: "none", borderRadius: 7, background: "var(--accent)", color: "#fff", cursor: "pointer" }}>
+              <I.plus /> Ghi đợt thanh toán {fmtNum(gap)} ngày {fmtDate(day)}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* Header + bảng dòng (in được) — dùng chung cho tạo + xem. */
 function ExtLinesTable({ vendor, no, date, from, to, lines, footerTotal, onPaid, busy }) {
   const th = (txt, align, w) => <th style={{ textAlign: align || "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase", width: w }}>{txt}</th>;
@@ -512,11 +613,17 @@ function ExtStatementForm({ cfg, onCancel, onSaved }) {
   const rowOf = (x) => ({ ...x, vatRate: rateOf(x), vat: vatOf(x), paidParts: paidMap[x.id] || {} });
   const sel = all.filter((x) => picked[x.id] !== false);
   const selRows = sel.map(rowOf);
-  const togglePaid = (ls, on, part) => setPaidMap((m) => {
-    const nm = { ...m };
-    ls.forEach((l) => { nm[l.id] = withPaid(l, on, part).paidParts; });
-    return nm;
-  });
+  const [paidReq, setPaidReq] = useState(null);   // chờ xác nhận + chọn ngày chi
+  const togglePaid = (ls, on, part) => { if (touchedParts(ls, on, part).length) setPaidReq({ lines: ls, on, part }); };
+  const applyPaid = (date) => {
+    const { lines: ls, on, part } = paidReq;
+    setPaidReq(null);
+    setPaidMap((m) => {
+      const nm = { ...m };
+      ls.forEach((l) => { nm[l.id] = withPaid(l, on, part, date).paidParts; });
+      return nm;
+    });
+  };
   const totalFee = sel.reduce((a, x) => a + (x.fee || 0), 0);
   const totalVat = sel.reduce((a, x) => a + vatOf(x), 0);
   const totalChoho = sel.reduce((a, x) => a + (x.choho || 0), 0);
@@ -664,6 +771,7 @@ function ExtStatementForm({ cfg, onCancel, onSaved }) {
         <div className="ke-noprint" style={{ marginTop: 14, fontSize: 12.5, color: "var(--ink-4)" }}>Sau khi lưu, mở bảng kê để nhập các đợt thanh toán cho nhà xe và theo dõi công nợ.</div>
       </div>
 
+      {paidReq && <PaidConfirmModal req={paidReq} onOk={applyPaid} onCancel={() => setPaidReq(null)} />}
       <PaidSummary lines={selRows}>
         <div style={{ display: "flex", gap: 10, marginLeft: "auto" }}>
           <Btn onClick={onCancel}>Hủy</Btn>
@@ -718,16 +826,23 @@ function SavedExtStatementPage({ st, onUpdate, onSave, onDelete, onLinesPaid, is
   const paidEntries = allLines.map((l) => ({ l, n: l._n, parts: partsOf(l).filter((x) => paidOf(l)[x.k]).map((x) => ({ ...x, date: paidOf(l)[x.k] })) }))
     .filter((e) => e.parts.length);
   // Tích chi: bảng kê đang có thay đổi chưa lưu (vd. vừa Làm mới) → sửa tại chỗ, lưu cùng nút Lưu; còn lại ghi ngay (PATCH).
+  // Mọi lần tích / bỏ tích đều qua popup xác nhận (tích phải chọn ngày chi) — chống bấm nhầm ghi thẳng vào dữ liệu.
+  const [paidReq, setPaidReq] = useState(null);
   const togglePaid = (ls, on, part) => {
     const targets = part ? ls : ls.filter((l) => isFull(l) !== on);
-    if (!targets.length || paidBusy) return;
+    if (!targets.length || paidBusy || !touchedParts(targets, on, part).length) return;
+    setPaidReq({ lines: targets, on, part });
+  };
+  const applyPaid = (date) => {
+    const { lines: targets, on, part } = paidReq;
+    setPaidReq(null);
     if (dirty || !onLinesPaid || targets.some((l) => !l.lineId)) {
       const keys = new Set(targets.map(lineKey));
-      onUpdate && onUpdate({ ...st, payments, lines: (st.lines || []).map((l) => (keys.has(lineKey(l)) ? withPaid(l, on, part) : l)) });
+      onUpdate && onUpdate({ ...st, payments, lines: (st.lines || []).map((l) => (keys.has(lineKey(l)) ? withPaid(l, on, part, date) : l)) });
       return;
     }
     setPaidBusy(true);
-    Promise.resolve(onLinesPaid(targets.map((l) => l.lineId), on, part)).finally(() => setPaidBusy(false));
+    Promise.resolve(onLinesPaid(targets.map((l) => l.lineId), on, part, date)).finally(() => setPaidBusy(false));
   };
 
   // Làm mới: lấy lại lô + chi phí mới nhất của nhà xe trong khoảng ngày (có thể sửa), giữ VAT/ghi chú/dấu đã chi của lô cũ.
@@ -796,6 +911,7 @@ function SavedExtStatementPage({ st, onUpdate, onSave, onDelete, onLinesPaid, is
         <Btn onClick={() => setSnap(true)}><i className="bi bi-camera" /> Chụp ảnh đã chi</Btn>
       </div>
       {snap && <PaidSnapshotModal st={st} entries={paidEntries} onClose={() => setSnap(false)} />}
+      {paidReq && <PaidConfirmModal req={paidReq} onOk={applyPaid} onCancel={() => setPaidReq(null)} />}
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "22px" }}>
         <div style={{ maxWidth: 940, margin: "0 auto", background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "8px 22px 18px" }}>
           <div className="ke-print" style={{ padding: "16px 4px 4px", background: "#fff" }}>
@@ -820,6 +936,8 @@ function SavedExtStatementPage({ st, onUpdate, onSave, onDelete, onLinesPaid, is
             {/* payments / công nợ */}
             <div style={{ marginTop: 18 }}>
               <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--ink-2)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>Thanh toán cho nhà xe (nhiều đợt)</div>
+              <PaidOnDay lines={allLines} payments={payments}
+                onAddPayment={(date, amt) => sync([...payments, { id: Date.now() + Math.random(), date, amount: String(amt), note: "Các khoản đã chi ngày " + fmtDate(date) }])} />
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
                 <thead><tr style={{ background: "#fafbfc" }}>{th("Đợt", "center")}{th("Ngày trả")}{th("Ghi chú")}{th("Số tiền", "right")}<th className="ke-noprint" style={{ width: 34, borderBottom: "1.5px solid var(--line)" }}></th></tr></thead>
                 <tbody>

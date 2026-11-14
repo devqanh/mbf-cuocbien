@@ -168,6 +168,8 @@ Route::middleware(['auth', RestrictSpendOnlySession::class])->group(function () 
             Route::get('/bao-cao-tai-san/data',      [ReportController::class, 'assetData'])->name('assetReport.data');
             Route::get('/bao-cao-lai-xe',            [ReportController::class, 'driverIndex'])->name('driverReport');   // số chuyến theo lái xe (từ Lộ trình)
             Route::get('/bao-cao-lai-xe/data',       [ReportController::class, 'driverData'])->name('driverReport.data');
+            Route::get('/bao-cao-xe-ngoai',          [ReportController::class, 'extPayableIndex'])->name('extPayableReport');   // công nợ phải trả nhà xe ngoài theo tháng
+            Route::get('/bao-cao-xe-ngoai/data',     [ReportController::class, 'extPayableData'])->name('extPayableReport.data');
             Route::get('/bao-cao/data',              [ReportController::class, 'data'])->name('report.data');
             Route::get('/bao-cao/trend',             [ReportController::class, 'trend'])->name('report.trend');
         });
