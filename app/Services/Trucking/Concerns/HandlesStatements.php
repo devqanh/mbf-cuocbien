@@ -395,6 +395,7 @@ trait HandlesStatements
                 'bks'       => $l->bks ?? '',
                 'from'      => $l->from_loc ?? '',
                 'to'        => $l->to_loc ?? '',
+                'toCode'    => $this->locationCodeOf($l->to_loc),   // ký hiệu điểm hạ (lọc Hạ ICD QV / TP / còn lại)
                 'date'      => $this->outDate($l->date),
                 'gioVao'    => $this->outDateTime($shipOf($l)?->gio_xe_den),   // kéo vào (giờ xe đến)
                 'gioRa'     => $this->outDateTime($shipOf($l)?->gio_xe_ra),    // cont ra

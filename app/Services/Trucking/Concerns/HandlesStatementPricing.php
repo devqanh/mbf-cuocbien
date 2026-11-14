@@ -384,6 +384,13 @@ trait HandlesStatementPricing
      * Để khớp bảng giá theo ký hiệu duy nhất dù dữ liệu ghi tên có/không dấu
      * (vd "LACH HUYEN" / "LẠCH HUYỆN" / "LHP" → cùng "LHP"). Memoize per-request.
      */
+    /** KÝ HIỆU của 1 địa điểm theo tên (hoặc chính ký hiệu): "ICD TP" / "ICDTP" → ICDTP. Không có trong danh mục → ''. */
+    public function locationCodeOf(?string $name): string
+    {
+        $k = mb_strtoupper(preg_replace('/\s+/u', '', trim(Str::ascii((string) $name))) ?? '');
+        return $k === '' ? '' : (string) ($this->normalizedCodeMap()[$k] ?? '');
+    }
+
     private function normalizedCodeMap(): array
     {
         if ($this->codeMapCache !== null) return $this->codeMapCache;
@@ -728,7 +735,7 @@ trait HandlesStatementPricing
             'id' => $s->id, 'booking' => $s->booking ?? '', 'io' => $s->io ?? '', 'sheet' => $sheet,
             'declNo' => $s->declaration_no ?? '', 'contType' => $s->cont_type ?? '', 'inv' => $s->inv ?? '',
             'contNo' => $s->cont_no ?? '', 'bks' => self::statementPlate($s->io, $s->bks_vao, $s->bks_ra),
-            'from' => $s->from_loc ?? '', 'to' => $s->to_loc ?? '', 'kho' => $s->kho ?? '', 'qty' => $s->qty,
+            'from' => $s->from_loc ?? '', 'to' => $s->to_loc ?? '', 'toCode' => $this->locationCodeOf($s->to_loc), 'kho' => $s->kho ?? '', 'qty' => $s->qty,
             'cru' => (bool) $s->cru, 'date' => $date, 'contLabel' => $contLabel, 'note' => $note, 'thanhLy' => $thanhLy,
             'gioVao' => $this->outDateTime($s->gio_xe_den), 'gioRa' => $this->outDateTime($s->gio_xe_ra),   // ngày + giờ kéo vào / cont ra
             // "Ghi chú tự do cho lô hàng" (popup Thông tin lô) — hiện ở trang tạo bảng kê như trang xem.

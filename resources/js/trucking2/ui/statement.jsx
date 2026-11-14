@@ -56,7 +56,7 @@ const candidateToLine = (x) => {
   return {
     id: x.id, booking: x.booking, sheet: x.sheet, io: x.io,
     declNo: x.declNo || "", contType: x.contType || "", inv: x.inv || "", contNo: x.contNo || "", bks: x.bks || "",
-    from: x.from, to: x.to, date: x.date, gioVao: x.gioVao || "", gioRa: x.gioRa || "", contLabel: x.contLabel,
+    from: x.from, to: x.to, toCode: x.toCode || "", date: x.date, gioVao: x.gioVao || "", gioRa: x.gioRa || "", contLabel: x.contLabel,
     phaiThu: base, cuoc: base, thanhLy: x.thanhLy || 0, note: x.note, infoNote: x.infoNote || "",
     costLines: x.costLines || [],   // toggle "Chi phí" hiện ngay khi vừa thêm (chưa lưu)
     detail: { ...x.pr },
@@ -163,6 +163,16 @@ function IoSeg({ value, onChange, counts, opts = IO_OPTS }) {
     </div>
   );
 }
+/* Lọc ĐIỂM HẠ (Nơi hạ của lô) theo KÝ HIỆU — toCode do backend gửi ("ICD TP" / "ICDTP" đều là ICDTP).
+   Thiếu toCode (dòng cũ chưa tải lại) → tự quy tên: bỏ dấu cách + dấu tiếng Việt. */
+const DROP_OPTS = [["all", "Tất cả"], ["qv", "Hạ ICD QV"], ["tp", "Hạ ICD TP"], ["other", "Điểm hạ khác"]];
+const DROP_LABEL = { qv: "Hạ ICD QV", tp: "Hạ ICD TP", other: "Điểm hạ khác" };
+const dropKey = (x) => {
+  const c = String(x.toCode || x.to || "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/gi, "d").replace(/\s+/g, "").toUpperCase();
+  return c === "ICDQV" || c === "ICDQUEVO" ? "qv" : c === "ICDTP" || c === "ICDTIENSON" ? "tp" : "other";
+};
+const dropCounts = (rows) => { const c = { all: 0, qv: 0, tp: 0, other: 0 }; (rows || []).forEach((x) => { c.all++; c[dropKey(x)]++; }); return c; };
+const filterDrop = (rows, k) => (k === "all" ? rows : rows.filter((x) => dropKey(x) === k));
 /* Thanh đáy (tổng tiền + nút Lưu) GHIM ở đáy khung cuộn của trang tạo / trang xem bảng kê — luôn thấy khi kéo bảng dài. */
 const STICKY_FOOT = { position: "sticky", bottom: 0, zIndex: 5, background: "#fff", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap",
   marginTop: 8, padding: "10px 0", borderTop: "1px solid var(--line)", boxShadow: "0 -8px 14px -10px rgba(16,19,23,.22)" };
@@ -589,8 +599,11 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
   useEffect(() => { try { localStorage.setItem(HIDE_BILLED_KEY, hideBilled ? "1" : "0"); } catch (e) {} }, [hideBilled]);
   const ioShown = all.filter((x) => ioInScope(x.io, io));
   const connShown = conn === "all" ? ioShown : ioShown.filter((x) => connKey(x) === conn);
-  const billedCount = connShown.filter((x) => billedOf(x).length).length;
-  const shown = hideBilled ? connShown.filter((x) => !billedOf(x).length) : connShown;
+  // Lọc ĐIỂM HẠ (Hạ ICD QV / TP / còn lại) — như Connect: bảng kê lưu CHỈ các lô đang hiện.
+  const [drop, setDrop] = useState("all");
+  const dropShown = filterDrop(connShown, drop);
+  const billedCount = dropShown.filter((x) => billedOf(x).length).length;
+  const shown = hideBilled ? dropShown.filter((x) => !billedOf(x).length) : dropShown;
   const isOn = (x) => (picked[x.id] != null ? picked[x.id] : !billedOf(x).length);   // mặc định chọn hết, trừ lô đã có bảng kê
   const sel = shown.filter(isOn);
   // Lọc "Có ghi chú" — CHỈ lọc bảng đang xem; bảng kê vẫn lưu đủ các lô đã tích (kể cả lô đang bị ẩn).
@@ -711,6 +724,10 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
           <IoSeg value={conn} onChange={setConn} counts={connCounts(ioShown)} opts={CONN_OPTS} />
         </div>
         <div style={{ display: "block" }}>
+          <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }} title="Theo Nơi hạ của lô — bảng kê lưu các lô đang hiện (như lọc Connect)">Điểm hạ</div>
+          <IoSeg value={drop} onChange={setDrop} counts={dropCounts(connShown)} opts={DROP_OPTS} />
+        </div>
+        <div style={{ display: "block" }}>
           <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }} title="Chỉ lọc danh sách đang xem — bảng kê vẫn lưu đủ các lô đã tích">Ghi chú</div>
           <IoSeg value={noteF} onChange={setNoteF} counts={noteCounts(shown, lineNoteOf)} opts={NOTE_OPTS} />
         </div>
@@ -739,8 +756,8 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
         <i className="bi bi-info-circle" style={{ marginTop: 1 }} />
         <span style={{ flex: "1 1 320px" }}>Lọc theo <b style={{ color: "var(--ink-3)" }}>Giờ xe ra</b> của lô hàng (mốc cont rời đi, nhập ở popup Lô hàng). Lô <b style={{ color: "var(--ink-3)" }}>chưa có giờ ra</b> sẽ không hiện ở đây.</span>
         <span className="tnum" style={{ whiteSpace: "nowrap", fontWeight: 600, color: loading ? "var(--accent)" : "var(--ink-3)" }}>
-          {loading ? "Đang tải lô…" : (io === "all" && conn === "all" ? `${all.length} lô có phải thu`
-            : `${shown.length} / ${all.length} lô (${[io !== "all" && IO_LABEL[io],conn !== "all" && (conn === "connect" ? "Connect" : "Disconnect")].filter(Boolean).join(" · ")})`)}
+          {loading ? "Đang tải lô…" : (io === "all" && conn === "all" && drop === "all" ? `${all.length} lô có phải thu`
+            : `${shown.length} / ${all.length} lô (${[io !== "all" && IO_LABEL[io], conn !== "all" && (conn === "connect" ? "Connect" : "Disconnect"), drop !== "all" && DROP_LABEL[drop]].filter(Boolean).join(" · ")})`)}
           {!loading && refreshMsg ? <span style={{ color: "var(--good)", fontWeight: 600 }}> · {refreshMsg}</span> : null}
           {!loading && (noteF === "has" || feeEx.length > 0) ? <span style={{ color: "var(--accent)" }}> · đang xem {listed.length} lô {[noteF === "has" && "có ghi chú", feeEx.length > 0 && "có phí khác ngoài " + feeEx.join(", ")].filter(Boolean).join(" · ")} (vẫn lưu đủ {sel.length} lô đã tích)</span> : null}
         </span>
@@ -1044,7 +1061,10 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
   const setPeriodTime = (k, v) => onUpdate && onUpdate({ ...st, info: { ...info, [k]: v || undefined } });
   // Lọc CONNECT / DISCONNECT — CHỈ lọc HIỂN THỊ (không lưu, không đổi tổng tiền / bản in).
   const [conn, setConn] = useState("all");
-  const connLines = conn === "all" ? scopedLines : scopedLines.filter((l) => connKey(l) === conn);
+  const connLines0 = conn === "all" ? scopedLines : scopedLines.filter((l) => connKey(l) === conn);
+  // Lọc ĐIỂM HẠ (Hạ ICD QV / TP / còn lại) — CHỈ lọc hiển thị.
+  const [drop, setDrop] = useState("all");
+  const connLines = filterDrop(connLines0, drop);
   // Lọc "Có ghi chú" — cũng CHỈ lọc hiển thị.
   const [noteF, setNoteF] = useState("all");
   const [feeEx, setFeeEx] = useState([]);   // lọc lô có phí KHÁC ngoài các khoản này — chỉ lọc hiển thị
@@ -1071,7 +1091,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
           infoNote: l.infoNote || "", userNote: l.userNote || "", costs: costsOf(l),
         };
       });
-      const filters = [scope !== "all" && "Phạm vi " + IO_LABEL[scope], conn !== "all" && (conn === "connect" ? "Connect" : "Disconnect"),
+      const filters = [scope !== "all" && "Phạm vi " + IO_LABEL[scope], conn !== "all" && (conn === "connect" ? "Connect" : "Disconnect"), drop !== "all" && DROP_LABEL[drop],
         noteF === "has" && "Có ghi chú", feeEx.length > 0 && "Có phí khác ngoài " + feeEx.join(", ")].filter(Boolean);
       const res = await fetch(exportViewUrl, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/octet-stream", "X-CSRF-TOKEN": (window.__TRK || {}).csrf },
         body: JSON.stringify({ rows, extraCols, filters }) });
@@ -1111,6 +1131,8 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
               <IoSeg value={scope} onChange={setScope} counts={ioCounts(st.lines)} />
               <span style={{ fontWeight: 600, marginLeft: 6 }} title="Chỉ lọc danh sách đang xem — không đổi tổng tiền, bản in, Excel">Connect</span>
               <IoSeg value={conn} onChange={setConn} counts={connCounts(scopedLines)} opts={CONN_OPTS} />
+              <span style={{ fontWeight: 600, marginLeft: 6 }} title="Theo Nơi hạ của lô — chỉ lọc danh sách đang xem, không đổi tổng tiền, bản in, Excel">Điểm hạ</span>
+              <IoSeg value={drop} onChange={setDrop} counts={dropCounts(connLines0)} opts={DROP_OPTS} />
               <span style={{ fontWeight: 600, marginLeft: 6 }} title="Chỉ lọc danh sách đang xem — không đổi tổng tiền, bản in, Excel">Ghi chú</span>
               <IoSeg value={noteF} onChange={setNoteF} counts={noteCounts(connLines, (l) => l.userNote)} opts={NOTE_OPTS} />
               <span style={{ fontWeight: 600, marginLeft: 6 }} title="Chỉ lọc danh sách đang xem — không đổi tổng tiền, bản in, Excel">Có phí khác ngoài</span>
@@ -1129,9 +1151,9 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
                 </button>
               )}
             </div>
-            {(conn !== "all" || noteF !== "all" || feeEx.length > 0) && (
+            {(conn !== "all" || drop !== "all" || noteF !== "all" || feeEx.length > 0) && (
               <div className="ke-noprint tnum" style={{ marginTop: 6, fontSize: 12, color: "var(--ink-3)", background: "#f4f6f8", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px" }}>
-                Đang xem <b>{shownLines.length}</b> / {scopedLines.length} lô <b>{[conn !== "all" && (conn === "connect" ? "Connect" : "Disconnect"), noteF === "has" && "có ghi chú", feeEx.length > 0 && "có phí khác ngoài " + feeEx.join(", ")].filter(Boolean).join(" · ")}</b> — chỉ lọc hiển thị, <b>tổng tiền / in / Excel vẫn tính cả bảng kê</b>.
+                Đang xem <b>{shownLines.length}</b> / {scopedLines.length} lô <b>{[conn !== "all" && (conn === "connect" ? "Connect" : "Disconnect"), drop !== "all" && DROP_LABEL[drop], noteF === "has" && "có ghi chú", feeEx.length > 0 && "có phí khác ngoài " + feeEx.join(", ")].filter(Boolean).join(" · ")}</b> — chỉ lọc hiển thị, <b>tổng tiền / in / Excel vẫn tính cả bảng kê</b>.
               </div>
             )}
             {scope !== "all" && (
