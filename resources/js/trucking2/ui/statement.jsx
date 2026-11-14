@@ -1,6 +1,6 @@
 import React from "react";
 const { useState, useMemo, useEffect } = React;
-import { I, fmtVND, fmtNum, fmtShort, fmtDate, calcCost, calcRev, calcVeh, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, Combo, useIsMobile, DateField, TimeField, statementAmounts, lineAmounts, STATEMENT_VAT_RATES } from "@trk/lib.jsx";
+import { I, fmtVND, fmtNum, fmtShort, fmtDate, calcCost, calcRev, calcVeh, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, Combo, MultiCombo, useIsMobile, DateField, TimeField, statementAmounts, lineAmounts, STATEMENT_VAT_RATES } from "@trk/lib.jsx";
 import { CostPopup, RevenuePopup, CostPopupICD, RevenuePopupICD, InfoPopup, ConfigPopup, PriceList, TRACK_COLORS, colorHex } from "@trk/pop.jsx";
 import { SortBtn, CellBtn, Badge, EditCell, TH, TD } from "./primitives.jsx";
 
@@ -138,9 +138,11 @@ const CO_SUB = [CO.website, CO.phone].filter(Boolean).join(" · ") || "http://mb
 
 /* Lọc lô theo NHẬP / XUẤT (io của lô: "Nhập" | "Xuất"). Dùng ở trang tạo (lọc ứng viên) và trang xem (lọc hiển thị). */
 const ioKey = (io) => { const v = String(io || "").toLowerCase(); return /xu/.test(v) ? "xuat" : /nh/.test(v) ? "nhap" : ""; };
-// Lô thuộc phạm vi? (khớp backend ioInScope) — lô "Khác" / chưa chọn (vd CHUYỂN KHO) thuộc MỌI phạm vi.
-const ioInScope = (io, scope) => scope === "all" || !ioKey(io) || ioKey(io) === scope;
-const IO_OPTS = [["all", "Tất cả"], ["nhap", "Nhập"], ["xuat", "Xuất"]];
+// Lô thuộc phạm vi? (khớp backend ioInScope) — lô "Khác" / chưa chọn (vd CHUYỂN KHO) thuộc MỌI phạm vi;
+// phạm vi "khac" = CHỈ lô Khác.
+const ioInScope = (io, scope) => scope === "all" || (scope === "khac" ? !ioKey(io) : !ioKey(io) || ioKey(io) === scope);
+const IO_OPTS = [["all", "Tất cả"], ["nhap", "Nhập"], ["xuat", "Xuất"], ["khac", "Khác"]];
+const IO_LABEL = { nhap: "Nhập", xuat: "Xuất", khac: "Khác" };
 function IoSeg({ value, onChange, counts, opts = IO_OPTS }) {
   return (
     <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 9, padding: 3, gap: 1 }}>
@@ -157,7 +159,33 @@ function IoSeg({ value, onChange, counts, opts = IO_OPTS }) {
     </div>
   );
 }
-const ioCounts = (lines) => { const c = { all: 0, nhap: 0, xuat: 0 }; (lines || []).forEach((l) => { c.all++; ["nhap", "xuat"].forEach((k) => { if (ioInScope(l.io, k)) c[k]++; }); }); return c; };
+/* Thanh đáy (tổng tiền + nút Lưu) GHIM ở đáy khung cuộn của trang tạo / trang xem bảng kê — luôn thấy khi kéo bảng dài. */
+const STICKY_FOOT = { position: "sticky", bottom: 0, zIndex: 5, background: "#fff", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap",
+  marginTop: 8, padding: "10px 0", borderTop: "1px solid var(--line)", boxShadow: "0 -8px 14px -10px rgba(16,19,23,.22)" };
+/* Lọc lô CÓ GHI CHÚ (ghi chú tự do của lô — popup Thông tin lô — hoặc ô Ghi chú gõ trong bảng kê). CHỈ lọc hiển thị. */
+const NOTE_OPTS = [["all", "Tất cả"], ["has", "Có ghi chú"]];
+const hasLotNote = (lotNote, lineNote) => !!(String(lotNote || "").trim() || String(lineNote || "").trim());
+const noteCounts = (rows, lineNoteOf) => ({ all: rows.length, has: rows.filter((r) => hasLotNote(r.infoNote, lineNoteOf(r))).length });
+/* Lọc "PHÍ KHÁC NGOÀI…": chọn các khoản thường gặp (vd Nâng, Hạ) → chỉ hiện lô có ÍT NHẤT 1 khoản Chi phí lô hàng
+   (chi phí + chi hộ) KHÔNG nằm trong danh sách đó — để tìm nhanh lô có phí lạ. Trống = không lọc. CHỈ lọc hiển thị. */
+const feeKey = (s) => String(s || "").trim().toLowerCase();
+const feeItemsOf = (r) => (Array.isArray(r.costLines) ? r.costLines : []).map((c) => String(c.item || "").trim()).filter(Boolean);
+const hasOtherFee = (r, excluded) => { const ex = new Set(excluded.map(feeKey)); return feeItemsOf(r).some((it) => !ex.has(feeKey(it))); };
+const filterOtherFee = (rows, excluded) => (excluded.length ? rows.filter((r) => hasOtherFee(r, excluded)) : rows);
+function FeeExcludeFilter({ rows, value, onChange, width = 260 }) {
+  // Khoản có trong các lô đang xem (gộp không phân biệt hoa/thường) + số lô có khoản đó.
+  const cnt = new Map(); const nameOf = new Map();
+  rows.forEach((r) => new Set(feeItemsOf(r).map(feeKey)).forEach((k) => cnt.set(k, (cnt.get(k) || 0) + 1)));
+  rows.forEach((r) => feeItemsOf(r).forEach((it) => { if (!nameOf.has(feeKey(it))) nameOf.set(feeKey(it), it); }));
+  const options = [...nameOf.values()].sort((a, b) => (cnt.get(feeKey(b)) || 0) - (cnt.get(feeKey(a)) || 0) || a.localeCompare(b, "vi"));
+  return (
+    <div style={{ width }} title="Chọn các khoản phí thường gặp (vd Nâng, Hạ) → chỉ hiện lô còn khoản phí KHÁC ngoài các khoản đã chọn">
+      <MultiCombo values={value} onChange={onChange} options={options} max={99} strict placeholder="Chọn phí loại trừ…"
+        labelOf={(v) => `${v} (${cnt.get(feeKey(v)) || 0})`} />
+    </div>
+  );
+}
+const ioCounts = (lines) => { const c = { all: 0, nhap: 0, xuat: 0, khac: 0 }; (lines || []).forEach((l) => { c.all++; ["nhap", "xuat", "khac"].forEach((k) => { if (ioInScope(l.io, k)) c[k]++; }); }); return c; };
 /* Lọc CONNECT / DISCONNECT (snapshot định giá: detail.conn ở dòng đã lưu, pr.conn ở lô ứng viên). */
 const CONN_OPTS = [["all", "Tất cả"], ["connect", "Connect"], ["disconnect", "Disconnect"]];
 const connKey = (x) => { const v = String((x && ((x.detail && x.detail.conn) || (x.pr && x.pr.conn))) || "").toLowerCase(); return v === "connect" ? "connect" : v === "disconnect" ? "disconnect" : ""; };
@@ -556,6 +584,11 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
   const shown = hideBilled ? connShown.filter((x) => !billedOf(x).length) : connShown;
   const isOn = (x) => (picked[x.id] != null ? picked[x.id] : !billedOf(x).length);   // mặc định chọn hết, trừ lô đã có bảng kê
   const sel = shown.filter(isOn);
+  // Lọc "Có ghi chú" — CHỈ lọc bảng đang xem; bảng kê vẫn lưu đủ các lô đã tích (kể cả lô đang bị ẩn).
+  const [noteF, setNoteF] = useState("all");
+  const lineNoteOf = (x) => noteOv[x.id];
+  const [feeEx, setFeeEx] = useState([]);   // lọc lô có phí KHÁC ngoài các khoản này — chỉ lọc hiển thị
+  const listed = filterOtherFee(noteF === "has" ? shown.filter((x) => hasLotNote(x.infoNote, lineNoteOf(x))) : shown, feeEx);
   // TOGGLE "Chi phí" từng lô (chi phí + chi hộ, từ popup Chi phí lô hàng) — như trang xem; mặc định thu gọn.
   const [costOpen, setCostOpen] = useState({});
   const costsOf = (x) => (Array.isArray(x.costLines) ? x.costLines : []);
@@ -618,7 +651,7 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
   };
 
   const footer = (
-    <div className="ke-noprint" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 8, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
+    <div className="ke-noprint" style={STICKY_FOOT}>
       <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{sel.length} lô · nền <b className="tnum">{fmtNum(amt.base)}</b> + VAT <b className="tnum">{fmtNum(amt.vat)}</b> + chi hộ <b className="tnum">{fmtNum(amt.choho)}</b>{extraCols.length ? <> + phí riêng <b className="tnum">{fmtNum(amt.extra)}</b></> : null} = tổng <b className="tnum" style={{ color: "var(--ink)" }}>{fmtVND(tongThu)}</b></div>
       <div style={{ display: "flex", gap: 10 }}>
         <Btn onClick={onCancel}>Hủy</Btn>
@@ -668,6 +701,14 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
           <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }}>Connect</div>
           <IoSeg value={conn} onChange={setConn} counts={connCounts(ioShown)} opts={CONN_OPTS} />
         </div>
+        <div style={{ display: "block" }}>
+          <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }} title="Chỉ lọc danh sách đang xem — bảng kê vẫn lưu đủ các lô đã tích">Ghi chú</div>
+          <IoSeg value={noteF} onChange={setNoteF} counts={noteCounts(shown, lineNoteOf)} opts={NOTE_OPTS} />
+        </div>
+        <div style={{ display: "block" }}>
+          <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 5, fontWeight: 500 }} title="Chỉ lọc danh sách đang xem — bảng kê vẫn lưu đủ các lô đã tích">Có phí khác ngoài</div>
+          <FeeExcludeFilter rows={shown} value={feeEx} onChange={setFeeEx} />
+        </div>
         {withCosts.length > 0 && (
           <button type="button" onClick={toggleAllCosts} title="Mở / thu gọn danh sách Chi phí lô hàng (chi phí + chi hộ) của mọi lô đang xem"
             style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 36, padding: "0 13px", fontSize: 13, fontWeight: 600, borderRadius: 9, cursor: "pointer", border: "1px solid " + (allCostOpen ? "var(--accent)" : "var(--line)"), background: allCostOpen ? "var(--accent-weak-2)" : "#fff", color: allCostOpen ? "var(--accent)" : "var(--ink-2)" }}>
@@ -690,8 +731,9 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
         <span style={{ flex: "1 1 320px" }}>Lọc theo <b style={{ color: "var(--ink-3)" }}>Giờ xe ra</b> của lô hàng (mốc cont rời đi, nhập ở popup Lô hàng). Lô <b style={{ color: "var(--ink-3)" }}>chưa có giờ ra</b> sẽ không hiện ở đây.</span>
         <span className="tnum" style={{ whiteSpace: "nowrap", fontWeight: 600, color: loading ? "var(--accent)" : "var(--ink-3)" }}>
           {loading ? "Đang tải lô…" : (io === "all" && conn === "all" ? `${all.length} lô có phải thu`
-            : `${shown.length} / ${all.length} lô (${[io !== "all" && (io === "nhap" ? "Nhập" : "Xuất"), conn !== "all" && (conn === "connect" ? "Connect" : "Disconnect")].filter(Boolean).join(" · ")})`)}
+            : `${shown.length} / ${all.length} lô (${[io !== "all" && IO_LABEL[io],conn !== "all" && (conn === "connect" ? "Connect" : "Disconnect")].filter(Boolean).join(" · ")})`)}
           {!loading && refreshMsg ? <span style={{ color: "var(--good)", fontWeight: 600 }}> · {refreshMsg}</span> : null}
+          {!loading && (noteF === "has" || feeEx.length > 0) ? <span style={{ color: "var(--accent)" }}> · đang xem {listed.length} lô {[noteF === "has" && "có ghi chú", feeEx.length > 0 && "có phí khác ngoài " + feeEx.join(", ")].filter(Boolean).join(" · ")} (vẫn lưu đủ {sel.length} lô đã tích)</span> : null}
         </span>
         {!loading && billedCount > 0 && (
           <label style={{ display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap", fontWeight: 600, color: "#9a6700", background: "#fff7e6", border: "1px solid #ffe1a8", borderRadius: 999, padding: "2px 10px", cursor: "pointer" }}
@@ -750,7 +792,7 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
             </td></tr>}
             {loading && all.length === 0 && <tr><td colSpan={nCols} style={{ padding: "24px", textAlign: "center", color: "var(--ink-4)" }}>Đang tải lô + định giá…</td></tr>}
             {!loading && all.length > 0 && shown.length === 0 && <tr><td colSpan={nCols} style={{ padding: "24px", textAlign: "center", color: "var(--ink-4)" }}>Không có lô phù hợp bộ lọc trong kỳ — đổi bộ lọc Lô hàng / Connect ở trên.</td></tr>}
-            {shown.map((x, i) => {
+            {listed.map((x, i) => {
               const on = isOn(x);
               const billed = billedOf(x);
               const costs = costsOf(x);
@@ -980,7 +1022,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
   const inScope = (l) => ioInScope(l.io, scope);
   const scopedLines = (st.lines || []).filter(inScope);
   const outCount = (st.lines || []).length - scopedLines.length;
-  const scopeLabel = scope === "nhap" ? "Nhập" : "Xuất";
+  const scopeLabel = IO_LABEL[scope] || "";
   // Các con số = Σ per-line TRONG PHẠM VI (khớp từng cột mỗi dòng), gồm cột chi phí riêng.
   const amt = statementAmounts(scopedLines, vatRate, null, extraCols);
   const tongThu = amt.total;
@@ -993,7 +1035,11 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
   const setPeriodTime = (k, v) => onUpdate && onUpdate({ ...st, info: { ...info, [k]: v || undefined } });
   // Lọc CONNECT / DISCONNECT — CHỈ lọc HIỂN THỊ (không lưu, không đổi tổng tiền / bản in).
   const [conn, setConn] = useState("all");
-  const shownLines = conn === "all" ? scopedLines : scopedLines.filter((l) => connKey(l) === conn);
+  const connLines = conn === "all" ? scopedLines : scopedLines.filter((l) => connKey(l) === conn);
+  // Lọc "Có ghi chú" — cũng CHỈ lọc hiển thị.
+  const [noteF, setNoteF] = useState("all");
+  const [feeEx, setFeeEx] = useState([]);   // lọc lô có phí KHÁC ngoài các khoản này — chỉ lọc hiển thị
+  const shownLines = filterOtherFee(noteF === "has" ? connLines.filter((l) => hasLotNote(l.infoNote, l.userNote)) : connLines, feeEx);
   // TOGGLE "Chi phí" từng lô (mặc định thu gọn cho đỡ rối) + nút mở/thu tất cả. Chỉ hiển thị, không lưu.
   const [costOpen, setCostOpen] = useState({});
   const costsOf = (l) => (Array.isArray(l.costLines) ? l.costLines : []);
@@ -1025,6 +1071,10 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
               <IoSeg value={scope} onChange={setScope} counts={ioCounts(st.lines)} />
               <span style={{ fontWeight: 600, marginLeft: 6 }} title="Chỉ lọc danh sách đang xem — không đổi tổng tiền, bản in, Excel">Connect</span>
               <IoSeg value={conn} onChange={setConn} counts={connCounts(scopedLines)} opts={CONN_OPTS} />
+              <span style={{ fontWeight: 600, marginLeft: 6 }} title="Chỉ lọc danh sách đang xem — không đổi tổng tiền, bản in, Excel">Ghi chú</span>
+              <IoSeg value={noteF} onChange={setNoteF} counts={noteCounts(connLines, (l) => l.userNote)} opts={NOTE_OPTS} />
+              <span style={{ fontWeight: 600, marginLeft: 6 }} title="Chỉ lọc danh sách đang xem — không đổi tổng tiền, bản in, Excel">Có phí khác ngoài</span>
+              <FeeExcludeFilter rows={connLines} value={feeEx} onChange={setFeeEx} />
               {withCosts.length > 0 && (
                 <button type="button" onClick={toggleAllCosts} title="Mở / thu gọn danh sách Chi phí lô hàng của mọi lô đang xem"
                   style={{ marginLeft: 6, display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", fontSize: 12, fontWeight: 600, borderRadius: 7, cursor: "pointer", border: "1px solid " + (allCostOpen ? "var(--accent)" : "var(--line)"), background: allCostOpen ? "var(--accent-weak-2)" : "#fff", color: allCostOpen ? "var(--accent)" : "var(--ink-3)" }}>
@@ -1032,9 +1082,9 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
                 </button>
               )}
             </div>
-            {conn !== "all" && (
+            {(conn !== "all" || noteF !== "all" || feeEx.length > 0) && (
               <div className="ke-noprint tnum" style={{ marginTop: 6, fontSize: 12, color: "var(--ink-3)", background: "#f4f6f8", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px" }}>
-                Đang xem <b>{shownLines.length}</b> / {scopedLines.length} lô <b>{conn === "connect" ? "Connect" : "Disconnect"}</b> — chỉ lọc hiển thị, <b>tổng tiền / in / Excel vẫn tính cả bảng kê</b>.
+                Đang xem <b>{shownLines.length}</b> / {scopedLines.length} lô <b>{[conn !== "all" && (conn === "connect" ? "Connect" : "Disconnect"), noteF === "has" && "có ghi chú", feeEx.length > 0 && "có phí khác ngoài " + feeEx.join(", ")].filter(Boolean).join(" · ")}</b> — chỉ lọc hiển thị, <b>tổng tiền / in / Excel vẫn tính cả bảng kê</b>.
               </div>
             )}
             {scope !== "all" && (
@@ -1365,7 +1415,7 @@ function LotPicker({ lots, inOther = 0, width, onAdd, onClose }) {
   const tog = (id) => setSel((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const togAll = () => setSel((p) => { const n = new Set(p); shown.forEach((x) => (all ? n.delete(String(x.id)) : n.add(String(x.id)))); return n; });
   return (
-    <div className="ke-noprint" style={{ maxWidth: width, margin: "0 auto 14px", background: "#fff", border: "1px solid var(--accent)", borderRadius: 12, padding: "12px 14px" }}>
+    <div className="ke-noprint" style={{ margin: "0 0 10px", background: "#fff", border: "1px solid var(--accent)", borderRadius: 12, padding: "12px 14px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
         <b style={{ fontSize: 13.5 }}><I.plus /> Thêm lô vào bảng kê</b>
         <span style={{ fontSize: 12, color: "var(--ink-3)" }}>{lots.length ? `${lots.length} lô trong kỳ chưa có bảng kê` : "Không còn lô nào trong kỳ chưa có bảng kê"}{inOther ? ` · ${inOther} lô đã nằm ở bảng kê khác` : ""}. Đổi “Cont ra từ / đến” ở dưới rồi bấm Thêm lô để tìm kỳ khác.</span>
@@ -1411,8 +1461,7 @@ function SavedStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUrl, 
   });
   const nAdd = (newLots || []).length;
   const recalcDiff = nNew > 0 || nAdd > 0;
-  // Khung rộng thêm theo số cột chi phí riêng (tối đa 4 cột; nhiều hơn thì bảng cuộn ngang).
-  const wide = 1120 + 110 * Math.min(4, (st.extraCols || []).length);
+  // Khung FULL chiều ngang, lề 2 bên mỏng; thanh Lưu / Xóa ghim ở đáy khung cuộn (STICKY_FOOT).
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
       <div className="ke-noprint trk-head" style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 22px", background: "#fff", borderBottom: "1px solid var(--line)" }}>
@@ -1439,8 +1488,8 @@ function SavedStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUrl, 
           <I.check /> Xuất Excel
         </button>}
       </div>
-      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "22px" }}>
-        <div className="ke-noprint" style={{ maxWidth: wide, margin: "0 auto 14px", display: "flex", gap: 10, alignItems: "flex-start", background: "#eff5ff", border: "1px solid #cfe0fb", borderRadius: 12, padding: "12px 14px", fontSize: 13, color: "#1f4f9e", lineHeight: 1.6 }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "10px 10px 0" }}>
+        <div className="ke-noprint" style={{ margin: "0 0 10px", display: "flex", gap: 10, alignItems: "flex-start", background: "#eff5ff", border: "1px solid #cfe0fb", borderRadius: 12, padding: "12px 14px", fontSize: 13, color: "#1f4f9e", lineHeight: 1.6 }}>
           <i className="bi bi-info-circle-fill" style={{ fontSize: 16, marginTop: 1, flexShrink: 0 }} />
           <div>
             Bảng kê này đã được <b>chốt số khi tạo</b> để lưu hồ sơ. Nếu sau này <b>lô hàng gốc bị sửa hoặc xóa</b>, bảng kê này <b>vẫn giữ nguyên</b> — không bị ảnh hưởng.
@@ -1449,7 +1498,7 @@ function SavedStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUrl, 
         </div>
         {/* Thanh tổng kết gợi ý sau Tính lại */}
         {suggestById && (
-          <div className="ke-noprint" style={{ maxWidth: wide, margin: "0 auto 14px", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", background: nNew ? "#fff7e6" : "var(--good-weak)", border: "1px solid " + (nNew ? "#ffe1a8" : "var(--good)"), borderRadius: 12, padding: "10px 14px", fontSize: 13, color: nNew ? "#7a5200" : "var(--good)", lineHeight: 1.5 }}>
+          <div className="ke-noprint" style={{ margin: "0 0 10px", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", background: nNew ? "#fff7e6" : "var(--good-weak)", border: "1px solid " + (nNew ? "#ffe1a8" : "var(--good)"), borderRadius: 12, padding: "10px 14px", fontSize: 13, color: nNew ? "#7a5200" : "var(--good)", lineHeight: 1.5 }}>
             <i className="bi bi-calculator-fill" style={{ fontSize: 16, flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 240 }}>
               {nNew
@@ -1463,15 +1512,15 @@ function SavedStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUrl, 
             {onClearSuggest && <Btn onClick={onClearSuggest}>Ẩn gợi ý</Btn>}
           </div>
         )}
-        {newLots && <LotPicker lots={newLots} inOther={inOtherStatements} width={wide} onAdd={onAddNewLots} onClose={onCloseLots} />}
-        <div style={{ maxWidth: wide, margin: "0 auto", background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "8px 22px 18px" }}>
+        {newLots && <LotPicker lots={newLots} inOther={inOtherStatements} onAdd={onAddNewLots} onClose={onCloseLots} />}
+        <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "4px 14px 0" }}>
           <StatementDetailBody st={st} onUpdate={onUpdate} detailById={detailById || {}} suggestById={suggestById} onApplyLine={onApplyLine} />
           {onUpdate && (
             <PendingLotsBox cust={st.customer} url={ROUTES_TRK.pendingLots} to={st.to} toTime={(st.info || {}).toTime}
               addedIds={new Set((st.lines || []).map((l) => String(l.id)))}
               onAdd={(x) => onUpdate({ ...st, lines: [...(st.lines || []), candidateToLine(x)] })} />
           )}
-          <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
+          <div className="ke-noprint" style={{ ...STICKY_FOOT, display: "block" }}>
             <StatementActions st={st} isDirty={isDirty} onSave={onSave} onDelete={(id) => { Promise.resolve(onDelete && onDelete(id)).then(() => { window.location.href = backUrl; }); }} />
           </div>
         </div>
@@ -1684,7 +1733,7 @@ function KePage({ ke, drift = {}, onNew, onOpen, onSetDue = null, children }) {
                 <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={st.customer}>{st.customer}</div>
                 {(driftOf(st) || (st.ioScope && st.ioScope !== "all") || st.extraAmount > 0) ? (
                   <div style={{ marginTop: 3, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    {st.ioScope && st.ioScope !== "all" ? <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", padding: "1px 8px", borderRadius: 999, whiteSpace: "nowrap" }} title="Phạm vi bảng kê — chỉ tính tiền lô loại này">{st.ioScope === "nhap" ? "Hàng nhập" : "Hàng xuất"}</span> : null}
+                    {st.ioScope && st.ioScope !== "all" ? <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", padding: "1px 8px", borderRadius: 999, whiteSpace: "nowrap" }} title="Phạm vi bảng kê — chỉ tính tiền lô loại này">{st.ioScope === "khac" ? "Hàng khác" : st.ioScope === "nhap" ? "Hàng nhập" : "Hàng xuất"}</span> : null}
                     {st.extraAmount > 0 ? <span className="tnum" style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-3)", background: "var(--line-2)", padding: "1px 8px", borderRadius: 999, whiteSpace: "nowrap" }} title="Σ cột chi phí riêng của bảng kê — đã gồm trong Tổng tiền">+ Phí riêng {fmtNum(st.extraAmount)}</span> : null}
                     {driftOf(st) ? <DriftChip n={driftOf(st).changed} /> : null}
                   </div>

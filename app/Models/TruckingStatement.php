@@ -16,7 +16,7 @@ class TruckingStatement extends Model
         'no', 'customer_id', 'customer_name', 'info',
         'date', 'period_from', 'period_to', 'total',
         'vat_rate', 'base_amount', 'choho_amount', 'extra_amount',
-        'io_scope',   // phạm vi lô tính tiền: all | nhap | xuat
+        'io_scope',   // phạm vi lô tính tiền: all | nhap | xuat | khac
         'extra_cols', // cột chi phí riêng của bảng kê: [{key, label, vat}] — số từng lô ở lines.detail.extras
     ];
 

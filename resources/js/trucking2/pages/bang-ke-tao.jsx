@@ -10,9 +10,6 @@ function CreateStatementApp() {
   const api = (method, url, body) => window.trkApi(method, url, body);
   const cfg = B.cfg || {};   // chỉ cần khách + thông tin khách; lô + định giá lấy từ backend (candidates)
   const back = () => { window.location.href = ROUTES.statements; };
-  // Khung nới rộng theo số cột chi phí riêng đang thêm (tối đa 4 cột; nhiều hơn thì bảng cuộn ngang).
-  const [nExtra, setNExtra] = React.useState(0);
-  const wide = 1140 + 120 * Math.min(4, nExtra);   // gồm cột Ghi chú
 
   const onSaved = async (st) => {
     const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -43,9 +40,10 @@ function CreateStatementApp() {
           </div>
         </div>
       </header>
-      <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "20px 22px 40px" }}>
-        <div style={{ maxWidth: wide, margin: "0 auto", background: "#fff", border: "1px solid var(--line)", borderRadius: 14, padding: "16px 22px 18px" }}>
-          <StatementForm cfg={cfg} onSaved={onSaved} onCancel={back} onExtraColsCount={setNExtra} />
+      {/* Khung FULL chiều ngang, lề 2 bên mỏng (bảng nhiều cột dễ nhìn); thanh tổng + nút Lưu ghim ở đáy (StatementForm). */}
+      <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "10px 10px 0" }}>
+        <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "6px 14px 0" }}>
+          <StatementForm cfg={cfg} onSaved={onSaved} onCancel={back} />
         </div>
       </div>
     </div>

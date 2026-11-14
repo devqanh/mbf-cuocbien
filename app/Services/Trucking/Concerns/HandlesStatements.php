@@ -51,6 +51,7 @@ trait HandlesStatements
      * in và xuất Excel; lô khác loại vẫn nằm trong bảng kê (hiện mờ) nhưng không tính. Khớp ioInScope ở frontend.
      * Lô "Khác" / chưa chọn Nhập-Xuất (vd CHUYỂN KHO) không thuộc riêng phạm vi nào → thuộc MỌI phạm vi; nếu không
      * khách tách bảng kê Nhập / Xuất (Canon) sẽ không bao giờ thu được lô này. Chống thu trùng vẫn nhờ billedIn.
+     * Phạm vi 'khac' = CHỈ lô Khác / chưa chọn (bảng kê riêng cho chuyển kho…).
      */
     public static function ioInScope(?string $io, ?string $scope): bool
     {
@@ -59,6 +60,7 @@ trait HandlesStatements
         $v = mb_strtolower((string) $io);
         $isXuat = str_contains($v, 'xu'); $isNhap = str_contains($v, 'nh');
         if (! $isXuat && ! $isNhap) return true;
+        if ($scope === 'khac') return false;
         return $scope === 'xuat' ? $isXuat : $isNhap;
     }
 
@@ -76,7 +78,7 @@ trait HandlesStatements
     private static function ioScopeOf($v): string
     {
         $v = (string) ($v ?? 'all');
-        return in_array($v, ['nhap', 'xuat'], true) ? $v : 'all';
+        return in_array($v, ['nhap', 'xuat', 'khac'], true) ? $v : 'all';
     }
 
     /**
