@@ -205,6 +205,21 @@
                     </button>
                     @endcan
 
+                    {{-- Cảnh báo lô QUÊN NHẬP GIỜ XE RA: Giờ xe đến quá N ngày (mặc định 15) mà chưa có Giờ xe ra.
+                         Chỉ hiện khi có lô; bấm → Lô hàng, tab "Chưa ra", lọc đúng các lô đó (?late=1). --}}
+                    @can('shipments.view')
+                    @php($__trk = app(\App\Services\TruckingV2Service::class))
+                    @php($__staleN = $__trk->staleShipmentCount())
+                    @if ($__staleN > 0)
+                    <a href="{{ route('trucking2.shipments', ['late' => 1]) }}" class="icon-btn position-relative text-decoration-none"
+                       style="color:#b45309;"
+                       title="{{ $__staleN }} lô có Giờ xe đến quá {{ $__trk->staleDays() }} ngày mà chưa nhập Giờ xe ra — chưa lên được bảng kê thu khách. Bấm để xem.">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        <span class="bell-badge" style="background:#d97706;">{{ $__staleN > 99 ? '99+' : $__staleN }}</span>
+                    </a>
+                    @endif
+                    @endcan
+
                     {{-- Bell notification --}}
                     <div class="dropdown bell-wrap">
                         <button id="bellBtn" type="button" class="icon-btn position-relative"

@@ -66,4 +66,5 @@
 - [Activity log](activity-log.md) — nhật ký thao tác ĐÃ build; rà lỗi dữ liệu thì tra `php artisan activity:log --subject=...` trước khi đoán (sau db:pull); log model khai ở config/activity.php
 - [Biển số chuẩn hóa](plate-canonical.md) — bks_vao/bks_ra tự lưu dạng 15C-15877 qua mutator TruckingShipment + PlateNormalizer::canonical; migration 2026_10_29 đã sửa dữ liệu cũ
 - [Báo cáo lái xe](driver-report.md) — /bao-cao-lai-xe (Quản trị, reports.view): số chuyến theo lái từ Lộ trình; lái THEO NGÀY từ Quản lý xe › Thời gian sử dụng (Từ ngày mới nhất ≤ ngày chạy), fallback lái mặc định cai-dat; cảnh báo chưa gắn lái + 1 lái 2 xe/ngày
+- [Cảnh báo quên Giờ xe ra](stale-shipment-alert.md) — topbar: Giờ xe đến + 15 ngày chưa có Giờ xe ra → badge, bấm mở /lo-hang?late=1 (tab Chưa ra); ngưỡng sys.stale_ra_days
 - [Nhật ký đổ dầu](fuel-log.md) — /nhat-ky-do-dau (menu Lô hàng) dùng chung trucking_fuel_refills với tab Dầu; popup xác nhận khi Ghi; xem=shipments.view, ghi=shipments.update

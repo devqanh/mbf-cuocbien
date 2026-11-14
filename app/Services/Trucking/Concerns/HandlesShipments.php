@@ -290,6 +290,8 @@ trait HandlesShipments
         } elseif ($filter === 'notout') {
             $applyNotOut($list);
         }
+        // Mở từ cảnh báo trên thanh menu (late=1): lô Giờ xe đến quá N ngày mà chưa có Giờ xe ra (HandlesStaleShipments).
+        if (! empty($p['late'])) $this->applyStale($list);
         if ($tl === 'done')         $applyTl($list);
         elseif ($tl === 'pending')  $applyNotTl($list);
         if ($hc === 'done')         $applyHc($list);

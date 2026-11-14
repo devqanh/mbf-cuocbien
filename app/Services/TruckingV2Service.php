@@ -64,4 +64,5 @@ class TruckingV2Service
     use \App\Services\Trucking\Concerns\HandlesStatementPricing;
     use \App\Services\Trucking\Concerns\HandlesExtStatements;
     use \App\Services\Trucking\Concerns\HandlesReceivableReport;
+    use \App\Services\Trucking\Concerns\HandlesStaleShipments;
 }

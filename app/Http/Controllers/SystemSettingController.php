@@ -46,6 +46,7 @@ class SystemSettingController extends Controller
             'lastBackup' => $this->lastBackup(),
             'features'   => [
                 'plan_link' => TruckingSetting::bool('sys.feature_plan_link', true),
+                'stale_ra_days' => (int) TruckingSetting::get('sys.stale_ra_days', 15) ?: 15,   // cảnh báo quên nhập Giờ xe ra
             ],
             'activity'   => [
                 'enabled' => TruckingSetting::bool('sys.activity_enabled', true),
@@ -176,6 +177,7 @@ class SystemSettingController extends Controller
             's3_url'      => ['nullable', 'string', 'max:255'],
             's3_endpoint' => ['nullable', 'string', 'max:255'],
             'activity_retention_days' => ['nullable', 'integer', 'min:0', 'max:3650'],
+            'stale_ra_days'           => ['nullable', 'integer', 'min:1', 'max:365'],
         ]);
 
         if ($data['upload_disk'] === 's3') {
@@ -210,6 +212,7 @@ class SystemSettingController extends Controller
 
         // Tính năng (feature flag) — checkbox: có gửi = bật, không gửi = tắt
         TruckingSetting::put('sys.feature_plan_link', $request->boolean('feature_plan_link') ? '1' : '0');
+        TruckingSetting::put('sys.stale_ra_days', (string) ((int) ($data['stale_ra_days'] ?? 15) ?: 15));   // cảnh báo quên nhập Giờ xe ra
         // Nhật ký thao tác: bật/tắt + số ngày giữ (0 = vĩnh viễn; dọn bằng activity:prune lúc 03:00)
         TruckingSetting::put('sys.activity_enabled', $request->boolean('activity_enabled') ? '1' : '0');
         TruckingSetting::put('sys.activity_retention_days', (string) (int) ($data['activity_retention_days'] ?? 365));

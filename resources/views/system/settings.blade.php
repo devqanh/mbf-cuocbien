@@ -191,6 +191,22 @@
                      style="cursor:pointer;">
             </div>
           </div>
+
+          <div class="d-flex align-items-start justify-content-between gap-3 p-3 rounded-3 mt-3" style="background:#f8f9fb;border:1px solid #e9edf3;">
+            <div>
+              <div class="fw-semibold"><i class="bi bi-exclamation-triangle me-1" style="color:#b45309;"></i> Cảnh báo quên nhập Giờ xe ra</div>
+              <div class="text-muted small mt-1" style="max-width:560px;line-height:1.5;">
+                Lô có <b>Giờ xe đến</b> quá số ngày này mà chưa nhập <b>Giờ xe ra</b> → hiện biểu tượng cảnh báo kèm số lô trên thanh menu
+                (bấm để mở tab <b>Chưa ra</b> ở trang Lô hàng). Lô chưa ra thì chưa lên được bảng kê thu khách.
+              </div>
+            </div>
+            <div style="width:120px;">
+              <div class="input-group input-group-sm">
+                <input type="number" min="1" max="365" name="stale_ra_days" class="form-control" value="{{ old('stale_ra_days', $features['stale_ra_days']) }}">
+                <span class="input-group-text">ngày</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

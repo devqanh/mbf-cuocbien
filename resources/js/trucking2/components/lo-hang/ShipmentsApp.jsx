@@ -38,7 +38,9 @@ function ShipmentsApp() {
   const FILTER_KEY = "trk:lohang:filters";
   // Mở bằng link từ trang khác (?q=<cont> — Lộ trình, Bảng kê): KHÔNG áp bộ lọc đã lưu. Áp vào thì lô cần mở có thể
   // bị lọc mất (vd tab lưu là "Đã ra" mà chuyến chưa ra) → danh sách rỗng, không mở được popup.
-  const fromLink = !!new URLSearchParams(window.location.search).get("q");
+  // ?late=1 — mở từ CẢNH BÁO trên thanh menu (Giờ xe đến quá N ngày mà chưa có Giờ xe ra) → tab "Chưa ra" + lọc đúng các lô đó.
+  const _late0 = new URLSearchParams(window.location.search).get("late") ? "1" : "";
+  const fromLink = !!new URLSearchParams(window.location.search).get("q") || !!_late0;
   const pf = fromLink ? {} : (() => { try { return JSON.parse(localStorage.getItem(FILTER_KEY) || "{}") || {}; } catch (e) { return {}; } })();
   const hasPersistedFilters = Object.keys(pf).length > 0;
 
@@ -80,7 +82,8 @@ function ShipmentsApp() {
   const [bulkTl, setBulkTl] = useState("");                   // "" giữ nguyên · "set" đánh dấu đã TL · "clear" bỏ đánh dấu
   const [bulkHc, setBulkHc] = useState("");                   // hạ cont hàng loạt: "" · "set" · "clear"
   const [bulkBusy, setBulkBusy] = useState(false);
-  const [filter, setFilter] = useState(pf.filter || "all");
+  const [filter, setFilter] = useState(_late0 ? "notout" : (pf.filter || "all"));
+  const [late, setLate] = useState(_late0);   // lọc lô quá hạn chưa cập nhật giờ (chỉ trong lượt mở từ cảnh báo)
   const [tlFilter, setTlFilter] = useState(pf.tlFilter || "all");   // all | done | pending (thanh lý tờ khai)
   const [hcFilter, setHcFilter] = useState(pf.hcFilter || "all");   // all | done | pending (hạ cont)
   const [priceFilter, setPriceFilter] = useState(pf.priceFilter || "all");   // all | unmatched | matched (khớp bảng giá, chỉ lô đã ra)
@@ -154,6 +157,7 @@ function ShipmentsApp() {
     if (perPage && perPage !== 20) p.set("perPage", perPage);
     if (qDeb.trim()) p.set("q", qDeb.trim());
     if (filter !== "all") p.set("filter", filter);
+    if (late) p.set("late", late);
     if (tlFilter !== "all") p.set("tl", tlFilter);
     if (hcFilter !== "all") p.set("hc", hcFilter);
     if (priceFilter !== "all") p.set("price", priceFilter);
@@ -219,9 +223,9 @@ function ShipmentsApp() {
   useEffect(() => {
     if (skipFirst.current) { skipFirst.current = false; return; }
     load();
-  }, [page, perPage, qDeb, filter, tlFilter, hcFilter, priceFilter, followFilter, toLocSel, toMode, fromLocSel, fromMode, custSel, denDate, tagSel, sort]);
-  // Mở từ Lộ trình/Bảng kê (?q/?open): boot là danh sách CHƯA lọc → tải lại theo q ngay + tự mở popup.
-  useEffect(() => { if (_initSp.get("q") || _initSp.get("open")) { skipFirst.current = false; load(); } }, []);
+  }, [page, perPage, qDeb, filter, late, tlFilter, hcFilter, priceFilter, followFilter, toLocSel, toMode, fromLocSel, fromMode, custSel, denDate, tagSel, sort]);
+  // Mở từ Lộ trình/Bảng kê (?q/?open) hoặc cảnh báo (?late): boot là danh sách CHƯA lọc → tải lại ngay.
+  useEffect(() => { if (_initSp.get("q") || _initSp.get("open") || _late0) { skipFirst.current = false; load(); } }, []);
 
   // Lazy-load master data (danh mục dropdown) lần đầu cần — boot chỉ có cfg tối thiểu.
   // cfgRef giữ cfg mới nhất để ensureCfg trả về giá trị đã merge (tránh stale closure ở export).
@@ -962,7 +966,7 @@ function ShipmentsApp() {
     );
   };
 
-  const setFilterP = (f) => { setFilter(f); setPage(1); };
+  const setFilterP = (f) => { setFilter(f); if (f !== "notout") setLate(""); setPage(1); };   // rời tab Chưa ra → bỏ lọc quá hạn
   const setFollowP = (f) => { setFollowFilter(f); setPage(1); };
   const setTlP = (f) => { setTlFilter(f); setPage(1); };           // lọc đã / chưa thanh lý tờ khai
   const setHcP = (f) => { setHcFilter(f); setPage(1); };           // lọc đã / chưa hạ cont
@@ -973,7 +977,7 @@ function ShipmentsApp() {
   const setTagP = (arr) => { setTagSel(arr); setPage(1); };       // lọc theo nhãn
   // Số bộ lọc chi tiết đang bật + xóa tất cả (để hiện badge / nút Xóa lọc)
   const activeFilters = (toLocSel.length ? 1 : 0) + (fromLocSel.length ? 1 : 0) + (custSel.length ? 1 : 0) + (denDate ? 1 : 0) + (tagSel.length ? 1 : 0) + (followFilter !== "all" ? 1 : 0) + (tlFilter !== "all" ? 1 : 0) + (hcFilter !== "all" ? 1 : 0) + (priceFilter !== "all" ? 1 : 0);
-  const clearFilters = () => { setToLocSel([]); setToMode("include"); setFromLocSel([]); setFromMode("exclude"); setCustSel([]); setDenDate(""); setTagSel([]); setFollowFilter("all"); setTlFilter("all"); setHcFilter("all"); setPriceFilter("all"); setPage(1); };
+  const clearFilters = () => { setLate(""); setToLocSel([]); setToMode("include"); setFromLocSel([]); setFromMode("exclude"); setCustSel([]); setDenDate(""); setTagSel([]); setFollowFilter("all"); setTlFilter("all"); setHcFilter("all"); setPriceFilter("all"); setPage(1); };
   // Nhóm nút Tất cả / Đã / Chưa dùng chung cho Thanh lý tờ khai và Hạ cont (panel lọc + popup Xuất Excel).
   const SegDone = ({ value, onChange, counts, labels, full, titles }) => (
     <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 9, padding: 3, gap: 1, ...(full ? { width: "100%", marginBottom: 11 } : {}) }}>
@@ -1165,6 +1169,14 @@ function ShipmentsApp() {
               );
             })}
           </div>
+          {late && (
+            <span title="Mở từ cảnh báo trên thanh menu: lô có Giờ xe đến đã lâu mà chưa nhập Giờ xe ra — bấm ✕ để xem cả tab"
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#b91c1c", background: "#fee2e2", border: "1px solid #fecaca", borderRadius: 999, padding: "4px 6px 4px 11px" }}>
+              <i className="bi bi-exclamation-triangle-fill" /> Quá hạn chưa nhập Giờ xe ra
+              <button type="button" onClick={() => { setLate(""); setPage(1); }} title="Bỏ lọc quá hạn"
+                style={{ border: "none", background: "transparent", color: "#b91c1c", cursor: "pointer", padding: "0 4px", fontSize: 13, lineHeight: 1 }}>✕</button>
+            </span>
+          )}
           {/* Nút mở panel bộ lọc chi tiết — badge = số bộ lọc đang bật */}
           <button type="button" onClick={() => setShowFilters((v) => !v)}
             style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "7px 12px", fontSize: 12.5, fontWeight: 600, borderRadius: 9, cursor: "pointer",
