@@ -1033,6 +1033,19 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
   const nCols = 10 + extraCols.length;   // số cột của bảng gồm cột Phí tờ khai + cột Ghi chú (cho colSpan phần chi tiết + tổng kết)
   const setLineNote = (id, v) => onUpdate && onUpdate({ ...st, lines: (st.lines || []).map((l) => (l.id === id ? { ...l, userNote: v } : l)) });
   // BỎ 1 lô khỏi bảng kê (hỏi lại; chỉ chốt khi bấm Lưu) — lô trả về danh sách "lô trong kỳ chưa có bảng kê".
+  // LÔ TRƯỚC KỲ: Giờ ra sớm hơn đầu kỳ (Cont ra từ + giờ) — vd lô đã có từ khi lập, sau đó kỳ được sửa sang 08:00.
+  // Đổi kỳ KHÔNG tự loại lô đã có → cảnh báo + nút bỏ (chỉ chốt khi bấm Lưu). Lô ra SAU kỳ không cảnh báo vì có thể là lô thu trước.
+  const kyFromTime = (st.info && st.info.fromTime) || "00:00";
+  const periodStart = st.from ? `${st.from}T${kyFromTime}` : "";
+  const beforeKy = (l) => !!(periodStart && l.gioRa && String(l.gioRa).replace(" ", "T").slice(0, 16) < periodStart);
+  const earlyLines = (st.lines || []).filter(beforeKy);
+  const dropEarly = async () => {
+    if (window.confirmAction && !(await window.confirmAction({ title: `Bỏ ${earlyLines.length} lô trước kỳ?`,
+      text: `Bỏ khỏi bảng kê các lô có Giờ ra trước <b>${fmtDate(st.from)} ${kyFromTime}</b>: ${earlyLines.map((l) => "<b>" + (l.contNo || l.booking) + "</b>").join(", ")}. Lô sẽ về danh sách chờ lập bảng kê của kỳ trước. Bấm <b>Lưu</b> để chốt.`,
+      confirmText: `Bỏ ${earlyLines.length} lô`, danger: true }))) return;
+    const ids = new Set(earlyLines.map((l) => l.id));
+    onUpdate && onUpdate({ ...st, lines: (st.lines || []).filter((l) => !ids.has(l.id)) });
+  };
   const delLine = async (l) => {
     if (window.confirmAction && !(await window.confirmAction({ title: "Bỏ lô khỏi bảng kê?", text: `Bỏ lô <b>${[l.booking && "Booking " + l.booking, l.contNo && "cont " + l.contNo].filter(Boolean).join(" · ")}</b> khỏi bảng kê này. Số tiền tính lại ngay; bấm <b>Lưu</b> để chốt.`, confirmText: "Bỏ lô", danger: true }))) return;
     onUpdate && onUpdate({ ...st, lines: (st.lines || []).filter((x) => x.id !== l.id) });
@@ -1183,6 +1196,15 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
                 Bảng kê <b>hàng {scopeLabel.toLowerCase()}</b>: tính tiền <b>{scopedLines.length}</b> lô {scopeLabel}{outCount > 0 ? <> — <b>{outCount}</b> lô khác loại đã ẩn, <b>không tính</b>, không in / xuất Excel (chọn <b>Tất cả</b> để xem lại)</> : null}. Bấm <b>Lưu</b> để chốt phạm vi.
               </div>
             )}
+            {earlyLines.length > 0 && (
+              <div className="ke-noprint tnum" style={{ marginTop: 6, fontSize: 12, color: "#991b1b", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "6px 10px", lineHeight: 1.6, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <span style={{ flex: "1 1 320px" }}>
+                  <i className="bi bi-exclamation-triangle-fill" /> <b>{earlyLines.length}</b> lô có <b>Giờ ra trước đầu kỳ</b> ({fmtDate(st.from)} {kyFromTime}) — thuộc kỳ trước:{" "}
+                  {earlyLines.map((l, i) => <span key={l.id}>{i ? ", " : ""}<b>{l.contNo || l.booking}</b> (ra {fmtDate(String(l.gioRa).slice(0, 10))} {String(l.gioRa).slice(11, 16)})</span>)}
+                </span>
+                {onUpdate && <Btn onClick={dropEarly}>Bỏ {earlyLines.length} lô khỏi bảng kê</Btn>}
+              </div>
+            )}
             {/* CỘT CHI PHÍ RIÊNG — repeater, chỉ áp cho bảng kê này; mỗi cột = 1 ô số theo lô trong bảng dưới */}
             <div style={{ marginTop: 8 }}><ExtraColsBar cols={extraCols} onAdd={addExtraCol} onChange={setExtraCol} onDelete={delExtraCol} /></div>
             {/* VAT + phạm vi cho bản in (read-only) */}
@@ -1242,7 +1264,11 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
                 <td style={{ padding: "8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top" }}>{l.from} → {l.to}<div style={{ fontSize: 11, color: "var(--ink-4)" }} className="tnum">{(ROUTES_TRK.loHang && l.contNo)
                   ? <a className="ke-noprint" href={ROUTES_TRK.loHang + "?q=" + encodeURIComponent(l.contNo) + "&open=1"} target="_blank" rel="noopener" title="Mở lô hàng (tab mới, lọc đúng cont này)" style={{ color: "var(--accent)", textDecoration: "none" }}>{l.contLabel}</a>
                   : l.contLabel}<span style={{ display: "none" }} className="ke-printonly">{l.contLabel}</span></div></td>
-                <td className="tnum" style={{ padding: "8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top" }}><VaoRaCell vao={l.gioVao} ra={l.gioRa} date={l.date} /></td>
+                <td className="tnum" style={{ padding: "8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", color: "var(--ink-2)", verticalAlign: "top" }}><VaoRaCell vao={l.gioVao} ra={l.gioRa} date={l.date} />
+                  {beforeKy(l) && <div className="ke-noprint" title={`Giờ ra trước đầu kỳ ${fmtDate(st.from)} ${kyFromTime} — thuộc kỳ trước`}
+                    style={{ marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, fontWeight: 700, color: "#b91c1c", background: "#fee2e2", border: "1px solid #fecaca", borderRadius: 999, padding: "1px 8px", whiteSpace: "nowrap" }}>
+                    <i className="bi bi-exclamation-triangle-fill" /> Trước kỳ</div>}
+                </td>
                 {(() => { const a = lineAmt(l); return (<>
                 <td className="tnum" style={{ textAlign: "right", padding: "6px 8px", borderBottom: d || noteOnly ? "none" : "1px solid var(--line-2)", fontWeight: 600, verticalAlign: "top" }}>
                   <span className="ke-noprint"><span style={{ position: "relative", display: "inline-block", width: 130 }}>
