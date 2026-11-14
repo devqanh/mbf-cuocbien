@@ -357,7 +357,7 @@ trait HandlesExtStatements
 
     /**
      * Báo cáo CÔNG NỢ PHẢI TRẢ nhà xe ngoài theo tháng (sổ tổng hợp kiểu kế toán, chỉ đọc):
-     *  - Phát sinh TĂNG = bảng kê có NGÀY LẬP trong tháng (tổng = cước + VAT + chi hộ).
+     *  - Phát sinh TĂNG = bảng kê có "ĐẾN NGÀY" của kỳ (period_to) trong tháng, chưa có kỳ → ngày lập (tổng = cước + VAT + chi hộ).
      *  - Phát sinh GIẢM = đợt thanh toán có NGÀY TRẢ trong tháng (cùng nguồn với "Còn nợ" ở danh sách).
      *  - Dư đầu kỳ = Σ bảng kê lập trước tháng − Σ đợt thanh toán trước tháng; dư cuối = đầu + tăng − giảm
      *    (âm = trả trước / trả thừa cho nhà xe).
@@ -373,6 +373,8 @@ trait HandlesExtStatements
 
         $sts = TruckingExtStatement::with(['lines', 'payments'])->orderBy('date')->orderBy('id')->get();
         $dayOf = fn ($m) => $m->date ? $m->date->toDateString() : optional($m->created_at)->toDateString();
+        // Bảng kê thuộc tháng của "ĐẾN NGÀY" kỳ Giờ xe đến (kỳ 26/10–25/11 → tháng 11); chưa có kỳ → ngày lập.
+        $stDay = fn ($st) => $st->period_to ? $st->period_to->toDateString() : $dayOf($st);
 
         $rows = []; $incDocs = []; $decDocs = []; $ticks = [];
         $prev = ['inc' => 0, 'dec' => 0];
@@ -383,7 +385,7 @@ trait HandlesExtStatements
             $v = trim((string) $st->ext_vendor) ?: '(Chưa có nhà xe)';
             $ref = ['hashid' => Hashid::encode($st->id), 'no' => $st->no, 'vendor' => $v];
             $total = (int) round((float) $st->total);
-            $d = $dayOf($st);
+            $d = $stDay($st);
             $row($v);
             if ($d < $from) {
                 $rows[$v]['opening'] += $total;
@@ -395,7 +397,7 @@ trait HandlesExtStatements
                     $fee += $f; $vat += (int) round($f * (float) $l->vat_rate / 100); $choho += (int) round((float) $l->choho);
                 }
                 $rows[$v]['inc'] += $total; $rows[$v]['nInc']++;
-                $incDocs[] = $ref + ['date' => $d, 'from' => $this->outDate($st->period_from), 'to' => $this->outDate($st->period_to),
+                $incDocs[] = $ref + ['date' => $d, 'created' => $dayOf($st), 'from' => $this->outDate($st->period_from), 'to' => $this->outDate($st->period_to),
                     'count' => $st->lines->count(), 'fee' => $fee, 'vat' => $vat, 'choho' => $choho, 'total' => $total];
             }
 

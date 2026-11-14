@@ -7,7 +7,7 @@ import { card, CardTitle, KPI, Empty } from "@trk/components/report-ui.jsx";
 const { useState, useEffect, useRef, useMemo } = React;
 
 /* BÁO CÁO CÔNG NỢ XE NGOÀI — sổ tổng hợp công nợ phải trả nhà xe thuê theo tháng (dữ liệu: extPayableReport).
-   Phát sinh TĂNG = bảng kê xe ngoài có ngày lập trong tháng; phát sinh GIẢM = đợt thanh toán có ngày trả trong tháng;
+   Phát sinh TĂNG = bảng kê xe ngoài có "đến ngày" của kỳ trong tháng (chưa có kỳ thì ngày lập); phát sinh GIẢM = đợt thanh toán có ngày trả trong tháng;
    dư cuối = dư đầu + tăng − giảm (âm = trả trước). Tab "Tích chi theo lô" đối chiếu các khoản tích đã chi với đợt thanh toán. */
 
 const T = window.__TRK || {};
@@ -160,7 +160,7 @@ function SummaryTab({ rep, rows, isMobile }) {
 
 /* Tab 2 — Phát sinh tăng: bảng kê lập trong tháng (tách cước / VAT / chi hộ cho hạch toán). */
 function IncTab({ docs, t }) {
-  if (!docs.length) return <Empty>Không lập bảng kê xe ngoài nào trong tháng.</Empty>;
+  if (!docs.length) return <Empty>Không có bảng kê xe ngoài nào có kỳ kết thúc trong tháng.</Empty>;
   return (
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
@@ -171,7 +171,7 @@ function IncTab({ docs, t }) {
         <tbody>
           {docs.map((d) => (
             <tr key={d.hashid}>
-              <td className="tnum" style={td(null, { whiteSpace: "nowrap" })}>{fmtDate(d.date)}</td>
+              <td className="tnum" style={td(null, { whiteSpace: "nowrap" })}>{fmtDate(d.created)}</td>
               <td style={td(null, { whiteSpace: "nowrap" })}><DocLink d={d} /></td>
               <td style={td(null, { fontWeight: 600 })}>{d.vendor}</td>
               <td className="tnum" style={td(null, { fontSize: 12, color: "var(--ink-3)", whiteSpace: "nowrap" })}>{d.from || d.to ? `${fmtDate(d.from) || "…"} – ${fmtDate(d.to) || "…"}` : "—"}</td>
@@ -275,7 +275,7 @@ function exportExcel(rep) {
     ["STT", "Nhà xe", "Dư đầu kỳ", "Phát sinh tăng", "Phát sinh giảm", "Dư cuối kỳ", "Số bảng kê", "Số đợt thanh toán", "Đã tích chi theo lô"],
     ...rep.rows.map((r, i) => [i + 1, r.vendor, r.opening, r.inc, r.dec, r.closing, r.nInc, r.nDec, r.ticked]),
     ["", "TỔNG CỘNG", t.opening, t.inc, t.dec, t.closing, "", "", t.ticked],
-    [], ["", "Ghi chú: Phát sinh tăng = bảng kê lập trong tháng; Phát sinh giảm = đợt thanh toán trong tháng; số âm = trả trước."],
+    [], ["", "Ghi chú: Phát sinh tăng = bảng kê có \"đến ngày\" của kỳ trong tháng; Phát sinh giảm = đợt thanh toán trong tháng; số âm = trả trước."],
   ], [6, 30, 16, 16, 16, 16, 11, 11, 16]), "Tổng hợp");
 
   const det = [...head("SỔ CHI TIẾT CÔNG NỢ PHẢI TRẢ THEO NHÀ XE"), ["Ngày", "Chứng từ", "Diễn giải", "Phát sinh tăng", "Phát sinh giảm", "Số dư"]];
@@ -287,9 +287,9 @@ function exportExcel(rep) {
   XLSX.utils.book_append_sheet(wb, sheet(det, [12, 18, 50, 16, 16, 16]), "Sổ chi tiết");
 
   XLSX.utils.book_append_sheet(wb, sheet([
-    ...head("PHÁT SINH TĂNG — BẢNG KÊ XE NGOÀI LẬP TRONG THÁNG"),
+    ...head("PHÁT SINH TĂNG — BẢNG KÊ XE NGOÀI CÓ KỲ KẾT THÚC TRONG THÁNG"),
     ["Ngày lập", "Số bảng kê", "Nhà xe", "Kỳ từ", "Kỳ đến", "Số lô", "Cước", "VAT", "Chi hộ", "Tổng"],
-    ...rep.incDocs.map((d) => [fmtDate(d.date), d.no, d.vendor, fmtDate(d.from), fmtDate(d.to), d.count, d.fee, d.vat, d.choho, d.total]),
+    ...rep.incDocs.map((d) => [fmtDate(d.created), d.no, d.vendor, fmtDate(d.from), fmtDate(d.to), d.count, d.fee, d.vat, d.choho, d.total]),
     ["", "TỔNG CỘNG", "", "", "", rep.incDocs.reduce((a, d) => a + d.count, 0), t.fee, t.vat, t.choho, t.inc],
   ], [12, 18, 26, 12, 12, 8, 15, 13, 15, 16]), "Phát sinh tăng");
 
@@ -428,8 +428,8 @@ function ExtPayableReportApp() {
               : tab === "dec" ? <DecTab docs={decDocs} total={decDocs.reduce((a, d) => a + d.amount, 0)} />
               : <TickTab ticks={ticks} total={ticks.reduce((a, x) => a + x.amount, 0)} />}
             <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 12, lineHeight: 1.55 }}>
-              <b>Phát sinh tăng</b> = bảng kê xe ngoài có <b>ngày lập</b> trong tháng (cước + VAT + chi hộ). <b>Phát sinh giảm</b> = các <b>đợt thanh toán</b> có ngày trả trong tháng
-              (nhập ở từng bảng kê). Dư cuối kỳ = dư đầu kỳ + phát sinh tăng − phát sinh giảm; số trong ngoặc là trả trước cho nhà xe. Bảng kê sửa / làm mới sau khi lập sẽ cập nhật số liệu của tháng lập.
+              <b>Phát sinh tăng</b> = bảng kê xe ngoài có <b>"đến ngày" của kỳ</b> (Giờ xe đến) trong tháng — kỳ 26/10–25/11 tính vào tháng 11; bảng kê chưa có kỳ thì theo ngày lập (cước + VAT + chi hộ). <b>Phát sinh giảm</b> = các <b>đợt thanh toán</b> có ngày trả trong tháng
+              (nhập ở từng bảng kê). Dư cuối kỳ = dư đầu kỳ + phát sinh tăng − phát sinh giảm; số trong ngoặc là trả trước cho nhà xe. Bảng kê sửa / làm mới sau khi lập sẽ cập nhật số liệu của tháng chứa "đến ngày" của kỳ.
             </div>
           </div>
 
