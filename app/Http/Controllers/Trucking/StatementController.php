@@ -158,6 +158,30 @@ class StatementController extends BaseTruckingController
         return $exporter->download($st, $this->svc->sellerInfo());
     }
 
+    /**
+     * Xuất DỮ LIỆU ĐANG XEM trên trang xem bảng kê (đúng bộ lọc + sửa chưa lưu) ra Excel tra cứu nội bộ có màu,
+     * lọc sẵn, mỗi khoản chi phí 1 cột. Dòng do trang gửi lên; thông tin đầu bảng kê lấy từ DB. Chỉ đọc.
+     */
+    public function exportView(Request $request, TruckingStatement $statement, \App\Services\Trucking\StatementViewExporter $exporter): StreamedResponse
+    {
+        $data = $request->validate([
+            'rows'      => ['present', 'array', 'max:5000'],
+            'rows.*'    => ['array'],
+            'extraCols' => ['nullable', 'array', 'max:50'],
+            'filters'   => ['nullable', 'array', 'max:20'],
+            'filters.*' => ['string', 'max:500'],
+        ]);
+        $statement->loadMissing('customer');
+        $head = [
+            'no'       => (string) $statement->no,
+            'customer' => (string) ($statement->customer_name ?: $statement->customer?->name),
+            'from'     => $statement->period_from ? (string) $statement->period_from : '',
+            'to'       => $statement->period_to ? (string) $statement->period_to : '',
+            'vatRate'  => (float) $statement->vat_rate,
+        ];
+        return $exporter->download($head, $data['rows'], $data['extraCols'] ?? [], $data['filters'] ?? []);
+    }
+
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate(['statement' => ['required', 'array']])['statement'];

@@ -264,6 +264,7 @@ Route::middleware(['auth', RestrictSpendOnlySession::class])->group(function () 
             Route::get('/bang-ke/{statement}/context', [StatementController::class, 'context'])->name('statements.context');
             Route::get('/bang-ke/{statement}/reprice', [StatementController::class, 'reprice'])->name('statements.reprice');   // tính lại ở backend
             Route::get('/bang-ke/{statement}/export-excel', [StatementController::class, 'export'])->name('statements.excel');
+            Route::post('/bang-ke/{statement}/export-view', [StatementController::class, 'exportView'])->name('statements.excelView');   // xuất dữ liệu đang xem (chỉ đọc)
         });
         Route::middleware('permission:statements.create')->group(function () {
             Route::post('/statements', [StatementController::class, 'store'])->name('statements.store');

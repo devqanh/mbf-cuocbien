@@ -951,7 +951,7 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
    detailById:  { [shipmentId]: { found, matched, cuoc, dau, choHoItems[], costItems[], phaiThu } } = SNAPSHOT đã lưu để đối soát.
    suggestById: kết quả "Tính lại" (gợi ý, không đụng số đã lưu) → hiện chip "Hệ thống tính X · Áp dụng" ở dòng lệch.
    onApplyLine(lineId): áp gợi ý vào 1 dòng. */
-function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null, onApplyLine }) {
+function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null, onApplyLine, exportViewUrl = null }) {
   const { useState } = React;
   const [payments, setPayments] = useState(st.payments || []);
   const sync = (arr) => { setPayments(arr); onUpdate && onUpdate({ ...st, payments: arr }); };
@@ -1046,6 +1046,37 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
   const withCosts = shownLines.filter((l) => costsOf(l).length);
   const allCostOpen = withCosts.length > 0 && withCosts.every((l) => costOpen[l.id]);
   const toggleAllCosts = () => setCostOpen(allCostOpen ? {} : Object.fromEntries(withCosts.map((l) => [l.id, true])));
+  // XUẤT DỮ LIỆU ĐANG XEM (đúng bộ lọc + số đang hiện, kể cả sửa chưa lưu) → server dựng Excel tra cứu có màu.
+  const [exporting, setExporting] = useState(false);
+  const exportView = async () => {
+    if (!exportViewUrl || exporting) return;
+    setExporting(true);
+    try {
+      const rows = shownLines.map((l) => {
+        const a = lineAmt(l); const d = (l.detail && typeof l.detail === "object") ? l.detail : {};
+        return {
+          booking: l.booking || "", io: l.io || "", contNo: l.contNo || "", contType: l.contType || "", declNo: l.declNo || "", bks: l.bks || "",
+          from: l.from || "", to: l.to || "", route: [d.route, d.bargeRoute && "Sà lan: " + d.bargeRoute].filter(Boolean).join(" · "), conn: d.conn || "",
+          gioVao: l.gioVao || "", gioRa: l.gioRa || "", status: isManualLine(l) ? "manual" : (d.matched ? "matched" : "unmatched"),
+          base: a.base, vatRate: a.rate, vat: a.vat, extras: a.extras, choho: a.choho, tk: a.tk, total: a.total,
+          infoNote: l.infoNote || "", userNote: l.userNote || "", costs: costsOf(l),
+        };
+      });
+      const filters = [scope !== "all" && "Phạm vi " + IO_LABEL[scope], conn !== "all" && (conn === "connect" ? "Connect" : "Disconnect"),
+        noteF === "has" && "Có ghi chú", feeEx.length > 0 && "Có phí khác ngoài " + feeEx.join(", ")].filter(Boolean);
+      const res = await fetch(exportViewUrl, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/octet-stream", "X-CSRF-TOKEN": (window.__TRK || {}).csrf },
+        body: JSON.stringify({ rows, extraCols, filters }) });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const blob = await res.blob();
+      const cd = res.headers.get("Content-Disposition") || "";
+      const m = /filename\*=(?:utf-8'')?([^;]+)/i.exec(cd) || /filename="?([^";]+)/i.exec(cd);   // ưu tiên tên UTF-8 (có dấu)
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = m ? decodeURIComponent(m[1]) : `bang-ke-${st.no || "export"}-du-lieu.xlsx`;
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    } catch (e) {
+      window.trkToast ? window.trkToast("Xuất dữ liệu thất bại", "error") : alert("Xuất dữ liệu thất bại");
+    } finally { setExporting(false); }
+  };
   const th = (txt, align) => <th style={{ textAlign: align || "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>{txt}</th>;
   return (
       <div className="ke-print" style={{ padding: "16px 4px 4px", background: "#fff" }}>
@@ -1079,6 +1110,13 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
                 <button type="button" onClick={toggleAllCosts} title="Mở / thu gọn danh sách Chi phí lô hàng của mọi lô đang xem"
                   style={{ marginLeft: 6, display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", fontSize: 12, fontWeight: 600, borderRadius: 7, cursor: "pointer", border: "1px solid " + (allCostOpen ? "var(--accent)" : "var(--line)"), background: allCostOpen ? "var(--accent-weak-2)" : "#fff", color: allCostOpen ? "var(--accent)" : "var(--ink-3)" }}>
                   <i className="bi bi-receipt" /> {allCostOpen ? "Thu gọn chi phí" : "Xem chi phí tất cả lô"}
+                </button>
+              )}
+              {exportViewUrl && (
+                <button type="button" onClick={exportView} disabled={exporting || !shownLines.length}
+                  title="Tải Excel ĐÚNG danh sách đang xem (theo bộ lọc, kể cả sửa chưa lưu): mỗi khoản chi phí 1 cột, tô màu chi hộ / chi phí công ty, lọc sẵn, dòng tổng tự cộng theo lọc"
+                  style={{ marginLeft: 6, display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", fontSize: 12, fontWeight: 600, borderRadius: 7, cursor: exporting ? "default" : "pointer", border: "1px solid var(--good)", background: "var(--good-weak)", color: "var(--good)", opacity: shownLines.length ? 1 : 0.5 }}>
+                  <i className={"bi " + (exporting ? "bi-hourglass-split" : "bi-file-earmark-spreadsheet")} /> {exporting ? "Đang xuất…" : `Xuất dữ liệu đang xem (${shownLines.length} lô)`}
                 </button>
               )}
             </div>
@@ -1514,7 +1552,8 @@ function SavedStatementPage({ st, onUpdate, onSave, onDelete, isDirty, backUrl, 
         )}
         {newLots && <LotPicker lots={newLots} inOther={inOtherStatements} onAdd={onAddNewLots} onClose={onCloseLots} />}
         <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "4px 14px 0" }}>
-          <StatementDetailBody st={st} onUpdate={onUpdate} detailById={detailById || {}} suggestById={suggestById} onApplyLine={onApplyLine} />
+          <StatementDetailBody st={st} onUpdate={onUpdate} detailById={detailById || {}} suggestById={suggestById} onApplyLine={onApplyLine}
+            exportViewUrl={ROUTES_TRK.base ? ROUTES_TRK.base + (st.hashid || st.id) + "/export-view" : null} />
           {onUpdate && (
             <PendingLotsBox cust={st.customer} url={ROUTES_TRK.pendingLots} to={st.to} toTime={(st.info || {}).toTime}
               addedIds={new Set((st.lines || []).map((l) => String(l.id)))}

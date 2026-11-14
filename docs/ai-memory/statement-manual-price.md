@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 4bec1b4a-b245-4320-87b0-daa8ea0472d4
-  modified: 2026-11-14T06:10:36.841Z
+  modified: 2026-11-14T06:34:10.008Z
 ---
 
 Từ 2026-09-23 (plan `plans/260923-0328-bang-ke-gia-tuy-chinh`), user chốt: **giá gõ tay trong bảng kê là số chính thức, "Tính lại" chỉ gợi ý, bấm Áp dụng mới điền** ("nhiều khi giá đó mới là đúng").
@@ -25,5 +25,7 @@ Từ 2026-09-23 (plan `plans/260923-0328-bang-ke-gia-tuy-chinh`), user chốt: *
 **Phạm vi Nhập/Xuất (2026-10-03, user: "chọn xuất/nhập để TÍNH TIỀN bảng kê, không phải lọc hiển thị"):** cột `trucking_statements.io_scope` (all|nhap|xuat, FE `ioScope`). `HandlesStatements::ioInScope($io, $scope)` (io lô "Nhập"/"Xuất"; FE `ioKey`) — `statementToArray`/`saveStatement` chỉ cộng lô trong phạm vi vào 4 con số; dòng khác loại VẪN lưu (đổi phạm vi về Tất cả là tính lại đủ); Excel exporter + drift bỏ qua lô ngoài phạm vi. UI trang xem: nhóm nút "Phạm vi" cạnh VAT (lưu cùng bảng kê, cần bấm Lưu), lô ngoài phạm vi ẨN HẲN khỏi danh sách (`scopedLines.map`, user 03/10: "hiện mờ nhìn rối"), thanh cảnh báo nêu số lô đã ẩn, chọn Tất cả để xem lại; trang tạo: nhóm "Lô hàng" lọc ứng viên và lưu `ioScope`; danh sách hiện chip "Hàng xuất/nhập". Liên quan [[price-by-cont-type]], [[json-schema-evolution]], [[cost-item-auto-vat]].
 
 **Lô "Khác" (2026-11-14):** lô io Khác/trống (CHUYỂN KHO) thuộc MỌI phạm vi (cả Nhập lẫn Xuất), nếu không khách tách bảng kê Nhập/Xuất như Canon sẽ không thu được; chống thu trùng nhờ billedIn. Thêm phạm vi `khac` = CHỈ lô Khác (nút "Khác" ở bộ lọc trang tạo + trang xem, chip "Hàng khác"); FE `ioInScope`/`IO_LABEL` khớp backend.
+
+**Lọc hiển thị + xuất dữ liệu đang xem (2026-11-14):** trang tạo/xem có lọc "Có ghi chú" (infoNote|userNote) và "Có phí khác ngoài" (MultiCombo khoản costLines, `filterOtherFee`) — CHỈ lọc hiển thị (trang tạo vẫn lưu đủ lô đã tích). Trang xem có nút "Xuất dữ liệu đang xem": FE gửi đúng `shownLines` + số `lineAmounts` (kể cả sửa chưa lưu) POST `/bang-ke/{st}/export-view` → `StatementViewExporter` (PhpSpreadsheet, chỉ đọc): sheet Bảng kê (nhóm cột màu, mỗi khoản chi phí 1 cột xanh=chi hộ/cam=công ty, dòng TỔNG SUBTOTAL theo lọc, autofilter, freeze), sheet Chi phí từng khoản, sheet Tổng hợp khoản. Khác mẫu chính thức `export-excel`.
 
 **Ghi chú lô trong chi tiết bảng kê (2026-09-30):** `statementToArray` trả `lines[].infoNote` = `info_note` ("Ghi chú tự do cho lô hàng" ở popup Thông tin lô) LẤY TRỰC TIẾP từ lô (sửa ở popup là bảng kê hiện theo, 1 query/bảng kê; `statements()` eager-load `lines.shipment:id,info_note`). ĐỪNG nhầm với `ghi_chu` = "Ghi chú kế toán" ở popup Doanh thu (bản đầu dùng nhầm cột này → user không thấy ghi chú). KHÔNG dùng cột `note` của dòng: đó là snapshot "ghi chú, trống thì tuyến + Connect/Disconnect" nên không tách được. `StatementDetailBody` hiện khối "Ghi chú:" (pre-wrap) đầu phần chi tiết lô; bảng kê cũ không có detail → dòng riêng `noteOnly` ngay dưới lô (kẻ cuối lô chuyển xuống dòng đó). Có in (không ke-noprint). Excel xuất vẫn dùng `note` snapshot.
