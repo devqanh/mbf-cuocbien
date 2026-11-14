@@ -94,7 +94,7 @@ return [
             'label'       => 'Báo cáo',
             'icon'        => 'bar-chart-line-fill',
             'color'       => '#db2777',
-            'description' => 'Báo cáo chi phí (lãi lỗ toàn công ty) và Báo cáo tài sản',
+            'description' => 'Báo cáo doanh thu phải thu, tài sản, lái xe, công nợ xe ngoài',
         ],
         'activity' => [
             'label'       => 'Nhật ký thao tác',
@@ -175,7 +175,7 @@ return [
 
         'driverPay.manage' => ['label' => 'Chi cho lái xe', 'desc' => 'Mở trang Lộ trình, ghi khoản chi cho lái theo ngày và chốt/bỏ chốt ngày (không cần quyền Lô hàng)'],
 
-        'reports.view' => ['label' => 'Xem báo cáo', 'desc' => 'Xem Báo cáo chi phí (doanh thu, chi phí, lãi lỗ toàn công ty) và Báo cáo tài sản'],
+        'reports.view' => ['label' => 'Xem báo cáo', 'desc' => 'Xem Báo cáo doanh thu phải thu (công nợ khách từ bảng kê thu), Báo cáo tài sản, lái xe, công nợ xe ngoài'],
 
         'activity.view' => ['label' => 'Xem nhật ký thao tác', 'desc' => 'Xem trang Nhật ký thao tác: ai đã lưu/sửa/xóa gì, giá trị cũ → mới (gồm cả thao tác của người khác)'],
 

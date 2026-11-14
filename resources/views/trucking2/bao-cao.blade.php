@@ -1,5 +1,5 @@
 @extends('layouts.app')
-@section('title', 'Báo cáo chi phí — Trucking')
+@section('title', 'Báo cáo doanh thu phải thu — Trucking')
 
 @push('styles')
 @include('trucking2.partials._styles')
@@ -12,14 +12,13 @@ window.__TRK = {
   csrf: '{{ csrf_token() }}',
   canEdit: {{ $canEdit ? 'true' : 'false' }},
   routes: {
-    data: '{{ route("trucking2.report.data") }}',
-    trend: '{{ route("trucking2.report.trend") }}',
-    fleet: '{{ url("trucking-v2/quan-ly-xe") }}',   // deep-link hồ sơ xe: #<hashid>/cost
-    office: '{{ url("trucking-v2/quan-ly-xe") }}#office',   // tab Chi phí văn phòng
+    data:      '{{ route("trucking2.report.data") }}',
+    statement: '{{ url("trucking-v2/bang-ke") }}/',   // + hashid → mở bảng kê thu
   },
   boot: @json($boot),
 };
 </script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 @endsection
 
 @push('scripts')

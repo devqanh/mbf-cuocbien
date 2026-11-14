@@ -170,8 +170,7 @@ Route::middleware(['auth', RestrictSpendOnlySession::class])->group(function () 
             Route::get('/bao-cao-lai-xe/data',       [ReportController::class, 'driverData'])->name('driverReport.data');
             Route::get('/bao-cao-xe-ngoai',          [ReportController::class, 'extPayableIndex'])->name('extPayableReport');   // công nợ phải trả nhà xe ngoài theo tháng
             Route::get('/bao-cao-xe-ngoai/data',     [ReportController::class, 'extPayableData'])->name('extPayableReport.data');
-            Route::get('/bao-cao/data',              [ReportController::class, 'data'])->name('report.data');
-            Route::get('/bao-cao/trend',             [ReportController::class, 'trend'])->name('report.trend');
+            Route::get('/bao-cao/data',              [ReportController::class, 'data'])->name('report.data');   // doanh thu phải thu theo tháng (từ bảng kê thu)
         });
         // --- Phí xe & lương lái xe (quyền riêng tripCost.*) ---
         Route::middleware('permission:tripCost.view')->group(function () {

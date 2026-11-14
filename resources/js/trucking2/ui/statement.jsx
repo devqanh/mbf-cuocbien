@@ -397,13 +397,13 @@ function AmountSummary({ amt, vatRate, paid, payCount, showDebt, extras = [], ch
   );
   return (
     <div style={{ width: 320, background: "#fafbfc", border: "1px solid var(--line)", borderRadius: 10, padding: "12px 16px" }}>
-      {row("Phải thu (cước + dầu)", amt.base)}
+      {row("Doanh thu (cước + dầu)", amt.base)}
       {row(`VAT (${vatRate || 0}%)`, amt.vat, { valStyle: { color: (vatRate ? "var(--accent)" : "var(--ink-4)") } })}
       {row("Chi hộ (không VAT)", amt.choho)}
       {amt.tk > 0 && row("Phí tờ khai (sau VAT)", amt.tk)}
       {extras.map((c) => <React.Fragment key={c.key}>{row((String(c.label || "").trim() || "Khoản mới") + (c.vat ? " (chịu VAT)" : " (không VAT)"), c.sum)}</React.Fragment>)}
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, paddingTop: 8, marginBottom: showDebt ? 8 : 0, borderTop: "1px solid var(--line)" }}>
-        <span style={{ fontWeight: 700 }}>TỔNG TIỀN</span><b className="tnum">{fmtVND(amt.total)}</b>
+        <span style={{ fontWeight: 700 }}>TỔNG PHẢI THU</span><b className="tnum">{fmtVND(amt.total)}</b>
       </div>
       {showDebt && <>
         {row(`Đã thanh toán (${payCount || 0} đợt)`, paid, { valStyle: { color: "var(--good)" } })}
@@ -771,12 +771,12 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
               <th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Lô / Booking</th>
               <th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Tuyến · Cont</th>
               <th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Kéo vào / Ra</th>
-              <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Phải thu<br/>(cước+dầu)</th>
+              <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Doanh thu<br/>(cước+dầu)</th>
               <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>VAT</th>
               {extraCols.map((c) => <th key={c.key} style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>{colLabel(c)}{c.vat ? <span style={{ color: "var(--accent)", fontSize: 9.5 }}><br/>+VAT</span> : null}</th>)}
               <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Chi hộ</th>
               <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }} title="Phí mở tờ khai + phí thanh lý (sau VAT — cộng thẳng vào tổng, không tính VAT thêm)">Phí tờ khai</th>
-              <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Tổng tiền</th>
+              <th style={{ textAlign: "right", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Tổng phải thu</th>
               <th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase" }}>Ghi chú</th>
             </tr>
           </thead>
@@ -905,7 +905,7 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
             {/* Khối tổng (nền/VAT/chi hộ/từng cột riêng/tổng tiền) */}
             <tr>
               <td className="ke-noprint"></td>
-              <td colSpan={nCols - 4} style={{ padding: "9px 8px 3px", textAlign: "right", color: "var(--ink-3)" }}>Phải thu (cước + dầu)</td>
+              <td colSpan={nCols - 4} style={{ padding: "9px 8px 3px", textAlign: "right", color: "var(--ink-3)" }}>Doanh thu (cước + dầu)</td>
               <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "9px 8px 3px" }}>{fmtVND(amt.base)}</td><td></td>
             </tr>
             <tr>
@@ -932,7 +932,7 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
             </tr>}
             <tr style={{ fontWeight: 700 }}>
               <td className="ke-noprint"></td>
-              <td colSpan={nCols - 4} style={{ padding: "8px 8px 11px", textAlign: "right" }}>TỔNG TIỀN</td>
+              <td colSpan={nCols - 4} style={{ padding: "8px 8px 11px", textAlign: "right" }}>TỔNG PHẢI THU</td>
               <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "8px 8px 11px" }}>{fmtVND(tongThu)}</td><td></td>
             </tr>
           </tfoot>
@@ -1147,9 +1147,9 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
         {/* Nhiều cột chi phí riêng → bảng giữ bề rộng tối thiểu và cuộn ngang trên màn hình (in: .ke-scroll bỏ cuộn + minWidth) */}
         <div className="ke-scroll" style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", minWidth: 1250 + 110 * extraCols.length, borderCollapse: "collapse", fontSize: 12.5 }}>
-          <thead><tr style={{ background: "#fafbfc" }}>{th("#", "center")}{th("Lô / Booking")}{th("Tuyến · Cont")}{th("Kéo vào / Ra")}{th(<>Phải thu<br/>(cước+dầu)</>, "right")}{th("VAT", "right")}
+          <thead><tr style={{ background: "#fafbfc" }}>{th("#", "center")}{th("Lô / Booking")}{th("Tuyến · Cont")}{th("Kéo vào / Ra")}{th(<>Doanh thu<br/>(cước+dầu)</>, "right")}{th("VAT", "right")}
             {extraCols.map((c) => <React.Fragment key={c.key}>{th(<>{colLabel(c)}{c.vat ? <span style={{ color: "var(--accent)", fontSize: 9.5 }}><br/>+VAT</span> : null}</>, "right")}</React.Fragment>)}
-            {th("Chi hộ", "right")}{th("Phí tờ khai", "right")}{th("Tổng tiền", "right")}<th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase", minWidth: 190 }}>Ghi chú</th></tr></thead>
+            {th("Chi hộ", "right")}{th("Phí tờ khai", "right")}{th("Tổng phải thu", "right")}<th style={{ textAlign: "left", padding: "9px 8px", borderBottom: "1.5px solid var(--line)", fontSize: 11, color: "var(--ink-3)", textTransform: "uppercase", minWidth: 190 }}>Ghi chú</th></tr></thead>
           <tbody>
             {shownLines.map((l, i) => {
               const d = detailById[l.id];
@@ -1317,7 +1317,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
               <td style={{ borderTop: "1.5px solid var(--line)" }}></td>
             </tr>
             <tr>
-              <td colSpan={nCols - 3} style={{ padding: "9px 8px 3px", textAlign: "right", color: "var(--ink-3)" }}>Phải thu (cước + dầu)</td>
+              <td colSpan={nCols - 3} style={{ padding: "9px 8px 3px", textAlign: "right", color: "var(--ink-3)" }}>Doanh thu (cước + dầu)</td>
               <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "9px 8px 3px" }}>{fmtVND(amt.base)}</td><td></td>
             </tr>
             <tr>
@@ -1339,7 +1339,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
               <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px" }}>{fmtVND(amt.tk)}</td><td></td>
             </tr>}
             <tr style={{ fontWeight: 700 }}>
-              <td colSpan={nCols - 3} style={{ padding: "8px 8px 11px", textAlign: "right" }}>TỔNG TIỀN</td>
+              <td colSpan={nCols - 3} style={{ padding: "8px 8px 11px", textAlign: "right" }}>TỔNG PHẢI THU</td>
               <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "8px 8px 11px" }}>{fmtVND(tongThu)}</td><td></td>
             </tr>
           </tfoot>
@@ -1467,7 +1467,7 @@ function LotPicker({ lots, inOther = 0, width, onAdd, onClose }) {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
             <thead><tr style={{ background: "#fafbfc", position: "sticky", top: 0 }}>
               <th style={{ padding: "6px 8px", width: 30 }}><input type="checkbox" checked={all} onChange={togAll} /></th>
-              {["Lô / Booking", "Tuyến · Cont", "Kéo vào / Ra", "Phải thu"].map((h, i) => <th key={h} style={{ padding: "6px 8px", textAlign: i === 3 ? "right" : "left", fontSize: 11, color: "var(--ink-3)" }}>{h}</th>)}
+              {["Lô / Booking", "Tuyến · Cont", "Kéo vào / Ra", "Doanh thu"].map((h, i) => <th key={h} style={{ padding: "6px 8px", textAlign: i === 3 ? "right" : "left", fontSize: 11, color: "var(--ink-3)" }}>{h}</th>)}
             </tr></thead>
             <tbody>
               {shown.map((x) => (
@@ -1748,7 +1748,7 @@ function KePage({ ke, drift = {}, onNew, onOpen, onSetDue = null, children }) {
                     {st.extraAmount > 0 && <span>Phí riêng: <b className="tnum" style={{ color: "var(--ink-2)" }}>{fmtNum(st.extraAmount)}</b></span>}
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 6 }}>
-                    <span style={{ fontSize: 13, color: "var(--ink-3)" }}>Tổng tiền: <b className="tnum" style={{ color: "var(--ink)" }}>{fmtVND(st.tongThu)}</b></span>
+                    <span style={{ fontSize: 13, color: "var(--ink-3)" }}>Tổng phải thu: <b className="tnum" style={{ color: "var(--ink)" }}>{fmtVND(st.tongThu)}</b></span>
                     <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Còn: <b className="tnum" style={{ color: s.con > 0 ? "var(--warn)" : "var(--good)" }}>{fmtVND(Math.max(0, s.con))}</b></span>
                   </div>
                 </div>
@@ -1759,7 +1759,7 @@ function KePage({ ke, drift = {}, onNew, onOpen, onSetDue = null, children }) {
         {!isMobile && (
         <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
           <div style={{ display: "grid", gridTemplateColumns: cols, gap: 12, padding: "11px 16px", background: "#fafbfc", borderBottom: "1px solid var(--line)", fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-            <div>Số bảng kê</div><div>Khách hàng</div><div>Ngày lập</div><div>Hạn TT</div><div>Kỳ cont ra</div><div style={{ textAlign: "right" }}>Phải thu<br/>(cước+dầu)</div><div style={{ textAlign: "right" }}>+VAT</div><div style={{ textAlign: "right" }}>Chi hộ</div><div style={{ textAlign: "right" }}>Tổng tiền</div>
+            <div>Số bảng kê</div><div>Khách hàng</div><div>Ngày lập</div><div>Hạn TT</div><div>Kỳ cont ra</div><div style={{ textAlign: "right" }}>Doanh thu<br/>(cước+dầu)</div><div style={{ textAlign: "right" }}>+VAT</div><div style={{ textAlign: "right" }}>Chi hộ</div><div style={{ textAlign: "right" }}>Tổng phải thu</div>
           </div>
           {shown.length === 0 && <div style={{ padding: "44px", textAlign: "center", color: "var(--ink-4)", fontSize: 13.5 }}>{emptyText}</div>}
           {shown.map(({ st, s }, i) => (
@@ -1773,7 +1773,7 @@ function KePage({ ke, drift = {}, onNew, onOpen, onSetDue = null, children }) {
                 {(driftOf(st) || (st.ioScope && st.ioScope !== "all") || st.extraAmount > 0) ? (
                   <div style={{ marginTop: 3, display: "flex", gap: 6, flexWrap: "wrap" }}>
                     {st.ioScope && st.ioScope !== "all" ? <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", background: "var(--accent-weak-2)", border: "1px solid var(--accent-weak)", padding: "1px 8px", borderRadius: 999, whiteSpace: "nowrap" }} title="Phạm vi bảng kê — chỉ tính tiền lô loại này">{st.ioScope === "khac" ? "Hàng khác" : st.ioScope === "nhap" ? "Hàng nhập" : "Hàng xuất"}</span> : null}
-                    {st.extraAmount > 0 ? <span className="tnum" style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-3)", background: "var(--line-2)", padding: "1px 8px", borderRadius: 999, whiteSpace: "nowrap" }} title="Σ cột chi phí riêng của bảng kê — đã gồm trong Tổng tiền">+ Phí riêng {fmtNum(st.extraAmount)}</span> : null}
+                    {st.extraAmount > 0 ? <span className="tnum" style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-3)", background: "var(--line-2)", padding: "1px 8px", borderRadius: 999, whiteSpace: "nowrap" }} title="Σ cột chi phí riêng của bảng kê — đã gồm trong Tổng phải thu">+ Phí riêng {fmtNum(st.extraAmount)}</span> : null}
                     {driftOf(st) ? <DriftChip n={driftOf(st).changed} /> : null}
                   </div>
                 ) : null}

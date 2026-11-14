@@ -96,7 +96,7 @@ class StatementViewExporter
             ['Giờ kéo vào', 15, 'dt', 'info', fn ($r) => $r['gioVao'] ?? ''],
             ['Giờ ra', 15, 'dt', 'info', fn ($r) => $r['gioRa'] ?? ''],
             ['Trạng thái giá', 14, 'status', 'info', fn ($r) => $r['status'] ?? ''],
-            ['Phải thu (cước+dầu)', 14, 'money', 'thu', fn ($r) => $r['base'] ?? 0],
+            ['Doanh thu (cước+dầu)', 14, 'money', 'thu', fn ($r) => $r['base'] ?? 0],
             ['VAT %', 7, 'pct', 'thu', fn ($r) => $r['vatRate'] ?? 0],
             ['VAT', 12, 'money', 'thu', fn ($r) => $r['vat'] ?? 0],
         ];
@@ -107,7 +107,7 @@ class StatementViewExporter
         array_push($cols,
             ['Chi hộ', 12, 'money', 'thu', fn ($r) => $r['choho'] ?? 0],
             ['Phí tờ khai', 12, 'money', 'thu', fn ($r) => $r['tk'] ?? 0],
-            ['TỔNG TIỀN', 15, 'total', 'thu', fn ($r) => $r['total'] ?? 0],
+            ['TỔNG PHẢI THU', 15, 'total', 'thu', fn ($r) => $r['total'] ?? 0],
         );
         foreach ($items as $it) {
             $k = $it['key'];
@@ -139,7 +139,7 @@ class StatementViewExporter
         $ws->getStyle('A2')->getFont()->setItalic(true)->setSize(9)->getColor()->setRGB('64748B');
 
         // Nhóm cột (dòng 4, gộp ô) + tiêu đề cột (dòng 5)
-        $groupLabel = ['info' => 'THÔNG TIN LÔ', 'thu' => 'THU KHÁCH', 'cost' => 'CHI PHÍ LÔ HÀNG (theo khoản)', 'note' => 'GHI CHÚ'];
+        $groupLabel = ['info' => 'THÔNG TIN LÔ', 'thu' => 'DOANH THU · PHẢI THU KHÁCH', 'cost' => 'CHI PHÍ LÔ HÀNG (theo khoản)', 'note' => 'GHI CHÚ'];
         $groupColor = ['info' => self::C_INFO, 'thu' => self::C_THU, 'cost' => self::C_COST, 'note' => self::C_NOTE];
         $start = 1;
         for ($i = 1; $i <= $n; $i++) {

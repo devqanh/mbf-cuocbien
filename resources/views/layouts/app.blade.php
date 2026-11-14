@@ -153,7 +153,7 @@
                             @can('reports.view')
                             <li><a class="dropdown-item {{ request()->routeIs('trucking2.report') ? 'active' : '' }}"
                                    href="{{ route('trucking2.report') }}">
-                                <i class="bi bi-bar-chart-line-fill"></i> Báo cáo chi phí</a></li>
+                                <i class="bi bi-graph-up-arrow"></i> Báo cáo doanh thu phải thu</a></li>
                             <li><a class="dropdown-item {{ request()->routeIs('trucking2.assetReport') ? 'active' : '' }}"
                                    href="{{ route('trucking2.assetReport') }}">
                                 <i class="bi bi-truck-front-fill"></i> Báo cáo tài sản</a></li>
