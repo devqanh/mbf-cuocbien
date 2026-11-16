@@ -1,5 +1,5 @@
 import React from "react";
-const { useState, useMemo, useEffect } = React;
+const { useState, useMemo, useEffect, useRef } = React;
 import { I, fmtVND, fmtNum, fmtShort, fmtDate, calcCost, calcRev, calcVeh, calcVehICD, calcRevICD, calcFreeTime, fmtHours, toNum, Modal, Btn, Combo, MultiCombo, useIsMobile, DateField, TimeField, statementAmounts, lineAmounts, STATEMENT_VAT_RATES } from "@trk/lib.jsx";
 import { CostPopup, RevenuePopup, CostPopupICD, RevenuePopupICD, InfoPopup, ConfigPopup, PriceList, TRACK_COLORS, colorHex } from "@trk/pop.jsx";
 import { SortBtn, CellBtn, Badge, EditCell, TH, TD } from "./primitives.jsx";
@@ -278,13 +278,25 @@ function ExtraCell({ col, value, onChange }) {
 
 /* Ô GHI CHÚ của 1 lô trong bảng kê (người dùng gõ) — lưu line.userNote; in ra chữ; Excel cột Note
    (trống thì Excel dùng ghi chú tự sinh như cũ). */
+const CSS_FIELD_SIZING = typeof CSS !== "undefined" && CSS.supports && CSS.supports("field-sizing", "content");
 function LineNoteCell({ value, onChange }) {
-  // Tự CAO theo nội dung (không bị che chữ), rộng theo cột (tối thiểu 170)
-  const fit = (el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + 2 + "px"; } };
+  // Tự CAO theo nội dung: CSS field-sizing:content (Chrome/Edge tự giãn, KHÔNG tốn gì). Trình duyệt chưa hỗ trợ thì chỉ
+  // đo lại LÚC GÕ. KHÔNG dùng ref={fit} — ref hàm mới mỗi lần vẽ ⇒ mỗi dòng đọc scrollHeight ⇒ ép tính lại bố cục cả
+  // trang × số dòng: bảng kê 233 lô mất ~1,2–1,6s MỖI lần cập nhật (gõ ghi chú / sửa giá bị đơ, user 16/11).
+  const fit = (el) => { if (el && !CSS_FIELD_SIZING) { el.style.height = "auto"; el.style.height = el.scrollHeight + 2 + "px"; } };
+  // GÕ MƯỢT: chữ giữ ở state RIÊNG của ô; chỉ đẩy lên bảng kê khi ngừng gõ 0,5s hoặc rời ô. Đẩy mỗi phím bắt
+  // CẢ bảng (hàng trăm lô, ~17k phần tử) vẽ lại → gõ bị đơ (user 16/11). Bấm Lưu làm ô mất focus → luôn chốt kịp.
+  const [txt, setTxt] = useState(value || "");
+  const focused = useRef(false); const timer = useRef(null); const sent = useRef(value || "");
+  useEffect(() => { if (!focused.current) { setTxt(value || ""); sent.current = value || ""; } }, [value]);
+  const commit = (v) => { clearTimeout(timer.current); if (v !== sent.current) { sent.current = v; onChange(v); } };
+  useEffect(() => () => clearTimeout(timer.current), []);
   return (<>
-    <textarea className="ke-noprint" rows={1} ref={fit} value={value || ""} onChange={(e) => { onChange(e.target.value); fit(e.target); }} placeholder="Ghi chú…"
-      style={{ display: "block", width: "100%", minWidth: 170, minHeight: 32, padding: "6px 8px", fontSize: 12.5, lineHeight: 1.4, fontFamily: "inherit", border: "1px solid var(--line)", borderRadius: 7, background: "#fff", outline: "none", resize: "vertical", overflow: "hidden" }}
-      onFocus={(e) => (e.target.style.borderColor = "var(--accent)")} onBlur={(e) => (e.target.style.borderColor = "var(--line)")} />
+    <textarea className="ke-noprint" rows={1} value={txt} placeholder="Ghi chú…"
+      onChange={(e) => { const v = e.target.value; setTxt(v); fit(e.target); clearTimeout(timer.current); timer.current = setTimeout(() => commit(v), 500); }}
+      style={{ display: "block", width: "100%", minWidth: 170, minHeight: 32, fieldSizing: "content", maxHeight: 240, padding: "6px 8px", fontSize: 12.5, lineHeight: 1.4, fontFamily: "inherit", border: "1px solid var(--line)", borderRadius: 7, background: "#fff", outline: "none", resize: "vertical", overflowY: "auto" }}
+      onFocus={(e) => { focused.current = true; e.target.style.borderColor = "var(--accent)"; }}
+      onBlur={(e) => { focused.current = false; e.target.style.borderColor = "var(--line)"; commit(e.target.value); }} />
     <span style={{ display: "none", whiteSpace: "pre-wrap" }} className="ke-printonly">{value || ""}</span>
   </>);
 }

@@ -322,6 +322,26 @@ trait HandlesStatements
             ->mapWithKeys(fn ($id) => [(string) $id => (int) $id])->all();
     }
 
+    /** Nơi lấy / nơi hạ HIỆN TẠI của lô gốc (null = dòng không còn lô hoặc lô chưa nhập). */
+    private function liveLoc($line, array $ships, string $col): ?string
+    {
+        $s = $line->shipment_id ? ($ships[(int) $line->shipment_id] ?? null) : null;
+        $v = $s ? trim((string) $s->{$col}) : '';
+        return $v !== '' ? $v : null;
+    }
+
+    /**
+     * Ghi chú TỰ SINH của dòng ("Nơi lấy → Nơi hạ · Connect", Excel dùng khi không có ghi chú gõ tay) chốt lúc lập —
+     * nếu nơi lấy / hạ của lô đã đổi thì thay phần đầu cho khớp. Ghi chú kế toán gõ thật (không bắt đầu bằng tuyến cũ) giữ nguyên.
+     */
+    private function liveAutoNote($line, array $ships): string
+    {
+        $note = (string) ($line->note ?? '');
+        $old  = trim((string) $line->from_loc) . ' → ' . trim((string) $line->to_loc);
+        $new  = trim((string) ($this->liveLoc($line, $ships, 'from_loc') ?? $line->from_loc)) . ' → ' . trim((string) ($this->liveLoc($line, $ships, 'to_loc') ?? $line->to_loc));
+        return ($old !== $new && str_starts_with($note, $old)) ? $new . substr($note, strlen($old)) : $note;
+    }
+
     public function statementToArray(TruckingStatement $st): array
     {
         // "Ghi chú tự do cho lô hàng" (info_note — ô Ghi chú ở popup Thông tin lô hàng) lấy TRỰC TIẾP từ lô:
@@ -332,7 +352,7 @@ trait HandlesStatements
         $ships = $st->lines->every(fn ($l) => $l->relationLoaded('shipment'))
             ? $st->lines->mapWithKeys(fn ($l) => [(int) $l->shipment_id => $l->shipment])->filter()->all()
             : \App\Models\TruckingShipment::whereIn('id', $st->lines->pluck('shipment_id')->filter()->unique()->values())
-                ->get(['id', 'info_note', 'gio_xe_den', 'gio_xe_ra'])->keyBy('id')->all();
+                ->get(['id', 'info_note', 'gio_xe_den', 'gio_xe_ra', 'from_loc', 'to_loc'])->keyBy('id')->all();
         $infoNote = array_map(fn ($s) => $s->info_note, $ships);
         // Dòng MẤT liên kết lô (lô bị xóa / nhập lại → shipment_id null): dò theo SỐ CONT + NGÀY cont ra để vẫn hiện giờ.
         $byContDate = [];
@@ -397,9 +417,12 @@ trait HandlesStatements
                 'inv'       => $l->inv ?? '',
                 'contNo'    => $l->cont_no ?? '',
                 'bks'       => $l->bks ?? '',
-                'from'      => $l->from_loc ?? '',
-                'to'        => $l->to_loc ?? '',
-                'toCode'    => $this->locationCodeOf($l->to_loc),   // ký hiệu điểm hạ (lọc Hạ ICD QV / TP / còn lại)
+                // NƠI LẤY / NƠI HẠ lấy THEO LÔ HIỆN TẠI (như giờ vào / ra): sửa nơi hạ ở lô là bảng kê hiện + lọc Điểm hạ
+                // theo — snapshot cũ có thể sai (vd TRHU8253473 lưu "ICD Quế Võ" trong khi lô hạ TÂN VŨ). Giá vẫn là số đã chốt.
+                // Lô đã xóa → giữ snapshot. Bấm Lưu thì snapshot dòng được ghi lại theo số đang hiện.
+                'from'      => (string) ($this->liveLoc($l, $ships, 'from_loc') ?? $l->from_loc ?? ''),
+                'to'        => (string) ($this->liveLoc($l, $ships, 'to_loc') ?? $l->to_loc ?? ''),
+                'toCode'    => $this->locationCodeOf($this->liveLoc($l, $ships, 'to_loc') ?? $l->to_loc),   // ký hiệu điểm hạ (lọc Hạ ICD QV / TP / còn lại)
                 'date'      => $this->outDate($l->date),
                 'gioVao'    => $this->outDateTime($shipOf($l)?->gio_xe_den),   // kéo vào (giờ xe đến)
                 'gioRa'     => $this->outDateTime($shipOf($l)?->gio_xe_ra),    // cont ra
@@ -408,7 +431,7 @@ trait HandlesStatements
                 'cuoc'      => (int) round((float) $l->cuoc),
                 'thanhLy'   => is_array($l->detail) && (isset($l->detail['declFee']) || isset($l->detail['tlFee']))
                     ? self::lineDeclFee($l->detail) : (int) round((float) $l->thanh_ly),   // phí tờ khai (mở + thanh lý)
-                'note'      => $l->note ?? '',
+                'note'      => $this->liveAutoNote($l, $ships),   // ghi chú tự sinh "Nơi lấy → Nơi hạ · kết nối" theo nơi hạ hiện tại
                 'userNote'  => $l->user_note ?? '',   // cột Ghi chú của bảng kê (người dùng gõ)
                 'costNotes' => $costNotes[(int) $l->shipment_id] ?? [],   // ghi chú các khoản Chi phí lô hàng (trực tiếp từ lô)
                 'costLines' => $costLines[(int) $l->shipment_id] ?? [],   // toàn bộ khoản Chi phí lô hàng (trực tiếp từ lô, chỉ để xem)
