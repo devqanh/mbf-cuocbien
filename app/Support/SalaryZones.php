@@ -142,7 +142,18 @@ class SalaryZones
             if (($km <= 0 && $toll <= 0) || $code($d['from'] ?? '') === '' || $code($d['to'] ?? '') === '') continue;
             $out['distances'][] = ['from' => $code($d['from']), 'to' => $code($d['to']), 'km' => $km > 0 ? $km : 0, 'toll' => $toll];
         }
-        $empty = ! $out['originGroups'] && ! $out['zones'] && ! $out['kcn'] && ! $out['distances']
+        // PHÍ THEO ĐIỂM HẠ — trường TÙY CHỌN: chuyến hạ cont ở điểm thuộc codes → Lộ trình tự cộng khoản này vào chuyến.
+        // type: luong (chi trong ngày, tính lương) | choho (chi hộ) | khac (chi phí công ty); bill = mặc định tích "Thu khách".
+        $out['dropFees'] = [];
+        foreach ((array) ($r['dropFees'] ?? []) as $f) {
+            if (! is_array($f)) continue;
+            $codes = array_values(array_unique(array_filter(array_map($code, $list($f['codes'] ?? [])), fn ($x) => $x !== '')));
+            $name = trim((string) ($f['name'] ?? ''));
+            if (! $codes || $name === '') continue;
+            $type = in_array($f['type'] ?? '', ['luong', 'choho', 'khac'], true) ? $f['type'] : 'choho';
+            $out['dropFees'][] = ['codes' => $codes, 'name' => $name, 'amount' => $money($f['amount'] ?? 0), 'type' => $type, 'bill' => ! empty($f['bill'])];
+        }
+        $empty = ! $out['originGroups'] && ! $out['zones'] && ! $out['kcn'] && ! $out['distances'] && ! $out['dropFees']
             && ! array_filter($out['fuel'], fn ($f) => $f['hr'] || $f['hh']);
         return $empty ? [] : $out;
     }

@@ -586,7 +586,7 @@ trait HandlesShipments
                 $khac = $perDay && ! empty($m['khac']);
                 $choHo = $perDay && ! $khac && ! empty($m['choHo']);
                 $g['manual'][] = ['name' => (string) ($m['name'] ?? ''), 'amount' => $amt, 'perDay' => $perDay, 'choHo' => $choHo, 'khac' => $khac,
-                    'note' => $khac ? (string) ($m['note'] ?? '') : ''];
+                    'note' => $khac ? (string) ($m['note'] ?? '') : '', 'bill' => ! empty($m['bill'])];   // bill = tích "Thu khách"
                 if ($amt <= 0) continue;
                 if ($khac) { $g['khacSub'] += $amt; continue; }
                 if ($perDay) $g['sub'] += $amt; else $g['payrollSub'] += $amt;
@@ -683,6 +683,15 @@ trait HandlesShipments
                 unset($manualByTrip[(string) $g['trip']]);
                 if (isset($manualByCont[(string) $g['cont']])) { $ms = array_merge($ms, $manualByCont[(string) $g['cont']]); unset($manualByCont[(string) $g['cont']]); }
                 $addManual($g, $ms);
+                // PHÍ THEO ĐIỂM HẠ của quy chế (chuyến có quy chế): luong/choho cộng chi cho lái trong ngày; khac = chi phí công ty.
+                if ($g['matched'] ?? false) {
+                    foreach ($this->dropFeeItems($l, $dayReg, $amts) as $it) {
+                        $g['items'][] = $it;
+                        if ($it['fixed'] === 'khac') { $g['khacSub'] += $it['amount']; continue; }
+                        $g['sub'] += $it['amount'];
+                        if ($it['fixed'] === 'choho') $g['chohoSub'] += $it['amount'];
+                    }
+                }
                 // có tiền (kể cả thủ công) → hết cảnh báo; trừ khoản còn chờ NHẬP TAY (vd tiền đường khác nhóm cảng)
                 if ($g['sub'] > 0 && $g['note'] !== '' && empty($g['needInput'])) $g['note'] = '';
                 // TRỢ CẤP THEO NGÀY (quy chế; kế toán chốt 09/10/2026) — chi trong ngày, tính lương. Thêm sau dòng xóa cảnh báo
@@ -709,6 +718,20 @@ trait HandlesShipments
                         ['editable' => true, 'removable' => true, 'base' => $turnaroundAllowance]) : 0;
                     if ($tripNo >= 3 && $thirdTripAllowance > 0 && $turnPaid <= 0) $add('chuyen3', 'Trợ cấp chuyến thứ ' . $tripNo . ' trong ngày', $thirdTripAllowance);
                     $prevOutHp = $outHp;
+                }
+                // THU KHÁCH: khoản chi cho lái được tích "Thu khách" (mọi khoản trừ Lương chuyến) → ghi thành dòng chi hộ của
+                // lô khi lưu popup Chi lái / chốt ngày (syncRoutePayBilling) để Bảng kê tự cộng vào Chi hộ.
+                // trip_overrides[trip].bill = {ck: bool} (đã lưu); chưa lưu → mặc định của khoản (phí theo điểm hạ có cờ bill).
+                $billMap = is_array($ov['bill'] ?? null) ? $ov['bill'] : [];
+                $g['billItems'] = [];
+                foreach ($g['items'] as &$it) {
+                    $ck = (string) ($it['ck'] ?? $it['key']);
+                    $it['bill'] = array_key_exists($ck, $billMap) ? (bool) $billMap[$ck] : ! empty($it['billDefault']);
+                    if ($it['bill'] && (int) $it['amount'] > 0) $g['billItems'][] = ['key' => $ck, 'label' => (string) $it['label'], 'amount' => (int) $it['amount']];
+                }
+                unset($it);
+                foreach ($g['manual'] as $mi => $m) {
+                    if (! empty($m['bill']) && $m['amount'] > 0) $g['billItems'][] = ['key' => 'm' . $mi, 'label' => $m['name'] !== '' ? $m['name'] : 'Chi khác', 'amount' => (int) $m['amount']];
                 }
                 $payGroups[] = $g;
                 $payTotal += $g['sub'];
@@ -932,6 +955,8 @@ trait HandlesShipments
         }
         $fuels = TruckingFuelPrice::orderByDesc('from_date')->orderByDesc('id')->get();
         $g = $this->legPayGroup($leg, $axle, $fuels, now()->toDateString(), $reg);
+        // Phí theo điểm hạ (cộng ở Lộ trình sau quy chế) — thử tính cũng hiện cho thấy chuyến được cộng gì
+        if ($g['matched'] ?? false) foreach ($this->dropFeeItems($leg, $reg) as $it) $g['items'][] = $it;
         // Giải thích: nhóm cảng của 2 đầu + tỉnh cũ / vùng của từng kho
         $grp = function (string $label) use ($reg) {
             $c = $this->pointCode($label);
@@ -956,6 +981,28 @@ trait HandlesShipments
     {
         if (! $book) return [];
         return $this->regCache[(int) $book->id] ??= \App\Support\SalaryZones::cleanRegulation($book->regulation);
+    }
+
+    /**
+     * PHÍ THEO ĐIỂM HẠ (quy chế › dropFees): chuyến kéo cont ra hạ ở điểm thuộc codes của dòng → thêm khoản đó vào chuyến.
+     * key = "df{chỉ số dòng}" (sửa tiền / tích Thu khách lưu theo key). fixed = loại khoản: luong | choho | khac (chi phí
+     * công ty — không cộng chi cho lái). $amts = số tiền sửa tay của chuyến (trip_overrides.amounts; 0 = bỏ khoản).
+     */
+    private function dropFeeItems(array $leg, array $reg, array $amts = []): array
+    {
+        if (($leg['mode'] ?? '') === 'none' || empty($reg['dropFees'])) return [];
+        $dc = $this->pointCode((string) ($leg['to'] ?? ''));
+        if ($dc === '') return [];
+        $out = [];
+        foreach ($reg['dropFees'] as $i => $f) {
+            if (! in_array($dc, $f['codes'], true)) continue;
+            $key = 'df' . $i;
+            $edited = array_key_exists($key, $amts);
+            $out[] = ['key' => $key, 'ck' => $key, 'label' => $f['name'], 'amount' => $edited ? (int) $amts[$key] : (int) $f['amount'],
+                'perDay' => true, 'fixed' => $f['type'], 'choHo' => $f['type'] === 'choho', 'editable' => true, 'base' => (int) $f['amount'],
+                'dropFee' => $dc, 'billDefault' => ! empty($f['bill'])] + ($edited ? ['edited' => true] : []);
+        }
+        return $out;
     }
 
     /** Mã điểm (cảng / kho) chuẩn hóa IN HOA từ tên hoặc ký hiệu — dùng so bảng KCN, nhóm cảng, bảng km. */
@@ -1108,6 +1155,7 @@ trait HandlesShipments
                 'choHo'  => empty($m['khac']) && ! empty($m['choHo']),       // chi hộ — không tính lương
                 'khac'   => ! empty($m['khac']),                              // chi phí khác — không tính lương, thống kê riêng
                 'note'   => ! empty($m['khac']) ? ($this->str($m['note'] ?? null) ?? '') : '',   // ghi chú chi phí khác (để biết chi gì)
+                'bill'   => ! empty($m['bill']),                              // tích "Thu khách" → lên Chi hộ của lô ở bảng kê
             ];
         }
         // Khoản phí tuyến chọn "Chi hộ" theo từng chuyến: chỉ ghi đè choho của các cont có trong payload, giữ lít dầu sửa tay.
@@ -1133,6 +1181,16 @@ trait HandlesShipments
             if ($amts) $cur['amounts'] = $amts; else unset($cur['amounts']);
             $this->tripOvPut($tripOv, $trip, $cont, $cur);
         }
+        // Tích "Thu khách" theo chuyến: [{trip, cont, map: {ck: bool}}] — ghi đủ trạng thái các khoản của chuyến.
+        foreach ((array) ($data['billItems'] ?? []) as $b) {
+            if (! is_array($b)) continue;
+            $cont = (string) ($b['cont'] ?? ''); $trip = (string) ($b['trip'] ?? '');
+            $map = [];
+            foreach ((array) ($b['map'] ?? []) as $k => $v) if (($k = (string) $k) !== '' && $k !== 'luong') $map[$k] = (bool) $v;
+            $cur = $this->tripOvGet($tripOv, $trip, $cont);
+            if ($map) $cur['bill'] = $map; else unset($cur['bill']);
+            $this->tripOvPut($tripOv, $trip, $cont, $cur);
+        }
         \App\Models\TruckingRoutePay::updateOrCreate(
             ['work_date' => $date, 'bks' => $bks],
             [
@@ -1147,7 +1205,42 @@ trait HandlesShipments
                 'updated_by' => auth()->id(),
             ]
         );
-        return ['ok' => true];
+        $billed = $this->syncRoutePayBilling($date, $bks);
+        return ['ok' => true, 'billed' => $billed];
+    }
+
+    /**
+     * Khoản chi cho lái tích "Thu khách" của 1 xe / ngày → dòng CHI HỘ (billable) trong Chi phí lô hàng của đúng lô chuyến đó,
+     * để Bảng kê tự cộng vào Chi hộ (không VAT), "Tính lại" / cảnh báo lệch giá cũng thấy. Dòng hệ thống: src = 'routePay',
+     * src_key = "rp|{ngày}|{bks}|{#lô}|{khoản}" — mỗi lần đồng bộ ghi đè đúng các dòng đó, gỡ dòng không còn tích; KHÔNG
+     * đụng dòng người dùng tự nhập. Gọi khi lưu popup Chi lái và khi chốt ngày. Trả số dòng đang thu khách của xe / ngày.
+     */
+    public function syncRoutePayBilling(string $date, string $bks, ?array $day = null): int
+    {
+        $day ??= $this->routeTripByDate($date);
+        $truck = collect($day['trucks'] ?? [])->firstWhere('bks', $bks);
+        $prefix = 'rp|' . $date . '|' . $bks . '|';
+        $want = [];   // src_key => [lô, tên khoản, số tiền]
+        foreach (($truck['payGroups'] ?? []) as $g) {
+            $sid = (int) ltrim((string) ($g['trip'] ?? ''), '#');
+            if (! empty($g['orphan']) || $sid <= 0) continue;   // chi khác chưa gắn chuyến → không có lô để thu
+            foreach (($g['billItems'] ?? []) as $b) $want[$prefix . '#' . $sid . '|' . $b['key']] = [$sid, $b['label'], (int) $b['amount']];
+        }
+        $existing = TruckingCostLine::where('src', 'routePay')->where('src_key', 'like', str_replace(['%', '_'], ['\%', '\_'], $prefix) . '%')->get()->keyBy('src_key');
+        $touched = [];
+        $note = 'Chi cho lái ' . $bks . ' ngày ' . \Carbon\Carbon::parse($date)->format('d/m/Y') . ' — tích Thu khách ở Lộ trình';
+        foreach ($want as $k => [$sid, $label, $amount]) {
+            $cl = $existing->get($k) ?? new TruckingCostLine(['src' => 'routePay', 'src_key' => $k]);
+            $cl->fill(['shipment_id' => $sid, 'item' => $label, 'amount' => $amount, 'vat' => 0, 'billable' => true, 'date' => $date, 'note' => $note]);
+            if (! $cl->exists || $cl->isDirty()) { $cl->save(); $touched[$sid] = true; }
+        }
+        foreach ($existing as $k => $cl) {
+            if (isset($want[$k])) continue;
+            $touched[(int) $cl->shipment_id] = true;
+            $cl->delete();
+        }
+        foreach (TruckingShipment::whereIn('id', array_keys($touched))->get() as $s) $this->recomputeShipmentDerived($s, ['cost']);
+        return count($want);
     }
 
     /**
@@ -1246,6 +1339,7 @@ trait HandlesShipments
             ];
             $row->updated_by = auth()->id();
             $row->save();
+            $this->syncRoutePayBilling($date, $bks, $day);   // chốt ngày → khoản tích Thu khách (kể cả mặc định chưa lưu) lên bảng kê
             $n++;
         }
         return ['ok' => true, 'frozen' => true, 'count' => $n];

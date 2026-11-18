@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class TruckingCostLine extends Model
 {
     protected $fillable = [
-        'shipment_id', 'item', 'cost_item_id', 'amount', 'vat', 'invoice_no', 'payer', 'payer_id', 'date', 'billable', 'ext_pay', 'color', 'src', 'note', 'sort',
+        'shipment_id', 'item', 'cost_item_id', 'amount', 'vat', 'invoice_no', 'payer', 'payer_id', 'date', 'billable', 'ext_pay', 'color', 'src', 'src_key', 'note', 'sort',
     ];
 
     protected $casts = [

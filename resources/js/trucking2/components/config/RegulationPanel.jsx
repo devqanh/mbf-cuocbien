@@ -46,7 +46,9 @@ const summary = (r) => !r ? "" : [
   (r.zones || []).length + " vùng",
   (r.kcn || []).length + " KCN",
   (r.distances || []).length + " chặng",
+  ...((r.dropFees || []).length ? [(r.dropFees || []).length + " phí điểm hạ"] : []),
 ].join(" · ");
+const DROP_TYPES = [{ value: "choho", label: "Chi hộ" }, { value: "luong", label: "Tính lương" }, { value: "khac", label: "Chi phí khác (công ty)" }];
 const MODES = [{ value: "zone", label: "Bảng vùng — Bước 3 (theo tỉnh cũ của kho)" }, { value: "kcn", label: "Bảng KCN — Bước 4 (theo ký hiệu kho)" }];
 
 /* HƯỚNG DẪN CẤU HÌNH theo bước — người mới làm lần lượt; mỗi bước có TRẠNG THÁI thật (đủ / còn thiếu gì) + đường dẫn
@@ -150,7 +152,8 @@ function HowItWorks({ d }) {
         {row(2, <><b>Km</b> = km khứ hồi trong bảng KCN, không có thì <b>cộng các chặng</b> xe đi qua <span style={pill("#eef4ff", "#2563eb")}>Bước 6</span>{arrow}<b>Dầu</b> = km × định mức theo số cầu xe <span style={pill("#eef4ff", "#2563eb")}>Bước 5</span> × giá dầu <span style={pill("#eef4ff", "#2563eb")}>Bước 7</span> (chi phí công ty).</>)}
         {row(3, <><b>Vé trạm</b> = cộng vé các chặng đi qua <span style={pill("#eef4ff", "#2563eb")}>Bước 6</span> (chi hộ cho lái, không tính lương).</>)}
         {row(4, <><b>Trợ cấp trong ngày</b>: quay đầu tuyến ngoài Hải Phòng · từ chuyến thứ 3 trong ngày (mỗi chuyến) — Lộ trình tự cộng vào đúng chuyến (mức tiền ở mục “Trợ cấp trong ngày”).</>)}
-        {row(5, <>Trên <b>Lộ trình</b>: phụ cấp đi đường + vé trạm + trợ cấp chi cho lái <b>trong ngày</b>; lương chuyến cộng vào <b>kỳ lương</b>. Kế toán vẫn <b>sửa tay</b> được từng chuyến ở popup Chi lái.</>)}
+        {row(5, <><b>Phí theo điểm hạ</b>: chuyến hạ cont ở điểm đã khai → tự cộng khoản tương ứng; khoản tích <b>Thu khách</b> lên Chi hộ của lô ở Bảng kê.</>)}
+        {row(6, <>Trên <b>Lộ trình</b>: phụ cấp đi đường + vé trạm + trợ cấp chi cho lái <b>trong ngày</b>; lương chuyến cộng vào <b>kỳ lương</b>. Kế toán vẫn <b>sửa tay</b> được từng chuyến ở popup Chi lái.</>)}
       </div>
     </div>
   );
@@ -192,7 +195,7 @@ function TripPreview({ draft, meta }) {
     </div>
   );
   const items = t ? [...(t.items || []), ...(t.payrollItems || [])] : [];
-  const daily = t ? (t.items || []).reduce((s, x) => s + (+x.amount || 0), 0) : 0;
+  const daily = t ? (t.items || []).reduce((s, x) => s + (x.fixed === "khac" ? 0 : (+x.amount || 0)), 0) : 0;
   const payroll = t ? (t.payrollItems || []).reduce((s, x) => s + (+x.amount || 0), 0) : 0;
   return (
     <div style={{ ...sec, borderColor: "#d9cdfa", background: "#faf8ff" }} id="reg-try">
@@ -232,7 +235,7 @@ function TripPreview({ draft, meta }) {
                 <div style={{ color: "#6d28d9", fontWeight: 600 }}>{t.feeRule}</div>
                 {items.map((x, i) => (
                   <div key={i}>{x.label}: {x.required ? <span style={{ color: "#b45309", fontWeight: 600 }}>nhập tay ở Lộ trình{x.suggest ? " (gợi ý " + fmtMoney(x.suggest) + ")" : ""}</span> : <b className="tnum">{fmtMoney(x.amount)}</b>}
-                    <span style={{ color: "var(--ink-4)" }}> · {x.perDay === false ? "vào kỳ lương" : x.fixed === "choho" ? "chi hộ trong ngày" : "chi trong ngày, tính lương"}</span></div>
+                    <span style={{ color: "var(--ink-4)" }}> · {x.perDay === false ? "vào kỳ lương" : x.fixed === "choho" ? "chi hộ trong ngày" : x.fixed === "khac" ? "chi phí công ty" : "chi trong ngày, tính lương"}{x.dropFee ? " · phí điểm hạ " + x.dropFee : ""}{x.billDefault ? " · thu khách" : ""}</span></div>
                 ))}
                 {t.inputHint ? <div style={{ color: "#b45309" }}>{t.inputHint}</div> : null}
               </>
@@ -487,6 +490,37 @@ export function RegulationPanel({ book, meta = {}, onBooks }) {
                     <Money value={(d.allowances || {})[k] ?? 100000} onChange={(v) => upd((x) => { x.allowances = { turnaround: 100000, thirdTrip: 100000, ...(x.allowances || {}), [k]: v }; return x; })} />
                   </div>
                 ))}
+              </div>
+
+              {/* Phí theo điểm hạ — chuyến hạ cont ở điểm nào thì Lộ trình tự cộng các khoản tương ứng (theo bảng quy chế của ngày) */}
+              <div style={sec} id="reg-drop">
+                {secTitle("Phí theo điểm hạ (tự cộng vào chuyến)", "Chuyến kéo cont ra hạ ở điểm đã chọn (theo ký hiệu Nơi hạ) → Lộ trình tự cộng khoản này vào chuyến, theo bảng quy chế áp cho ngày chạy. Loại: Chi hộ / Tính lương (cộng chi cho lái) hoặc Chi phí khác (chi phí công ty, không cộng chi cho lái). Tích “Thu khách” = mặc định thu lại của khách: lưu popup Chi lái hoặc chốt ngày là khoản lên Chi hộ của lô ở Bảng kê (vẫn bỏ tích được từng chuyến). Kế toán sửa được số tiền từng chuyến; nhập 0 = bỏ khoản.")}
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
+                    <thead><tr><th style={th}>Điểm hạ (ký hiệu)</th><th style={{ ...th, width: 200 }}>Tên khoản</th><th style={{ ...th, width: 140 }}>Số tiền / chuyến</th><th style={{ ...th, width: 170 }}>Loại</th><th style={{ ...th, width: 96 }}>Thu khách</th><th style={{ width: 40 }} /></tr></thead>
+                    <tbody>
+                      {(d.dropFees || []).map((f, i) => {
+                        const setF = (np) => upd((x) => { x.dropFees = (x.dropFees || []).map((o, j) => (j === i ? { ...o, ...np } : o)); return x; });
+                        return (
+                          <tr key={i} style={{ borderTop: "1px solid var(--line-2)" }}>
+                            <td style={td}><MultiCombo values={f.codes || []} max={30} options={meta.locCodes || []} placeholder="Chọn điểm hạ…" onChange={(v) => setF({ codes: v })} /></td>
+                            <td style={td}><input value={f.name || ""} onChange={(e) => setF({ name: e.target.value })} placeholder="VD: Phí nâng hạ cảng" style={inp} /></td>
+                            <td style={td}><Money value={f.amount || ""} onChange={(v) => setF({ amount: v })} /></td>
+                            <td style={td}><Combo value={f.type || "choho"} options={DROP_TYPES} strict onChange={(v) => setF({ type: v })} small /></td>
+                            <td style={{ ...td, textAlign: "center" }}>
+                              <label style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600, color: f.bill ? "#166534" : "var(--ink-4)", cursor: "pointer" }}>
+                                <input type="checkbox" checked={!!f.bill} onChange={(e) => setF({ bill: e.target.checked })} style={{ accentColor: "#16a34a" }} /> Thu khách
+                              </label>
+                            </td>
+                            <td style={td}><button type="button" title="Xóa dòng" style={delBtn} onClick={() => upd((x) => { x.dropFees = (x.dropFees || []).filter((_, j) => j !== i); return x; })}><i className="bi bi-x-lg" /></button></td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {!(d.dropFees || []).length && <div style={{ fontSize: 12, color: "var(--ink-4)", padding: "4px 6px" }}>Chưa có khoản nào — chuyến chỉ tính theo các bước trên.</div>}
+                <button type="button" style={addBtn} onClick={() => upd((x) => { x.dropFees = [...(x.dropFees || []), { codes: [], name: "", amount: "", type: "choho", bill: true }]; return x; })}><i className="bi bi-plus-lg" /> Thêm phí theo điểm hạ</button>
               </div>
 
               {/* 4. Định mức dầu */}

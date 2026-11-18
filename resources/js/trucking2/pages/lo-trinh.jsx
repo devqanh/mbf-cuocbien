@@ -64,6 +64,16 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
   const ckOf = (it) => it.ck || it.key;
   const [chSel, setChSel] = useState(() => groups.map((g) => new Set((g.items || []).filter((it) => it.choHo).map(ckOf))));
   const setCh = (gi, ck, on) => setChSel((prev) => prev.map((st, j) => { if (j !== gi) return st; const n = new Set(st); on ? n.add(ck) : n.delete(ck); return n; }));
+  // THU KHÁCH: khoản (trừ Lương chuyến) tích → khi Lưu ghi thành dòng CHI HỘ của lô chuyến đó → Bảng kê tự cộng vào Chi hộ.
+  const [billSel, setBillSel] = useState(() => groups.map((g) => new Set((g.items || []).filter((it) => it.bill).map(ckOf))));
+  const setBill = (gi, ck, on) => setBillSel((prev) => prev.map((st, j) => { if (j !== gi) return st; const n = new Set(st); on ? n.add(ck) : n.delete(ck); return n; }));
+  const billBox = (on, onChange, disabled) => (
+    <label title={disabled ? "Chuyến không gắn lô hàng — không thu khách được" : "Tích = thu lại của khách: khi Lưu, khoản này lên cột Chi hộ của lô ở Bảng kê (không VAT)"}
+      style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, fontWeight: 600, padding: "3px 7px", borderRadius: 6, cursor: frozen || disabled ? "default" : "pointer", whiteSpace: "nowrap",
+        border: "1px solid " + (on ? "#86efac" : "var(--line)"), background: on ? "#dcfce7" : "#fff", color: on ? "#166534" : "var(--ink-4)", opacity: disabled ? 0.5 : 1 }}>
+      <input type="checkbox" checked={on} disabled={frozen || disabled} onChange={(e) => onChange(e.target.checked)} style={{ accentColor: "#16a34a", margin: 0 }} /> Thu khách
+    </label>
+  );
   // SỐ TIỀN NHẬP TAY cho khoản editable (tiền đường chuyến HP → ICD/Tri Phương: quy chế không có định mức).
   // amt[gi] = {key: chuỗi tiền}; "" = chưa nhập (chuyến còn cảnh báo).
   // Khoản editable có thể ở cả chi trong ngày (items) lẫn kỳ lương (payrollItems — lương chuyến xe ra không kéo cont).
@@ -90,7 +100,8 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
       </div>
     );
   };
-  const computedSub = (g, gi) => (g.items || []).reduce((s, it) => s + amtOf(gi, it), 0);
+  // Khoản loại "Chi phí khác" (phí theo điểm hạ khai là chi phí công ty) không cộng vào chi cho lái
+  const computedSub = (g, gi) => (g.items || []).reduce((s, it) => s + (it.fixed === "khac" ? 0 : amtOf(gi, it)), 0);
   // Chi phí khác = chi phí CÔNG TY → không cộng vào chi cho lái
   const manualSub = (gi) => (extras[gi] || []).reduce((s, m) => s + (m.perDay !== false && !m.khac ? toNum(m.amount) : 0), 0);
   const chohoSub = (g, gi) => (g.items || []).reduce((s, it) => s + ((chSel[gi] || new Set()).has(ckOf(it)) ? amtOf(gi, it) : 0), 0)
@@ -101,7 +112,11 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
   const total = groups.reduce((s, g, gi) => s + groupTotal(g, gi), 0);
   const chohoTotal = groups.reduce((s, g, gi) => s + chohoSub(g, gi), 0);
   // CHI PHÍ KHÁC (chi khác phát sinh chọn "Chi phí khác"): chi phí công ty — KHÔNG tính lương, KHÔNG nằm trong tổng chi cho lái
-  const khacTotal = extras.reduce((s, arr) => s + (arr || []).reduce((a, m) => a + (m.perDay !== false && m.khac ? toNum(m.amount) : 0), 0), 0);
+  const khacTotal = extras.reduce((s, arr) => s + (arr || []).reduce((a, m) => a + (m.perDay !== false && m.khac ? toNum(m.amount) : 0), 0), 0)
+    + groups.reduce((s, g, gi) => s + (g.items || []).reduce((a, it) => a + (it.fixed === "khac" ? amtOf(gi, it) : 0), 0), 0);
+  // Tổng đang tích Thu khách (khoản có tiền) — hiện ở đầu popup để biết sẽ lên bảng kê bao nhiêu
+  const billTotal = groups.reduce((s, g, gi) => s + (g.orphan ? 0 : (g.items || []).reduce((a, it) => a + ((billSel[gi] || new Set()).has(ckOf(it)) ? amtOf(gi, it) : 0), 0)
+    + (extras[gi] || []).reduce((a, m) => a + (m.bill ? toNum(m.amount) : 0), 0)), 0);
   // Ô loại cho CHI KHÁC PHÁT SINH: 3 loại (khoản theo quy chế đã khóa loại nên chỉ dòng thủ công mới chọn)
   const exTypeSel = (m, onChange) => {
     const v = m.khac ? "khac" : m.choHo ? "choho" : "luong";
@@ -135,14 +150,16 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
     const extraItems = [];
     groups.forEach((g, gi) => (extras[gi] || []).forEach((m) => {
       if (!(m.name || "").trim() && !toNum(m.amount)) return;   // bỏ dòng rỗng
-      extraItems.push({ trip: g.trip || "", cont: g.cont || "", name: m.name || "", amount: m.amount, perDay: m.perDay !== false, choHo: !m.khac && !!m.choHo, khac: !!m.khac, note: m.khac ? (m.note || "") : "" });
+      extraItems.push({ trip: g.trip || "", cont: g.cont || "", name: m.name || "", amount: m.amount, perDay: m.perDay !== false, choHo: !m.khac && !!m.choHo, khac: !!m.khac, note: m.khac ? (m.note || "") : "", bill: !g.orphan && !!m.bill });
     }));
+    // Tích "Thu khách" của khoản theo quy chế / phí điểm hạ — gửi đủ trạng thái từng khoản (bỏ tích cũng được lưu)
+    const billItems = groups.filter((g) => !g.orphan).map((g) => { const gi = groups.indexOf(g); return { trip: g.trip || "", cont: g.cont || "", map: Object.fromEntries((g.items || []).map((it) => [ckOf(it), (billSel[gi] || new Set()).has(ckOf(it))])) }; });
     // Khoản phí tuyến chọn Chi hộ theo từng chuyến (gửi đủ mọi chuyến để bỏ chọn cũng được lưu)
     const chohoItems = groups.map((g, gi) => ({ trip: g.trip || "", cont: g.cont || "", keys: [...(chSel[gi] || [])] }));
     // Số tiền nhập tay (gửi đủ mọi khoản editable — xóa trắng = bỏ nhập tay)
     const amountItems = groups.flatMap((g, gi) => editables(g).map((it) => ({ trip: g.trip || "", cont: g.cont || "", key: it.key, amount: (amt[gi] || {})[it.key] ?? "" })));
-    window.trkApi("POST", (window.__TRK.routes || {}).savePay, { date, bks: truck.bks, driver, paid, note, extraItems, chohoItems, amountItems })
-      .then((r) => { if (r && r.ok) { window.trkToast && window.trkToast("Đã lưu chi cho lái"); onSaved({ payDriver: driver, paid, payNote: note }); onClose(); } else { window.trkToast && window.trkToast("Lưu thất bại", "error"); setSaving(false); } })
+    window.trkApi("POST", (window.__TRK.routes || {}).savePay, { date, bks: truck.bks, driver, paid, note, extraItems, chohoItems, amountItems, billItems })
+      .then((r) => { if (r && r.ok) { window.trkToast && window.trkToast("Đã lưu chi cho lái" + (r.billed ? ` · ${r.billed} khoản thu khách lên bảng kê` : "")); onSaved({ payDriver: driver, paid, payNote: note }); onClose(); } else { window.trkToast && window.trkToast("Lưu thất bại", "error"); setSaving(false); } })
       .catch(() => { window.trkToast && window.trkToast("Lỗi kết nối", "error"); setSaving(false); });
   };
   const footer = (
@@ -159,6 +176,7 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
       <input value={m.name || ""} onChange={(e) => updEx(gi, k, { name: e.target.value })} placeholder="Tên khoản phát sinh"
         style={{ flex: 1, minWidth: 0, padding: "5px 8px", fontSize: 12.5, border: "1px solid var(--line)", borderRadius: 7, outline: "none" }} />
       {exTypeSel(m, (np) => updEx(gi, k, np))}
+      {billBox(!!m.bill, (v) => updEx(gi, k, { bill: v }), !!(groups[gi] || {}).orphan)}
       <div style={{ width: 130 }}><Money value={m.amount} onChange={(x) => updEx(gi, k, { amount: x })} dim /></div>
       <button type="button" onClick={() => delEx(gi, k)} title="Xóa khoản" style={{ flexShrink: 0, width: 26, height: 26, display: "grid", placeItems: "center", border: "1px solid var(--line)", borderRadius: 7, background: "#fff", color: "var(--ink-4)", cursor: "pointer" }}><I.x /></button>
     </div>
@@ -173,7 +191,7 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
     </div>
   );
   return (
-    <Modal title={"Chi cho lái xe · " + truck.bks} subtitle={"Ngày " + date + " · theo quy chế lương chuyến + chi khác phát sinh từng chuyến"} onClose={onClose} footer={footer} width={580} icon={<i className="bi bi-cash-coin" />}>
+    <Modal title={"Chi cho lái xe · " + truck.bks} subtitle={"Ngày " + date + " · theo quy chế lương chuyến + chi khác phát sinh từng chuyến"} onClose={onClose} footer={footer} width={680} icon={<i className="bi bi-cash-coin" />}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {groups.length === 0 ? (
           <div style={{ padding: "14px", fontSize: 13, color: "var(--ink-4)", background: "#fafbfc", border: "1px dashed var(--line)", borderRadius: 10 }}>Xe không có chuyến nào trong ngày.</div>
@@ -181,8 +199,13 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "9px 12px", fontSize: 12.5, lineHeight: 1.5, color: "#1f4f9e", background: "#eff5ff", border: "1px solid #cfe0fb", borderRadius: 10 }}>
               <i className="bi bi-info-circle-fill" style={{ marginTop: 2 }} />
-              <span>Mỗi khoản thuộc 1 loại. <b>Tính lương</b> = cộng vào <b>lương cuối tháng</b> của lái (kỳ lương). <b style={{ color: "#9a6700" }}>Chi hộ</b> = tiền đưa lái để chi hộ (vé, đường…). <b style={{ color: "#6d28d9" }}>Chi phí khác</b> = chi phí công ty (VETC, sửa xe, rửa xe, gửi xe…) — như dầu: <b>KHÔNG tính lương</b> và <b>KHÔNG cộng vào tổng chi cho lái</b>. Chi hộ vẫn nằm trong <b>tổng chi hôm nay</b> nhưng <b>KHÔNG tính vào lương cuối tháng</b>. Dòng vàng “kỳ lương” là khoản không chi trong ngày, trả vào kỳ lương.{frozen ? <> <b>Ngày đã chốt</b> — bỏ chốt để đổi loại khoản.</> : null}</span>
+              <span>Mỗi khoản thuộc 1 loại. <b>Tính lương</b> = cộng vào <b>lương cuối tháng</b> của lái (kỳ lương). <b style={{ color: "#9a6700" }}>Chi hộ</b> = tiền đưa lái để chi hộ (vé, đường…). <b style={{ color: "#6d28d9" }}>Chi phí khác</b> = chi phí công ty (VETC, sửa xe, rửa xe, gửi xe…) — như dầu: <b>KHÔNG tính lương</b> và <b>KHÔNG cộng vào tổng chi cho lái</b>. Chi hộ vẫn nằm trong <b>tổng chi hôm nay</b> nhưng <b>KHÔNG tính vào lương cuối tháng</b>. Dòng vàng “kỳ lương” là khoản không chi trong ngày, trả vào kỳ lương. Tích <b style={{ color: "#166534" }}>Thu khách</b> = khoản thu lại của khách: bấm <b>Lưu</b> là khoản lên cột <b>Chi hộ</b> của lô ở <b>Bảng kê</b>.{frozen ? <> <b>Ngày đã chốt</b> — bỏ chốt để đổi loại khoản.</> : null}</span>
             </div>
+            {billTotal > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", fontSize: 12.5, color: "#166534", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10 }}>
+                <i className="bi bi-receipt" /> Đang tích <b>Thu khách</b>: <b className="tnum">{fmtVND(billTotal)}</b> — lên Chi hộ của lô ở Bảng kê khi bấm Lưu.
+              </div>
+            )}
             {warnCount > 0 && (
               <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "9px 12px", fontSize: 12.5, color: "#a05a00", background: "#fff7e9", border: "1px solid #f1d59a", borderRadius: 10 }}>
                 <i className="bi bi-exclamation-triangle-fill" style={{ marginTop: 1 }} />
@@ -224,13 +247,15 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
                       ? <span style={{ fontSize: 11.5, color: "var(--ink-4)" }} className="tnum">{fmtNum(it.liters)} lít × {fmtVND(it.unitPrice)}/lít</span>
                       : null}
                     <span style={{ flex: 1 }} />
+                    {it.dropFee && <span title={"Phí theo điểm hạ " + it.dropFee + " — tự cộng theo quy chế lương"} style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 600, color: "#0369a1", background: "#e0f2fe", padding: "1px 7px", borderRadius: 999 }}>điểm hạ {it.dropFee}</span>}
                     {it.fixed
-                      ? <span title={it.fixed === "choho" ? "Theo quy chế: khoản chi hộ — không tính lương" : "Theo quy chế: tính vào lương"}
+                      ? <span title={it.fixed === "choho" ? "Theo quy chế: khoản chi hộ — không tính lương" : it.fixed === "khac" ? "Theo quy chế: chi phí công ty — không tính lương, không cộng chi cho lái" : "Theo quy chế: tính vào lương"}
                           style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, fontWeight: 600, padding: "3px 8px", borderRadius: 6,
-                            border: "1px solid " + (it.fixed === "choho" ? "#f0c36d" : "var(--line)"), background: it.fixed === "choho" ? "#fff7e6" : "var(--line-2)", color: it.fixed === "choho" ? "#9a6700" : "var(--ink-3)" }}>
-                          <i className="bi bi-lock-fill" style={{ fontSize: 9 }} /> {it.fixed === "choho" ? "Chi hộ" : "Tính lương"}
+                            border: "1px solid " + (it.fixed === "choho" ? "#f0c36d" : it.fixed === "khac" ? "#c4b5fd" : "var(--line)"), background: it.fixed === "choho" ? "#fff7e6" : it.fixed === "khac" ? "#f5f3ff" : "var(--line-2)", color: it.fixed === "choho" ? "#9a6700" : it.fixed === "khac" ? "#6d28d9" : "var(--ink-3)" }}>
+                          <i className="bi bi-lock-fill" style={{ fontSize: 9 }} /> {it.fixed === "choho" ? "Chi hộ" : it.fixed === "khac" ? "Chi phí khác" : "Tính lương"}
                         </span>
                       : typeSel((chSel[gi] || new Set()).has(ckOf(it)), (v) => setCh(gi, ckOf(it), v))}
+                    {billBox((billSel[gi] || new Set()).has(ckOf(it)), (v) => setBill(gi, ckOf(it), v), !!g.orphan)}
                     {it.editable && !frozen
                       ? amtInput(gi, it)
                       : <span className="tnum" style={{ fontWeight: 600, minWidth: 92, textAlign: "right" }}>{fmtVND(amtOf(gi, it))}</span>}

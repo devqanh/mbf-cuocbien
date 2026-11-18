@@ -57,6 +57,11 @@ class LoTrinhController extends BaseTruckingController
             'amountItems.*.cont'    => ['nullable', 'string'],
             'amountItems.*.key'     => ['required', 'string', 'max:40'],
             'amountItems.*.amount'  => ['nullable'],
+            'extraItems.*.bill'     => ['nullable', 'boolean'],   // chi khác tích "Thu khách"
+            'billItems'             => ['nullable', 'array'],     // tích "Thu khách" khoản theo quy chế: [{trip, cont, map{ck: bool}}]
+            'billItems.*.trip'      => ['nullable', 'string', 'max:40'],
+            'billItems.*.cont'      => ['nullable', 'string'],
+            'billItems.*.map'       => ['nullable', 'array'],
         ]);
         return response()->json($this->svc->saveRoutePay($d['date'], $d['bks'], $d));
     }
