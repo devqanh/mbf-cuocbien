@@ -88,9 +88,24 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
   const amtInput = (gi, it) => {
     const raw = rawOf(gi, it);
     const changed = !it.required && raw !== "" && toNum(raw) !== (it.base || 0);
+    // Khoản BỎ được (trợ cấp quay đầu / chuyến thứ 3): đã bỏ = lưu 0 đ → gạch ngang + Khôi phục; chưa bỏ → nút Bỏ
+    const dropped = it.removable && raw !== "" && toNum(raw) === 0;
+    if (dropped) return (
+      <div style={{ width: 130, flexShrink: 0, textAlign: "right", fontSize: 12, color: "var(--ink-4)" }}>
+        <s className="tnum">{fmtVND(it.base || 0)}</s> · đã bỏ
+        <button type="button" onClick={() => setAmtOf(gi, it.key, "")} title="Khôi phục về mức quy chế"
+          style={{ display: "block", marginLeft: "auto", border: "none", background: "none", padding: "2px 0 0", fontSize: 10.5, fontWeight: 600, color: "var(--accent)", cursor: "pointer" }}>↺ Khôi phục</button>
+      </div>
+    );
     return (
       <div style={{ width: 130, flexShrink: 0, textAlign: "right" }}>
         <Money value={(amt[gi] || {})[it.key] ?? ""} onChange={(x) => setAmtOf(gi, it.key, x)} placeholder={it.required ? "Nhập tiền" : fmtNum(it.base || 0)} />
+        {it.removable && (
+          <button type="button" onClick={() => setAmtOf(gi, it.key, "0")} title="Không trả khoản này cho chuyến này (lưu 0 đ)"
+            style={{ border: "none", background: "none", padding: "2px 0 0", fontSize: 10.5, fontWeight: 600, color: "var(--bad, #c0392b)", cursor: "pointer" }}>
+            <i className="bi bi-x-circle" /> Bỏ khoản
+          </button>
+        )}
         {changed && (
           <button type="button" onClick={() => setAmtOf(gi, it.key, "")} title="Bỏ sửa tay — tính lại theo quy chế"
             style={{ border: "none", background: "none", padding: "2px 0 0", fontSize: 10.5, fontWeight: 600, color: "#b45309", cursor: "pointer" }}>

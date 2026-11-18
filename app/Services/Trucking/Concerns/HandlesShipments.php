@@ -744,7 +744,9 @@ trait HandlesShipments
                     // Quay đầu tính theo điều kiện nhưng nhiều lô thực tế không trả → kế toán sửa / bỏ từng chuyến.
                     $turnPaid = ($outHp && $prevOutHp && $turnaroundAllowance > 0) ? $add('quayDau', 'Trợ cấp quay đầu ngoài HP', $turnaroundAllowance,
                         ['editable' => true, 'removable' => true, 'base' => $turnaroundAllowance]) : 0;
-                    if ($tripNo >= 3 && $thirdTripAllowance > 0 && $turnPaid <= 0) $add('chuyen3', 'Trợ cấp chuyến thứ ' . $tripNo . ' trong ngày', $thirdTripAllowance);
+                    // Trợ cấp chuyến thứ 3+: kế toán SỬA tiền / BỎ (0 đ) được từng chuyến như quay đầu (user 18/11 — trước đây cố định).
+                    if ($tripNo >= 3 && $thirdTripAllowance > 0 && $turnPaid <= 0) $add('chuyen3', 'Trợ cấp chuyến thứ ' . $tripNo . ' trong ngày', $thirdTripAllowance,
+                        ['editable' => true, 'removable' => true, 'base' => $thirdTripAllowance]);
                     $prevOutHp = $outHp;
                 }
                 // THU KHÁCH: khoản chi cho lái được tích "Thu khách" (mọi khoản trừ Lương chuyến) → ghi thành dòng chi hộ của
@@ -1318,7 +1320,7 @@ trait HandlesShipments
     {
         $bks = trim($bks); $date = trim($date);
         if ($bks === '' || $date === '') return ['ok' => false, 'message' => 'Thiếu ngày/biển số'];
-        if (! in_array($key, ['tienDuong', 'luong', 'veTram', 'quayDau'], true)) return ['ok' => false, 'message' => 'Khoản không cho sửa'];
+        if (! in_array($key, ['tienDuong', 'luong', 'veTram', 'quayDau', 'chuyen3'], true)) return ['ok' => false, 'message' => 'Khoản không cho sửa'];
         $row = \App\Models\TruckingRoutePay::whereDate('work_date', $date)->where('bks', $bks)->first()
             ?? new \App\Models\TruckingRoutePay(['work_date' => $date, 'bks' => $bks]);
         if ($row->frozen) return ['ok' => false, 'message' => 'Ngày đã chốt — bỏ chốt ngày để sửa'];
