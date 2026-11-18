@@ -17,6 +17,7 @@ window.__TRK = {
     freeze: '{{ route("trucking2.loTrinh.freeze") }}',
     saveFuel: '{{ route("trucking2.loTrinh.saveFuel") }}',   // sửa lít dầu 1 chuyến
     saveAmount: '{{ route("trucking2.loTrinh.saveAmount") }}',   // sửa phụ cấp / lương 1 chuyến
+    paidAck: '{{ route("trucking2.loTrinh.paidAck") }}',         // đã xử lý chênh lệch chi lái → lấy số hiện tại làm số đã chi
     shipment: '{{ url("trucking-v2/lo-hang") }}',
     routeFees: '{{ url("trucking-v2/cai-dat") }}#routeFees',
   },

@@ -792,6 +792,12 @@ trait HandlesShipments
                 $payrollTotal += $g['payrollSub'];
                 $payWarn++;
             }
+            // Số chi TÍNH THEO LÔ HIỆN TẠI (trước khi áp số đã chốt) — mốc so với SỐ ĐÃ CHI để báo chi thừa / thiếu.
+            $live = ['total' => (int) $payTotal, 'trips' => []];
+            foreach ($payGroups as $pg) {
+                $k = (string) ($pg['trip'] ?? '') !== '' ? (string) $pg['trip'] : 'o:' . ($pg['cont'] ?? '');
+                $live['trips'][$k] = ['cont' => (string) ($pg['cont'] ?? ''), 'route' => (string) ($pg['route'] ?? ''), 'sub' => (int) ($pg['sub'] ?? 0)];
+            }
             // ĐÓNG BĂNG (chốt): nếu xe/ngày đã chốt → dùng số ĐÃ CHỐT (không đổi dù sửa quy chế).
             $frozen = (bool) ($pay?->frozen);
             if ($frozen && is_array($pay->frozen_data)) {
@@ -820,6 +826,8 @@ trait HandlesShipments
                 'payGroups' => $payGroups, 'payTotal' => $payTotal, 'payrollTotal' => $payrollTotal, 'payWarn' => $payWarn, 'chohoTotal' => $chohoTotal, 'khacTotal' => $khacTotal,
                 'fuelTotal' => $fuelTotal, 'fuelLiters' => round($fuelLiters, 1),
                 'frozen' => $frozen,
+                'live' => $live,   // số tính theo lô hiện tại (chụp làm "số đã chi")
+                'paidCheck' => ($pay?->paid && is_array($pay->paid_snapshot)) ? $this->paidDiff($pay->paid_snapshot, $live) : null,
                 'payDriver' => $pay?->driver ?? '', 'payNote' => $pay?->note ?? '', 'paid' => (bool) ($pay?->paid ?? false), 'paidDate' => $pay ? $this->outDate($pay->paid_date) : ''];
         }
         usort($trucks, fn ($a, $b) => count($b['legs']) + count($b['planned']) <=> count($a['legs']) + count($a['planned']) ?: strcmp($a['bks'], $b['bks']));
@@ -1242,8 +1250,60 @@ trait HandlesShipments
                 'updated_by' => auth()->id(),
             ]
         );
-        $billed = $this->syncRoutePayBilling($date, $bks);
+        $day = $this->routeTripByDate($date);
+        $billed = $this->syncRoutePayBilling($date, $bks, $day);
+        // SỐ ĐÃ CHI: vừa tích Đã chi (hoặc đã chi mà chưa có số chụp) → chụp số hiện tại; bỏ tích → xóa số chụp.
+        if (! $paid) DB::table('trucking_route_pays')->whereDate('work_date', $date)->where('bks', $bks)->update(['paid_snapshot' => null]);
+        elseif (! $existing?->paid || ! is_array($existing?->paid_snapshot)) $this->snapshotPaidDay($date, 'paid', $bks, $day);
         return ['ok' => true, 'billed' => $billed];
+    }
+
+    /**
+     * SO SỐ ĐÃ CHI (chụp lúc tích Đã chi) với số tính lại theo LÔ HIỆN TẠI → chi thừa / thiếu + chuyến nào đổi.
+     * changed = cùng chuyến khác tiền (lô sửa giờ / tuyến / kho, quy chế…); added = chuyến mới (lô mới gán xe / đổi giờ ra
+     * vào ngày); removed = chuyến không còn (lô bị sửa xe / giờ / xóa). null = khớp. diff > 0 = chi THIẾU, < 0 = chi THỪA.
+     */
+    private function paidDiff(array $snap, array $live): ?array
+    {
+        $before = is_array($snap['trips'] ?? null) ? $snap['trips'] : [];
+        $changes = [];
+        foreach ($live['trips'] as $k => $t) {
+            $b = $before[$k] ?? null;
+            if ($b === null) { if ($t['sub'] !== 0) $changes[] = ['kind' => 'added', 'cont' => $t['cont'], 'route' => $t['route'], 'before' => 0, 'after' => $t['sub']]; continue; }
+            if ((int) $b['sub'] !== $t['sub']) $changes[] = ['kind' => 'changed', 'cont' => $t['cont'], 'route' => $t['route'],
+                'routeBefore' => (string) ($b['route'] ?? '') !== $t['route'] ? (string) ($b['route'] ?? '') : '', 'before' => (int) $b['sub'], 'after' => $t['sub']];
+        }
+        foreach ($before as $k => $b) {
+            if (! isset($live['trips'][$k]) && (int) ($b['sub'] ?? 0) !== 0) $changes[] = ['kind' => 'removed', 'cont' => (string) ($b['cont'] ?? ''), 'route' => (string) ($b['route'] ?? ''), 'before' => (int) $b['sub'], 'after' => 0];
+        }
+        $diff = (int) $live['total'] - (int) ($snap['total'] ?? 0);
+        if ($diff === 0 && ! $changes) return null;
+        return ['paid' => (int) ($snap['total'] ?? 0), 'now' => (int) $live['total'], 'diff' => $diff, 'changes' => $changes, 'at' => $snap['at'] ?? null, 'src' => $snap['src'] ?? ''];
+    }
+
+    /**
+     * Chụp SỐ ĐÃ CHI (paid_snapshot) = số tính theo lô hiện tại cho các xe ĐÃ CHI của 1 ngày. $src: paid (vừa tích Đã chi) |
+     * ack (kế toán ghi nhận đã chi bù / thu lại xong) | backfill (migration — chỉ xe chưa có số chụp). Ghi thẳng cột (không đẻ
+     * nhật ký). Trả số xe-ngày đã chụp.
+     */
+    public function snapshotPaidDay(string $date, string $src = 'paid', ?string $onlyBks = null, ?array $day = null): int
+    {
+        $day ??= $this->routeTripByDate($date);
+        $n = 0;
+        foreach ($day['trucks'] ?? [] as $t) {
+            if ($onlyBks !== null && $t['bks'] !== $onlyBks) continue;
+            $q = DB::table('trucking_route_pays')->whereDate('work_date', $date)->where('bks', $t['bks'])->where('paid', true);
+            if ($src === 'backfill') $q->whereNull('paid_snapshot');
+            $n += $q->update(['paid_snapshot' => json_encode(($t['live'] ?? ['total' => 0, 'trips' => []]) + ['at' => now('Asia/Ho_Chi_Minh')->format('Y-m-d H:i'), 'src' => $src], JSON_UNESCAPED_UNICODE)]);
+        }
+        return $n;
+    }
+
+    /** Kế toán đã chi bù / thu lại phần chênh lệch → lấy số hiện tại làm số đã chi (hết cảnh báo). */
+    public function ackRoutePaid(string $date, string $bks): array
+    {
+        $n = $this->snapshotPaidDay(trim($date), 'ack', trim($bks));
+        return $n ? ['ok' => true] : ['ok' => false, 'message' => 'Xe / ngày này chưa tích Đã chi'];
     }
 
     /**
@@ -1255,7 +1315,9 @@ trait HandlesShipments
     public function syncRoutePayBilling(string $date, string $bks, ?array $day = null): int
     {
         $day ??= $this->routeTripByDate($date);
-        $truck = collect($day['trucks'] ?? [])->firstWhere('bks', $bks);
+        // So sánh CHẶT: biển "29E-72151" là chuỗi SỐ MŨ với PHP ("29e-72151" ≈ 0) → firstWhere('bks', …) so lỏng sẽ khớp NHẦM
+        // mọi biển "…E-…" (29E-28914 == 29E-72151).
+        $truck = collect($day['trucks'] ?? [])->first(fn ($t) => (string) $t['bks'] === $bks);
         $prefix = 'rp|' . $date . '|' . $bks . '|';
         $want = [];   // src_key => [lô, tên khoản, số tiền]
         foreach (($truck['payGroups'] ?? []) as $g) {

@@ -96,6 +96,13 @@ class LoTrinhController extends BaseTruckingController
         return response()->json($this->svc->saveRouteAmount($d['date'], $d['bks'], (string) ($d['cont'] ?? ''), $d['key'], $raw === '' ? null : (int) $raw, (string) ($d['trip'] ?? '')));
     }
 
+    /** Đã chi bù / thu lại chênh lệch của xe / ngày → lấy số tính theo lô hiện tại làm số đã chi (hết cảnh báo thừa / thiếu). */
+    public function paidAck(Request $request): JsonResponse
+    {
+        $d = $request->validate(['date' => ['required', 'date_format:Y-m-d'], 'bks' => ['required', 'string', 'max:20']]);
+        return response()->json($this->svc->ackRoutePaid($d['date'], $d['bks']));
+    }
+
     /** Chốt / bỏ chốt cả ngày (đóng băng số tiền chi cho lái). */
     public function freeze(Request $request): JsonResponse
     {

@@ -160,6 +160,7 @@ Route::middleware(['auth', RestrictSpendOnlySession::class])->group(function () 
             Route::post('/lo-trinh/freeze',        [LoTrinhController::class, 'freeze'])->name('loTrinh.freeze');
             Route::post('/lo-trinh/fuel',          [LoTrinhController::class, 'saveFuel'])->name('loTrinh.saveFuel');   // sửa lít dầu 1 chuyến
             Route::post('/lo-trinh/amount',        [LoTrinhController::class, 'saveAmount'])->name('loTrinh.saveAmount');   // sửa phụ cấp / lương 1 chuyến
+            Route::post('/lo-trinh/paid-ack',      [LoTrinhController::class, 'paidAck'])->name('loTrinh.paidAck');   // đã chi bù / thu lại chênh lệch → lấy số hiện tại làm số đã chi
         });
         // --- Báo cáo chi phí (lãi lỗ) + báo cáo tài sản (quyền riêng reports.view) ---
         Route::middleware('permission:reports.view')->group(function () {

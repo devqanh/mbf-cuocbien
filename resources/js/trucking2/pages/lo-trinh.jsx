@@ -737,6 +737,15 @@ function LoTrinhApp() {
     } catch (e) { /* trkApi đã báo lỗi */ }
     return false;
   };
+  // Đã chi bù / thu lại chênh lệch → lấy số hiện tại làm số đã chi, tải lại ngầm
+  const ackPaid = async (tr) => {
+    try {
+      const r = await window.trkApi("POST", ROUTES.paidAck, { date, bks: tr.bks });
+      if (r && r.ok) { window.trkToast && window.trkToast("Đã ghi nhận — số đã chi cập nhật theo lô hiện tại"); load(true); return true; }
+      window.trkToast && window.trkToast((r && r.message) || "Lưu thất bại", "error");
+    } catch (e) { /* trkApi đã báo lỗi */ }
+    return false;
+  };
   const allTrucks = data?.trucks || [];
   const isMbf = (t) => t.matched && t.type !== "Ngoài";   // xe MBF = khớp đội xe & không phải "Ngoài"
   const extCount = allTrucks.length - allTrucks.filter(isMbf).length;
@@ -749,6 +758,10 @@ function LoTrinhApp() {
   // Lỗi dữ liệu của các xe đang xem (gom theo loại) + số chuyến/xe vướng để hiện trên nút
   const issueList = collectIssues(trucks);
   const issueCount = issueList.reduce((s, x) => s + x.trips, 0);
+  // Xe đã chi mà lô bị sửa sau đó → chênh lệch (chi thiếu / thừa) cả ngày
+  const paidDiffTrucks = trucks.filter((t) => t.paidCheck);
+  const under = paidDiffTrucks.reduce((s, t) => s + Math.max(0, t.paidCheck.diff), 0);
+  const over = paidDiffTrucks.reduce((s, t) => s + Math.max(0, -t.paidCheck.diff), 0);
 
   // Chốt / bỏ chốt cả ngày: đóng băng số tiền chi cho lái (không đổi khi sửa quy chế).
   const doFreeze = async (frozen) => {
@@ -790,6 +803,15 @@ function LoTrinhApp() {
                   border: "1px solid " + (issueCount ? "#e8b860" : "var(--good)"), background: showCheck ? (issueCount ? "#fff1d6" : "var(--good-weak)") : "#fff", color: issueCount ? "#a05a00" : "var(--good)" }}>
                 <i className={"bi " + (issueCount ? "bi-clipboard-x" : "bi-clipboard-check")} /> Kiểm tra dữ liệu
                 <span className="tnum" style={{ padding: "0 6px", borderRadius: 999, fontSize: 11, background: issueCount ? "#e8b860" : "var(--good)", color: "#fff" }}>{issueCount || "✓"}</span>
+              </button>
+            )}
+            {paidDiffTrucks.length > 0 && (
+              <button type="button" onClick={() => scrollToTruck(paidDiffTrucks[0].bks)}
+                title={"Xe đã chi nhưng lô bị sửa sau đó: " + paidDiffTrucks.map((t) => t.bks).join(", ") + " — bấm để tới xe đầu tiên"}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 32, padding: "0 12px", fontSize: 12.5, fontWeight: 700, borderRadius: 9, cursor: "pointer", border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c" }}>
+                <i className="bi bi-exclamation-octagon-fill" /> Lệch số đã chi: {paidDiffTrucks.length} xe
+                {under > 0 && <span className="tnum" style={{ fontWeight: 600 }}>· thiếu {fmtVND(under)}</span>}
+                {over > 0 && <span className="tnum" style={{ fontWeight: 600, color: "#c2410c" }}>· thừa {fmtVND(over)}</span>}
               </button>
             )}
             {(extCount > 0 || showExt) && (
@@ -872,11 +894,13 @@ function LoTrinhApp() {
                       <i className={"bi " + (tr.paid ? "bi-cash-coin" : "bi-cash")} /> Chi lái: <span className="tnum">{fmtVND(tr.payTotal || 0)}</span>
                       {tr.payDriver ? <span style={{ fontWeight: 500 }}>· {tr.payDriver}</span> : null}
                       {tr.paid ? <span title="Đã chi">✓</span> : null}
+                      {tr.paidCheck ? <i className="bi bi-exclamation-octagon-fill" title={(tr.paidCheck.diff > 0 ? "Chi thiếu " : tr.paidCheck.diff < 0 ? "Chi thừa " : "Tiền từng chuyến đổi ") + fmtVND(Math.abs(tr.paidCheck.diff)) + " so với số đã chi — lô bị sửa sau khi chi"} style={{ color: tr.paidCheck.diff > 0 ? "#b91c1c" : "#c2410c" }} /> : null}
                       {tr.payNote ? <i className="bi bi-sticky" title={"Ghi chú: " + tr.payNote} /> : null}
                       {tr.payWarn > 0 ? <i className="bi bi-exclamation-triangle-fill" title={tr.payWarn + " chuyến chưa ra tiền (xem lý do trong popup Chi lái)"} style={{ color: "#c9820f" }} /> : null}
                     </button>}
                     </div>
                   </div>
+                  {tr.paidCheck && <PaidDiffBar pc={tr.paidCheck} canEdit={!!T.canEdit} onAck={() => ackPaid(tr)} />}
                   {/* LỘ TRÌNH 1 NGÀY: timeline dọc nối liền — chuyến xong (dầu theo payGroups cùng chỉ số) + chuyến chưa xong, xếp theo giờ */}
                   <div style={{ padding: "8px 12px 10px" }}>
                     {(() => {
@@ -901,6 +925,49 @@ function LoTrinhApp() {
       </div>
       {payTruck && <PayPopup truck={payTruck} date={date} drivers={drivers} routeFeesUrl={ROUTES.routeFees}
         onClose={() => setPayTruck(null)} onSaved={(np) => { applyPay(payTruck.bks, np); load(true); }} />}
+    </div>
+  );
+}
+
+/* CHÊNH LỆCH CHI LÁI: xe đã tích "Đã chi" nhưng lô bị sửa sau đó → số tính lại theo lô hiện tại khác số đã chi.
+   diff > 0 = chi THIẾU (cần chi bù cho lái), < 0 = chi THỪA (cần thu lại / trừ lần sau). Liệt kê chuyến nào đổi để sửa;
+   chi bù / thu lại xong bấm "Đã xử lý" → lấy số hiện tại làm số đã chi. */
+function PaidDiffBar({ pc, canEdit, onAck }) {
+  const [busy, setBusy] = useState(false);
+  const under = pc.diff > 0;
+  const KIND = { added: ["Chuyến mới", "#166534"], removed: ["Chuyến không còn", "#b91c1c"], changed: ["Đổi tiền", "#92400e"] };
+  const fmtAt = (s) => (s ? String(s).slice(8, 10) + "/" + String(s).slice(5, 7) + " " + String(s).slice(11, 16) : "");
+  return (
+    <div style={{ padding: "9px 14px", borderBottom: "1px solid var(--line-2)", background: under ? "#fef2f2" : "#fff7ed", fontSize: 12.5, lineHeight: 1.55 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <i className="bi bi-exclamation-octagon-fill" style={{ color: under ? "#b91c1c" : "#c2410c" }} />
+        <span style={{ flex: "1 1 320px" }}>
+          Đã chi <b className="tnum">{fmtVND(pc.paid)}</b>{pc.at ? <span style={{ color: "var(--ink-4)" }}> ({pc.src === "backfill" ? "mốc lúc cập nhật hệ thống " : "lúc "}{fmtAt(pc.at)})</span> : null}
+          {" "}· tính lại theo lô hiện tại <b className="tnum">{fmtVND(pc.now)}</b> →{" "}
+          {pc.diff === 0
+            ? <b>tổng không đổi nhưng tiền từng chuyến đã đổi</b>
+            : <b style={{ color: under ? "#b91c1c" : "#c2410c" }}>{under ? "CHI THIẾU " : "CHI THỪA "}<span className="tnum">{fmtVND(Math.abs(pc.diff))}</span></b>}
+          <span style={{ color: "var(--ink-3)" }}> — lô hàng đã bị sửa sau khi chi{under ? ": cần chi bù cho lái" : pc.diff < 0 ? ": cần thu lại / trừ vào lần chi sau" : ""}.</span>
+        </span>
+        {canEdit && (
+          <button type="button" disabled={busy} onClick={async () => { setBusy(true); await onAck(); setBusy(false); }}
+            title="Đã chi bù / thu lại phần chênh lệch → lấy số hiện tại làm số đã chi (hết cảnh báo)"
+            style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", fontSize: 12, fontWeight: 700, borderRadius: 8, cursor: "pointer", border: "1px solid var(--good)", background: "#fff", color: "var(--good)" }}>
+            <i className="bi bi-check2-circle" /> {busy ? "Đang lưu…" : "Đã xử lý chênh lệch"}
+          </button>
+        )}
+      </div>
+      {(pc.changes || []).length > 0 && (
+        <div style={{ marginTop: 5, paddingLeft: 22, display: "flex", flexDirection: "column", gap: 2 }}>
+          {pc.changes.map((c, i) => (
+            <div key={i} className="tnum" style={{ fontSize: 12, color: "var(--ink-2)" }}>
+              <b style={{ color: KIND[c.kind][1] }}>{KIND[c.kind][0]}</b> · cont <b>{c.cont || "—"}</b> · {c.routeBefore ? <><s style={{ color: "var(--ink-4)" }}>{c.routeBefore}</s> → </> : null}{c.route}
+              {" "}: <span style={{ color: "var(--ink-4)" }}>{fmtVND(c.before)}</span> → <b>{fmtVND(c.after)}</b>
+              <span style={{ color: c.after > c.before ? "#b91c1c" : "#c2410c", fontWeight: 600 }}> ({c.after > c.before ? "+" : "−"}{fmtVND(Math.abs(c.after - c.before))})</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

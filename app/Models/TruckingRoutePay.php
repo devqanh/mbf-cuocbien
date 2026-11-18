@@ -10,6 +10,7 @@ class TruckingRoutePay extends Model
     protected $fillable = [
         'work_date', 'bks', 'vehicle_id', 'driver', 'driver_id', 'paid', 'paid_date', 'note', 'extra_items', 'trip_overrides',
         'frozen', 'frozen_at', 'frozen_data', 'updated_by',
+        'paid_snapshot',   // số ĐÃ CHI chụp lúc tích Đã chi {total, trips{#lô:{cont,route,sub}}, at, src} — so chi thừa / thiếu
     ];
 
     protected $casts = [
@@ -23,5 +24,6 @@ class TruckingRoutePay extends Model
         'frozen'      => 'boolean',
         'frozen_at'   => 'datetime',
         'frozen_data' => 'array',
+        'paid_snapshot' => 'array',
     ];
 }
