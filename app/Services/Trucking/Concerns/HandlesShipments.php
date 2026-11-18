@@ -723,7 +723,9 @@ trait HandlesShipments
                 //  - TỪ CHUYẾN THỨ 3 trong ngày: chuyến kéo cont thứ 3, 4, 5… của xe (bất kể đi đâu) → MỖI chuyến +100k.
                 //  1 chuyến CHỈ hưởng 1 trợ cấp: đã có quay đầu (còn trả) thì không cộng thêm chuyến thứ 3; kế toán bỏ quay đầu
                 //  ở chuyến đó → chuyến thứ 3 (nếu đủ điều kiện) được tính lại.
-                if (($l['mode'] ?? '') !== 'none') {
+                // Cont THỨ 2 của cặp kẹp cont chở cùng chuyến trước → KHÔNG phải chuyến mới: không đếm số chuyến (chuyến thứ 3…),
+                // không trợ cấp quay đầu / chuyến thứ 3 cho riêng nó (user 18/11: kẹp cont tính 1 chuyến).
+                if (($l['mode'] ?? '') !== 'none' && ! $kepSecond) {
                     $tripNo++;
                     $outHp = ($g['tripMode'] ?? '') === 'zone' && $this->legOutsideHaiPhong($l);
                     $add = function ($key, $label, $amount, array $extra = []) use (&$g, $amts) {
