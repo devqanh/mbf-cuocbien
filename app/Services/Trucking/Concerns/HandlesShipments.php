@@ -633,8 +633,29 @@ trait HandlesShipments
             $payGroups = []; $payTotal = 0; $payrollTotal = 0; $payWarn = 0;
             $prevOutHp = false;   // chuyến kéo cont TRƯỚC của xe trong ngày có đi kho ngoài Hải Phòng (tỉnh cũ) không
             $tripNo = 0;          // số thứ tự chuyến KÉO CONT của xe trong ngày vận hành (08:00 → 08:00)
+            $kepOpen = false;     // chuyến trước là cont THỨ NHẤT của 1 cặp kẹp cont (chưa ghép cặp)
             foreach ($ls as $l) {
                 $g = $this->legPayGroup($l, $axle, $fuels, $dateStr);
+                // KẸP CONT (user 18/11): xe chở 2 cont 20' cùng lúc trên cùng tuyến → 2 chuyến LIỀN NHAU của xe đều tích
+                // "Kẹp cont" ở lô = 1 cặp; cont THỨ 2 KHÔNG tính Phụ cấp đi đường (kế toán vẫn nhập tay lại được ở Chi lái).
+                $isKep = ! empty($l['kepCont']) && ($l['mode'] ?? '') !== 'none';
+                $kepSecond = $isKep && $kepOpen;
+                $kepOpen = $isKep && ! $kepSecond;
+                if ($kepSecond) {
+                    foreach ($g['items'] as &$it) {
+                        if ($it['key'] !== 'tienDuong') continue;
+                        $g['sub'] -= (int) $it['amount'];
+                        $it['amount'] = 0; $it['base'] = 0; $it['kep2'] = true;
+                        unset($it['required'], $it['suggest']);
+                    }
+                    unset($it);
+                    $g['kep2'] = true;
+                    // Phụ cấp là khoản duy nhất phải nhập tay (khác nhóm cảng) → cont thứ 2 hết cảnh báo nhập tay
+                    if (! empty($g['needInput']) && ! array_filter(array_merge($g['items'], $g['payrollItems']), fn ($x) => ! empty($x['required']))) {
+                        $g['needInput'] = false; $g['note'] = '';
+                        $g['issues'] = array_values(array_filter($g['issues'] ?? [], fn ($x) => $x['type'] !== 'needInput'));
+                    }
+                }
                 // Lít dầu sửa tay ghi đè định mức quy chế của chuyến (làm tròn số nguyên); tiền = lít × giá dầu theo ngày.
                 $ov = $this->tripOvGet($tripOv, (string) $g['trip'], (string) $g['cont']);
                 $fl = $ov['liters'] ?? null;

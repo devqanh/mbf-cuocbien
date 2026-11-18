@@ -240,6 +240,7 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", borderTop: i ? "1px solid var(--line-2)" : "none", fontSize: 13, background: it.required && rawOf(gi, it) === "" ? "#fffbf0" : undefined }}>
                     <span style={{ fontWeight: 600 }}>
                       {it.label}
+                      {it.kep2 && <span style={{ display: "block", fontSize: 11, fontWeight: 500, color: "#7c3aed" }}>Kẹp cont — cont thứ 2 chở cùng chuyến trước, không tính phụ cấp</span>}
                       {/* Quy chế không có định mức (khác nhóm cảng / xe ra không kéo cont) → bắt buộc nhập tay, gợi ý nếu có */}
                       {it.required && <span style={{ display: "block", fontSize: 11, fontWeight: 500, color: "#a05a00" }}>{g.inputHint || "Nhập tay"}{it.suggest ? <> · gợi ý <b className="tnum">{fmtVND(it.suggest)}</b></> : null}</span>}
                     </span>
