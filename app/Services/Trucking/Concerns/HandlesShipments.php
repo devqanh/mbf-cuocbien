@@ -634,6 +634,7 @@ trait HandlesShipments
             $prevOutHp = false;   // chuyến kéo cont TRƯỚC của xe trong ngày có đi kho ngoài Hải Phòng (tỉnh cũ) không
             $tripNo = 0;          // số thứ tự chuyến KÉO CONT của xe trong ngày vận hành (08:00 → 08:00)
             $kepOpen = false;     // chuyến trước là cont THỨ NHẤT của 1 cặp kẹp cont (chưa ghép cặp)
+            $ketOpen = false;     // chuyến trước là chuyến THỨ NHẤT của 1 cặp kết hợp (chưa ghép cặp)
             foreach ($ls as $l) {
                 $g = $this->legPayGroup($l, $axle, $fuels, $dateStr);
                 // KẸP CONT (user 18/11): xe chở 2 cont 20' cùng lúc trên cùng tuyến → 2 chuyến LIỀN NHAU của xe đều tích
@@ -641,6 +642,12 @@ trait HandlesShipments
                 $isKep = ! empty($l['kepCont']) && ($l['mode'] ?? '') !== 'none';
                 $kepSecond = $isKep && $kepOpen;
                 $kepOpen = $isKep && ! $kepSecond;
+                // KẾT HỢP (user 18/11): 2 chuyến LIỀN NHAU của xe đều tích "Kết hợp" = 1 chuyến khi ĐẾM số chuyến (không đẩy chuyến
+                // sau thành "chuyến thứ 3"); KHÁC kẹp cont: dầu, phụ cấp, vé… của chuyến thứ 2 vẫn tính bình thường.
+                $isKet = ! empty($l['ketHop']) && ($l['mode'] ?? '') !== 'none';
+                $ketSecond = $isKet && $ketOpen;
+                $ketOpen = $isKet && ! $ketSecond;
+                if ($ketSecond) $g['ket2'] = true;
                 if ($kepSecond) {
                     foreach ($g['items'] as &$it) {
                         if ($it['key'] !== 'tienDuong') continue;
@@ -728,9 +735,9 @@ trait HandlesShipments
                 //  - TỪ CHUYẾN THỨ 3 trong ngày: chuyến kéo cont thứ 3, 4, 5… của xe (bất kể đi đâu) → MỖI chuyến +100k.
                 //  1 chuyến CHỈ hưởng 1 trợ cấp: đã có quay đầu (còn trả) thì không cộng thêm chuyến thứ 3; kế toán bỏ quay đầu
                 //  ở chuyến đó → chuyến thứ 3 (nếu đủ điều kiện) được tính lại.
-                // Cont THỨ 2 của cặp kẹp cont chở cùng chuyến trước → KHÔNG phải chuyến mới: không đếm số chuyến (chuyến thứ 3…),
-                // không trợ cấp quay đầu / chuyến thứ 3 cho riêng nó (user 18/11: kẹp cont tính 1 chuyến).
-                if (($l['mode'] ?? '') !== 'none' && ! $kepSecond) {
+                // Cont THỨ 2 của cặp kẹp cont / chuyến THỨ 2 của cặp kết hợp → KHÔNG phải chuyến mới: không đếm số chuyến (chuyến
+                // thứ 3…), không trợ cấp quay đầu / chuyến thứ 3 cho riêng nó (user 18/11: kẹp cont / kết hợp tính 1 chuyến).
+                if (($l['mode'] ?? '') !== 'none' && ! $kepSecond && ! $ketSecond) {
                     $tripNo++;
                     $outHp = ($g['tripMode'] ?? '') === 'zone' && $this->legOutsideHaiPhong($l);
                     $add = function ($key, $label, $amount, array $extra = []) use (&$g, $amts) {

@@ -239,6 +239,8 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
                     <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}>
                       <span className="tnum" style={{ fontWeight: 700, fontSize: 12.5, color: warn ? "#a05a00" : "var(--accent)" }}>{g.route}</span>
                       {g.cont ? <span className="tnum" style={{ fontSize: 11, color: "var(--ink-4)", fontWeight: 600, whiteSpace: "nowrap" }}>· cont {g.cont}</span> : null}
+                      {(g.kep2 || g.ket2) && <span title={g.kep2 ? "Kẹp cont: cont thứ 2 chở cùng chuyến trước — tính chung 1 chuyến, không phụ cấp đi đường, không dầu" : "Kết hợp: tính chung 1 chuyến với chuyến trước khi đếm số chuyến (dầu, phụ cấp vẫn tính)"}
+                        style={{ fontSize: 10.5, fontWeight: 700, color: "#7c3aed", background: "#f3ecff", padding: "1px 7px", borderRadius: 999, whiteSpace: "nowrap" }}>{g.kep2 ? "Kẹp cont · cont 2" : "Kết hợp · chung chuyến trước"}</span>}
                     </div>
                     {/* Mức đã áp theo QUY CHẾ (bảng KCN / bảng vùng theo tỉnh cũ của kho) — dòng riêng cho gọn */}
                     {g.matched && g.feeSource === "regulation" && (
