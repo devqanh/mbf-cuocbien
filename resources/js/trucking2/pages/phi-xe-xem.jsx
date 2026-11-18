@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import "@trk/shared.js";
 
 const { useState, useMemo, useEffect } = React;
-import { I, Btn, Txt, Combo, DateField, fmtVND, fmtNum, fmtDate, toNum } from "@trk/lib.jsx";
+import { I, Btn, Txt, Combo, DateField, Money, fmtVND, fmtNum, fmtDate, toNum } from "@trk/lib.jsx";
 import { PayrollDetail, ExtraPayEditor, PaymentsEditor, payrollSumsFromDetail, rowStats, groupMatches, detailRows } from "@trk/components/payroll-detail.jsx";
 
 const STATUS_OPTS = [["all", "Tất cả"], ["due", "Còn phải trả"], ["paid", "Đã trả đủ"], ["warn", "Có chuyến cần kiểm tra"]];
@@ -52,7 +52,7 @@ function ViewPayrollApp() {
 
   const set = (i, np) => { setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...np } : r))); setDirty(true); };
   const sumExtra = (r) => (r.extraPay || []).reduce((s, e) => s + toNum(e.amount), 0);
-  const effPay = (r) => (r.payroll || 0) + sumExtra(r);   // lương phải trả = gốc (đã trừ dầu) + phát sinh
+  const effPay = (r) => (r.payroll || 0) + sumExtra(r) + toNum(r.chuyenCan);   // lương phải trả = gốc (đã trừ dầu) + phát sinh + chuyên cần
   const paidOf = (r) => (r.payments || []).reduce((s, p) => s + toNum(p.amount), 0);
   const grandPayroll = rows.reduce((a, x) => a + effPay(x), 0);
 
@@ -96,7 +96,7 @@ function ViewPayrollApp() {
   const tot = totOf(view);
   const showChoho = stats.some((s) => s.choho > 0);
   const showKhac = stats.some((s) => s.khac > 0);
-  const nCols = 8 + (showChoho ? 1 : 0) + (showKhac ? 1 : 0);
+  const nCols = 9 + (showChoho ? 1 : 0) + (showKhac ? 1 : 0);
 
   // Gom nhóm theo lái xe: nhóm theo tên lái nhận lương của xe (nhiều lái → giữ chuỗi "A, B").
   const sections = groupBy === "driver"
@@ -113,7 +113,7 @@ function ViewPayrollApp() {
     const sum = view.map(({ r, st }) => ({
       "Biển số": r.bks, "Lái xe nhận lương": r.driver || "", "Số ngày": r.days || 0, "Số chuyến": r.trips || 0,
       "Đã chi theo ngày (tính lương)": r.paidDaily || 0, "Chi hộ": st.choho, "Chi phí khác": st.khac,
-      "Lương gốc": r.payroll || 0, "Lương phát sinh": effPay(r) - (r.payroll || 0), "Lương phải trả": effPay(r),
+      "Lương gốc": r.payroll || 0, "Lương phát sinh": sumExtra(r), "Lương chuyên cần": toNum(r.chuyenCan), "Lương phải trả": effPay(r),
       "Đã trả": paidOf(r), "Còn lại": effPay(r) - paidOf(r), "Dầu (lít, công ty)": Math.round(st.liters), "Chuyến cần kiểm tra": st.warn,
     }));
     const det = [];
@@ -186,11 +186,11 @@ function ViewPayrollApp() {
     const byBks = {}; rows.forEach((x) => { byBks[x.bks] = x; });
     const merged = (r.rows || []).map((nr) => {
       const old = byBks[nr.bks] || {};
-      return { ...nr, detail: nr.lines || nr.detail || [], driver: old.driver || nr.driver || "", extraPay: old.extraPay || [], payments: old.payments || [] };
+      return { ...nr, detail: nr.lines || nr.detail || [], driver: old.driver || nr.driver || "", extraPay: old.extraPay || [], chuyenCan: old.chuyenCan || 0, payments: old.payments || [] };
     });
     const liveSet = new Set(merged.map((x) => x.bks));
     rows.forEach((x) => {
-      if (liveSet.has(x.bks) || !((x.extraPay || []).length || (x.payments || []).length)) return;
+      if (liveSet.has(x.bks) || !((x.extraPay || []).length || (x.payments || []).length || toNum(x.chuyenCan))) return;
       merged.push({ ...x, days: 0, trips: 0, paidDaily: 0, payroll: 0, detail: [] });
     });
     return merged;
@@ -337,7 +337,7 @@ function ViewPayrollApp() {
                 <thead><tr>
                   <TH>Biển số xe</TH><TH>Lái xe nhận lương</TH><TH right>Ngày</TH><TH right>Chuyến</TH>
                   <TH right>Đã chi theo ngày</TH>{showChoho && <TH right>Chi hộ</TH>}{showKhac && <TH right>Chi khác</TH>}
-                  <TH right>Lương phải trả</TH><TH right>Đã trả</TH><TH right>Còn lại</TH>
+                  <TH right>Lương chuyên cần</TH><TH right>Lương phải trả</TH><TH right>Đã trả</TH><TH right>Còn lại</TH>
                 </tr></thead>
                 <tbody>
                   {sections.map((sec) => {
@@ -351,6 +351,7 @@ function ViewPayrollApp() {
                         <td style={{ padding: "8px 10px", textAlign: "right", borderBottom: "1px solid var(--line)" }}><span className="tnum" style={{ color: "var(--ink-4)" }}>{fmtVND(st.daily)}</span></td>
                         {showChoho && <td style={{ padding: "8px 10px", textAlign: "right", borderBottom: "1px solid var(--line)" }}><span className="tnum" style={{ color: "#9a6700" }}>{fmtVND(st.choho)}</span></td>}
                         {showKhac && <td style={{ padding: "8px 10px", textAlign: "right", borderBottom: "1px solid var(--line)" }}><span className="tnum" style={{ color: "#6d28d9" }}>{fmtVND(st.khac)}</span></td>}
+                        <td style={{ padding: "8px 10px", textAlign: "right", borderBottom: "1px solid var(--line)" }}><span className="tnum">{fmtVND(sec.items.reduce((s, { r }) => s + toNum(r.chuyenCan), 0))}</span></td>
                         <td style={{ padding: "8px 10px", textAlign: "right", borderBottom: "1px solid var(--line)" }}><b className="tnum" style={{ color: "var(--accent)" }}>{fmtVND(st.payroll)}</b></td>
                         <td style={{ padding: "8px 10px", textAlign: "right", borderBottom: "1px solid var(--line)" }}><span className="tnum" style={{ color: "var(--good)" }}>{fmtVND(st.paid)}</span></td>
                         <td style={{ padding: "8px 10px", textAlign: "right", borderBottom: "1px solid var(--line)" }}><b className="tnum" style={{ color: (st.payroll - st.paid) > 0 ? "var(--danger)" : "var(--good)" }}>{fmtVND(st.payroll - st.paid)}</b></td>
@@ -376,6 +377,9 @@ function ViewPayrollApp() {
                           <TD right><span className="tnum" style={{ color: "var(--ink-4)" }}>{fmtVND(r.paidDaily)}</span></TD>
                           {showChoho && <TD right><span className="tnum" style={{ color: rs.choho ? "#9a6700" : "var(--ink-4)" }}>{fmtVND(rs.choho)}</span></TD>}
                           {showKhac && <TD right><span className="tnum" style={{ color: rs.khac ? "#6d28d9" : "var(--ink-4)" }}>{fmtVND(rs.khac)}</span></TD>}
+                          <TD right><div style={{ width: 120, marginLeft: "auto" }} onClick={(e) => e.stopPropagation()} title="Lương chuyên cần — tự điền, cộng vào lương phải trả">
+                            {locked ? <span className="tnum">{fmtVND(toNum(r.chuyenCan))}</span> : <Money value={r.chuyenCan || ""} onChange={(v) => set(i, { chuyenCan: v })} placeholder="0" />}
+                          </div></TD>
                           <TD right><span className="tnum" style={{ fontWeight: 700, color: "var(--accent)" }}>{fmtVND(payroll)}</span></TD>
                           <TD right><span className="tnum" style={{ color: "var(--good)" }}>{fmtVND(paid)}</span></TD>
                           <TD right><span className="tnum" style={{ fontWeight: 700, color: remain > 0 ? "var(--danger)" : "var(--good)" }}>{fmtVND(remain)}</span></TD>
@@ -400,6 +404,7 @@ function ViewPayrollApp() {
                     <TD right><span className="tnum" style={{ color: "var(--ink-4)" }}>{fmtVND(tot.daily)}</span></TD>
                     {showChoho && <TD right><span className="tnum" style={{ color: "#9a6700" }}>{fmtVND(tot.choho)}</span></TD>}
                     {showKhac && <TD right><span className="tnum" style={{ color: "#6d28d9" }}>{fmtVND(tot.khac)}</span></TD>}
+                    <TD right><span className="tnum">{fmtVND(view.reduce((s, { r }) => s + toNum(r.chuyenCan), 0))}</span></TD>
                     <TD right><span className="tnum" style={{ fontWeight: 800, fontSize: 15, color: "var(--accent)" }}>{fmtVND(tot.payroll)}</span></TD>
                     <TD right><span className="tnum" style={{ color: "var(--good)" }}>{fmtVND(tot.paid)}</span></TD>
                     <TD right><span className="tnum" style={{ fontWeight: 800, color: (tot.payroll - tot.paid) > 0 ? "var(--danger)" : "var(--good)" }}>{fmtVND(tot.payroll - tot.paid)}</span></TD>

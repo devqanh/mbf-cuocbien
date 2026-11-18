@@ -1458,12 +1458,18 @@ trait HandlesShipments
         $end   = Carbon::parse($to ?: ($from ?: now()->format('Y-m-d')))->startOfDay();
         if ($end->lt($start)) { $tmp = $start; $start = $end; $end = $tmp; }
 
+        // CHỈ XE MBF (đội xe công ty — scope mbfFleet: kind + type) — xe ngoài thuê không có lương lái (user 18/11).
+        $mbf = TruckingVehicle::mbfFleet()->get(['id', 'plate']);
+        $mbfIds = array_flip($mbf->pluck('id')->map(fn ($x) => (int) $x)->all());
+        $mbfPlates = array_flip($mbf->pluck('plate')->map(fn ($p) => trim((string) $p))->all());
         $byBks = [];
         for ($d = $start->copy(); $d->lte($end); $d->addDay()) {
             $ds  = $d->format('Y-m-d');
             $day = $this->routeTripByDate($ds);
             foreach ($day['trucks'] as $t) {
                 $bks = $t['bks'];
+                $isMbf = ($t['vehicleId'] ?? null) ? isset($mbfIds[(int) $t['vehicleId']]) : isset($mbfPlates[trim((string) $bks)]);
+                if (! $isMbf) continue;
                 if (! isset($byBks[$bks])) {
                     $byBks[$bks] = ['bks' => $bks, 'vehicleId' => $t['vehicleId'] ?? null, 'type' => $t['type'], 'axle' => $t['axle'],
                         'drivers' => [], 'days' => 0, 'trips' => 0, 'paidDaily' => 0, 'chiHo' => 0, 'chiKhac' => 0, 'payroll' => 0, 'lines' => []];

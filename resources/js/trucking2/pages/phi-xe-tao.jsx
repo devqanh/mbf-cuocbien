@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import "@trk/shared.js";
 
 const { useState } = React;
-import { I, Btn, Txt, Combo, DateField, fmtVND, axleLabel } from "@trk/lib.jsx";
+import { I, Btn, Txt, Combo, DateField, Money, fmtVND, axleLabel, toNum } from "@trk/lib.jsx";
 import { PayrollDetail } from "@trk/components/payroll-detail.jsx";
 
 const lbl = (t) => <div style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 4, fontWeight: 500 }}>{t}</div>;
@@ -39,7 +39,10 @@ function CreatePayrollApp() {
   };
 
   const set = (i, np) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...np } : r)));
-  const grandPayroll = (rows || []).reduce((a, x) => a + (x.total || 0), 0);
+  // Lương phải trả = lương gốc (Lộ trình) + LƯƠNG CHUYÊN CẦN kế toán tự điền từng xe
+  const payOf = (r) => (r.payroll || 0) + toNum(r.chuyenCan);
+  const grandPayroll = (rows || []).reduce((a, x) => a + payOf(x), 0);
+  const grandCC = (rows || []).reduce((a, x) => a + toNum(x.chuyenCan), 0);
   const grandDaily = (rows || []).reduce((a, x) => a + (x.paidDaily || 0), 0);
 
   const save = async () => {
@@ -97,13 +100,13 @@ function CreatePayrollApp() {
           ) : (
             <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
               <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--line-2)", fontSize: 12, color: "var(--ink-4)" }}>
-                <i className="bi bi-info-circle" /> <b>Lương phải trả</b> = các khoản CHƯA "chi theo ngày" (gom trả 1 đợt). <b>Đã chi theo ngày</b> chỉ để tham khảo (đã thanh toán ở Lộ trình). Bấm vào dòng xe để xem <b>chi tiết từng chuyến</b>. Lái xe tự gán theo thời điểm — sửa được nếu cần.
+                <i className="bi bi-info-circle" /> Chỉ tính <b>xe MBF</b> (xe ngoài thuê không có lương lái). <b>Lương phải trả</b> = lương chuyến (các khoản CHƯA "chi theo ngày", gom trả 1 đợt) + <b>lương chuyên cần</b> tự điền. <b>Đã chi theo ngày</b> chỉ để tham khảo (đã thanh toán ở Lộ trình). Bấm vào dòng xe để xem <b>chi tiết từng chuyến</b>. Lái xe tự gán theo thời điểm — sửa được nếu cần.
               </div>
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead><tr>
                     <TH>Biển số xe</TH><TH>Lái xe nhận lương</TH><TH right>Ngày</TH><TH right>Chuyến</TH>
-                    <TH right>Đã chi theo ngày</TH><TH right>Lương phải trả</TH>
+                    <TH right>Đã chi theo ngày</TH><TH right>Lương chuyến</TH><TH right>Lương chuyên cần</TH><TH right>Lương phải trả</TH>
                   </tr></thead>
                   <tbody>
                     {rows.map((r, i) => (
@@ -118,9 +121,13 @@ function CreatePayrollApp() {
                         <TD right><span className="tnum">{r.days}</span></TD>
                         <TD right><span className="tnum">{r.trips}</span></TD>
                         <TD right><span className="tnum" style={{ color: "var(--ink-4)" }}>{fmtVND(r.paidDaily)}</span></TD>
-                        <TD right><span className="tnum" style={{ fontWeight: 700, color: "var(--accent)" }}>{fmtVND(r.total)}</span></TD>
+                        <TD right><span className="tnum">{fmtVND(r.payroll)}</span></TD>
+                        <TD right><div style={{ width: 130, marginLeft: "auto" }} onClick={(e) => e.stopPropagation()} title="Lương chuyên cần — tự điền, cộng vào lương phải trả">
+                          <Money value={r.chuyenCan || ""} onChange={(v) => set(i, { chuyenCan: v })} placeholder="0" />
+                        </div></TD>
+                        <TD right><span className="tnum" style={{ fontWeight: 700, color: "var(--accent)" }}>{fmtVND(payOf(r))}</span></TD>
                       </tr>
-                      {open[r.bks] && <tr><td colSpan={6} style={{ padding: 0, borderBottom: "1px solid var(--line-2)" }}><PayrollDetail row={r} loTrinhUrl={ROUTES.loTrinh} /></td></tr>}
+                      {open[r.bks] && <tr><td colSpan={8} style={{ padding: 0, borderBottom: "1px solid var(--line-2)" }}><PayrollDetail row={r} loTrinhUrl={ROUTES.loTrinh} /></td></tr>}
                       </React.Fragment>
                     ))}
                   </tbody>
@@ -128,6 +135,8 @@ function CreatePayrollApp() {
                     <tr style={{ background: "#fafbfc" }}>
                       <TD><b>Tổng {rows.length} xe</b></TD><TD /><TD /><TD />
                       <TD right><span className="tnum" style={{ color: "var(--ink-4)" }}>{fmtVND(grandDaily)}</span></TD>
+                      <TD right><span className="tnum">{fmtVND(grandPayroll - grandCC)}</span></TD>
+                      <TD right><span className="tnum">{fmtVND(grandCC)}</span></TD>
                       <TD right><span className="tnum" style={{ fontWeight: 800, fontSize: 15, color: "var(--accent)" }}>{fmtVND(grandPayroll)}</span></TD>
                     </tr>
                   </tfoot>

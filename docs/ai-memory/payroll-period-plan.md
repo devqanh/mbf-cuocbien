@@ -5,6 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: b68a982e-c908-47ea-ac62-63eae4bc49de
+  modified: 2026-11-18T08:46:55.157Z
 ---
 
 **ĐÃ BUILD** (2026-06-18, commit `c87285e`). `/phi-xe` (route name `tripCost.*` giữ nguyên) nay = **Kỳ lương lái xe**, thay hẳn "Phí xe nội bộ theo lô" cũ (TripEditor/computeTripCosts/tripSuggest KHÔNG còn dùng ở đây).
@@ -31,6 +32,8 @@ metadata:
 **DẦU KHÔNG tính vào lương lái (user 2026-06-19, xem [[route-pays-lo-trinh]]):** computePayroll tự loại dầu (payTotal/payrollTotal không còn dầu). Snapshot CŨ (chốt trước đổi luật) còn dau1/dau2 trong groups → xử lý ở FE: `payroll-detail.splitGroup` lọc item dầu (`key dau1/dau2` hoặc có `liters`+`unitPrice`) + export `payrollSumsFromDetail(row)`; `phi-xe-xem` chuẩn hóa rows lúc nạp (payroll/paidDaily suy từ detail đã trừ dầu) → hiển thị đúng ngay + bấm Lưu ghi đè DB (sửa luôn list). "Tính lại" cũng cho số sạch. Không cần migration.
 
 **Đối soát chi tiết (2026-10-15, commit `8bc2889`):** `PayrollDetail` = sổ THEO NGÀY (bung chuyến, chip khoản tô theo rổ daily/payroll/choho/khac, cảnh báo, lít dầu, "Tổng hợp theo khoản", link `lo-trinh?date=&bks=` — Lộ trình đọc 2 param này, cuộn tới xe). Helpers `rowStats`/`groupMatches`/`detailRows` ở payroll-detail.jsx. phi-xe-xem: KPI, tìm (bks/lái/cont/tuyến/khoản), lọc lái/ngày/trạng thái, gom theo lái, cột Chi hộ/Chi khác, Xuất Excel 2 sheet (XLSX CDN trong blade). **Tự đối soát với Lộ trình khi mở kỳ** (GET recompute, chỉ đọc, ~0.7s/tháng) → khung "N xe lệch" + "Cập nhật từ Lộ trình"; merge GIỮ xe có đợt trả/lương phát sinh dù biến mất khỏi Lộ trình. Lý do user báo "thiếu chi khác": bảng cũ không có cột chi hộ/chi khác + snapshot lập trước khi nhập chi khác. Backend: chi khác có cont không còn khớp chuyến → nhóm `orphan` "Chi khác chưa gắn chuyến" (không tính chuyến, có cảnh báo) thay vì bị rơi; xe chỉ có chi khác mà không có chuyến vẫn hiện. Lưu ý test: biển số "29E-38562" là chuỗi số dạng khoa học → `firstWhere('bks', …)` của Collection so lỏng sẽ khớp nhầm xe khác, dùng so sánh `===`.
+
+**2026-11-18:** `computePayroll` CHỈ xe MBF (`TruckingVehicle::mbfFleet()` theo vehicleId, fallback biển). Cột **Lương chuyên cần** (`chuyenCan`, tự điền từng xe) ở cả phi-xe-tao + phi-xe-xem (sửa được khi chưa chốt; Tính lại / merge GIỮ chuyenCan); savePayroll: total = payroll + Σ extraPay + chuyenCan; Excel có cột "Lương chuyên cần".
 
 **Còn để ngỏ:** perf loop-từng-ngày (ok cho generate). TripCostBatch tables cũ bỏ không dùng (chưa drop).
 

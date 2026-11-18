@@ -293,12 +293,16 @@ trait HandlesTripAndDrivers
             ->all();
     }
 
-    /** Tạo bảng phí tuyến mới (áp dụng từ ngày); $copyFrom = sao chép toàn bộ tuyến ĐÃ LƯU của bảng đó. */
-    public function createRouteFeeBook(?string $label, ?string $from, ?int $copyFrom): array
+    /**
+     * Tạo bảng quy chế mới (áp dụng từ ngày) theo MẪU: $copyFrom = sao chép quy chế + tuyến ĐÃ LƯU của bảng đó;
+     * $fromDefault = nạp mẫu mặc định Quy chế 03/2026; cả hai không có = bảng trống.
+     */
+    public function createRouteFeeBook(?string $label, ?string $from, ?int $copyFrom, bool $fromDefault = false): array
     {
-        $book = DB::transaction(function () use ($label, $from, $copyFrom) {
+        $book = DB::transaction(function () use ($label, $from, $copyFrom, $fromDefault) {
             $sort = (int) (TruckingRouteFeeBook::max('sort') ?? 0) + 1;
             $book = TruckingRouteFeeBook::create(['label' => $this->str($label), 'from_date' => $this->inDate($from), 'sort' => $sort]);
+            if ($fromDefault) $book->update(['regulation' => \App\Support\SalaryZones::defaultRegulation()]);
             if ($copyFrom && ($src = TruckingRouteFeeBook::find($copyFrom)) && $src->regulation) {
                 $book->update(['regulation' => $src->regulation]);   // sao chép kèm quy chế lương chuyến
             }
@@ -1174,7 +1178,8 @@ trait HandlesTripAndDrivers
             if ($bks === '') continue;
             $base     = (int) round((float) ($r['payroll'] ?? $r['total'] ?? 0));   // lương gốc (từ phí tuyến)
             $extraPay = $this->extraPayIn($r['extraPay'] ?? null);                  // lương phát sinh thêm tay
-            $eff      = $base + array_sum(array_column($extraPay, 'amount'));        // lương phải trả = gốc + phát sinh
+            $chuyenCan = max(0, $this->inMoney($r['chuyenCan'] ?? null) ?? 0);       // LƯƠNG CHUYÊN CẦN — kế toán tự điền từng xe
+            $eff      = $base + array_sum(array_column($extraPay, 'amount')) + $chuyenCan;   // lương phải trả = gốc + phát sinh + chuyên cần
             $pd       = (int) round((float) ($r['paidDaily'] ?? 0));
             $lines[] = [
                 'bks'       => $bks,
@@ -1186,6 +1191,7 @@ trait HandlesTripAndDrivers
                 'paidDaily' => $pd,
                 'payroll'   => $base,
                 'extraPay'  => $extraPay,
+                'chuyenCan' => $chuyenCan,
                 'total'     => $eff,
                 'note'      => $this->str($r['note'] ?? null) ?? '',
                 'detail'    => is_array($r['detail'] ?? null) ? $r['detail'] : (is_array($r['lines'] ?? null) ? $r['lines'] : []),

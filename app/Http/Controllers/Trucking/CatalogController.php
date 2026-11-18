@@ -78,8 +78,12 @@ class CatalogController extends BaseTruckingController
     /** Tạo BẢNG phí tuyến mới (áp dụng từ ngày); copyFrom = sao chép toàn bộ tuyến đã lưu của bảng đó. */
     public function createRouteFeeBook(Request $request): JsonResponse
     {
-        $d = $request->validate(['label' => ['nullable', 'string'], 'from' => ['nullable', 'date'], 'copyFrom' => ['nullable', 'integer']]);
-        return response()->json($this->svc->createRouteFeeBook($d['label'] ?? null, $d['from'] ?? null, isset($d['copyFrom']) ? (int) $d['copyFrom'] : null));
+        // template: 'book' (sao chép bảng copyFrom) | 'default' (mẫu Quy chế 03/2026) | 'empty' (bảng trống)
+        $d = $request->validate(['label' => ['nullable', 'string'], 'from' => ['nullable', 'date'], 'copyFrom' => ['nullable', 'integer'],
+            'template' => ['nullable', 'in:book,default,empty']]);
+        $tpl = $d['template'] ?? (isset($d['copyFrom']) ? 'book' : 'empty');
+        return response()->json($this->svc->createRouteFeeBook($d['label'] ?? null, $d['from'] ?? null,
+            $tpl === 'book' && isset($d['copyFrom']) ? (int) $d['copyFrom'] : null, $tpl === 'default'));
     }
 
     /** Thử tính 1 chuyến theo quy chế đang sửa (chưa lưu) — giải thích từng bước cho người cấu hình. */
