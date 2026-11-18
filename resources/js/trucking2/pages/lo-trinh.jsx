@@ -415,7 +415,7 @@ function AmountChip({ it, payroll, hint, canEdit, frozen, onSave }) {
 
 /* DẦU 1 chuyến (chi phí công ty): lít × giá dầu theo ngày. Sửa được SỐ LÍT (số nguyên — backend làm tròn, không lẻ phẩy) — lưu theo cont của chuyến,
    ghi đè định mức quy chế; "Về định mức" = bỏ sửa tay. Ngày đã chốt thì khóa. */
-function FuelChip({ fuel, canEdit, frozen, onSave }) {
+function FuelChip({ fuel, kep2, canEdit, frozen, onSave }) {
   const [edit, setEdit] = useState(false);
   const [val, setVal] = useState("");
   const [busy, setBusy] = useState(false);
@@ -442,6 +442,13 @@ function FuelChip({ fuel, canEdit, frozen, onSave }) {
       {fuel && fuel.edited && <button type="button" disabled={busy} onClick={(e) => save(e, null)} title={fuel.baseLiters != null ? `Về định mức quy chế (${fmtNum(fuel.baseLiters)} lít)` : "Bỏ số lít sửa tay"} style={{ ...mini, color: "var(--ink-3)" }}>Về định mức</button>}
       <button type="button" onClick={(e) => { stopLink(e); setEdit(false); }} style={{ ...mini, color: "var(--ink-4)" }}>Hủy</button>
     </div>
+  );
+  // Cont thứ 2 của cặp kẹp cont: dầu đã tính ở cont thứ nhất (cùng 1 chuyến xe) → không tính dầu; vẫn bấm nhập tay được
+  if (!fuel && kep2) return (
+    <button type="button" onClick={canEdit && !frozen ? start : stopLink} title="Kẹp cont — cont thứ 2 chở cùng chuyến trước, dầu đã tính ở cont thứ nhất. Bấm để nhập lít nếu cần."
+      style={{ ...box, cursor: canEdit && !frozen ? "pointer" : "default", background: "#f3ecff", color: "#7c3aed", border: "1px solid #ddd0fb" }}>
+      <i className="bi bi-fuel-pump" /> Kẹp cont · không tính dầu
+    </button>
   );
   if (!fuel) return canEdit && !frozen
     ? <button type="button" onClick={start} style={{ ...box, cursor: "pointer", background: "#fff", borderStyle: "dashed" }} title="Chuyến chưa có định mức dầu — nhập số lít"><i className="bi bi-fuel-pump" /> + Nhập lít dầu</button>
@@ -560,7 +567,7 @@ function TripNode({ l, isFirst, isLast, bks, href, g, canEdit, frozen, onFuel, o
           </div>
         )}
         {/* Dầu chuyến này = chi phí công ty (lít × giá dầu theo ngày) — sửa được số lít */}
-        {g && !l.planned ? <div><FuelChip fuel={fuel} canEdit={canEdit} frozen={frozen} onSave={(liters) => onFuel(l, liters)} /></div> : null}
+        {g && !l.planned ? <div><FuelChip fuel={fuel} kep2={!!g.kep2} canEdit={canEdit} frozen={frozen} onSave={(liters) => onFuel(l, liters)} /></div> : null}
       </div>
     </a>
   );

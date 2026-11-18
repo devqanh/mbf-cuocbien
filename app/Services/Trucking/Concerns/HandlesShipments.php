@@ -650,6 +650,11 @@ trait HandlesShipments
                     }
                     unset($it);
                     $g['kep2'] = true;
+                    // Dầu đã tính ở cont thứ nhất (cùng 1 chuyến xe) → cont thứ 2 KHÔNG tính dầu, không cần km chặng
+                    // (user 18/11). Lít dầu sửa tay ở Lộ trình (trip_overrides.liters) vẫn ghi đè nếu kế toán nhập.
+                    $g['fuel'] = null;
+                    unset($g['km'], $g['kmMissing']);
+                    $g['issues'] = array_values(array_filter($g['issues'] ?? [], fn ($x) => ! in_array($x['type'], ['kmMissing', 'noFuelPrice'], true)));
                     // Phụ cấp là khoản duy nhất phải nhập tay (khác nhóm cảng) → cont thứ 2 hết cảnh báo nhập tay
                     if (! empty($g['needInput']) && ! array_filter(array_merge($g['items'], $g['payrollItems']), fn ($x) => ! empty($x['required']))) {
                         $g['needInput'] = false; $g['note'] = '';
