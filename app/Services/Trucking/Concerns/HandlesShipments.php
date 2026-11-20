@@ -656,6 +656,14 @@ trait HandlesShipments
                         unset($it['required'], $it['suggest']);
                     }
                     unset($it);
+                    // LƯƠNG CHUYẾN (kỳ lương): cặp kẹp = 1 chuyến → cont thứ 2 cũng KHÔNG tính (user 20/11); vẫn nhập tay được.
+                    foreach ($g['payrollItems'] as &$it) {
+                        if ($it['key'] !== 'luong') continue;
+                        $g['payrollSub'] -= (int) $it['amount'];
+                        $it['amount'] = 0; $it['base'] = 0; $it['kep2'] = true;
+                        unset($it['required'], $it['suggest']);
+                    }
+                    unset($it);
                     $g['kep2'] = true;
                     // Dầu đã tính ở cont thứ nhất (cùng 1 chuyến xe) → cont thứ 2 KHÔNG tính dầu, không cần km chặng
                     // (user 18/11). Lít dầu sửa tay ở Lộ trình (trip_overrides.liters) vẫn ghi đè nếu kế toán nhập.

@@ -283,7 +283,7 @@ function PayPopup({ truck, date, drivers, routeFeesUrl, onClose, onSaved }) {
                 {(g.payrollItems || []).map((it, i) => (
                   <div key={"p" + i} title="Gom trả vào kỳ lương — không cộng vào chi hôm nay"
                     style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderTop: "1px solid var(--line-2)", fontSize: 12.5, color: "var(--ink-4)" }}>
-                    <span>{it.label}</span>
+                    <span>{it.label}{it.kep2 && <span style={{ display: "block", fontSize: 11, fontWeight: 500, color: "#7c3aed" }}>Kẹp cont — cont thứ 2 tính chung chuyến trước, không tính lương chuyến</span>}</span>
                     <span style={{ fontSize: 10.5, fontWeight: 700, color: "#7c5b16", background: "#fbf0d3", padding: "0 7px", borderRadius: 999 }}>kỳ lương</span>
                     <span style={{ flex: 1 }} />
                     {it.editable && !frozen
