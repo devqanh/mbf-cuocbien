@@ -25,7 +25,7 @@ function snapToMinute(d) {
   return rest === 0 ? d : new Date(d.getTime() + (rest >= 30000 ? 60000 - rest : -rest));
 }
 
-function cellDate(v) {
+export function cellDate(v) {
   if (v == null || v === "") return { iso: "", display: "" };
   if (v instanceof Date && !isNaN(v)) {
     v = snapToMinute(v);

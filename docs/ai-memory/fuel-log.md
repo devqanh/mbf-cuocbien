@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 3629f4f2-edea-4851-a2a7-3c96665ae6af
-  modified: 2026-10-15T03:00:03.043Z
+  modified: 2026-11-20T04:57:04.606Z
 ---
 
 Trang **Nhật ký đổ dầu** (menu con Lô hàng, 2026-10-15) ghi xe MBF đổ dầu ngày nào, bao nhiêu lít. KHÔNG có bảng riêng: đọc/ghi `trucking_fuel_refills` qua `saveFuelRefill`/`deleteFuelRefill` (HandlesVehicleDetail) — ghi ở đâu cũng hiện ở tab Dầu của [[asset-management]] Quản lý xe.
@@ -14,5 +14,6 @@ Trang **Nhật ký đổ dầu** (menu con Lô hàng, 2026-10-15) ghi xe MBF đ�
 - Chỉ xe `mbfFleet()`; tìm biển số bỏ qua `-`, `.`, khoảng trắng.
 - UI: ô ghi nhanh (giữ ngày + trạm, Enter để ghi, đơn giá gợi ý theo Bảng giá dầu) → **luôn có popup xác nhận** (user yêu cầu), cảnh báo trong popup nếu xe đã có phiếu cùng ngày; xem Theo ngày / Theo xe (+ danh sách xe chưa đổ trong kỳ); xuất CSV.
 - Số lít: client đổi dấu phẩy → chấm trước khi gửi vì `inNum` xóa dấu phẩy (150,5 thành 1505).
+- **Xuất / Nhập Excel (2026-11-20)** theo mẫu kế toán "MBF nhap dau.xlsx" (Ngày đổ dầu · Biển số xe · ĐVT · Số lượng · Đơn giá · Thành tiền · Trạm đổ; tiêu đề dòng 2, ô gộp, dừng ở dòng "Tổng cộng"). Logic ở `components/fuel-log-excel.js` (SheetJS CDN nạp ở blade), khớp cột theo TỪ KHÓA tiêu đề nên nhận cả file kế toán lẫn file tự xuất. Import 2 bước qua `POST fuelLog.import` → `fuelLogImport($rows, $commit)`: commit=false = xem trước (Sẽ nhập/Trùng/Lỗi), true = ghi trong transaction. Trùng = cùng xe+ngày+lít đã có (đếm theo số lượng → nhập lại cùng file không cộng đôi); thiếu đơn giá + thành tiền → giá theo Bảng giá dầu.
 
 **Why:** tránh 2 nguồn dữ liệu dầu lệch nhau. **How to apply:** mọi tính năng dầu (định mức, tiêu thụ) đọc trucking_fuel_refills.

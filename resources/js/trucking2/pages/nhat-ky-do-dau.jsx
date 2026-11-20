@@ -4,6 +4,7 @@ import "@trk/shared.js";
 
 const { useState, useEffect, useRef, useMemo } = React;
 import { I, useIsMobile, DateField, Combo, Modal, Btn, fmtNum, fmtVND, fmtDate } from "@trk/lib.jsx";
+import { parseFuelSheet, buildFuelWb, buildFuelTemplateWb, fileStamp } from "@trk/components/fuel-log-excel.js";
 
 /**
  * NHẬT KÝ ĐỔ DẦU — ghi nhận xe MBF đổ dầu ngày nào, bao nhiêu lít.
@@ -133,9 +134,11 @@ function FuelLogPage() {
     try { const res = await api("DELETE", ROUTES.base + "/" + r.id); if (res && res.ok) { toast("Đã xóa phiếu đổ dầu"); load(); } } catch (e) { /* trkApi đã báo lỗi */ }
   };
 
-  // ---- xuất CSV toàn bộ kết quả lọc ----
+  // ---- xuất Excel toàn bộ kết quả lọc (cùng cột mẫu kế toán → sửa rồi nhập lại được) ----
   const [exporting, setExporting] = useState(false);
-  const exportCsv = async () => {
+  const xlsxReady = () => { if (typeof XLSX !== "undefined") return true; toast("Thư viện Excel chưa tải xong, thử lại sau giây lát.", "error"); return false; };
+  const exportXlsx = async () => {
+    if (!xlsxReady()) return;
     setExporting(true);
     try {
       let all = [], pg = 1, last = 1;
@@ -143,14 +146,48 @@ function FuelLogPage() {
         const r = await api("GET", ROUTES.data + "?" + params({ page: pg, perPage: 200 }).toString());
         all = all.concat(r.rows || []); last = r.lastPage || 1; pg++;
       } while (pg <= last);
-      const esc = (v) => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
-      const lines = [["STT", "Ngày", "Thứ", "Biển số", "Số lít", "Đơn giá", "Thành tiền", "Km đồng hồ", "Trạm đổ", "Ghi chú"].map(esc).join(",")];
-      all.forEach((r, i) => lines.push([i + 1, fmtDate(r.date), weekday(r.date), r.plate, String(r.liters).replace(".", ","), r.unitPrice ?? "", r.totalCost ?? "", r.odometerKm ?? "", r.station, r.note].map(esc).join(",")));
-      const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob); const a = document.createElement("a");
-      a.href = url; a.download = `nhat-ky-do-dau-${month || (from || "dau") + "_" + (to || "nay")}.csv`;
-      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      all.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id - b.id));   // file kế toán xếp ngày tăng dần
+      const period = month ? monthLabel(month) : (from || to) ? `${from ? fmtDate(from) : "…"} – ${to ? fmtDate(to) : "nay"}` : "toàn bộ";
+      XLSX.writeFile(buildFuelWb(all, `NHẬT KÝ ĐỔ DẦU XE MBF — ${period}`), `nhat-ky-do-dau-${month || (from || "dau") + "_" + (to || "nay")}.xlsx`);
     } catch (e) { /* trkApi đã báo lỗi */ } finally { setExporting(false); }
+  };
+
+  // ---- nhập Excel hàng loạt: đọc file → server kiểm tra (xem trước) → bấm Nhập mới ghi ----
+  const impFileRef = useRef(null);
+  const [imp, setImp] = useState(null);   // { fileName, wb, sheets, sheet, parsed, check, busy, filter }
+  const checkImport = async (st) => {
+    const parsed = parseFuelSheet(st.wb, st.sheet);
+    setImp({ ...st, parsed, check: null, busy: !parsed.error, filter: "all" });
+    if (parsed.error) return;
+    try {
+      const r = await api("POST", ROUTES.import, { commit: false, rows: parsed.rows });
+      setImp((s) => s && s.sheet === st.sheet ? { ...s, check: r, busy: false } : s);
+    } catch (e) { setImp((s) => s && { ...s, busy: false }); }
+  };
+  const onImpFile = (e) => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!f || !xlsxReady()) return;
+    const rd = new FileReader();
+    rd.onload = () => {
+      try {
+        const wb = XLSX.read(rd.result, { type: "array", cellDates: true });
+        const sheets = wb.SheetNames || [];
+        // sheet đầu tiên đọc được bảng đổ dầu (file có thể có sheet hướng dẫn)
+        const sheet = sheets.find((n) => !parseFuelSheet(wb, n).error) || sheets[0] || "";
+        checkImport({ fileName: f.name, wb, sheets, sheet });
+      } catch (er) { toast("Không đọc được file Excel", "error"); }
+    };
+    rd.readAsArrayBuffer(f);
+  };
+  const commitImport = async () => {
+    if (!imp || !imp.check || !imp.check.summary.ok) return;
+    setImp((s) => ({ ...s, busy: true }));
+    try {
+      const r = await api("POST", ROUTES.import, { commit: true, rows: imp.parsed.rows });
+      if (r && r.ok) { toast(`Đã nhập ${fmtNum(r.created)} lần đổ dầu`); setImp(null); load(); return; }
+    } catch (e) { /* trkApi đã báo lỗi */ }
+    setImp((s) => s && { ...s, busy: false });
   };
 
   // ---- gom theo ngày (trên trang hiện tại) ----
@@ -266,10 +303,21 @@ function FuelLogPage() {
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm biển số, trạm, ghi chú…"
               style={{ width: isMobile ? "100%" : 240, padding: "9px 12px 9px 34px", fontSize: isMobile ? 16 : 13.5, border: "1px solid var(--line)", borderRadius: 10, outline: "none", background: "#fafbfc", boxSizing: "border-box" }} />
           </div>
-          <button type="button" onClick={exportCsv} disabled={exporting || !T0.count}
+          <button type="button" onClick={exportXlsx} disabled={exporting || !T0.count}
             style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", fontSize: 12.5, fontWeight: 600, border: "1px solid var(--good)", borderRadius: 9, background: "var(--good-weak)", color: "var(--good)", cursor: exporting || !T0.count ? "default" : "pointer", opacity: !T0.count ? 0.5 : 1, whiteSpace: "nowrap" }}>
-            <i className="bi bi-filetype-csv" /> {exporting ? "Đang xuất…" : "Xuất Excel (CSV)"}
+            <i className="bi bi-file-earmark-excel" /> {exporting ? "Đang xuất…" : "Xuất Excel"}
           </button>
+          {canEdit && <>
+            <input ref={impFileRef} type="file" accept=".xlsx,.xls" onChange={onImpFile} style={{ display: "none" }} />
+            <button type="button" onClick={() => impFileRef.current && impFileRef.current.click()} title="Nhập hàng loạt từ file Excel (mẫu MBF nhập dầu)"
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", fontSize: 12.5, fontWeight: 600, border: "1px solid #0f766e", borderRadius: 9, background: "#fff", color: "#0f766e", cursor: "pointer", whiteSpace: "nowrap" }}>
+              <i className="bi bi-upload" /> Nhập Excel
+            </button>
+            <button type="button" onClick={() => xlsxReady() && XLSX.writeFile(buildFuelTemplateWb(), "mau-nhap-dau.xlsx")} title="Tải file mẫu nhập đổ dầu"
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 10px", fontSize: 12.5, fontWeight: 600, border: "1px solid var(--line)", borderRadius: 9, background: "#fff", color: "var(--ink-3)", cursor: "pointer", whiteSpace: "nowrap" }}>
+              <i className="bi bi-download" /> Mẫu
+            </button>
+          </>}
         </div>
         {/* thanh lọc */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "0 0 11px" }}>
@@ -491,6 +539,88 @@ function FuelLogPage() {
           )}
         </div>
       </div>
+
+      {imp && (() => {
+        const S = imp.check ? imp.check.summary : null;
+        const textOf = Object.fromEntries(((imp.parsed && imp.parsed.rows) || []).map((r) => [r.line, r.dateText]));
+        const list = (imp.check ? imp.check.rows : []).filter((r) => imp.filter === "all" || r.status === imp.filter);
+        const tone = { ok: ["#ecfdf5", "#047857", "Sẽ nhập"], dup: ["#f1f5f9", "#64748b", "Trùng"], error: ["#fef2f2", "#b91c1c", "Lỗi"] };
+        const priceNote = { bangGia: "theo bảng giá dầu", total: "theo thành tiền" };
+        const fBtn = (k, label, n) => chipBtn(`${label} (${fmtNum(n)})`, () => setImp((s) => ({ ...s, filter: k })), imp.filter === k);
+        return (
+          <Modal title="Nhập đổ dầu từ Excel" subtitle={imp.fileName} onClose={() => !imp.busy && setImp(null)} width={980}
+            footer={<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 12, color: "var(--ink-4)" }}>Dòng trùng và dòng lỗi được bỏ qua.</span>
+              <div style={{ flex: 1 }} />
+              <Btn onClick={() => setImp(null)} disabled={imp.busy}>Hủy</Btn>
+              <Btn variant="primary" onClick={commitImport} disabled={imp.busy || !S || !S.ok}>
+                {imp.busy && S ? "Đang nhập…" : `Nhập ${S ? fmtNum(S.ok) : 0} lần đổ`}
+              </Btn>
+            </div>}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {imp.sheets.length > 1 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={lbl}>Sheet</span>
+                  <select value={imp.sheet} onChange={(e) => checkImport({ ...imp, sheet: e.target.value })} disabled={imp.busy} style={{ ...inp, width: "auto" }}>
+                    {imp.sheets.map((n) => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+              )}
+              {imp.parsed && imp.parsed.error ? (
+                <div style={{ padding: "12px 14px", borderRadius: 10, background: "#fef2f2", color: "#b91c1c", fontSize: 13 }}>{imp.parsed.error}</div>
+              ) : !S ? (
+                <div style={{ padding: 30, textAlign: "center", color: "var(--ink-4)", fontSize: 13 }}>Đang kiểm tra {fmtNum(imp.parsed ? imp.parsed.rows.length : 0)} dòng…</div>
+              ) : (
+                <>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <span style={{ fontSize: 13 }}><b className="tnum" style={{ color: "#047857" }}>{fmtNum(S.ok)}</b> lần đổ sẽ nhập · <b className="tnum">{fmtL(S.liters)}</b> lít</span>
+                    <span style={{ flex: 1 }} />
+                    {fBtn("all", "Tất cả", imp.check.rows.length)}
+                    {fBtn("ok", "Sẽ nhập", S.ok)}
+                    {fBtn("dup", "Trùng", S.dup)}
+                    {fBtn("error", "Lỗi", S.error)}
+                  </div>
+                  <div style={{ maxHeight: "55vh", overflow: "auto", border: "1px solid var(--line)", borderRadius: 10 }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <thead style={{ position: "sticky", top: 0, zIndex: 1 }}><tr>
+                        <th style={{ ...th, width: 50 }}>Dòng</th>
+                        <th style={th}>Ngày</th>
+                        <th style={th}>Biển số</th>
+                        <th style={{ ...th, textAlign: "right" }}>Số lít</th>
+                        <th style={{ ...th, textAlign: "right" }}>Đơn giá</th>
+                        <th style={{ ...th, textAlign: "right" }}>Thành tiền</th>
+                        <th style={th}>Trạm đổ</th>
+                        <th style={th}>Trạng thái</th>
+                      </tr></thead>
+                      <tbody>
+                        {list.map((r) => (
+                          <tr key={r.line}>
+                            <td style={{ ...td, color: "var(--ink-4)" }} className="tnum">{r.line}</td>
+                            <td style={{ ...td, whiteSpace: "nowrap" }} className="tnum">{r.date ? fmtDate(r.date) : <span style={{ color: "#b91c1c" }}>{textOf[r.line] || "—"}</span>}</td>
+                            <td style={{ ...td, fontWeight: 700 }} className="tnum">{r.plate || <span style={{ color: "#b91c1c", fontWeight: 400 }}>—</span>}</td>
+                            <td style={{ ...td, textAlign: "right", fontWeight: 700 }} className="tnum">{r.liters ? fmtL(r.liters) : "—"}</td>
+                            <td style={{ ...td, textAlign: "right", color: "var(--ink-3)" }} className="tnum">
+                              {r.unitPrice ? fmtNum(r.unitPrice) : "—"}
+                              {priceNote[r.priceSrc] && <div style={{ fontSize: 10.5, color: "var(--ink-4)" }}>{priceNote[r.priceSrc]}</div>}
+                            </td>
+                            <td style={{ ...td, textAlign: "right" }} className="tnum">{r.totalCost ? fmtVND(r.totalCost) : "—"}</td>
+                            <td style={{ ...td, color: "var(--ink-2)" }}>{r.station || ""}</td>
+                            <td style={td}>
+                              <span style={{ fontSize: 11.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: tone[r.status][0], color: tone[r.status][1], whiteSpace: "nowrap" }}>{tone[r.status][2]}</span>
+                              {r.message && <div style={{ fontSize: 11.5, color: tone[r.status][1], marginTop: 3 }}>{r.message}</div>}
+                            </td>
+                          </tr>
+                        ))}
+                        {!list.length && <tr><td colSpan={8} style={{ ...td, textAlign: "center", color: "var(--ink-4)", padding: 24 }}>Không có dòng nào.</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          </Modal>
+        );
+      })()}
 
       {editing && (
         <Modal title="Sửa phiếu đổ dầu" subtitle={`${vById[editing.vehicleId]?.plate || ""} · ${fmtDate(editing.date)}`} onClose={() => setEditing(null)} width={560}

@@ -94,4 +94,83 @@ trait HandlesFuelLog
             ],
         ];
     }
+
+    /**
+     * NHẬP EXCEL hàng loạt phiếu đổ dầu (client đã đọc file → $rows: [{line, date (Y-m-d), plate, liters, unitPrice?, totalCost?,
+     * odometerKm?, station?, note?}]). Kiểm tra từng dòng: ngày, xe MBF (biển số bỏ qua "-", ".", khoảng trắng), số lít > 0;
+     * dòng GIỐNG HỆT phiếu đã có (cùng xe + ngày + số lít) = trùng → bỏ qua, nên nhập lại cùng 1 file không bị cộng đôi.
+     * Thiếu đơn giá và thành tiền → lấy đơn giá theo Bảng giá dầu của ngày đổ (như ô ghi nhanh).
+     * $commit = false: chỉ trả kết quả kiểm tra (xem trước); true: ghi các dòng hợp lệ trong 1 transaction.
+     */
+    public function fuelLogImport(array $rows, bool $commit): array
+    {
+        $norm = fn ($p) => mb_strtoupper(str_replace([' ', '-', '.'], '', trim((string) $p)));
+        $fleet = TruckingVehicle::mbfFleet()->get(['id', 'plate'])->keyBy(fn ($v) => $norm($v->plate));
+        $fuels = TruckingFuelPrice::orderByDesc('from_date')->orderByDesc('id')->get();
+        $key = fn ($vid, $date, $liters) => $vid . '|' . $date . '|' . number_format((float) $liters, 2, '.', '');
+
+        // Kiểm tra từng dòng trước (chưa xét trùng) → gom xe + ngày để tra phiếu đã có 1 lần.
+        $out = [];
+        foreach ($rows as $i => $r) {
+            if (! is_array($r)) continue;
+            $date = $this->inDate($r['date'] ?? null);
+            $plate = trim((string) ($r['plate'] ?? ''));
+            $liters = is_numeric($r['liters'] ?? null) ? round((float) $r['liters'], 2) : 0.0;
+            $veh = $plate !== '' ? $fleet->get($norm($plate)) : null;
+            $err = ! $date ? 'Thiếu / sai ngày đổ'
+                : ($plate === '' ? 'Thiếu biển số'
+                : (! $veh ? 'Không tìm thấy xe MBF có biển số này'
+                : ($liters <= 0 ? 'Số lít phải lớn hơn 0' : '')));
+            $unit = is_numeric($r['unitPrice'] ?? null) && (float) $r['unitPrice'] > 0 ? (int) round((float) $r['unitPrice']) : null;
+            $total = is_numeric($r['totalCost'] ?? null) && (float) $r['totalCost'] > 0 ? (int) round((float) $r['totalCost']) : null;
+            $priceSrc = $unit !== null ? 'file' : ($total !== null ? 'total' : '');
+            if ($unit === null && $total === null && $date && ($p = $this->fuelPriceForDate($fuels, $date)) > 0) { $unit = (int) round($p); $priceSrc = 'bangGia'; }
+            $out[] = [
+                'line' => (int) ($r['line'] ?? $i + 1), 'date' => $date ?: '', 'plate' => $veh?->plate ?? $plate, 'vehicleId' => $veh?->id,
+                'liters' => $liters, 'unitPrice' => $unit, 'totalCost' => $unit !== null ? (int) round($liters * $unit) : $total, 'priceSrc' => $priceSrc,
+                'odometerKm' => is_numeric($r['odometerKm'] ?? null) ? (float) $r['odometerKm'] : null,
+                'station' => mb_substr(trim((string) ($r['station'] ?? '')), 0, 255), 'note' => mb_substr(trim((string) ($r['note'] ?? '')), 0, 2000),
+                'status' => $err !== '' ? 'error' : 'ok', 'message' => $err,
+            ];
+        }
+
+        // Trùng phiếu đã có: đếm theo (xe, ngày, lít) — file có 2 dòng giống nhau mà DB mới có 1 thì vẫn nhập dòng thứ 2.
+        $okRows = array_filter($out, fn ($x) => $x['status'] === 'ok');
+        $have = [];
+        if ($okRows) {
+            TruckingFuelRefill::whereIn('vehicle_id', array_unique(array_column($okRows, 'vehicleId')))
+                ->whereIn('refill_date', array_unique(array_column($okRows, 'date')))
+                ->get(['vehicle_id', 'refill_date', 'liters'])
+                ->each(function ($f) use (&$have, $key) { $k = $key($f->vehicle_id, $f->refill_date->format('Y-m-d'), $f->liters); $have[$k] = ($have[$k] ?? 0) + 1; });
+        }
+        foreach ($out as &$x) {
+            if ($x['status'] !== 'ok') continue;
+            $k = $key($x['vehicleId'], $x['date'], $x['liters']);
+            if (($have[$k] ?? 0) > 0) { $have[$k]--; $x['status'] = 'dup'; $x['message'] = 'Đã có phiếu cùng xe, ngày và số lít — bỏ qua'; }
+        }
+        unset($x);
+
+        $created = 0;
+        if ($commit) {
+            $vehicles = TruckingVehicle::whereIn('id', array_unique(array_filter(array_column($out, 'vehicleId'))))->get()->keyBy('id');
+            \Illuminate\Support\Facades\DB::transaction(function () use ($out, $vehicles, &$created) {
+                foreach ($out as $x) {
+                    if ($x['status'] !== 'ok') continue;
+                    $this->saveFuelRefill($vehicles[$x['vehicleId']], [
+                        'date' => $x['date'], 'liters' => $x['liters'], 'unitPrice' => $x['unitPrice'], 'totalCost' => $x['totalCost'],
+                        'odometerKm' => $x['odometerKm'], 'station' => $x['station'], 'note' => $x['note'],
+                    ]);
+                    $created++;
+                }
+            });
+        }
+
+        $count = fn ($s) => count(array_filter($out, fn ($x) => $x['status'] === $s));
+        return [
+            'rows' => $out,
+            'summary' => ['ok' => $count('ok'), 'dup' => $count('dup'), 'error' => $count('error'),
+                'liters' => round(array_sum(array_column(array_filter($out, fn ($x) => $x['status'] === 'ok'), 'liters')), 2)],
+            'created' => $created,
+        ];
+    }
 }

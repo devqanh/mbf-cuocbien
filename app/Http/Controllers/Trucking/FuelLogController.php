@@ -49,6 +49,17 @@ class FuelLogController extends BaseTruckingController
         return response()->json(['ok' => true, 'id' => $refill->id]);
     }
 
+    /** Nhập Excel hàng loạt: commit=false → kiểm tra (xem trước); commit=true → ghi các dòng hợp lệ, bỏ dòng trùng / lỗi. */
+    public function import(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'commit' => ['nullable', 'boolean'],
+            'rows'   => ['required', 'array', 'max:3000'],
+            'rows.*' => ['array'],
+        ], ['rows.required' => 'File không có dòng đổ dầu nào.', 'rows.max' => 'Mỗi lần nhập tối đa 3.000 dòng.']);
+        return response()->json(['ok' => true] + $this->svc->fuelLogImport($data['rows'], (bool) ($data['commit'] ?? false)));
+    }
+
     public function destroy(TruckingFuelRefill $refill): JsonResponse
     {
         $this->svc->deleteFuelRefill($refill);

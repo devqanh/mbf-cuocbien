@@ -148,6 +148,7 @@ Route::middleware(['auth', RestrictSpendOnlySession::class])->group(function () 
         });
         Route::middleware('permission:shipments.update')->group(function () {
             Route::post('/nhat-ky-do-dau',             [FuelLogController::class, 'save'])->name('fuelLog.save');
+            Route::post('/nhat-ky-do-dau/import',      [FuelLogController::class, 'import'])->name('fuelLog.import');
             Route::delete('/nhat-ky-do-dau/{refill}',  [FuelLogController::class, 'destroy'])->name('fuelLog.destroy')->whereNumber('refill');
         });
         // --- Lộ trình lái xe: xem = quyền Lô hàng HOẶC quyền chi cho lái; chi / chốt ngày = driverPay.manage ---
