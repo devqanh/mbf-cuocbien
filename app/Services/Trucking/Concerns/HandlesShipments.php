@@ -185,6 +185,9 @@ trait HandlesShipments
         $isYmd = fn ($v) => preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) === 1;
         $denFrom = trim((string) ($p['denFrom'] ?? '')); if (! $isYmd($denFrom)) $denFrom = '';
         $denTo   = trim((string) ($p['denTo'] ?? ''));   if (! $isYmd($denTo)) $denTo = '';
+        // Lọc theo NGÀY CẮT MÁNG — chọn 1 NGÀY. cut_off là CHUỖI ISO "Y-m-d\TH:i" (DTField/import ghi ra),
+        // nên so khớp bằng tiền tố ngày; dữ liệu cũ nhập tay dạng text tự do sẽ không khớp (không có năm).
+        $cutDate = trim((string) ($p['cutDate'] ?? '')); if (! $isYmd($cutDate)) $cutDate = '';
 
         // Lọc theo NHÃN (tags) — chọn nhiều = OR. Danh sách nhãn thực có để đổ vào bộ lọc.
         $tagSel = array_values(array_filter(array_map(fn ($x) => trim((string) $x), (array) ($p['tags'] ?? [])), fn ($x) => $x !== ''));
@@ -233,7 +236,7 @@ trait HandlesShipments
                 $b->whereIn($col, $raw ?: ['\\0__none__']);
             }
         };
-        $searched = function () use ($sheet, $applySearch, $applyLoc, $toLocSel, $toLocRaw, $toMode, $fromSel, $fromRaw, $fromMode, $custSel, $custIds, $denDate, $denFrom, $denTo, $tagSel) {
+        $searched = function () use ($sheet, $applySearch, $applyLoc, $toLocSel, $toLocRaw, $toMode, $fromSel, $fromRaw, $fromMode, $custSel, $custIds, $denDate, $denFrom, $denTo, $cutDate, $tagSel) {
             $b = TruckingShipment::ofSheet($sheet);
             $applySearch($b);
             $applyLoc($b, 'to_loc', $toLocSel, $toLocRaw, $toMode);
@@ -243,6 +246,7 @@ trait HandlesShipments
             if ($denDate !== '') $b->whereDate('gio_den_du_kien', $denDate);       // lô có Giờ đến KH = ngày chọn
             if ($denFrom !== '') $b->whereDate('gio_den_du_kien', '>=', $denFrom);
             if ($denTo !== '')   $b->whereDate('gio_den_du_kien', '<=', $denTo);
+            if ($cutDate !== '') $b->where('cut_off', 'like', $cutDate . '%');   // lô có Cắt máng = ngày chọn
             // Lọc nhãn = OR. Dùng JSON_SEARCH (khớp được trên MariaDB + JSON lưu unicode escaped, whereJsonContains fail).
             if ($tagSel) $b->where(function ($w) use ($tagSel) { foreach ($tagSel as $t) $w->orWhereRaw('JSON_SEARCH(tags, \'one\', ?) IS NOT NULL', [$t]); });
             return $b;

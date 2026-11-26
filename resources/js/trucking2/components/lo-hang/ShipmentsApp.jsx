@@ -98,6 +98,7 @@ function ShipmentsApp() {
   const [custSel, setCustSel] = useState(pf.custSel || []);      // lọc theo KHÁCH HÀNG (tên) — chọn nhiều (OR)
   const [custOptions, setCustOptions] = useState(P0.custOptions || []);
   const [denDate, setDenDate] = useState(pf.denDate || "");     // lọc theo Giờ đến kế hoạch (gio_den_du_kien) — chọn 1 NGÀY
+  const [cutDate, setCutDate] = useState(pf.cutDate || "");     // lọc theo NGÀY CẮT MÁNG (cut_off) — chọn 1 NGÀY
   const [tagSel, setTagSel] = useState(pf.tagSel || []);        // lọc theo NHÃN — chọn nhiều (OR)
   const [tagOptions, setTagOptions] = useState(P0.tagOptions || []);
   const [showFilters, setShowFilters] = useState(!!pf.showFilters);   // mở/thu panel bộ lọc chi tiết
@@ -168,6 +169,7 @@ function ShipmentsApp() {
     if (fromLocSel && fromLocSel.length) p.set("fromMode", fromMode);
     (custSel || []).forEach((v) => p.append("cust[]", v));   // chọn nhiều khách → OR
     if (denDate) p.set("denDate", denDate);
+    if (cutDate) p.set("cutDate", cutDate);
     (tagSel || []).forEach((v) => p.append("tags[]", v));
     if (sort.key !== "default") { p.set("sort", sort.key); p.set("dir", String(sort.dir)); }
     return p;
@@ -214,8 +216,8 @@ function ShipmentsApp() {
   const skipPersist = useRef(fromLink);
   useEffect(() => {
     if (skipPersist.current) { skipPersist.current = false; return; }
-    try { localStorage.setItem(FILTER_KEY, JSON.stringify({ filter, tlFilter, hcFilter, priceFilter, followFilter, toLocSel, toMode, fromLocSel, fromMode, custSel, denDate, tagSel, perPage, sort, showFilters })); } catch (e) {}
-  }, [filter, tlFilter, hcFilter, priceFilter, followFilter, toLocSel, toMode, fromLocSel, fromMode, custSel, denDate, tagSel, perPage, sort, showFilters]);
+    try { localStorage.setItem(FILTER_KEY, JSON.stringify({ filter, tlFilter, hcFilter, priceFilter, followFilter, toLocSel, toMode, fromLocSel, fromMode, custSel, denDate, cutDate, tagSel, perPage, sort, showFilters })); } catch (e) {}
+  }, [filter, tlFilter, hcFilter, priceFilter, followFilter, toLocSel, toMode, fromLocSel, fromMode, custSel, denDate, cutDate, tagSel, perPage, sort, showFilters]);
 
   // Nạp lại khi tham số đổi. Bỏ lần mount đầu NẾU không có bộ lọc lưu (đã có boot mặc định);
   // nếu CÓ bộ lọc lưu (khác mặc định) → nạp ngay lần đầu để áp đúng cấu hình đã khôi phục.
@@ -223,7 +225,7 @@ function ShipmentsApp() {
   useEffect(() => {
     if (skipFirst.current) { skipFirst.current = false; return; }
     load();
-  }, [page, perPage, qDeb, filter, late, tlFilter, hcFilter, priceFilter, followFilter, toLocSel, toMode, fromLocSel, fromMode, custSel, denDate, tagSel, sort]);
+  }, [page, perPage, qDeb, filter, late, tlFilter, hcFilter, priceFilter, followFilter, toLocSel, toMode, fromLocSel, fromMode, custSel, denDate, cutDate, tagSel, sort]);
   // Mở từ Lộ trình/Bảng kê (?q/?open) hoặc cảnh báo (?late): boot là danh sách CHƯA lọc → tải lại ngay.
   useEffect(() => { if (_initSp.get("q") || _initSp.get("open") || _late0) { skipFirst.current = false; load(); } }, []);
 
@@ -974,10 +976,11 @@ function ShipmentsApp() {
   const setToLocP = (arr) => { setToLocSel(arr); setPage(1); };   // chọn nhiều ký hiệu nơi hạ (OR)
   const setCustP = (arr) => { setCustSel(arr); setPage(1); };      // lọc theo khách hàng (OR)
   const setDenDateP = (v) => { setDenDate(v); setPage(1); };      // lọc theo Giờ đến kế hoạch (1 ngày)
+  const setCutDateP = (v) => { setCutDate(v); setPage(1); };      // lọc theo ngày cắt máng (1 ngày)
   const setTagP = (arr) => { setTagSel(arr); setPage(1); };       // lọc theo nhãn
   // Số bộ lọc chi tiết đang bật + xóa tất cả (để hiện badge / nút Xóa lọc)
-  const activeFilters = (toLocSel.length ? 1 : 0) + (fromLocSel.length ? 1 : 0) + (custSel.length ? 1 : 0) + (denDate ? 1 : 0) + (tagSel.length ? 1 : 0) + (followFilter !== "all" ? 1 : 0) + (tlFilter !== "all" ? 1 : 0) + (hcFilter !== "all" ? 1 : 0) + (priceFilter !== "all" ? 1 : 0);
-  const clearFilters = () => { setLate(""); setToLocSel([]); setToMode("include"); setFromLocSel([]); setFromMode("exclude"); setCustSel([]); setDenDate(""); setTagSel([]); setFollowFilter("all"); setTlFilter("all"); setHcFilter("all"); setPriceFilter("all"); setPage(1); };
+  const activeFilters = (toLocSel.length ? 1 : 0) + (fromLocSel.length ? 1 : 0) + (custSel.length ? 1 : 0) + (denDate ? 1 : 0) + (cutDate ? 1 : 0) + (tagSel.length ? 1 : 0) + (followFilter !== "all" ? 1 : 0) + (tlFilter !== "all" ? 1 : 0) + (hcFilter !== "all" ? 1 : 0) + (priceFilter !== "all" ? 1 : 0);
+  const clearFilters = () => { setLate(""); setToLocSel([]); setToMode("include"); setFromLocSel([]); setFromMode("exclude"); setCustSel([]); setDenDate(""); setCutDate(""); setTagSel([]); setFollowFilter("all"); setTlFilter("all"); setHcFilter("all"); setPriceFilter("all"); setPage(1); };
   // Nhóm nút Tất cả / Đã / Chưa dùng chung cho Thanh lý tờ khai và Hạ cont (panel lọc + popup Xuất Excel).
   const SegDone = ({ value, onChange, counts, labels, full, titles }) => (
     <div style={{ display: "inline-flex", background: "#f1f2f4", borderRadius: 9, padding: 3, gap: 1, ...(full ? { width: "100%", marginBottom: 11 } : {}) }}>
@@ -1195,6 +1198,7 @@ function ShipmentsApp() {
               {fromLocSel.length > 0 && <FChip onClear={() => setFromLocP([])}>{fromMode === "exclude" ? "Lấy ⊘ " : "Lấy: "}{fromLocSel.join(", ")}</FChip>}
               {custSel.length > 0 && <FChip onClear={() => setCustP([])}>Khách: {custSel.join(", ")}</FChip>}
               {denDate && <FChip onClear={() => setDenDateP("")}>Đóng hàng {fmtDate(denDate)}</FChip>}
+              {cutDate && <FChip onClear={() => setCutDateP("")}>Cắt máng {fmtDate(cutDate)}</FChip>}
               {tagSel.length > 0 && <FChip onClear={() => setTagP([])}>Nhãn: {tagSel.join(", ")}</FChip>}
               {priceFilter !== "all" && <FChip onClear={() => setPriceP("all")}>{priceFilter === "unmatched" ? "Chưa khớp giá" : "Đã khớp giá"}</FChip>}
               {followFilter !== "all" && <FChip onClear={() => setFollowP("all")}>Theo dõi: {followFilter === "missing" ? "chưa số HĐ" : followFilter === "any" ? "có theo dõi" : "màu"}</FChip>}
@@ -1235,6 +1239,10 @@ function ShipmentsApp() {
             <FF label="Ngày đóng hàng" icon="bi-calendar-event">
               <div style={{ width: 150 }}><DateField value={denDate} onChange={setDenDateP} placeholder="Chọn ngày" /></div>
               {denDate && <button type="button" onClick={() => setDenDateP("")} title="Bỏ lọc ngày" style={{ border: "none", background: "transparent", color: "var(--ink-4)", cursor: "pointer", padding: 2 }}><i className="bi bi-x-circle" /></button>}
+            </FF>
+            <FF label="Ngày cắt máng" icon="bi-clock-history">
+              <div style={{ width: 150 }}><DateField value={cutDate} onChange={setCutDateP} placeholder="Chọn ngày" /></div>
+              {cutDate && <button type="button" onClick={() => setCutDateP("")} title="Bỏ lọc cắt máng" style={{ border: "none", background: "transparent", color: "var(--ink-4)", cursor: "pointer", padding: 2 }}><i className="bi bi-x-circle" /></button>}
             </FF>
             <FF label="Thanh lý tờ khai" icon="bi-file-earmark-check">
               <SegDone value={tlFilter} onChange={setTlP} counts={tlCounts} labels={["Tất cả", "Đã thanh lý", "Chưa thanh lý"]}
