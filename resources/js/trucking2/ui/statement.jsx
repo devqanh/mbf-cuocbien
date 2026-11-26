@@ -438,8 +438,11 @@ function VatSelect({ value, onChange }) {
   );
 }
 
-/* Khối tổng tiền 4 dòng (dùng chung tạo + xem): nền · VAT · chi hộ · tổng (+ công nợ nếu có). */
-/* extras: [{key,label,vat,sum}] — cột chi phí riêng của bảng kê (đã gồm trong amt.total). */
+/* Khối tổng tiền (dùng chung tạo + xem) — trình bày theo VAT (user 26/11):
+     Doanh thu (cước + dầu) + các cột phí riêng CHỊU VAT = TỔNG DOANH THU (cơ sở tính VAT)
+     → VAT → Chi hộ, cột phí riêng KHÔNG VAT, phí tờ khai → TỔNG PHẢI THU (+ công nợ nếu có).
+   Chỉ đổi cách hiện — con số vẫn từ statementAmounts (VAT cộng theo từng dòng, khớp backend).
+   extras: [{key,label,vat,sum}] — cột chi phí riêng của bảng kê (đã gồm trong amt.total). */
 function AmountSummary({ amt, vatRate, paid, payCount, showDebt, extras = [], children }) {
   const con = (amt.total || 0) - (paid || 0);
   const row = (label, val, opt = {}) => (
@@ -448,13 +451,23 @@ function AmountSummary({ amt, vatRate, paid, payCount, showDebt, extras = [], ch
       <b className="tnum" style={opt.valStyle || {}}>{fmtVND(val)}</b>
     </div>
   );
+  const exLabel = (c) => String(c.label || "").trim() || "Khoản mới";
+  const vatEx = extras.filter((c) => c.vat), noVatEx = extras.filter((c) => !c.vat);
+  const doanhThu = (amt.base || 0) + vatEx.reduce((s, c) => s + (+c.sum || 0), 0);   // cơ sở tính VAT
+  const strong = (label, val, opt = {}) => (
+    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "7px 0 6px", margin: "2px 0 6px", borderTop: "1px solid var(--line)", ...(opt.wrap || {}) }}>
+      <span style={{ fontWeight: 700 }}>{label}</span><b className="tnum">{fmtVND(val)}</b>
+    </div>
+  );
   return (
     <div style={{ width: 320, background: "#fafbfc", border: "1px solid var(--line)", borderRadius: 10, padding: "12px 16px" }}>
       {row("Doanh thu (cước + dầu)", amt.base)}
+      {vatEx.map((c) => <React.Fragment key={c.key}>{row(exLabel(c) + " (chịu VAT)", c.sum)}</React.Fragment>)}
+      {strong("TỔNG DOANH THU", doanhThu)}
       {row(`VAT (${vatRate || 0}%)`, amt.vat, { valStyle: { color: (vatRate ? "var(--accent)" : "var(--ink-4)") } })}
       {row("Chi hộ (không VAT)", amt.choho)}
+      {noVatEx.map((c) => <React.Fragment key={c.key}>{row(exLabel(c) + " (không VAT)", c.sum)}</React.Fragment>)}
       {amt.tk > 0 && row("Phí tờ khai (sau VAT)", amt.tk)}
-      {extras.map((c) => <React.Fragment key={c.key}>{row((String(c.label || "").trim() || "Khoản mới") + (c.vat ? " (chịu VAT)" : " (không VAT)"), c.sum)}</React.Fragment>)}
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, paddingTop: 8, marginBottom: showDebt ? 8 : 0, borderTop: "1px solid var(--line)" }}>
         <span style={{ fontWeight: 700 }}>TỔNG PHẢI THU</span><b className="tnum">{fmtVND(amt.total)}</b>
       </div>
@@ -467,6 +480,31 @@ function AmountSummary({ amt, vatRate, paid, payCount, showDebt, extras = [], ch
       {children}
     </div>
   );
+}
+
+/* CHÂN BẢNG TỔNG (trang tạo + trang xem, cũng là phần IN) — cùng thứ tự với AmountSummary:
+   Doanh thu (cước + dầu) · phí riêng chịu VAT → TỔNG DOANH THU → VAT → Chi hộ · phí riêng không VAT · phí tờ khai → TỔNG PHẢI THU.
+   lead = trang tạo có thêm 1 ô đầu dòng (cột tích chọn, ẩn khi in). */
+function TotalsRows({ amt, vatRate, extraCols = [], tongThu, labelSpan, lead }) {
+  const r = (key, label, val, opt = {}) => (
+    <tr key={key} style={opt.trStyle}>
+      {lead && <td className="ke-noprint"></td>}
+      <td colSpan={labelSpan} style={{ padding: opt.pad || "3px 8px", textAlign: "right", color: opt.strong ? undefined : "var(--ink-3)", fontWeight: opt.strong ? 700 : undefined, borderTop: opt.line ? "1px solid var(--line)" : undefined }}>{label}</td>
+      <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: opt.pad || "3px 8px", fontWeight: opt.strong ? 700 : undefined, color: opt.color, borderTop: opt.line ? "1px solid var(--line)" : undefined }}>{fmtVND(val)}</td><td></td>
+    </tr>
+  );
+  const vatEx = extraCols.filter((c) => c.vat), noVatEx = extraCols.filter((c) => !c.vat);
+  const doanhThu = (amt.base || 0) + vatEx.reduce((s, c) => s + (amt.extras[c.key] || 0), 0);
+  return (<>
+    {r("base", "Doanh thu (cước + dầu)", amt.base, { pad: "9px 8px 3px" })}
+    {vatEx.map((c) => r("x" + c.key, colLabel(c) + " (chịu VAT)", amt.extras[c.key] || 0))}
+    {r("dt", "TỔNG DOANH THU", doanhThu, { strong: true, line: true, pad: "6px 8px" })}
+    {r("vat", "VAT" + (vatRate ? ` (mặc định ${vatRate}%)` : ""), amt.vat, { color: amt.vat ? "var(--accent)" : "var(--ink-4)" })}
+    {r("choho", "Chi hộ (không VAT)", amt.choho)}
+    {noVatEx.map((c) => r("n" + c.key, colLabel(c) + " (không VAT)", amt.extras[c.key] || 0))}
+    {amt.tk > 0 && r("tk", "Phí tờ khai — mở + thanh lý (sau VAT)", amt.tk)}
+    {r("total", "TỔNG PHẢI THU", tongThu, { strong: true, line: true, pad: "8px 8px 11px" })}
+  </>);
 }
 
 /* onExtraColsCount(n): báo số cột chi phí riêng đang có để trang cha nới khung (bảng rộng thêm theo cột). */
@@ -962,39 +1000,8 @@ function StatementForm({ cfg, onCancel, onSaved, onExtraColsCount }) {
               <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(tongThu)}</td>
               <td style={{ borderTop: "1.5px solid var(--line)" }}></td>
             </tr>
-            {/* Khối tổng (nền/VAT/chi hộ/từng cột riêng/tổng tiền) */}
-            <tr>
-              <td className="ke-noprint"></td>
-              <td colSpan={nCols - 4} style={{ padding: "9px 8px 3px", textAlign: "right", color: "var(--ink-3)" }}>Doanh thu (cước + dầu)</td>
-              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "9px 8px 3px" }}>{fmtVND(amt.base)}</td><td></td>
-            </tr>
-            <tr>
-              <td className="ke-noprint"></td>
-              <td colSpan={nCols - 4} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>VAT{vatRate ? ` (mặc định ${vatRate}%)` : ""}</td>
-              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px", color: amt.vat ? "var(--accent)" : "var(--ink-4)" }}>{fmtVND(amt.vat)}</td><td></td>
-            </tr>
-            {extraCols.map((c) => (
-              <tr key={c.key}>
-                <td className="ke-noprint"></td>
-                <td colSpan={nCols - 4} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>{colLabel(c)}{c.vat ? " (chịu VAT)" : " (không VAT)"}</td>
-                <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px" }}>{fmtVND(amt.extras[c.key] || 0)}</td><td></td>
-              </tr>
-            ))}
-            <tr>
-              <td className="ke-noprint"></td>
-              <td colSpan={nCols - 4} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>Chi hộ (không VAT)</td>
-              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px" }}>{fmtVND(amt.choho)}</td><td></td>
-            </tr>
-            {amt.tk > 0 && <tr>
-              <td className="ke-noprint"></td>
-              <td colSpan={nCols - 4} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>Phí tờ khai — mở + thanh lý (sau VAT)</td>
-              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px" }}>{fmtVND(amt.tk)}</td><td></td>
-            </tr>}
-            <tr style={{ fontWeight: 700 }}>
-              <td className="ke-noprint"></td>
-              <td colSpan={nCols - 4} style={{ padding: "8px 8px 11px", textAlign: "right" }}>TỔNG PHẢI THU</td>
-              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "8px 8px 11px" }}>{fmtVND(tongThu)}</td><td></td>
-            </tr>
+            {/* Khối tổng: doanh thu + phí chịu VAT = TỔNG DOANH THU → VAT → chi hộ / phí không VAT / phí tờ khai → TỔNG PHẢI THU */}
+            <TotalsRows amt={amt} vatRate={vatRate} extraCols={extraCols} tongThu={tongThu} labelSpan={nCols - 4} lead />
           </tfoot>
         </table>
         </div>
@@ -1407,32 +1414,7 @@ function StatementDetailBody({ st, onUpdate, detailById = {}, suggestById = null
               <td className="tnum" style={{ textAlign: "right", padding: "9px 8px", borderTop: "1.5px solid var(--line)" }}>{fmtNum(tongThu)}</td>
               <td style={{ borderTop: "1.5px solid var(--line)" }}></td>
             </tr>
-            <tr>
-              <td colSpan={nCols - 3} style={{ padding: "9px 8px 3px", textAlign: "right", color: "var(--ink-3)" }}>Doanh thu (cước + dầu)</td>
-              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "9px 8px 3px" }}>{fmtVND(amt.base)}</td><td></td>
-            </tr>
-            <tr>
-              <td colSpan={nCols - 3} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>VAT{vatRate ? ` (mặc định ${vatRate}%)` : ""}</td>
-              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px", color: amt.vat ? "var(--accent)" : "var(--ink-4)" }}>{fmtVND(amt.vat)}</td><td></td>
-            </tr>
-            {extraCols.map((c) => (
-              <tr key={c.key}>
-                <td colSpan={nCols - 3} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>{colLabel(c)}{c.vat ? " (chịu VAT)" : " (không VAT)"}</td>
-                <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px" }}>{fmtVND(amt.extras[c.key] || 0)}</td><td></td>
-              </tr>
-            ))}
-            <tr>
-              <td colSpan={nCols - 3} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>Chi hộ (không VAT)</td>
-              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px" }}>{fmtVND(amt.choho)}</td><td></td>
-            </tr>
-            {amt.tk > 0 && <tr>
-              <td colSpan={nCols - 3} style={{ padding: "3px 8px", textAlign: "right", color: "var(--ink-3)" }}>Phí tờ khai — mở + thanh lý (sau VAT)</td>
-              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "3px 8px" }}>{fmtVND(amt.tk)}</td><td></td>
-            </tr>}
-            <tr style={{ fontWeight: 700 }}>
-              <td colSpan={nCols - 3} style={{ padding: "8px 8px 11px", textAlign: "right" }}>TỔNG PHẢI THU</td>
-              <td className="tnum" colSpan={2} style={{ textAlign: "right", padding: "8px 8px 11px" }}>{fmtVND(tongThu)}</td><td></td>
-            </tr>
+            <TotalsRows amt={amt} vatRate={vatRate} extraCols={extraCols} tongThu={tongThu} labelSpan={nCols - 3} />
           </tfoot>
         </table>
         </div>
